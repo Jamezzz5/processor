@@ -1,12 +1,14 @@
 import pandas as pd
+import numpy as np
 import vendormatrix as vm
 import cleaning as cln
 import dictionary as dct
 import errorreport as er
-import calc as cal
 import logging
 
 log = logging.getLogger()
+ADCOST = 'Adserving Cost'
+AM_CPM = 'CPM'
 
 
 def import_readcsv(csvpath, filename):
@@ -48,6 +50,15 @@ def combining_data(df, key, **kwargs):
     return df
 
 
+def adcost_calculation(df):
+    if vm.clicks not in df:
+        return df
+    df[ADCOST] = np.where(df[dct.AM] == AM_CPM,
+                          df[dct.AR] * df[vm.impressions]/1000,
+                          df[dct.AR] * df[vm.clicks])
+    return df
+
+
 def import_data(key, **kwargs):
     data = import_readcsv(vm.pathraw, kwargs[vm.filename])
     data = cln.firstlastadj(data, kwargs[vm.firstrow], kwargs[vm.lastrow])
@@ -59,14 +70,13 @@ def import_data(key, **kwargs):
     dic.auto(err, kwargs[vm.autodicord], kwargs[vm.placement])
     data = dic.merge(data, dct.FPN)
     data = combining_data(data, key, **kwargs)
-
     data = cln.data_to_type(data, vm.datafloatcol, vm.datadatecol, [])
-    data = cln.date_removal(data, kwargs[vm.startdate])
-    data = cal.adcost_calculation(data)
+    data = cln.date_removal(data, vm.date,
+                            kwargs[vm.startdate], kwargs[vm.enddate])
+    data = adcost_calculation(data)
     data = cln.col_removal(data, key, kwargs[vm.dropcol])
-    data = cln.null_items(data, key, **kwargs)
-    data = cln.null_items_date(data, key, **kwargs)
-
+    data = cln.null_items(data, key, dct.VEN, vm.nullcoldic, **kwargs)
+    data = cln.null_items_date(data, key, vm.date, vm.nullcoldic**kwargs)
     return data
 
 

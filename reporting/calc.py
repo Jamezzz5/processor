@@ -26,7 +26,6 @@ BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
 
-ADCOST = 'Adserving Cost'
 NCF = 'Net Cost Final'
 
 CLI_PNPD = 'Clicks by Placement & Placement Date'
@@ -48,19 +47,7 @@ DROPCOL = ([dct.FPN, 'index', CLI_PD, NC_CUMSUM, NC_SUMDATE,
             NC_CUMSUMMINDATE] + DIF_COL)
 
 
-def adcost_calculation(df):
-    if vm.clicks not in df:
-        return df
-    df[ADCOST] = np.where(df[dct.AM] == BM_CPM,
-                          df[dct.AR] * df[vm.impressions]/1000,
-                          df[dct.AR] * df[vm.clicks])
-    return df
-
-
 def clicks_by_placedate(df):
-    df.to_csv('test.csv')
-    # df[CLI_PNPD] = ((df[vm.date] + df[dct.PN]))
-
     df_click_placedate = (df.groupby([vm.date, dct.PN])[[vm.clicks]]
                           .apply(lambda x: x/float(x.sum())).astype(float))
     df_click_placedate = df_click_placedate.replace(np.nan, 0).astype(float)

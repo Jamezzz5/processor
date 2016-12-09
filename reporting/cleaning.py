@@ -1,7 +1,5 @@
 import logging
 import datetime as dt
-import vendormatrix as vm
-import dictionary as dct
 import numpy as np
 import pandas as pd
 
@@ -72,8 +70,10 @@ def firstlastadj(df, firstrow, lastrow):
     return df
 
 
-def date_removal(df, startdate):
-    df = df[df[vm.date] >= startdate]
+def date_removal(df, datecolname, startdate, enddate):
+    if enddate != dt.date.today() - dt.timedelta(weeks=520):
+        df = df[df[datecolname] <= enddate]
+    df = df[df[datecolname] >= startdate]
     return df
 
 
@@ -90,27 +90,27 @@ def col_removal(df, key, removalcols):
     return df
 
 
-def null_items(df, key, **kwargs):
+def null_items(df, key, vencolname, nullcoldic, **kwargs):
     logging.debug('Nulling vendor metrics')
-    for col in vm.nullcoldic:
+    for col in nullcoldic:
         if col not in df.columns:
             continue
-        for ven in kwargs[vm.nullcoldic[col]]:
-            df[col] = np.where((df[dct.VEN] == ven), 0, df[col])
+        for ven in kwargs[nullcoldic[col]]:
+            df[col] = np.where((df[vencolname] == ven), 0, df[col])
     return df
 
 
-def null_items_date(df, key, **kwargs):
+def null_items_date(df, key, datecol, nulldatedic, **kwargs):
     logging.debug('Nulling vendor metrics by date')
-    for col in vm.nulldatedic:
+    for col in nulldatedic:
         if col not in df.columns:
             continue
-        for sd, ed in zip(kwargs[vm.nulldatedic[col][0]],
-                          kwargs[vm.nulldatedic[col][1]]):
+        for sd, ed in zip(kwargs[nulldatedic[col][0]],
+                          kwargs[nulldatedic[col][1]]):
             if sd == 'nan' or ed == 'nan':
                 continue
             sd = string_to_date(sd)
             ed = string_to_date(ed)
-            df[col] = np.where((df[vm.date] >= sd) & (df[vm.date] <= ed),
+            df[col] = np.where((df[datecol] >= sd) & (df[datecol] <= ed),
                                0, df[col])
     return df
