@@ -2,7 +2,7 @@ import logging
 import os.path
 import pandas as pd
 import cleaning as cln
-import importdata as imp
+import reporting.importdata as imp
 
 log = logging.getLogger()
 
@@ -18,8 +18,11 @@ placement = 'Placement Name'
 filenamedict = 'FILENAME_DICTIONARY'
 filenameerror = 'FILENAME_ERROR'
 startdate = 'START DATE'
+enddate = 'END DATE'
 dropcol = 'DROP_COLUMNS'
 autodicord = 'AUTO DICTIONARY ORDER'
+apifile = 'API_FILE'
+apifields = 'API_FIELDS'
 date = 'Date'
 impressions = 'Impressions'
 clicks = 'Clicks'
@@ -75,7 +78,8 @@ nullconv10sd = 'NULL CONV10 - SD'
 nullconv10ed = 'NULL CONV10 - ED'
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
-          filenameerror, startdate, dropcol, autodicord]
+          filenameerror, startdate, enddate, dropcol, autodicord, apifile,
+          apifields]
 
 datacol = [date, impressions, clicks, cost, conv1, conv2, conv3, conv4, conv5,
            conv6, conv7, conv8, conv9, conv10]
@@ -93,7 +97,8 @@ nulldate = [nullimpssd, nullimpsed, nullclicksd, nullclicked, nullcostsd,
 
 vmkeys = vmkeys + datacol + nullcol + nulldate
 undersplitcol = [fullplacename, dropcol, autodicord] + nullcol + nulldate
-datecol = [startdate] + nulldate
+barsplitcol = [apifields]
+datecol = [startdate, enddate] + nulldate
 datadatecol = [date] + nulldate
 datafloatcol = [impressions, clicks, cost, conv1, conv2, conv3, conv4, conv5,
                 conv6, conv7, conv8, conv9, conv10]
@@ -119,7 +124,10 @@ class VendorMatrix(object):
         self.vl = self.vm[vendorkey].tolist()
         self.vm = self.vm.set_index(vendorkey).to_dict()
         for col in undersplitcol:
-            self.vm[col] = ({key: list(value.split('_')) for key, value in
+            self.vm[col] = ({key: list(str(value).split('_')) for key, value in
+                            self.vm[col].items()})
+        for col in barsplitcol:
+            self.vm[col] = ({key: list(str(value).split('|')) for key, value in
                             self.vm[col].items()})
 
     def vendor_set(self, vk):
