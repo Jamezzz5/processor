@@ -76,7 +76,7 @@ def import_data(key, **kwargs):
     data = adcost_calculation(data)
     data = cln.col_removal(data, key, kwargs[vm.dropcol])
     data = cln.null_items(data, key, dct.VEN, vm.nullcoldic, **kwargs)
-    data = cln.null_items_date(data, key, vm.date, vm.nullcoldic**kwargs)
+    data = cln.null_items_date(data, key, vm.date, vm.nulldatedic, **kwargs)
     return data
 
 
@@ -88,6 +88,6 @@ def import_plan_data(key, data, **kwargs):
     er.ErrorReport(data, dic, kwargs[vm.placement], kwargs[vm.filenameerror])
     data = dic.merge(data, dct.FPN)
     data = data.drop_duplicates()
-    undersplit = lambda x: pd.Series([i for i in (x.split('_'))])
-    data[vm.fullplacename] = (data[dct.FPN].apply(undersplit))
+    barsplit = lambda x: pd.Series([i for i in (x.split('|'))])
+    data[vm.fullplacename] = (data[dct.FPN].apply(barsplit))
     return data
