@@ -61,7 +61,7 @@ class Dict(object):
         self.read()
 
     def read(self):
-        if os.path.isfile(self.dictfile) == False:
+        if not os.path.isfile(self.dictfile):
             logging.info('Creating ' + self.filename)
             if self.filename == PFN:
                 data_dict = pd.DataFrame(columns=PCOLS, index=None)

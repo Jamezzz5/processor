@@ -71,7 +71,7 @@ def firstlastadj(df, firstrow, lastrow):
 
 
 def date_removal(df, datecolname, startdate, enddate):
-    if enddate != dt.date.today() - dt.timedelta(weeks=520):
+    if enddate.date() != (dt.date.today() - dt.timedelta(weeks=520)):
         df = df[df[datecolname] <= enddate]
     df = df[df[datecolname] >= startdate]
     return df

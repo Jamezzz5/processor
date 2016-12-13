@@ -22,7 +22,6 @@ def main():
     matrix = vm.VendorMatrix()
     if args.api:
         api.apicalls(matrix)
-    """
     data = matrix.vmloop()
     data = cal.netcost_calculation(data)
     data = cal.netcostfinal_calculation(data, matrix.vm[dct.FPN][vm.plankey])
@@ -32,6 +31,6 @@ def main():
     except IOError:
         logging.info(OUTPUT_FILE + ' could not be opened.  ' +
                      'Final Output not updated.')
-    """
+
 if __name__ == '__main__':
     main()

@@ -4,6 +4,7 @@ import pandas as pd
 import logging
 import time
 import sys
+import ast
 from facebookads.api import FacebookAdsApi
 from facebookads import objects
 from facebookads.adobjects.adsinsights import AdsInsights
@@ -16,15 +17,25 @@ log.setLevel(logging.INFO)
 
 
 def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
-              'clicks', 'spend', 'video_10_sec_watched_actions',
+              'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
               'video_p50_watched_actions', 'video_p100_watched_actions']
-
+nestedcol = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
+             'video_p50_watched_actions']
+colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
+              'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
+              'ad_name': 'Ad Name', 'impressions': 'Impressions',
+              'inline_link_clicks': 'Link Clicks',
+              'spend': 'Amount Spent (USD)',
+              'video_10_sec_watched_actions': '3-Second Video Views',
+              'video_p50_watched_actions': 'Video Watches at 50%',
+              'video_p100_watched_actions': 'Video Watches at 100%'}
 config = 'Config/fbconfig.json'
 
 
 class FbApi(object):
     def __init__(self):
         self.loadconfig()
+        self.checkconfig()
         self.df = pd.DataFrame()
 
     def loadconfig(self):
@@ -41,6 +52,20 @@ class FbApi(object):
         FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
         self.account = objects.AdAccount(self.config['act_id'])
 
+    def checkconfig(self):
+        if self.app_id == '':
+            logging.warn('App ID not in FB config file.  Aborting.')
+            sys.exit(0)
+        if self.app_secret == '':
+            logging.warn('App Secret not in FB config file. Aborting.')
+            sys.exit(0)
+        if self.account == '':
+            logging.warn('Account ID not in FB config file. Aborting.')
+            sys.exit(0)
+        if self.access_token == '':
+            logging.warn('Access Token not in FB config file. Aborting.')
+            sys.exit(0)
+
     def getdata(self, sd, ed=(dt.date.today() - dt.timedelta(days=1)),
                 fields=def_fields):
         if sd > ed:
@@ -49,7 +74,7 @@ class FbApi(object):
             sd = ed
         cd = sd
         delta = dt.timedelta(days=1)
-        while cd < ed:
+        while cd <= ed:
             logging.info('Getting FB data for ' + str(cd))
             try:
                 insights = list(self.account.get_insights(
@@ -72,8 +97,16 @@ class FbApi(object):
                 continue
             self.df = self.df.append(insights, ignore_index=True)
             cd = cd + delta
-        self.df = self.cleandata()
+        for col in nestedcol:
+            self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
         return self.df
 
-    def cleandata(self):
+    def cleandata(self, x):
+        if str(x) == str('nan'):
+            return 0
+        x = str(x).strip('[]')
+        return ast.literal_eval(x)['value']
+
+    def renamecols(self):
+        self.df = self.df.rename(columns=colnamedic)
         return self.df

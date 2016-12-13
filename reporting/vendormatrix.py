@@ -23,6 +23,7 @@ dropcol = 'DROP_COLUMNS'
 autodicord = 'AUTO DICTIONARY ORDER'
 apifile = 'API_FILE'
 apifields = 'API_FIELDS'
+apimerge = 'API_MERGE'
 date = 'Date'
 impressions = 'Impressions'
 clicks = 'Clicks'
@@ -79,7 +80,7 @@ nullconv10ed = 'NULL CONV10 - ED'
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
           filenameerror, startdate, enddate, dropcol, autodicord, apifile,
-          apifields]
+          apifields, apimerge]
 
 datacol = [date, impressions, clicks, cost, conv1, conv2, conv3, conv4, conv5,
            conv6, conv7, conv8, conv9, conv10]
@@ -96,8 +97,9 @@ nulldate = [nullimpssd, nullimpsed, nullclicksd, nullclicked, nullcostsd,
             nullconv10ed]
 
 vmkeys = vmkeys + datacol + nullcol + nulldate
-undersplitcol = [fullplacename, dropcol, autodicord] + nullcol + nulldate
-barsplitcol = [apifields]
+barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + nullcol +
+               nulldate)
+
 datecol = [startdate, enddate] + nulldate
 datadatecol = [date] + nulldate
 datafloatcol = [impressions, clicks, cost, conv1, conv2, conv3, conv4, conv5,
@@ -120,12 +122,9 @@ class VendorMatrix(object):
         planrow = (self.vm.loc[self.vm[vendorkey] == plankey])
         self.vm = self.vm[self.vm[vendorkey] != plankey]
         self.vm = self.vm.append(planrow).reset_index()
-        self.vm = cln.data_to_type(self.vm, [], datecol, undersplitcol)
+        self.vm = cln.data_to_type(self.vm, [], datecol, barsplitcol)
         self.vl = self.vm[vendorkey].tolist()
         self.vm = self.vm.set_index(vendorkey).to_dict()
-        for col in undersplitcol:
-            self.vm[col] = ({key: list(str(value).split('_')) for key, value in
-                            self.vm[col].items()})
         for col in barsplitcol:
             self.vm[col] = ({key: list(str(value).split('|')) for key, value in
                             self.vm[col].items()})
