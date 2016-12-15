@@ -115,6 +115,7 @@ class VendorMatrix(object):
     def __init__(self):
         log.info('Initializing Vendor Matrix')
         self.vm_parse()
+        self.vm_apikeys()
 
     def vm_parse(self):
         self.vm = pd.DataFrame(columns=[datacol])
@@ -128,6 +129,17 @@ class VendorMatrix(object):
         for col in barsplitcol:
             self.vm[col] = ({key: list(str(value).split('|')) for key, value in
                             self.vm[col].items()})
+
+    def vm_apikeys(self):
+        self.apifbkey = []
+        self.apiawkey = []
+        for vk in self.vl:
+            vksplit = {vk: vk.split('_')}
+            if vksplit[vk][0] == 'API':
+                if vksplit[vk][1] == 'Adwords':
+                    self.apiawkey.append(vk)
+                if vksplit[vk][1] == 'Facebook':
+                    self.apifbkey.append(vk)
 
     def vendor_set(self, vk):
         venparam = {}

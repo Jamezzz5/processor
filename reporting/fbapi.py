@@ -29,22 +29,26 @@ colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
               'video_10_sec_watched_actions': '3-Second Video Views',
               'video_p50_watched_actions': 'Video Watches at 50%',
               'video_p100_watched_actions': 'Video Watches at 100%'}
-config = 'Config/fbconfig.json'
+configpath = 'Config/'
+configfile = 'Config/fbconfig.json'
 
 
 class FbApi(object):
     def __init__(self):
-        self.loadconfig()
-        self.checkconfig()
         self.df = pd.DataFrame()
 
+    def inputconfig(self, config):
+        logging.info('Loading Facebook config file: ' + config)
+        self.configfile = configpath + config
+        self.loadconfig()
+        self.checkconfig()
+
     def loadconfig(self):
-        logging.info('Loading Facebook config file')
         try:
-            with open(config, 'r') as f:
+            with open(configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('Config file not found.  Aborting.')
+            logging.error(configfile + ' not found.  Aborting.')
             sys.exit(0)
         self.app_id = self.config['app_id']
         self.app_secret = self.config['app_secret']
@@ -97,8 +101,12 @@ class FbApi(object):
                 continue
             self.df = self.df.append(insights, ignore_index=True)
             cd = cd + delta
+        self.df = self.renamecols()
         for col in nestedcol:
-            self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
+            try:
+                self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
+            except KeyError:
+                continue
         return self.df
 
     def cleandata(self, x):
