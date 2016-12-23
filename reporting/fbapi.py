@@ -30,7 +30,6 @@ colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
               'video_p50_watched_actions': 'Video Watches at 50%',
               'video_p100_watched_actions': 'Video Watches at 100%'}
 configpath = 'Config/'
-configfile = 'Config/fbconfig.json'
 
 
 class FbApi(object):
@@ -45,10 +44,10 @@ class FbApi(object):
 
     def loadconfig(self):
         try:
-            with open(configfile, 'r') as f:
+            with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(configfile + ' not found.  Aborting.')
+            logging.error(self.configfile + ' not found.  Aborting.')
             sys.exit(0)
         self.app_id = self.config['app_id']
         self.app_secret = self.config['app_secret']
@@ -72,6 +71,8 @@ class FbApi(object):
 
     def getdata(self, sd, ed=(dt.date.today() - dt.timedelta(days=1)),
                 fields=def_fields):
+        sd = sd.date()
+        ed = ed.date()
         if sd > ed:
             logging.warn('Start date greater than end date.  Start data was' +
                          'set to end date.')

@@ -11,7 +11,6 @@ logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 configpath = 'Config/'
-configfile = 'Config/awconfig.yaml'
 
 def_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
               'ImageCreativeName', 'Headline', 'HeadlinePart1',
@@ -36,7 +35,7 @@ class AwApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = yaml.safe_load(f)
         except:
-            logging.error(configfile + ' not found.  Aborting.')
+            logging.error(self.configfile + ' not found.  Aborting.')
             sys.exit(0)
         self.config = self.config['adwords']
         self.client_id = self.config['client_id']
@@ -64,6 +63,8 @@ class AwApi(object):
 
     def getdata(self, sd, ed=(dt.date.today() - dt.timedelta(days=1)),
                 fields=def_fields):
+        sd = sd.date()
+        ed = ed.date()
         if sd > ed:
             logging.warn('Start date greater than end date.  Start date was' +
                          'set to end date.')

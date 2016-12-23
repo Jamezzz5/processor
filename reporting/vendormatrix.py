@@ -115,7 +115,7 @@ class VendorMatrix(object):
     def __init__(self):
         log.info('Initializing Vendor Matrix')
         self.vm_parse()
-        self.vm_apikeys()
+        self.vm_importkeys()
 
     def vm_parse(self):
         self.vm = pd.DataFrame(columns=[datacol])
@@ -130,9 +130,11 @@ class VendorMatrix(object):
             self.vm[col] = ({key: list(str(value).split('|')) for key, value in
                             self.vm[col].items()})
 
-    def vm_apikeys(self):
+    def vm_importkeys(self):
         self.apifbkey = []
         self.apiawkey = []
+        self.apitwkey = []
+        self.ftpszkey = []
         for vk in self.vl:
             vksplit = {vk: vk.split('_')}
             if vksplit[vk][0] == 'API':
@@ -140,6 +142,11 @@ class VendorMatrix(object):
                     self.apiawkey.append(vk)
                 if vksplit[vk][1] == 'Facebook':
                     self.apifbkey.append(vk)
+                if vksplit[vk][1] == 'Twitter':
+                    self.apitwkey.append(vk)
+            if vksplit[vk][0] == 'FTP':
+                if vksplit[vk][1] == 'Sizmek':
+                    self.ftpszkey.append(vk)
 
     def vendor_set(self, vk):
         venparam = {}

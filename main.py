@@ -1,7 +1,7 @@
 import logging
 import argparse
 import reporting.vendormatrix as vm
-import reporting.apihandler as api
+import reporting.importhandler as ih
 import reporting.calc as cal
 import reporting.dictionary as dct
 
@@ -12,7 +12,8 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--api', choices=['all', 'fb', 'aw'])
+parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw'])
+parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--noprocess', action='store_true')
 args = parser.parse_args()
 
@@ -22,7 +23,11 @@ OUTPUT_FILE = 'Raw Data Output.csv'
 def main():
     matrix = vm.VendorMatrix()
     if args.api:
-        api.apicalls(args.api, matrix)
+        api = ih.ImportHandler(args.api, matrix)
+        api.api_loop()
+    if args.ftp:
+        ftp = ih.ImportHandler(args.ftp, matrix)
+        ftp.ftp_loop()
     if not args.noprocess:
         data = matrix.vmloop()
         data = cal.netcost_calculation(data)
