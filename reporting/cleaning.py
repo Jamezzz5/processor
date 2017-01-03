@@ -13,9 +13,9 @@ def exceldate_to_datetime(xlDate):
 
 
 def string_to_date(my_string):
-    if '/' in my_string and (len(my_string) == 7 or len(my_string) == 8):
-        return dt.datetime.strptime(my_string, '%m/%d/%Y')
-    elif '/' in my_string and (len(my_string) == 10 or len(my_string) == 9):
+    if '/' in my_string and my_string[-4:][:2] != '20':
+        return dt.datetime.strptime(my_string, '%m/%d/%y')
+    elif '/' in my_string and my_string[-4:][:2] == '20':
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
     elif ((len(my_string) == 5) or
             ((len(my_string) == 7) and ('.' in my_string))):
