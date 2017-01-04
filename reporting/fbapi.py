@@ -41,6 +41,8 @@ class FbApi(object):
         self.configfile = configpath + config
         self.loadconfig()
         self.checkconfig()
+        FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
+        self.account = objects.AdAccount(self.config['act_id'])
 
     def loadconfig(self):
         try:
@@ -52,22 +54,15 @@ class FbApi(object):
         self.app_id = self.config['app_id']
         self.app_secret = self.config['app_secret']
         self.access_token = self.config['access_token']
-        FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
-        self.account = objects.AdAccount(self.config['act_id'])
+        self.act_id = self.config['act_id']
+        self.configlist = [self.app_id, self.app_secret, self.access_token,
+                           self.act_id]
 
     def checkconfig(self):
-        if self.app_id == '':
-            logging.warn('App ID not in FB config file.  Aborting.')
-            sys.exit(0)
-        if self.app_secret == '':
-            logging.warn('App Secret not in FB config file. Aborting.')
-            sys.exit(0)
-        if self.account == '':
-            logging.warn('Account ID not in FB config file. Aborting.')
-            sys.exit(0)
-        if self.access_token == '':
-            logging.warn('Access Token not in FB config file. Aborting.')
-            sys.exit(0)
+        for item in self.configlist:
+            if item == '':
+                logging.warn(item + 'not in FB config file.  Aborting.')
+                sys.exit(0)
 
     def getdata(self, sd, ed=(dt.date.today() - dt.timedelta(days=1)),
                 fields=def_fields):
@@ -102,12 +97,12 @@ class FbApi(object):
                 continue
             self.df = self.df.append(insights, ignore_index=True)
             cd = cd + delta
-        self.df = self.renamecols()
         for col in nestedcol:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
             except KeyError:
                 continue
+        self.df = self.renamecols()
         return self.df
 
     def cleandata(self, x):
