@@ -2,8 +2,8 @@ import ftplib
 import logging
 import json
 import sys
-from StringIO import StringIO
 import time
+from StringIO import StringIO
 import pandas as pd
 
 

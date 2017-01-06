@@ -120,6 +120,9 @@ class VendorMatrix(object):
     def vm_parse(self):
         self.vm = pd.DataFrame(columns=[datacol])
         self.vm = pd.read_csv(csv)
+        drop = [item for item in self.vm.columns.values.tolist()
+                if (item[0] == '|')]
+        self.vm = cln.col_removal(self.vm, 'vm', drop)
         planrow = (self.vm.loc[self.vm[vendorkey] == plankey])
         self.vm = self.vm[self.vm[vendorkey] != plankey]
         self.vm = self.vm.append(planrow).reset_index()
