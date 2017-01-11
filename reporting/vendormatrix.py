@@ -1,8 +1,10 @@
 import logging
 import os.path
 import pandas as pd
+import numpy as np
 import cleaning as cln
-import reporting.importdata as imp
+import dictionary as dct
+import errorreport as er
 
 log = logging.getLogger()
 
@@ -109,6 +111,8 @@ nullcoldic = dict(zip(datafloatcol, nullcol))
 nulldatedic = dict(zip(datafloatcol, zip(nulldate, nulldate[1:])[::2]))
 
 plankey = 'Plan Net'
+ADCOST = 'Adserving Cost'
+AM_CPM = 'CPM'
 
 
 class VendorMatrix(object):
@@ -166,16 +170,92 @@ class VendorMatrix(object):
 
     def vmloop(self):
         logging.info('Initializing Vendor Matrix Loop')
-        self.data = pd.DataFrame(columns=[datacol])
+        self.df = pd.DataFrame(columns=[datacol])
         for vk in self.vl:
             if self.vendor_check(vk):
                 self.venparam = self.vendor_set(vk)
                 logging.info('Initializing ' + vk)
                 if vk == plankey:
-                    self.importdata = imp.import_plan_data(vk, self.data,
-                                                           **self.venparam)
+                    self.tdf = import_plan_data(vk, self.df, **self.venparam)
                 else:
-                    self.importdata = imp.import_data(vk, **self.venparam)
-                self.data = self.data.append(self.importdata,
-                                             ignore_index=True)
-        return self.data
+                    self.tdf = import_data(vk, **self.venparam)
+                self.df = self.df.append(self.tdf, ignore_index=True)
+        return self.df
+
+
+def import_readcsv(csvpath, filename):
+    rawfile = csvpath + filename
+    df = pd.read_csv(rawfile, parse_dates=True)
+    return df
+
+
+def full_placement_creation(df, key, fullcol, fullplacecols):
+    logging.debug('Creating Full Placement Name')
+    df[fullcol] = ''
+    i = 0
+    for col in fullplacecols:
+        if col not in df:
+            logging.warn(col + ' was not in ' + key + '.  It was not ' +
+                         'included in Full Placement Name.  For reference '
+                         'column names are as follows: \n' +
+                         str(df.columns.values.tolist()))
+            continue
+        df[col] = df[col].astype(str)
+        if i == 0:
+            df[fullcol] = df[col]
+        else:
+            df[fullcol] = (df[fullcol] + '_' + df[col])
+        i = i + 1
+    return df
+
+
+def combining_data(df, key, **kwargs):
+    logging.debug('Combining Data.')
+    for col in datacol:
+        if pd.isnull(kwargs[col]):
+            continue
+        if kwargs[col] not in df:
+            logging.warn(kwargs[col] + ' is not in ' + key +
+                         '.  It was not put in ' + col)
+            continue
+        df[col] = df[kwargs[col]]
+    return df
+
+
+def adcost_calculation(df):
+    if clicks not in df:
+        return df
+    df[ADCOST] = np.where(df[dct.AM] == AM_CPM,
+                          df[dct.AR] * df[impressions]/1000,
+                          df[dct.AR] * df[clicks])
+    return df
+
+
+def import_data(key, **kwargs):
+    df = import_readcsv(pathraw, kwargs[filename])
+    df = cln.firstlastadj(df, kwargs[firstrow], kwargs[lastrow])
+    df = full_placement_creation(df, key, dct.FPN, kwargs[fullplacename])
+    dic = dct.Dict(kwargs[filenamedict])
+    err = er.ErrorReport(df, dic, kwargs[placement], kwargs[filenameerror])
+    dic.auto(err, kwargs[autodicord], kwargs[placement])
+    df = dic.merge(df, dct.FPN)
+    df = combining_data(df, key, **kwargs)
+    df = cln.data_to_type(df, datafloatcol, datadatecol, [])
+    df = cln.date_removal(df, date, kwargs[startdate], kwargs[enddate])
+    df = adcost_calculation(df)
+    df = cln.col_removal(df, key, kwargs[dropcol])
+    df = cln.null_items(df, key, dct.VEN, nullcoldic, **kwargs)
+    df = cln.null_items_date(df, key, date, nulldatedic, **kwargs)
+    return df
+
+
+def import_plan_data(key, df, **kwargs):
+    df = df.loc[:, kwargs[fullplacename]]
+    df = full_placement_creation(df, key, dct.FPN, kwargs[fullplacename])
+    dic = dct.Dict(kwargs[filenamedict])
+    er.ErrorReport(df, dic, kwargs[placement], kwargs[filenameerror])
+    df = dic.merge(df, dct.FPN)
+    df = df.drop_duplicates()
+    barsplit = lambda x: pd.Series([i for i in (x.split('|'))])
+    df[fullplacename] = (df[dct.FPN].apply(barsplit))
+    return df

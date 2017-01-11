@@ -29,12 +29,11 @@ def main():
         ftp = ih.ImportHandler(args.ftp, matrix)
         ftp.ftp_loop()
     if not args.noprocess:
-        data = matrix.vmloop()
-        data = cal.netcost_calculation(data)
-        data = cal.netcostfinal_calculation(data,
-                                            matrix.vm[dct.FPN][vm.plankey])
+        df = matrix.vmloop()
+        df = cal.netcost_calculation(df)
+        df = cal.netcostfinal_calculation(df, matrix.vm[dct.FPN][vm.plankey])
         try:
-            data.to_csv(OUTPUT_FILE, index=False)
+            df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')
         except IOError:
             logging.info(OUTPUT_FILE + ' could not be opened.  ' +

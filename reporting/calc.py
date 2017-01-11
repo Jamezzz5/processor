@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import dictionary as dct
 import vendormatrix as vm
-import importdata as imp
 import cleaning as cln
 
 log = logging.getLogger()
@@ -107,13 +106,11 @@ def netcost(df):
 def netcost_calculation(df):
     logging.info('Calculating Net Cost')
     df = clicks_by_placedate(df)
-    df[vm.cost].to_csv('test.csv')
     df[vm.cost] = df.apply(netcost, axis=1)
     return df
 
 
-def net_plan_comp(df, vmfpn):
-    df = imp.full_placement_creation(df, vm.plankey, dct.PFPN, vmfpn)
+def net_plan_comp(df):
     df = df.replace(np.nan, 0)
     nc_pnc = df.groupby(dct.PFPN)[dct.PNC, vm.cost].sum()
     nc_pnc[DIF_NCPNC] = nc_pnc[vm.cost] - nc_pnc[dct.PNC]
@@ -159,9 +156,9 @@ def netcostfinal(df):
     return df
 
 
-def netcostfinal_calculation(df, vmfpn):
+def netcostfinal_calculation(df):
     logging.info('Calculating Net Cost Final')
-    df = net_plan_comp(df, vmfpn)
+    df = net_plan_comp(df)
     df = net_cumsum(df)
     df = net_sumdate(df)
     df = netcostfinal(df)
