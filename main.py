@@ -3,7 +3,6 @@ import argparse
 import reporting.vendormatrix as vm
 import reporting.importhandler as ih
 import reporting.calc as cal
-import reporting.dictionary as dct
 
 
 logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
@@ -31,7 +30,7 @@ def main():
     if not args.noprocess:
         df = matrix.vmloop()
         df = cal.netcost_calculation(df)
-        df = cal.netcostfinal_calculation(df, matrix.vm[dct.FPN][vm.plankey])
+        df = cal.netcostfinal_calculation(df)
         try:
             df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')

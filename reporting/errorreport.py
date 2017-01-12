@@ -22,6 +22,9 @@ class ErrorReport(object):
         self.write(self.filename)
 
     def create(self):
+        if dct.FPN not in self.df:
+            logging.warn('Full Placement Name not in ' + self.filename + '.' +
+                         '  Delete that dictionary and try rebuilding.')
         data_err = pd.merge(self.df, self.dictionary, on=dct.FPN,
                             how='left', indicator=True)
         data_err = data_err[data_err['_merge'] == 'left_only']

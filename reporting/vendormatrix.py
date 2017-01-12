@@ -177,9 +177,12 @@ class VendorMatrix(object):
                 logging.info('Initializing ' + vk)
                 if vk == plankey:
                     self.tdf = import_plan_data(vk, self.df, **self.venparam)
+                    print self.tdf
                 else:
                     self.tdf = import_data(vk, **self.venparam)
                 self.df = self.df.append(self.tdf, ignore_index=True)
+        self.df = full_placement_creation(self.df, plankey, dct.PFPN,
+                                          self.vm[fullplacename][plankey])
         return self.df
 
 
