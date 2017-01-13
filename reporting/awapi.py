@@ -61,7 +61,8 @@ class AwApi(object):
             logging.warn('Client Customer ID not in AW config file. Aborting.')
             sys.exit(0)
 
-    def getdata(self, sd, ed=(dt.date.today() - dt.timedelta(days=1)),
+    def getdata(self, sd=(dt.date.today() - dt.timedelta(days=2)),
+                ed=(dt.date.today() - dt.timedelta(days=1)),
                 fields=def_fields):
         sd = sd.date()
         ed = ed.date()
