@@ -5,7 +5,7 @@ import twapi
 import szkftp
 import os
 import pandas as pd
-import vendormatrix as vm
+import vmcolumns as vmc
 
 log = logging.getLogger()
 
@@ -17,7 +17,7 @@ class ImportHandler(object):
 
     def output(self, apimerge, apidf, filename):
         if str(apimerge) != 'nan':
-            apimergefile = vm.pathraw + apimerge
+            apimergefile = vmc.pathraw + apimerge
             if os.path.isfile(apimergefile):
                 try:
                     df = pd.read_csv(apimergefile)
@@ -33,7 +33,7 @@ class ImportHandler(object):
                 df = df.append(apidf, ignore_index=True)
                 df.to_csv(apimergefile, index=False)
         else:
-            apidf.to_csv(vm.pathraw + filename, index=False)
+            apidf.to_csv(vmc.pathraw + filename, index=False)
 
     def arg_check(self, argcheck):
         if self.args == argcheck or self.args == 'all':
@@ -44,9 +44,9 @@ class ImportHandler(object):
     def api_call(self, keylist, apiclass):
         for vk in keylist:
             params = self.matrix.vendor_set(vk)
-            apiclass.inputconfig(params[vm.apifile])
-            df = apiclass.getdata(params[vm.startdate], params[vm.enddate])
-            self.output(params[vm.apimerge], df, params[vm.filename])
+            apiclass.inputconfig(params[vmc.apifile])
+            df = apiclass.getdata(params[vmc.startdate], params[vmc.enddate])
+            self.output(params[vmc.apimerge], df, params[vmc.filename])
 
     def api_loop(self):
         if self.arg_check('fb'):
@@ -59,9 +59,9 @@ class ImportHandler(object):
     def ftp_load(self, ftpkey, ftpclass):
         for vk in ftpkey:
             params = self.matrix.vendor_set(vk)
-            ftpclass.inputconfig(params[vm.apifile])
+            ftpclass.inputconfig(params[vmc.apifile])
             df = ftpclass.getdata()
-            self.output(params[vm.apimerge], df, params[vm.filename])
+            self.output(params[vmc.apimerge], df, params[vmc.filename])
 
     def ftp_loop(self):
         if self.arg_check('sz'):
