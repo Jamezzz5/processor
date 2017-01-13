@@ -5,6 +5,7 @@ import numpy as np
 import vmcolumns as vmc
 import cleaning as cln
 import dictionary as dct
+import dictcolumns as dctc
 import errorreport as er
 
 log = logging.getLogger()
@@ -82,7 +83,7 @@ class VendorMatrix(object):
                 else:
                     self.tdf = import_data(vk, **self.venparam)
                 self.df = self.df.append(self.tdf, ignore_index=True)
-        self.df = full_placement_creation(self.df, plankey, dct.PFPN,
+        self.df = full_placement_creation(self.df, plankey, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plankey])
         return self.df
 
@@ -129,39 +130,39 @@ def combining_data(df, key, **kwargs):
 def adcost_calculation(df):
     if vmc.clicks not in df:
         return df
-    df[ADCOST] = np.where(df[dct.AM] == AM_CPM,
-                          df[dct.AR] * df[vmc.impressions]/1000,
-                          df[dct.AR] * df[vmc.clicks])
+    df[ADCOST] = np.where(df[dctc.AM] == AM_CPM,
+                          df[dctc.AR] * df[vmc.impressions]/1000,
+                          df[dctc.AR] * df[vmc.clicks])
     return df
 
 
 def import_data(key, **kwargs):
     df = import_readcsv(pathraw, kwargs[vmc.filename])
     df = cln.firstlastadj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
-    df = full_placement_creation(df, key, dct.FPN, kwargs[vmc.fullplacename])
+    df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     dic = dct.Dict(kwargs[vmc.filenamedict])
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
                          kwargs[vmc.filenameerror])
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.placement])
-    df = dic.merge(df, dct.FPN)
+    df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, **kwargs)
     df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol, [])
     df = cln.date_removal(df, vmc.date, kwargs[vmc.startdate],
                           kwargs[vmc.enddate])
     df = adcost_calculation(df)
     df = cln.col_removal(df, key, kwargs[vmc.dropcol])
-    df = cln.null_items(df, key, dct.VEN, vmc.nullcoldic, **kwargs)
+    df = cln.null_items(df, key, dctc.VEN, vmc.nullcoldic, **kwargs)
     df = cln.null_items_date(df, key, vmc.date, vmc.nulldatedic, **kwargs)
     return df
 
 
 def import_plan_data(key, df, **kwargs):
     df = df.loc[:, kwargs[vmc.fullplacename]]
-    df = full_placement_creation(df, key, dct.FPN, kwargs[vmc.fullplacename])
+    df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     dic = dct.Dict(kwargs[vmc.filenamedict])
     er.ErrorReport(df, dic, kwargs[vmc.placement], kwargs[vmc.filenameerror])
-    df = dic.merge(df, dct.FPN)
+    df = dic.merge(df, dctc.FPN)
     df = df.drop_duplicates()
     barsplit = lambda x: pd.Series([i for i in (x.split('|'))])
-    df[vmc.fullplacename] = (df[dct.FPN].apply(barsplit))
+    df[vmc.fullplacename] = (df[dctc.FPN].apply(barsplit))
     return df

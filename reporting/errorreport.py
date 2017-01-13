@@ -1,7 +1,7 @@
 import logging
 import os.path
 import pandas as pd
-import dictionary as dct
+import dictcolumns as dctc
 
 log = logging.getLogger()
 
@@ -22,14 +22,14 @@ class ErrorReport(object):
         self.write(self.filename)
 
     def create(self):
-        if dct.FPN not in self.df:
+        if dctc.FPN not in self.df:
             logging.warn('Full Placement Name not in ' + self.filename + '.' +
                          '  Delete that dictionary and try rebuilding.')
-        data_err = pd.merge(self.df, self.dictionary, on=dct.FPN,
+        data_err = pd.merge(self.df, self.dictionary, on=dctc.FPN,
                             how='left', indicator=True)
         data_err = data_err[data_err['_merge'] == 'left_only']
-        data_err = data_err[[dct.FPN, self.pn]].drop_duplicates()
-        data_err.columns = [dct.FPN, dct.PN]
+        data_err = data_err[[dctc.FPN, self.pn]].drop_duplicates()
+        data_err.columns = [dctc.FPN, dctc.PN]
         return data_err
 
     def get(self):
