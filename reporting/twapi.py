@@ -109,8 +109,8 @@ class TwApi(object):
                 cidname[item[colcid]] = item[colcname]
         return cidname
 
-    def getdata(self, sd=(dt.date.today() - dt.timedelta(days=2)),
-                ed=(dt.date.today() - dt.timedelta(days=1)),
+    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
+                ed=(dt.datetime.today() - dt.timedelta(days=1)),
                 fields=def_fields):
         ed = ed + dt.timedelta(days=1)
         if sd > ed:

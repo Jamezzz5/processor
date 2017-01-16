@@ -2,6 +2,7 @@ import logging
 from googleads import adwords
 import datetime as dt
 import pandas as pd
+import numpy as np
 import os
 import yaml
 import sys
@@ -12,10 +13,19 @@ log = logging.getLogger()
 log.setLevel(logging.INFO)
 configpath = 'Config/'
 
+VIEWS = 'Views'
+VIEWS25 = 'Video played to 25%'
+VIEWS50 = 'Video played to 50%'
+VIEWS75 = 'Video played to 75%'
+VIEWS100 = 'Video played to 100%'
+VIEWMETRICS = [VIEWS25, VIEWS50, VIEWS75, VIEWS100]
+
 def_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
-              'ImageCreativeName', 'Headline', 'HeadlinePart1',
+              'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
               'HeadlinePart2', 'Description', 'Description1', 'Description2',
-              'Impressions', 'Clicks', 'Cost', 'VideoViews']
+              'Impressions', 'Clicks', 'Cost', 'VideoViews',
+              'VideoQuartile25Rate', 'VideoQuartile50Rate',
+              'VideoQuartile75Rate', 'VideoQuartile100Rate']
 
 
 class AwApi(object):
@@ -57,8 +67,14 @@ class AwApi(object):
                 logging.warn(item + 'not in Sizmek config file.  Aborting.')
                 sys.exit(0)
 
-    def getdata(self, sd=(dt.date.today() - dt.timedelta(days=2)),
-                ed=(dt.date.today() - dt.timedelta(days=1)),
+    def videocalc(self, df):
+        for column in VIEWMETRICS:
+            df[column] = df[column].str.strip('%').astype(np.float)
+            df[column] = (df[column] / 100) * df[VIEWS]
+        return df
+
+    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
+                ed=(dt.datetime.today() - dt.timedelta(days=1)),
                 fields=def_fields):
         sd = sd.date()
         ed = ed.date()
