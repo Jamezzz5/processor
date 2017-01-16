@@ -4,6 +4,7 @@ import awapi
 import twapi
 import szkftp
 import os
+import datetime as dt
 import pandas as pd
 import vmcolumns as vmc
 
@@ -45,6 +46,9 @@ class ImportHandler(object):
         for vk in keylist:
             params = self.matrix.vendor_set(vk)
             apiclass.inputconfig(params[vmc.apifile])
+            for date in [params[vmc.startdate], params[vmc.enddate]]:
+                if date.date() == (dt.date.today() - dt.timedelta(weeks=520)):
+                    date = ''
             df = apiclass.getdata(params[vmc.startdate], params[vmc.enddate])
             self.output(params[vmc.apimerge], df, params[vmc.filename])
 

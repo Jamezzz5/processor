@@ -63,7 +63,7 @@ class AwApi(object):
         sd = sd.date()
         ed = ed.date()
         if sd > ed:
-            logging.warn('Start date greater than end date.  Start date was' +
+            logging.warn('Start date greater than end date.  Start date was ' +
                          'set to end date.')
             sd = ed
         logging.info('Getting Adwords data from ' + str(sd) + ' until ' +
