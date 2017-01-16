@@ -97,3 +97,5 @@ datafloatcol = [impressions, clicks, cost, conv1, conv2, conv3, conv4, conv5,
 
 nullcoldic = dict(zip(datafloatcol, nullcol))
 nulldatedic = dict(zip(datafloatcol, zip(nulldate, nulldate[1:])[::2]))
+
+pathraw = 'Raw Data/'

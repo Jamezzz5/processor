@@ -23,7 +23,7 @@ class AwApi(object):
         self.df = pd.DataFrame()
 
     def inputconfig(self, config):
-        logging.info('Loading Adwords config file: ' + config)
+        logging.info('Loading Adwords config file: ' + str(config))
         self.configfile = configpath + config
         self.loadconfig()
         self.checkconfig()

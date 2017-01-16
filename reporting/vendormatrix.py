@@ -11,7 +11,6 @@ import errorreport as er
 log = logging.getLogger()
 
 csv = 'Config/Vendormatrix.csv'
-pathraw = 'Raw Data/'
 plankey = 'Plan Net'
 ADCOST = 'Adserving Cost'
 AM_CPM = 'CPM'
@@ -65,7 +64,7 @@ class VendorMatrix(object):
         return venparam
 
     def vendor_check(self, vk):
-        if (os.path.isfile(pathraw + self.vm[vmc.filename][vk]) or
+        if (os.path.isfile(vmc.pathraw + self.vm[vmc.filename][vk]) or
            vk == plankey):
             return True
         else:
@@ -137,7 +136,7 @@ def adcost_calculation(df):
 
 
 def import_data(key, **kwargs):
-    df = import_readcsv(pathraw, kwargs[vmc.filename])
+    df = import_readcsv(vmc.pathraw, kwargs[vmc.filename])
     df = cln.firstlastadj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     dic = dct.Dict(kwargs[vmc.filenamedict])
