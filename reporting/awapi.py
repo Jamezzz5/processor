@@ -23,10 +23,14 @@ class AwApi(object):
         self.df = pd.DataFrame()
 
     def inputconfig(self, config):
+        if str(config) == 'nan':
+            logging.warn('Config file name not in vendor matrix.  Aborting.')
+            sys.exit(0)
         logging.info('Loading Adwords config file: ' + str(config))
         self.configfile = configpath + config
         self.loadconfig()
         self.checkconfig()
+        self.configfile = configpath + config
         self.adwords_client = (adwords.AdWordsClient.
                                LoadFromStorage(self.configfile))
 
@@ -43,23 +47,15 @@ class AwApi(object):
         self.developer_token = self.config['developer_token']
         self.refresh_token = self.config['refresh_token']
         self.client_customer_id = self.config['client_customer_id']
+        self.configlist = [self.config, self.client_id, self.client_secret,
+                           self.developer_token, self.refresh_token,
+                           self.client_customer_id]
 
     def checkconfig(self):
-        if self.client_id == '':
-            logging.warn('Client ID not in AW config file.  Aborting.')
-            sys.exit(0)
-        if self.client_secret == '':
-            logging.warn('Client Secret not in AW config file. Aborting.')
-            sys.exit(0)
-        if self.developer_token == '':
-            logging.warn('Developer Token not in AW config file. Aborting.')
-            sys.exit(0)
-        if self.refresh_token == '':
-            logging.warn('Refresh Token not in AW config file. Aborting.')
-            sys.exit(0)
-        if self.client_customer_id == '':
-            logging.warn('Client Customer ID not in AW config file. Aborting.')
-            sys.exit(0)
+        for item in self.configlist:
+            if item == '':
+                logging.warn(item + 'not in Sizmek config file.  Aborting.')
+                sys.exit(0)
 
     def getdata(self, sd=(dt.date.today() - dt.timedelta(days=2)),
                 ed=(dt.date.today() - dt.timedelta(days=1)),
