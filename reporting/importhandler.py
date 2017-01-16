@@ -47,8 +47,13 @@ class ImportHandler(object):
             params = self.matrix.vendor_set(vk)
             apiclass.inputconfig(params[vmc.apifile])
             for date in [params[vmc.startdate], params[vmc.enddate]]:
+                print date
                 if date.date() == (dt.date.today() - dt.timedelta(weeks=520)):
+                    print date
                     date = ''
+                    print date
+            print params[vmc.startdate]
+            print params[vmc.enddate]
             df = apiclass.getdata(params[vmc.startdate], params[vmc.enddate])
             self.output(params[vmc.apimerge], df, params[vmc.filename])
 

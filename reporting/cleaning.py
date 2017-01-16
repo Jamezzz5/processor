@@ -1,4 +1,5 @@
 import logging
+import sys
 import datetime as dt
 import numpy as np
 import pandas as pd
@@ -57,16 +58,16 @@ def data_to_type(df, floatcol, datecol, strcol):
 def firstlastadj(df, firstrow, lastrow):
     logging.debug('Removing First & Last Rows')
     if firstrow > 0:
-        df.columns = df.iloc[firstrow-1]
+        df.columns = df.loc[firstrow-1]
         df = df.ix[firstrow:]
     if lastrow > 0:
-        df = df[:-lastrow]
+        df = df.ix[:-lastrow]
     df = df.reset_index()
     if pd.isnull(df.columns.values).any():
         logging.warn('At least one column name is undefined.  Your first row '
                      'is likely incorrect. For reference the first few rows '
                      'are:\n' + str(df.head()))
-        quit()
+        sys.exit(0)
     return df
 
 

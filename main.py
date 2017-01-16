@@ -29,8 +29,7 @@ def main():
         ftp.ftp_loop()
     if not args.noprocess:
         df = matrix.vmloop()
-        df = cal.netcost_calculation(df)
-        df = cal.netcostfinal_calculation(df)
+        df = cal.calculate_cost(df)
         try:
             df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')

@@ -29,6 +29,7 @@ NCF = 'Net Cost Final'
 
 CLI_PNPD = 'Clicks by Placement & Placement Date'
 CLI_PD = 'Clicks by Placement Date'
+PLACEDATE = 'Placement Date'
 
 DIF_PNC = 'Dif - PNC'
 DIF_NC = 'Dif - NC'
@@ -42,12 +43,14 @@ NC_CUMSUMMINDATE = 'NC_CUMSUMMINDATE'
 NC_CUMSUM_COL = [dctc.PFPN, vmc.date, NC_CUMSUM]
 NC_SUMDATE_COL = [dctc.PFPN, vmc.date, NC_SUMDATE]
 
-DROPCOL = ([dctc.FPN, 'index', CLI_PD, NC_CUMSUM, NC_SUMDATE,
+DROPCOL = ([dctc.FPN, 'index', CLI_PD, NC_CUMSUM, NC_SUMDATE, PLACEDATE,
             NC_CUMSUMMINDATE] + DIF_COL)
 
 
 def clicks_by_placedate(df):
-    df_click_placedate = (df.groupby([vmc.date, dctc.PN])[[vmc.clicks]]
+    df[PLACEDATE] = (df[vmc.date].dt.strftime('%m/%d/%Y') +
+                     df[dctc.PN].astype(str))
+    df_click_placedate = (df.groupby([PLACEDATE])[[vmc.clicks]]
                           .apply(lambda x: x/float(x.sum())).astype(float))
     df_click_placedate = df_click_placedate.replace(np.nan, 0).astype(float)
     df_click_placedate.columns = [CLI_PD]
@@ -163,4 +166,10 @@ def netcostfinal_calculation(df):
     df = net_cumsum(df)
     df = net_sumdate(df)
     df = netcostfinal(df)
+    return df
+
+
+def calculate_cost(df):
+    df = netcost_calculation(df)
+    df = netcostfinal_calculation(df)
     return df
