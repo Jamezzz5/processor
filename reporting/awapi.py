@@ -99,4 +99,5 @@ class AwApi(object):
         self.df = pd.read_csv('tempgoogle.csv')
         os.remove('tempgoogle.csv')
         self.df['Cost'] = self.df['Cost'] / 1000000
+        self.df = self.videocalc(self.df)
         return self.df

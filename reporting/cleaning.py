@@ -1,10 +1,16 @@
 import logging
 import sys
+import os
 import datetime as dt
 import numpy as np
 import pandas as pd
 
 log = logging.getLogger()
+
+
+def dircheck(directory):
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
 
 
 def exceldate_to_datetime(xlDate):
@@ -62,7 +68,6 @@ def firstlastadj(df, firstrow, lastrow):
         df = df.ix[firstrow:]
     if lastrow > 0:
         df = df.ix[:-lastrow]
-    df = df.reset_index()
     if pd.isnull(df.columns.values).any():
         logging.warn('At least one column name is undefined.  Your first row '
                      'is likely incorrect. For reference the first few rows '

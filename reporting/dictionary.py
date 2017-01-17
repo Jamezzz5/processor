@@ -1,3 +1,4 @@
+import sys
 import os.path
 import logging
 import pandas as pd
@@ -11,6 +12,10 @@ csvpath = 'Dictionaries/'
 
 class Dict(object):
     def __init__(self, filename):
+        cln.dircheck(csvpath)
+        if str(filename) == 'nan':
+            logging.error('No dictionary file provided.  Aborting.')
+            sys.exit(0)
         self.filename = filename
         self.dictfile = csvpath + self.filename
         self.read()

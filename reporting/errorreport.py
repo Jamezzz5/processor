@@ -1,6 +1,8 @@
 import logging
 import os.path
+import sys
 import pandas as pd
+import cleaning as cln
 import dictcolumns as dctc
 
 log = logging.getLogger()
@@ -10,6 +12,10 @@ csvpath = 'ERROR REPORTS/'
 
 class ErrorReport(object):
     def __init__(self, df, dic, pn, filename):
+        cln.dircheck(csvpath)
+        if str(filename) == 'nan':
+            logging.error('No error report file provided.  Aborting.')
+            sys.exit(0)
         self.df = df
         self.dic = dic
         self.pn = pn

@@ -1,4 +1,5 @@
 import logging
+import sys
 import os.path
 import pandas as pd
 import numpy as np
@@ -10,7 +11,8 @@ import errorreport as er
 
 log = logging.getLogger()
 
-csv = 'Config/Vendormatrix.csv'
+csvpath = 'Config/'
+csv = csvpath + 'Vendormatrix.csv'
 plankey = 'Plan Net'
 ADCOST = 'Adserving Cost'
 AM_CPM = 'CPM'
@@ -19,12 +21,26 @@ AM_CPM = 'CPM'
 class VendorMatrix(object):
     def __init__(self):
         log.info('Initializing Vendor Matrix')
+        cln.dircheck(csvpath)
         self.vm_parse()
         self.vm_importkeys()
 
-    def vm_parse(self):
-        self.vm = pd.DataFrame(columns=[vmc.datacol])
+    def read(self):
+        if not os.path.isfile(csv):
+            logging.info('Creating Vendor Matrix.  Populate it and run again')
+            vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
+            vm.to_csv(csv, index=False)
         self.vm = pd.read_csv(csv)
+
+    def plannetcheck(self):
+        if not self.vm['Vendor Key'].isin(['Plan Net']).any():
+            logging.error('No Plan Net key in Vendor Matrix.  Add it.')
+            sys.exit(0)
+
+    def vm_parse(self):
+        self.vm = pd.DataFrame(columns=vmc.datacol)
+        self.read()
+        self.plannetcheck()
         drop = [item for item in self.vm.columns.values.tolist()
                 if (item[0] == '|')]
         self.vm = cln.col_removal(self.vm, 'vm', drop)
@@ -70,17 +86,21 @@ class VendorMatrix(object):
         else:
             return False
 
+    def vendor_get(self, vk):
+        self.venparam = self.vendor_set(vk)
+        logging.info('Initializing ' + vk)
+        if vk == plankey:
+            self.tdf = import_plan_data(vk, self.df, **self.venparam)
+        else:
+            self.tdf = import_data(vk, **self.venparam)
+        return self.tdf
+
     def vmloop(self):
         logging.info('Initializing Vendor Matrix Loop')
         self.df = pd.DataFrame(columns=[vmc.datacol])
         for vk in self.vl:
             if self.vendor_check(vk):
-                self.venparam = self.vendor_set(vk)
-                logging.info('Initializing ' + vk)
-                if vk == plankey:
-                    self.tdf = import_plan_data(vk, self.df, **self.venparam)
-                else:
-                    self.tdf = import_data(vk, **self.venparam)
+                self.tdf = self.vendor_get(vk)
                 self.df = self.df.append(self.tdf, ignore_index=True)
         self.df = full_placement_creation(self.df, plankey, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plankey])
