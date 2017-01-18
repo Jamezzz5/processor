@@ -104,6 +104,11 @@ class VendorMatrix(object):
                 self.df = self.df.append(self.tdf, ignore_index=True)
         self.df = full_placement_creation(self.df, plankey, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plankey])
+        if not os.listdir(er.csvpath):
+            if os.path.isdir(er.csvpath):
+                logging.info('All placements defined.  Deleting Error report' +
+                             ' directory.')
+                os.rmdir(er.csvpath)
         return self.df
 
 
@@ -147,7 +152,7 @@ def combining_data(df, key, **kwargs):
 
 
 def adcost_calculation(df):
-    if vmc.clicks not in df:
+    if (vmc.impressions not in df) or (vmc.clicks not in df):
         return df
     df[ADCOST] = np.where(df[dctc.AM] == AM_CPM,
                           df[dctc.AR] * df[vmc.impressions]/1000,

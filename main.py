@@ -6,7 +6,11 @@ import reporting.calc as cal
 
 
 logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
-                            '[%(levelname)8s] %(message)s'))
+                            '[%(levelname)8s] %(message)s'),
+                    filename='logfile.log',
+                    datefmt='%H:%M:%S',
+                    level=logging.INFO)
+
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
@@ -34,7 +38,7 @@ def main():
             df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')
         except IOError:
-            logging.info(OUTPUT_FILE + ' could not be opened.  ' +
+            logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
                          'Final Output not updated.')
 
 if __name__ == '__main__':

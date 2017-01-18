@@ -49,7 +49,7 @@ class ErrorReport(object):
                 logging.info('All placements defined!  ' + filename +
                              ' was deleted.')
             except OSError:
-                logging.info('All placements defined!  ')
+                logging.info('All placements defined!')
                 next
         else:
             try:

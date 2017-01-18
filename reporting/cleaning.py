@@ -67,7 +67,7 @@ def firstlastadj(df, firstrow, lastrow):
         df.columns = df.loc[firstrow-1]
         df = df.ix[firstrow:]
     if lastrow > 0:
-        df = df.ix[:-lastrow]
+        df = df[:-lastrow]
     if pd.isnull(df.columns.values).any():
         logging.warn('At least one column name is undefined.  Your first row '
                      'is likely incorrect. For reference the first few rows '
