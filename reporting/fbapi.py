@@ -18,16 +18,20 @@ log.setLevel(logging.INFO)
 
 def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
               'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
-              'video_p50_watched_actions', 'video_p100_watched_actions']
+              'video_p25_watched_actions', 'video_p50_watched_actions',
+              'video_p75_watched_actions', 'video_p100_watched_actions']
 nestedcol = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
-             'video_p50_watched_actions']
+             'video_p50_watched_actions', 'video_p25_watched_actions',
+             'video_p75_watched_actions']
 colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
               'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
               'ad_name': 'Ad Name', 'impressions': 'Impressions',
               'inline_link_clicks': 'Link Clicks',
               'spend': 'Amount Spent (USD)',
               'video_10_sec_watched_actions': '3-Second Video Views',
+              'video_p25_watched_actions': 'Video Watches at 25%',
               'video_p50_watched_actions': 'Video Watches at 50%',
+              'video_p75_watched_actions': 'Video Watches at 75%',
               'video_p100_watched_actions': 'Video Watches at 100%'}
 configpath = 'Config/'
 

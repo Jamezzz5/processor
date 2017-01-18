@@ -21,8 +21,12 @@ class ImportHandler(object):
             apimergefile = vmc.pathraw + apimerge
             if os.path.isfile(apimergefile):
                 try:
-                    df = pd.read_csv(apimergefile)
+                    df = pd.read_csv(apimergefile, parse_dates=True)
+                    df = self.create_all_col(df)
+                    apidf = self.create_all_col(apidf)
+                    apidf = apidf[~apidf['ALL'].isin(df['ALL'])]
                     df = df.append(apidf, ignore_index=True)
+                    df.drop('ALL', axis=1, inplace=True)
                     df.to_csv(apimergefile, index=False)
                 except IOError:
                     logging.warn(apimerge + ' could not be opened.  ' +
@@ -35,6 +39,12 @@ class ImportHandler(object):
                 df.to_csv(apimergefile, index=False)
         else:
             apidf.to_csv(vmc.pathraw + filename, index=False)
+
+    def create_all_col(self, df):
+        df['ALL'] = ''
+        for col in df.columns:
+            df['ALL'] = df['ALL'] + df[col].astype(str)
+        return df
 
     def arg_check(self, argcheck):
         if self.args == argcheck or self.args == 'all':

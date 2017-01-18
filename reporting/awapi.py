@@ -96,7 +96,7 @@ class AwApi(object):
             report_downloader.DownloadReport(report, f,
                                              skip_report_header=True,
                                              skip_report_summary=True)
-        self.df = pd.read_csv('tempgoogle.csv')
+        self.df = pd.read_csv('tempgoogle.csv', parse_dates=True)
         os.remove('tempgoogle.csv')
         self.df['Cost'] = self.df['Cost'] / 1000000
         self.df = self.videocalc(self.df)
