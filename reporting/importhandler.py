@@ -8,8 +8,6 @@ import datetime as dt
 import pandas as pd
 import vmcolumns as vmc
 
-log = logging.getLogger()
-
 
 class ImportHandler(object):
     def __init__(self, args, matrix):

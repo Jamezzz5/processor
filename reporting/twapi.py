@@ -7,12 +7,6 @@ import datetime as dt
 import pandas as pd
 import oauth2 as oauth
 
-logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
-                            '[%(levelname)8s] %(message)s'))
-log = logging.getLogger()
-log.setLevel(logging.INFO)
-
-
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 configpath = 'Config/'
 

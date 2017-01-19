@@ -10,12 +10,6 @@ from facebookads import objects
 from facebookads.adobjects.adsinsights import AdsInsights
 from facebookads.exceptions import FacebookRequestError
 
-logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
-                            '[%(levelname)8s] %(message)s'))
-log = logging.getLogger()
-log.setLevel(logging.INFO)
-
-
 def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
               'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
               'video_p25_watched_actions', 'video_p50_watched_actions',

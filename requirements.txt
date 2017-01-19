@@ -3,4 +3,5 @@ Numpy==1.11.2
 Facebookads==2.8.1
 googleads==4.8.0
 win_inet_pton==1.0.1
-twitter-ads==1.0.0
+requests==2.12.5
+oauth2==1.9.0.post1

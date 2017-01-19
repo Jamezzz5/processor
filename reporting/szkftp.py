@@ -6,12 +6,6 @@ import time
 from StringIO import StringIO
 import pandas as pd
 
-
-logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
-                            '[%(levelname)8s] %(message)s'))
-log = logging.getLogger()
-log.setLevel(logging.INFO)
-
 configpath = 'Config/'
 
 

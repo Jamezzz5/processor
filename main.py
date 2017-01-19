@@ -1,18 +1,22 @@
 import logging
 import argparse
+import sys
 import reporting.vendormatrix as vm
 import reporting.importhandler as ih
 import reporting.calc as cal
 
-
-logging.basicConfig(format=('%(asctime)s [%(module)14s]' +
-                            '[%(levelname)8s] %(message)s'),
+logging.basicConfig(stream=sys.stdout,
                     filename='logfile.log',
-                    datefmt='%H:%M:%S',
-                    level=logging.INFO)
-
-log = logging.getLogger()
-log.setLevel(logging.INFO)
+                    filemode='w',
+                    level=logging.INFO,
+                    disable_existing_loggers=False,
+                    format=('%(asctime)s [%(module)14s]' +
+                            '[%(levelname)8s] %(message)s'))
+console = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s [%(module)14s]' +
+                              '[%(levelname)8s] %(message)s')
+console.setFormatter(formatter)
+logging.getLogger('').addHandler(console)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw'])

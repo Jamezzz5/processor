@@ -5,8 +5,6 @@ import datetime as dt
 import numpy as np
 import pandas as pd
 
-log = logging.getLogger()
-
 
 def dircheck(directory):
     if not os.path.isdir(directory):

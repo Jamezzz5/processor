@@ -5,8 +5,6 @@ import pandas as pd
 import cleaning as cln
 import dictcolumns as dctc
 
-log = logging.getLogger()
-
 csvpath = 'Dictionaries/'
 
 

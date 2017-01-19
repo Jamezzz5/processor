@@ -5,8 +5,6 @@ import dictcolumns as dctc
 import vmcolumns as vmc
 import cleaning as cln
 
-log = logging.getLogger()
-
 BM_CPM = 'CPM'
 BM_CPC = 'CPC'
 BM_AV = 'AV'

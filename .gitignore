@@ -43,3 +43,5 @@ Raw Data/
 Dictionaries/
 ERROR REPORTS/
 Raw Data Output.csv
+venv/
+logfile.log
