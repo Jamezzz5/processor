@@ -35,7 +35,7 @@ class FbApi(object):
         self.df = pd.DataFrame()
 
     def inputconfig(self, config):
-        logging.info('Loading Facebook config file: ' + config)
+        logging.info('Loading Facebook config file: ' + str(config))
         self.configfile = configpath + config
         self.loadconfig()
         self.checkconfig()
@@ -62,7 +62,7 @@ class FbApi(object):
                 logging.warn(item + 'not in FB config file.  Aborting.')
                 sys.exit(0)
 
-    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
+    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=1)),
                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
                 fields=def_fields):
         sd = sd.date()
@@ -71,16 +71,19 @@ class FbApi(object):
             logging.warn('Start date greater than end date.  Start data was' +
                          'set to end date.')
             sd = ed
-        cd = sd
-        delta = dt.timedelta(days=1)
-        while cd <= ed:
-            logging.info('Getting FB data for ' + str(cd))
+        full_date_list = self.listdates(sd, ed)
+        date_lists = map(None, *(iter(full_date_list),) * 7)
+        for date_list in date_lists:
+            date_list = filter(None, date_list)
+            sd = date_list[0]
+            ed = date_list[-1]
+            logging.info('Getting FB data for ' + str(sd) + ' to ' + str(ed))
             try:
                 insights = list(self.account.get_insights(
                     fields=fields,
                     params={'level': AdsInsights.Level.ad,
-                            'time_range': {'since': str(cd),
-                                           'until': str(cd), },
+                            'time_range': {'since': str(sd),
+                                           'until': str(ed), },
                             'time_increment': 1, }))
             except FacebookRequestError as e:
                 if e._api_error_code == 190:
@@ -92,10 +95,8 @@ class FbApi(object):
                     time.sleep(300)
                     continue
             if not insights:
-                cd = cd + delta
                 continue
             self.df = self.df.append(insights, ignore_index=True)
-            cd = cd + delta
         for col in nestedcol:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
@@ -113,3 +114,10 @@ class FbApi(object):
     def renamecols(self):
         self.df = self.df.rename(columns=colnamedic)
         return self.df
+
+    def listdates(self, sd, ed):
+        dates = []
+        while sd <= ed:
+            dates.append(sd)
+            sd = sd + dt.timedelta(days=1)
+        return dates

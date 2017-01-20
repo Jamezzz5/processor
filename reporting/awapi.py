@@ -69,7 +69,7 @@ class AwApi(object):
             df[column] = (df[column] / 100) * df[VIEWS]
         return df
 
-    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
+    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=1)),
                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
                 fields=def_fields):
         sd = sd.date()
