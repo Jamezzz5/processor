@@ -22,12 +22,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--noprocess', action='store_true')
+parser.add_argument('--vmupdate', action='store_true')
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
 
 
 def main():
+    if args.vmupdate:
+        vm.vm_update()
     matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)

@@ -190,3 +190,18 @@ def import_plan_data(key, df, **kwargs):
     barsplit = lambda x: pd.Series([i for i in (x.split('|'))])
     df[vmc.fullplacename] = (df[dctc.FPN].apply(barsplit))
     return df
+
+
+def vm_update(oldfile='Config/OldVendorMatrix.csv'):
+    logging.info('Updating Vendor Matrix')
+    ovm = pd.read_csv(oldfile)
+    nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
+    vm = nvm.append(ovm)
+    for col in [vmc.fullplacename, vmc.dropcol, vmc.autodicord] + vmc.nullcol:
+        vm[col] = vm[col].replace({'_': '|'}, regex=True)
+    vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
+                                vm[vmc.firstrow] + 1, vm[vmc.firstrow])
+    vm = cln.col_removal(vm, 'vm',
+                         ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
+    vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys, axis=1)
+    vm.to_csv(csv, index=False)
