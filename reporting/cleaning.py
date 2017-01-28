@@ -61,6 +61,8 @@ def data_to_type(df, floatcol, datecol, strcol):
 
 def firstlastadj(df, firstrow, lastrow):
     logging.debug('Removing First & Last Rows')
+    firstrow = int(firstrow)
+    lastrow = int(lastrow)
     if firstrow > 0:
         df.columns = df.loc[firstrow-1]
         df = df.ix[firstrow:]

@@ -86,6 +86,9 @@ class VendorMatrix(object):
         else:
             return False
 
+    def vm_change(self, vk, col, newvalue):
+        self.vm[col][vk] = newvalue
+
     def vendor_get(self, vk):
         self.venparam = self.vendor_set(vk)
         logging.info('Initializing ' + vk)
@@ -141,13 +144,15 @@ def full_placement_creation(df, key, fullcol, fullplacecols):
 def combining_data(df, key, **kwargs):
     logging.debug('Combining Data.')
     for col in vmc.datacol:
-        if pd.isnull(kwargs[col]):
-            continue
-        if kwargs[col] not in df:
-            logging.warn(kwargs[col] + ' is not in ' + key +
-                         '.  It was not put in ' + col)
-            continue
-        df[col] = df[kwargs[col]]
+        df[col] = 0
+        for item in kwargs[col]:
+            if str(item) == 'nan':
+                continue
+            if item not in df:
+                logging.warn(item + ' is not in ' + key +
+                             '.  It was not put in ' + col)
+                continue
+            df[col] = df[col] + df[item].astype(float)
     return df
 
 

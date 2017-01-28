@@ -111,8 +111,8 @@ nulldate = [nullimpssd, nullimpsed, nullclicksd, nullclicked, nullcostsd,
             nullconv9ed, nullconv10sd, nullconv10ed]
 
 vmkeys = vmkeys + datacol + nullcol + nulldate
-barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + nullcol +
-               nulldate)
+barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol +
+               nullcol + nulldate)
 
 datecol = [startdate, enddate] + nulldate
 datadatecol = [date] + nulldate
