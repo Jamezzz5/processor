@@ -37,7 +37,7 @@ def string_to_date(my_string):
         return my_string
 
 
-def data_to_type(df, floatcol, datecol, strcol):
+def data_to_type(df, floatcol=[], datecol=[], strcol=[]):
     for col in floatcol:
         if col not in df:
             continue

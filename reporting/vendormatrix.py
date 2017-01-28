@@ -144,7 +144,8 @@ def full_placement_creation(df, key, fullcol, fullplacecols):
 def combining_data(df, key, **kwargs):
     logging.debug('Combining Data.')
     for col in vmc.datacol:
-        df[col] = 0
+        if col not in df:
+            df[col] = 0
         for item in kwargs[col]:
             if str(item) == 'nan':
                 continue
@@ -152,7 +153,11 @@ def combining_data(df, key, **kwargs):
                 logging.warn(item + ' is not in ' + key +
                              '.  It was not put in ' + col)
                 continue
-            df[col] = df[col] + df[item].astype(float)
+            if col in vmc.datafloatcol:
+                df = cln.data_to_type(df, floatcol=[col, item])
+                df[col] = df[col].astype(float) + df[item].astype(float)
+            else:
+                df[col] = df[item]
     return df
 
 
