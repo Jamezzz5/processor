@@ -4,6 +4,12 @@ import os
 import datetime as dt
 import numpy as np
 import pandas as pd
+import vmcolumns as vmc
+
+RULEMETRIC = 'METRIC'
+RULEQUERY = 'QUERY'
+RULEFACTOR = 'FACTOR'
+RULECONST = [RULEMETRIC, RULEQUERY, RULEFACTOR]
 
 
 def dircheck(directory):
@@ -119,4 +125,38 @@ def null_items_date(df, key, datecol, nulldatedic, **kwargs):
             ed = string_to_date(ed)
             df[col] = np.where((df[datecol] >= sd) & (df[datecol] <= ed),
                                0, df[col])
+    return df
+
+
+def apply_rules(df, vmrules, **kwargs):
+    for rule in vmrules:
+        for item in RULECONST:
+            if item not in vmrules[rule].keys():
+                logging.warn(item + ' not in vendormatrix for rule ' +
+                             rule + '.  The rule did not run.')
+                return df
+        metrics = kwargs[vmrules[rule][RULEMETRIC]]
+        queries = kwargs[vmrules[rule][RULEQUERY]]
+        factor = kwargs[vmrules[rule][RULEFACTOR]]
+        if (str(metrics) == 'nan' or str(queries) == 'nan' or
+           str(factor) == 'nan'):
+            continue
+        tdf = df
+        metrics = metrics.split('|')
+        queries = queries.split('|')
+        for query in queries:
+            query = query.split(':')
+            values = query[1].split(',')
+            if query[0] not in df.columns:
+                continue
+            if query[0] == vmc.date:
+                sd = string_to_date(values[0])
+                ed = string_to_date(values[1])
+                tdf = tdf.loc[(df[query[0]] >= sd) & (df[query[0]] <= ed)]
+            else:
+                tdf = tdf.loc[tdf[query[0]].isin(values)]
+        tdf = list(tdf.index.values)
+        for metric in metrics:
+            df.ix[tdf, metric] = df.ix[tdf, metric] * factor
+        df.to_csv('test.csv')
     return df

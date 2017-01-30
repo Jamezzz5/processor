@@ -24,6 +24,7 @@ class VendorMatrix(object):
         cln.dircheck(csvpath)
         self.vm_parse()
         self.vm_importkeys()
+        self.vm_rules()
 
     def read(self):
         if not os.path.isfile(csv):
@@ -72,9 +73,19 @@ class VendorMatrix(object):
                 if vksplit[vk][1] == 'Sizmek':
                     self.ftpszkey.append(vk)
 
+    def vm_rules(self):
+        self.vmrules = {}
+        for key in self.vm:
+            keysplit = key.split('_')
+            if keysplit[0] == 'RULE':
+                if keysplit[1] in self.vmrules:
+                    self.vmrules[keysplit[1]].update({keysplit[2]: key})
+                else:
+                    self.vmrules[keysplit[1]] = {keysplit[2]: key}
+
     def vendor_set(self, vk):
         venparam = {}
-        for key in vmc.vmkeys:
+        for key in self.vm:
             value = self.vm[key][vk]
             venparam[key] = value
         return venparam
@@ -95,7 +106,7 @@ class VendorMatrix(object):
         if vk == plankey:
             self.tdf = import_plan_data(vk, self.df, **self.venparam)
         else:
-            self.tdf = import_data(vk, **self.venparam)
+            self.tdf = import_data(vk, self.vmrules, **self.venparam)
         return self.tdf
 
     def vmloop(self):
@@ -170,7 +181,7 @@ def adcost_calculation(df):
     return df
 
 
-def import_data(key, **kwargs):
+def import_data(key, vmrules, **kwargs):
     df = import_readcsv(vmc.pathraw, kwargs[vmc.filename])
     df = cln.firstlastadj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
@@ -185,8 +196,11 @@ def import_data(key, **kwargs):
                           kwargs[vmc.enddate])
     df = adcost_calculation(df)
     df = cln.col_removal(df, key, kwargs[vmc.dropcol])
+    df = cln.apply_rules(df, vmrules, **kwargs)
+    """
     df = cln.null_items(df, key, dctc.VEN, vmc.nullcoldic, **kwargs)
     df = cln.null_items_date(df, key, vmc.date, vmc.nulldatedic, **kwargs)
+    """
     return df
 
 
