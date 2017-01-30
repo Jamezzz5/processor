@@ -43,6 +43,7 @@ Config/
 Raw Data/
 Dictionaries/
 ERROR REPORTS/
+temp/
 Raw Data Output.csv
 venv/
 logfile.log

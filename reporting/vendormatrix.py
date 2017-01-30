@@ -164,9 +164,11 @@ def combining_data(df, key, **kwargs):
                 logging.warn(item + ' is not in ' + key +
                              '.  It was not put in ' + col)
                 continue
+            if col == item:
+                continue
             if col in vmc.datafloatcol:
                 df = cln.data_to_type(df, floatcol=[col, item])
-                df[col] = df[col].astype(float) + df[item].astype(float)
+                df[col] = df[col] + df[item]
             else:
                 df[col] = df[item]
     return df
@@ -191,16 +193,13 @@ def import_data(key, vmrules, **kwargs):
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.placement])
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, **kwargs)
+    df.to_csv(key + '.csv')
     df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol, [])
     df = cln.date_removal(df, vmc.date, kwargs[vmc.startdate],
                           kwargs[vmc.enddate])
     df = adcost_calculation(df)
     df = cln.col_removal(df, key, kwargs[vmc.dropcol])
     df = cln.apply_rules(df, vmrules, **kwargs)
-    """
-    df = cln.null_items(df, key, dctc.VEN, vmc.nullcoldic, **kwargs)
-    df = cln.null_items_date(df, key, vmc.date, vmc.nulldatedic, **kwargs)
-    """
     return df
 
 

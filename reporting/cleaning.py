@@ -49,6 +49,7 @@ def data_to_type(df, floatcol=[], datecol=[], strcol=[]):
             continue
         df[col] = df[col].astype(str)
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
+        df[col] = df[col].replace('NA', 0)
         df[col] = df[col].astype(float)
     for col in datecol:
         if col not in df:
@@ -147,8 +148,10 @@ def apply_rules(df, vmrules, **kwargs):
         for query in queries:
             query = query.split(':')
             values = query[1].split(',')
-            if query[0] not in df.columns:
-                continue
+            if query[0] not in df:
+                logging.warn(query[0] + ' not in data for rule ' +
+                             rule + '.  The rule did not run.')
+                return df
             if query[0] == vmc.date:
                 sd = string_to_date(values[0])
                 ed = string_to_date(values[1])
@@ -157,6 +160,9 @@ def apply_rules(df, vmrules, **kwargs):
                 tdf = tdf.loc[tdf[query[0]].isin(values)]
         tdf = list(tdf.index.values)
         for metric in metrics:
+            if metric not in df:
+                logging.warn(metric + ' not in data for rule ' +
+                             rule + '.  The rule did not run.')
+                continue
             df.ix[tdf, metric] = df.ix[tdf, metric] * factor
-        df.to_csv('test.csv')
     return df
