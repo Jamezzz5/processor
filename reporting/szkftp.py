@@ -68,4 +68,7 @@ class SzkFtp(object):
         self.ftp.retrbinary('RETR ' + self.ftp_path + readfile, r.write)
         self.ftp.quit()
         r.seek(0)
-        self.df = pd.read_csv(r)
+        if readfile[-4:] == '.zip':
+            self.df = pd.read_csv(r, compression='zip')
+        else:
+            self.df = pd.read_csv(r)

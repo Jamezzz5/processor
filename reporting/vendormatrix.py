@@ -128,7 +128,10 @@ class VendorMatrix(object):
 
 def import_readcsv(csvpath, filename):
     rawfile = csvpath + filename
-    df = pd.read_csv(rawfile, parse_dates=True)
+    try:
+        df = pd.read_csv(rawfile, parse_dates=True)
+    except pd.io.common.CParserError:
+        df = pd.read_csv(rawfile, parse_dates=True, sep=None, engine='python')
     return df
 
 
@@ -193,7 +196,6 @@ def import_data(key, vmrules, **kwargs):
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.placement])
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, **kwargs)
-    df.to_csv(key + '.csv')
     df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol, [])
     df = cln.date_removal(df, vmc.date, kwargs[vmc.startdate],
                           kwargs[vmc.enddate])
