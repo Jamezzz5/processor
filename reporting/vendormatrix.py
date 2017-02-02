@@ -224,8 +224,9 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     vm = nvm.append(ovm)
     for col in [vmc.fullplacename, vmc.dropcol, vmc.autodicord]:
         vm[col] = vm[col].replace({'_': '|'}, regex=True)
-    vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
-                                vm[vmc.firstrow] + 1, vm[vmc.firstrow])
+    if 'FIRSTROWADJ' in vm.columns:
+        vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
+                                    vm[vmc.firstrow] + 1, vm[vmc.firstrow])
     vm = cln.col_removal(vm, 'vm',
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
     vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys, axis=1)

@@ -9,7 +9,13 @@ from facebookads.api import FacebookAdsApi
 from facebookads import objects
 from facebookads.adobjects.adsinsights import AdsInsights
 from facebookads.exceptions import FacebookRequestError
-
+"""
+def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
+              'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
+              'video_p25_watched_actions', 'video_p50_watched_actions',
+              'video_p75_watched_actions', 'video_p100_watched_actions',
+              'actions', 'action_values']
+"""
 def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
               'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
               'video_p25_watched_actions', 'video_p50_watched_actions',
@@ -17,6 +23,20 @@ def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
 nestedcol = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
              'video_p50_watched_actions', 'video_p25_watched_actions',
              'video_p75_watched_actions']
+"""
+colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
+              'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
+              'ad_name': 'Ad Name', 'impressions': 'Impressions',
+              'inline_link_clicks': 'Link Clicks',
+              'spend': 'Amount Spent (USD)',
+              'video_10_sec_watched_actions': '3-Second Video Views',
+              'video_p25_watched_actions': 'Video Watches at 25%',
+              'video_p50_watched_actions': 'Video Watches at 50%',
+              'video_p75_watched_actions': 'Video Watches at 75%',
+              'video_p100_watched_actions': 'Video Watches at 100%',
+              'actions': 'Result Indicator',
+              'action_values': 'Results'}
+"""
 colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
               'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
               'ad_name': 'Ad Name', 'impressions': 'Impressions',
@@ -89,13 +109,18 @@ class FbApi(object):
                 if e._api_error_code == 190:
                     logging.error('Facebook Access Token invalid.  Aborting.')
                     sys.exit(0)
-                if e._api_error_code == 17:
+                elif e._api_error_code == 17:
                     logging.warn('Facebook rate limit reached.  Pausing for ' +
                                  '300 seconds.')
                     time.sleep(300)
                     continue
+                else:
+                    logging.error('Aborting as the Facebook API call resulted '
+                                  'in the following error: ' + str(e))
+                    sys.exit(0)
             if not insights:
                 continue
+
             self.df = self.df.append(insights, ignore_index=True)
         for col in nestedcol:
             try:
