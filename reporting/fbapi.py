@@ -114,6 +114,13 @@ class FbApi(object):
                                  '300 seconds.')
                     time.sleep(300)
                     continue
+                elif e._api_error_code == 1:
+                    logging.warn('Too much data queried.  Reducing time scale')
+                    fh = date_list[:len(date_list)/2]
+                    bh = date_list[len(date_list)/2:]
+                    date_lists.append(fh)
+                    date_lists.append(bh)
+                    continue
                 else:
                     logging.error('Aborting as the Facebook API call resulted '
                                   'in the following error: ' + str(e))
