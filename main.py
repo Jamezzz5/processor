@@ -2,6 +2,7 @@ import logging
 import argparse
 import sys
 import reporting.vendormatrix as vm
+import reporting.dictionary as dct
 import reporting.importhandler as ih
 import reporting.calc as cal
 
@@ -22,15 +23,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--noprocess', action='store_true')
-parser.add_argument('--vmupdate', action='store_true')
+parser.add_argument('--update', choices=['all', 'vm', 'dct'])
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
 
 
 def main():
-    if args.vmupdate:
+    if args.update == 'all' or args.update == 'vm':
         vm.vm_update()
+    if args.update == 'all' or args.update == 'dct':
+        dct.dict_update()
     matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)

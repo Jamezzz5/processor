@@ -103,32 +103,6 @@ def col_removal(df, key, removalcols):
     return df
 
 
-def null_items(df, key, vencolname, nullcoldic, **kwargs):
-    logging.debug('Nulling vendor metrics')
-    for col in nullcoldic:
-        if col not in df.columns:
-            continue
-        for ven in kwargs[nullcoldic[col]]:
-            df[col] = np.where((df[vencolname] == ven), 0, df[col])
-    return df
-
-
-def null_items_date(df, key, datecol, nulldatedic, **kwargs):
-    logging.debug('Nulling vendor metrics by date')
-    for col in nulldatedic:
-        if col not in df.columns:
-            continue
-        for sd, ed in zip(kwargs[nulldatedic[col][0]],
-                          kwargs[nulldatedic[col][1]]):
-            if sd == 'nan' or ed == 'nan':
-                continue
-            sd = string_to_date(sd)
-            ed = string_to_date(ed)
-            df[col] = np.where((df[datecol] >= sd) & (df[datecol] <= ed),
-                               0, df[col])
-    return df
-
-
 def apply_rules(df, vmrules, **kwargs):
     for rule in vmrules:
         for item in RULECONST:
@@ -164,5 +138,6 @@ def apply_rules(df, vmrules, **kwargs):
                 logging.warn(metric + ' not in data for rule ' +
                              rule + '.  The rule did not run.')
                 continue
-            df.ix[tdf, metric] = df.ix[tdf, metric] * factor
+            df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
+                                  factor.astype(float))
     return df

@@ -1,8 +1,13 @@
 
 FPN = 'Full Placement Name'
 PN = 'mpPlacement Name'
+CLI = 'mpClient'
 BUD = 'mpBudget'
+FRA = 'mpFranchise'
 CAM = 'mpCampaign'
+CTIM = 'mpCampaign Timing'
+CT = 'mpCampaign Type'
+CP = 'mpCampaign Phase'
 VEN = 'mpVendor'
 COU = 'mpCountry/Region'
 VT = 'mpVendor Type'
@@ -19,6 +24,23 @@ MIS = 'mpMisc'
 RET = 'mpRetailer'
 AM = 'mpAd Model'
 AR = 'mpAd Rate'
+AGE = 'mpAge'
+GEN = 'mpGender'
+CTA = 'mpCTA'
+URL = 'mpClickthrough URL'
+PRN = 'mpProduct Name'
+PRD = 'mpProduct Detail'
+FOR = 'mpFormat'
+ENV = 'mpEnvironment'
+DT1 = 'mpData Type 1'
+DT2 = 'mpData Type 2'
+TB = 'mpTargeting Bucket'
+GT = 'mpGenre Targeting'
+KPI = 'mpKPI'
+DN = 'mpDescriptive Name'
+AT = 'mpAd Type'
+AF = 'mpAd Format'
+CD = 'mpCreative Description'
 BR2 = 'mpBuy Rate 2'
 BR3 = 'mpBuy Rate 3'
 BR4 = 'mpBuy Rate 4'
@@ -32,9 +54,10 @@ MIS3 = 'mpMisc 3'
 MIS4 = 'mpMisc 4'
 MIS5 = 'mpMisc 5'
 MIS6 = 'mpMisc 6'
-COLS = [FPN, PN, BUD, CAM, VEN, COU, VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD,
-        SRV, MIS, RET, AM, AR, BR2, BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2,
-        MIS3, MIS4, MIS5, MIS6]
+COLS = [FPN, PN, CLI, BUD, FRA, CAM, CTIM, CT, CP, VEN, COU, VT, MC, TAR, CRE,
+        COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE, GEN, CTA, URL, PRN,
+        PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT, AF, CD, BR2, BR3, BR4,
+        BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, BR2, BR3]
 datecol = [PD, PD2, PD3, PD4, PD5]

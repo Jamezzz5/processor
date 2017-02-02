@@ -53,10 +53,12 @@ class Dict(object):
             err.reset()
             self.clean()
 
-    def write(self):
+    def write(self, df=None):
         logging.info('Writing ' + self.filename)
+        if df is None:
+            df = self.data_dict
         try:
-            self.data_dict.to_csv(self.dictfile, index=False)
+            df.to_csv(self.dictfile, index=False)
         except IOError:
             logging.warn(self.filename + ' could not be opened.  ' +
                          'This dictionary was not saved.')
@@ -64,3 +66,20 @@ class Dict(object):
     def clean(self):
         self.data_dict = cln.data_to_type(self.data_dict, dctc.floatcol,
                                           dctc.datecol, dctc.strcol)
+
+
+def dict_update():
+    for filename in os.listdir(csvpath):
+        if 'plannet' in filename:
+            cols = dctc.PCOLS
+        else:
+            cols = dctc.COLS
+        ndic = pd.DataFrame(columns=cols, index=None)
+        dic = Dict(filename)
+        odic = dic.get()
+        df = ndic.append(odic)
+        if 'pncFull Placement Name' in df.columns:
+            df[dctc.FPN] = df['pncFull Placement Name']
+            df = df[cols]
+        df = df[cols]
+        dic.write(df)
