@@ -12,6 +12,7 @@ filenameerror = 'FILENAME_ERROR'
 startdate = 'START DATE'
 enddate = 'END DATE'
 dropcol = 'DROP_COLUMNS'
+autodicplace = 'AUTO DICTIONARY PLACEMENT'
 autodicord = 'AUTO DICTIONARY ORDER'
 apifile = 'API_FILE'
 apifields = 'API_FIELDS'
@@ -62,8 +63,8 @@ conv10 = 'Conv10'
 
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
-          filenameerror, startdate, enddate, dropcol, autodicord, apifile,
-          apifields, apimerge]
+          filenameerror, startdate, enddate, dropcol, autodicplace,
+          autodicord, apifile, apifields, apimerge]
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            views100, landingpage, homepage, btnclick, purchase, signup,

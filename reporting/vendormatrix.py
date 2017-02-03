@@ -193,7 +193,7 @@ def import_data(key, vmrules, **kwargs):
     dic = dct.Dict(kwargs[vmc.filenamedict])
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
                          kwargs[vmc.filenameerror])
-    dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.placement])
+    dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, **kwargs)
     df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol, [])
@@ -227,6 +227,7 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
+    vm[vmc.audodicplace] = vm[vmc.placement]
     vm = cln.col_removal(vm, 'vm',
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
     vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys, axis=1)
