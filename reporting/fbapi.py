@@ -9,7 +9,7 @@ from facebookads.api import FacebookAdsApi
 from facebookads import objects
 from facebookads.adobjects.adsinsights import AdsInsights
 from facebookads.exceptions import FacebookRequestError
-"""
+
 def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
               'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
               'video_p25_watched_actions', 'video_p50_watched_actions',
@@ -20,10 +20,11 @@ def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
               'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
               'video_p25_watched_actions', 'video_p50_watched_actions',
               'video_p75_watched_actions', 'video_p100_watched_actions']
+"""
 nestedcol = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
              'video_p50_watched_actions', 'video_p25_watched_actions',
              'video_p75_watched_actions']
-"""
+
 colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
               'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
               'ad_name': 'Ad Name', 'impressions': 'Impressions',
@@ -47,6 +48,7 @@ colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
               'video_p50_watched_actions': 'Video Watches at 50%',
               'video_p75_watched_actions': 'Video Watches at 75%',
               'video_p100_watched_actions': 'Video Watches at 100%'}
+"""
 configpath = 'Config/'
 
 
@@ -134,6 +136,8 @@ class FbApi(object):
                 self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
             except KeyError:
                 continue
+        self.df['Result Indicator'] = 
+        
         self.df = self.renamecols()
         return self.df
 
@@ -141,7 +145,15 @@ class FbApi(object):
         if str(x) == str('nan'):
             return 0
         x = str(x).strip('[]')
+        """
         return ast.literal_eval(x)['value']
+        """
+        return ast.literal_eval(x)
+
+    def cleanlistdata(self, x):
+        x = str(x).strip('[]').split(',')
+        for col in x:
+            
 
     def renamecols(self):
         self.df = self.df.rename(columns=colnamedic)
