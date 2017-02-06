@@ -39,6 +39,7 @@ Thumbs.db
 *.pyc
 *.csv
 *.xlsx
+*.xlsm
 
 Config/
 Raw Data/

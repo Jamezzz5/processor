@@ -220,6 +220,7 @@ def import_plan_data(key, df, **kwargs):
 def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
     ovm = pd.read_csv(oldfile)
+    rules = [col for col in ovm.columns if 'RULE_' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
     vm = nvm.append(ovm)
     for col in [vmc.fullplacename, vmc.dropcol, vmc.autodicord]:
@@ -227,8 +228,8 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
-    vm[vmc.audodicplace] = vm[vmc.placement]
+    vm[vmc.autodicplace] = vm[vmc.placement]
     vm = cln.col_removal(vm, 'vm',
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
-    vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys, axis=1)
+    vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)
     vm.to_csv(csv, index=False)
