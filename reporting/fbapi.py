@@ -124,7 +124,7 @@ class FbApi(object):
         if str(x) == str('nan'):
             return 0
         x = str(x).strip('[]')
-        return ast.literal_eval(x)
+        return ast.literal_eval(x)['value']
 
     def renamecols(self):
         self.df = self.df.rename(columns=colnamedic)
