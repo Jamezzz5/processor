@@ -10,6 +10,8 @@ RULEMETRIC = 'METRIC'
 RULEQUERY = 'QUERY'
 RULEFACTOR = 'FACTOR'
 RULECONST = [RULEMETRIC, RULEQUERY, RULEFACTOR]
+PRE = 'PRE'
+POST = 'POST'
 
 
 def dircheck(directory):
@@ -103,7 +105,7 @@ def col_removal(df, key, removalcols):
     return df
 
 
-def apply_rules(df, vmrules, **kwargs):
+def apply_rules(df, vmrules, pre_or_post, **kwargs):
     for rule in vmrules:
         for item in RULECONST:
             if item not in vmrules[rule].keys():
@@ -116,8 +118,11 @@ def apply_rules(df, vmrules, **kwargs):
         if (str(metrics) == 'nan' or str(queries) == 'nan' or
            str(factor) == 'nan'):
             continue
+        metrics = metrics.split(':')
+        if metrics[0] != pre_or_post:
+            continue
         tdf = df
-        metrics = metrics.split('|')
+        metrics = metrics[1].split('|')
         queries = queries.split('|')
         for query in queries:
             query = query.split(':')
@@ -129,6 +134,7 @@ def apply_rules(df, vmrules, **kwargs):
             if query[0] == vmc.date:
                 sd = string_to_date(values[0])
                 ed = string_to_date(values[1])
+                vmc.date = string_to_date(vmc.date)
                 tdf = tdf.loc[(df[query[0]] >= sd) & (df[query[0]] <= ed)]
             else:
                 tdf = tdf.loc[tdf[query[0]].isin(values)]

@@ -195,13 +195,14 @@ def import_data(key, vmrules, **kwargs):
                          kwargs[vmc.filenameerror])
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
     df = dic.merge(df, dctc.FPN)
+    df = cln.apply_rules(df, vmrules, cln.PRE, **kwargs)
     df = combining_data(df, key, **kwargs)
     df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol, [])
     df = cln.date_removal(df, vmc.date, kwargs[vmc.startdate],
                           kwargs[vmc.enddate])
     df = adcost_calculation(df)
     df = cln.col_removal(df, key, kwargs[vmc.dropcol])
-    df = cln.apply_rules(df, vmrules, **kwargs)
+    df = cln.apply_rules(df, vmrules, cln.POST, **kwargs)
     return df
 
 
@@ -221,6 +222,7 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
     ovm = pd.read_csv(oldfile)
     rules = [col for col in ovm.columns if 'RULE_' in col]
+    rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
     vm = nvm.append(ovm)
     for col in [vmc.fullplacename, vmc.dropcol, vmc.autodicord]:
@@ -232,4 +234,6 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     vm = cln.col_removal(vm, 'vm',
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
     vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)
+    for col in rule_metrics:
+        vm[col] = 'POST:'+vm[col]
     vm.to_csv(csv, index=False)
