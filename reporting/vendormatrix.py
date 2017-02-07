@@ -155,10 +155,10 @@ def full_placement_creation(df, key, fullcol, fullplacecols):
     return df
 
 
-def combining_data(df, key, **kwargs):
+def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
-    for col in vmc.datacol:
-        if col not in df:
+    for col in columns:
+        if col not in df.columns:
             df[col] = 0
         for item in kwargs[col]:
             if str(item) == 'nan':
@@ -171,7 +171,7 @@ def combining_data(df, key, **kwargs):
                 continue
             if col in vmc.datafloatcol:
                 df = cln.data_to_type(df, floatcol=[col, item])
-                df[col] = df[col] + df[item]
+                df[col] += df[item]
             else:
                 df[col] = df[item]
     return df
@@ -195,9 +195,11 @@ def import_data(key, vmrules, **kwargs):
                          kwargs[vmc.filenameerror])
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
     df = dic.merge(df, dctc.FPN)
+    df = combining_data(df, key, vmc.datadatecol, **kwargs)
+    df = cln.data_to_type(df, datecol=vmc.datadatecol)
     df = cln.apply_rules(df, vmrules, cln.PRE, **kwargs)
-    df = combining_data(df, key, **kwargs)
-    df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol, [])
+    df = combining_data(df, key, vmc.datafloatcol, **kwargs)
+    df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
     df = cln.date_removal(df, vmc.date, kwargs[vmc.startdate],
                           kwargs[vmc.enddate])
     df = adcost_calculation(df)

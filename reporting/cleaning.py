@@ -51,6 +51,7 @@ def data_to_type(df, floatcol=[], datecol=[], strcol=[]):
             continue
         df[col] = df[col].astype(str)
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
+        df[col] = df[col].replace('nan', 0)
         df[col] = df[col].replace('NA', 0)
         df[col] = df[col].astype(float)
     for col in datecol:
@@ -134,7 +135,6 @@ def apply_rules(df, vmrules, pre_or_post, **kwargs):
             if query[0] == vmc.date:
                 sd = string_to_date(values[0])
                 ed = string_to_date(values[1])
-                vmc.date = string_to_date(vmc.date)
                 tdf = tdf.loc[(df[query[0]] >= sd) & (df[query[0]] <= ed)]
             else:
                 tdf = tdf.loc[tdf[query[0]].isin(values)]
