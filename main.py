@@ -5,6 +5,7 @@ import reporting.vendormatrix as vm
 import reporting.dictionary as dct
 import reporting.importhandler as ih
 import reporting.calc as cal
+import reporting.export as exp
 
 logging.basicConfig(stream=sys.stdout,
                     filename='logfile.log',
@@ -24,6 +25,7 @@ parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--noprocess', action='store_true')
 parser.add_argument('--update', choices=['all', 'vm', 'dct'])
+parser.add_argument('--db', action='store_true')
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
@@ -50,6 +52,9 @@ def main():
         except IOError:
             logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
                          'Final Output not updated.')
+    if args.db:
+        exp.export_to_rds()
+
 
 if __name__ == '__main__':
     main()
