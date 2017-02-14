@@ -228,7 +228,7 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
     vm = nvm.append(ovm)
     for col in [vmc.fullplacename, vmc.dropcol, vmc.autodicord]:
-        vm[col] = vm[col].replace({'_': '|'}, regex=True)
+        vm[col] = vm[col].astype(str).replace({'_': '|'}, regex=True)
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
