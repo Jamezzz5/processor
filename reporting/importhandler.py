@@ -43,7 +43,12 @@ class ImportHandler(object):
                 df = df.append(apidf, ignore_index=True)
                 df.to_csv(apimergefile, index=False)
         else:
-            apidf.to_csv(vmc.pathraw + filename, index=False)
+            try:
+                apidf.to_csv(vmc.pathraw + filename, index=False)
+            except IOError:
+                    logging.warn(vmc.pathraw + filename + ' could not be ' +
+                                 'opened.  API data was not merged.')
+                    apidf.to_csv(apimergefile)
 
     def create_all_col(self, df):
         df['ALL'] = ''

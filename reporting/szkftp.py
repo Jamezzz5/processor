@@ -44,6 +44,10 @@ class SzkFtp(object):
         logging.info('Getting Sizmek data from ' + self.ftp)
         self.ftp_init()
         newestfile = self.ftp_newestfile()
+        self.ftp_remove_files(newestfile)
+        if newestfile == '.' or newestfile == '..':
+            logging.warn('No files found, returning empty Dataframe.')
+            return self.df
         self.ftp_readfile(newestfile)
         return self.df
 
@@ -53,13 +57,15 @@ class SzkFtp(object):
         self.ftp.cwd(self.ftp_path)
 
     def ftp_newestfile(self):
-        files = []
-        self.ftp.dir(files.append)
-        for item in files:
+        self.files = []
+        file_dict = {}
+        self.ftp.dir(self.files.append)
+        for item in self.files:
             file_info = item.split()
             file_date = ' '.join(item.split()[5:8])
-            file_dict = {time.strptime(file_date, '%b %d %H:%M'): file_info[8]}
-            date_list = list([key for key, value in file_dict.items()])
+            item_dict = {time.strptime(file_date, '%b %d %H:%M'): file_info[8]}
+            file_dict.update(item_dict)
+        date_list = list([key for key, value in file_dict.items()])
         newestfile = file_dict[max(date_list)]
         return newestfile
 
@@ -72,3 +78,10 @@ class SzkFtp(object):
             self.df = pd.read_csv(r, compression='zip')
         else:
             self.df = pd.read_csv(r)
+
+    def ftp_remove_files(self, newestfile):
+        for item in self.files:
+            file_info = item.split()[8]
+            if (file_info != newestfile and file_info != '.' and
+               file_info != '..'):
+                self.ftp.delete(self.ftp_path + file_info)
