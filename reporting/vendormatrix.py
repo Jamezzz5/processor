@@ -220,6 +220,15 @@ def import_plan_data(key, df, **kwargs):
     return df
 
 
+def vm_update_rulecheck(vm, vmcol):
+    vm[vmcol] = vm[vmcol].astype(str)
+    vm[vmcol] = np.where(
+                vm[vmcol].str.contains('|'.join(['PRE:', 'POST:', 'nan'])),
+                vm[vmcol],
+                'POST:' + (vm[vmcol]).astype(str))
+    return vm
+
+
 def vm_update(oldfile='Config/OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
     ovm = pd.read_csv(oldfile)
@@ -237,5 +246,7 @@ def vm_update(oldfile='Config/OldVendorMatrix.csv'):
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
     vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)
     for col in rule_metrics:
-        vm[col] = 'POST:'+vm[col]
+        vm = vm_update_rulecheck(vm, col)
+    vm = vm.fillna('')
+    vm = vm.replace('nan', '')
     vm.to_csv(csv, index=False)
