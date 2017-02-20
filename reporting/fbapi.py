@@ -96,6 +96,7 @@ class FbApi(object):
                     logging.warn('Facebook rate limit reached.  Pausing for ' +
                                  '300 seconds.')
                     time.sleep(300)
+                    date_lists.append(date_list)
                     continue
                 elif e._api_error_code == 1:
                     logging.warn('Too much data queried.  Reducing time scale')
