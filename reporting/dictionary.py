@@ -43,7 +43,6 @@ class Dict(object):
             logging.info('Populating ' + self.filename)
             i = 0
             for value in autodicord:
-                print value, placement
                 error[value] = error[placement].str.split('_').str[i]
                 i = i + 1
             error = error.ix[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
