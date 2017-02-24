@@ -29,6 +29,7 @@ parser.add_argument('--db', action='store_true')
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
+dbconfigfile = 'dbconfig.json'
 
 
 def main():
@@ -53,8 +54,8 @@ def main():
             logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
                          'Final Output not updated.')
     if args.db:
-        exp.export_to_rds()
-
+        db = exp.DB(OUTPUT_FILE, dbconfigfile)
+        db.export_to_rds()
 
 if __name__ == '__main__':
     main()
