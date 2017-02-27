@@ -101,10 +101,10 @@ class DB(object):
         command = """
                   SELECT EXISTS(
                   SELECT * FROM information_schema.tables
-                  WHERE table_name = '{0}')
+                   WHERE table_name = '{0}')
                   """.format(self.table)
-        try:
-            self.cursor.execute(command).fetchone()[0]
+        self.cursor.execute(command)
+        if self.cursor.fetchone():
             return True
-        except AttributeError:
+        else:
             return False
