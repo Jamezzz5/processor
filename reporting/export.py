@@ -15,7 +15,7 @@ configpath = 'Config/'
 class DB(object):
     def __init__(self, datafile, config):
         self.config = config
-        self.df = pd.read_csv(datafile)
+        self.df = pd.read_csv(datafile, encoding='iso-8859-1')
         self.df = self.clean_for_export(self.df)
         self.inputconfig(self.config)
         self.connstring = ('postgresql://{0}:{1}@{2}:{3}/{4}'.
@@ -56,18 +56,19 @@ class DB(object):
 
     def export_to_rds(self):
         self.connect()
-        logging.info('CREATING DB Table')
-        command = '''
+        if self.db_table_check() is False:
+            logging.info('CREATING DB Table')
+            command = '''
                   DROP TABLE IF EXISTS {0};
                   CREATE TABLE {0}
                   (
                   {1}
                   );'''.format(self.table, exc.db_columns)
-        self.cursor.execute(command)
-        self.connection.commit()
+            self.cursor.execute(command)
+            self.connection.commit()
         logging.info('Writing to RDS')
         output = cStringIO.StringIO()
-        self.df.to_csv(output, sep='\t', header=False, index=False)
+        self.df.to_csv(output, sep='\t', header=False, index=False, encoding='utf-8')
         output.seek(0)
         contents = output.getvalue()
         cur = self.connection.cursor()
@@ -94,3 +95,15 @@ class DB(object):
         df.rename(columns=lambda x: x.replace('-', '_'), inplace=True)
         df.rename(columns=lambda x: x.replace('/', '_'), inplace=True)
         return df
+
+    def db_table_check(self):
+        command = """
+                  SELECT EXISTS(
+                  SELECT * FROM information_schema.tables
+                  WHERE table_name = '{0}')
+                  """.format(self.table)
+        try:
+            self.cursor.execute(command).fetchone()[0]
+            return True
+        except AttributeError:
+            return False
