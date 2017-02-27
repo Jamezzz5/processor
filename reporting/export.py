@@ -19,7 +19,7 @@ class DB(object):
         self.df = self.clean_for_export(self.df)
         self.inputconfig(self.config)
         self.connstring = ('postgresql://{0}:{1}@{2}:{3}/{4}'.
-                            format(*self.configlist))
+                           format(*self.configlist))
 
     def inputconfig(self, config):
         logging.info('Loading DB config file: ' + str(config))
@@ -68,7 +68,8 @@ class DB(object):
             self.connection.commit()
         logging.info('Writing to RDS')
         output = cStringIO.StringIO()
-        self.df.to_csv(output, sep='\t', header=False, index=False, encoding='utf-8')
+        self.df.to_csv(output, sep='\t', header=False, index=False,
+                       encoding='utf-8')
         output.seek(0)
         contents = output.getvalue()
         cur = self.connection.cursor()
