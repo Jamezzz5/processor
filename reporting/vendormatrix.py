@@ -223,9 +223,9 @@ def import_plan_data(key, df, **kwargs):
 def vm_update_rulecheck(vm, vmcol):
     vm[vmcol] = vm[vmcol].astype(str)
     vm[vmcol] = np.where(
-                vm[vmcol].str.contains('|'.join(['PRE:', 'POST:', 'nan'])),
+                vm[vmcol].str.contains('|'.join(['PRE::', 'POST::', 'nan'])),
                 vm[vmcol],
-                'POST:' + (vm[vmcol]).astype(str))
+                'POST::' + (vm[vmcol]).astype(str))
     return vm
 
 

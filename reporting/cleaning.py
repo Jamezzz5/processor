@@ -47,6 +47,10 @@ def string_to_date(my_string):
           my_string[4] == '/'):
         my_string = my_string[:9]
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
+    elif (('PST' in my_string) and (len(my_string) == 28) and
+          (':' in my_string)):
+        my_string = my_string.replace('PST ', '')
+        return dt.datetime.strptime(my_string, '%a %b %d %M:%S:%H %Y')
     else:
         return my_string
 
@@ -125,14 +129,14 @@ def apply_rules(df, vmrules, pre_or_post, **kwargs):
         if (str(metrics) == 'nan' or str(queries) == 'nan' or
            str(factor) == 'nan'):
             continue
-        metrics = metrics.split(':')
+        metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
             continue
         tdf = df
         metrics = metrics[1].split('|')
         queries = queries.split('|')
         for query in queries:
-            query = query.split(':')
+            query = query.split('::')
             values = query[1].split(',')
             if query[0] not in df:
                 logging.warn(query[0] + ' not in data for rule ' +
