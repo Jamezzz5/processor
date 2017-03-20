@@ -9,25 +9,36 @@ import dictcolumns as dctc
 import expcolumns as exc
 
 log = logging.getLogger()
-configpath = 'Config/'
+config_path = 'Config/'
 
 
 class DB(object):
     def __init__(self, datafile, config):
+        self.user = None
+        self.pw = None
+        self.host = None
+        self.port = None
+        self.table = None
+        self.config_list = []
+        self.configfile = None
+        self.engine = None
+        self.connection = None
+        self.cursor = None
         self.config = config
+        self.df_rds = pd.DataFrame()
         self.df = pd.read_csv(datafile, encoding='iso-8859-1')
         self.df = self.clean_for_export(self.df)
-        self.inputconfig(self.config)
-        self.connstring = ('postgresql://{0}:{1}@{2}:{3}/{4}'.
-                           format(*self.configlist))
+        self.input_config(self.config)
+        self.conn_string = ('postgresql://{0}:{1}@{2}:{3}/{4}'.
+                            format(*self.config_list))
 
-    def inputconfig(self, config):
+    def input_config(self, config):
         logging.info('Loading DB config file: ' + str(config))
-        self.configfile = configpath + config
-        self.loadconfig()
-        self.checkconfig()
+        self.configfile = config_path + config
+        self.load_config()
+        self.check_config()
 
-    def loadconfig(self):
+    def load_config(self):
         try:
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
@@ -39,18 +50,18 @@ class DB(object):
         self.host = self.config['HOST']
         self.port = self.config['PORT']
         self.table = self.config['TABLE']
-        self.configlist = [self.user, self.pw, self.host, self.port,
-                           self.table]
+        self.config_list = [self.user, self.pw, self.host, self.port,
+                            self.table]
 
-    def checkconfig(self):
-        for item in self.configlist:
+    def check_config(self):
+        for item in self.config_list:
             if item == '':
                 logging.warn(item + 'not in DB config file.  Aborting.')
                 sys.exit(0)
 
     def connect(self):
         logging.info('Connecting to DB at Host: ' + self.host)
-        self.engine = create_engine(self.connstring)
+        self.engine = create_engine(self.conn_string)
         self.connection = self.engine.raw_connection()
         self.cursor = self.connection.cursor()
 
@@ -71,7 +82,7 @@ class DB(object):
         self.df.to_csv(output, sep='\t', header=False, index=False,
                        encoding='utf-8')
         output.seek(0)
-        contents = output.getvalue()
+        output.getvalue()
         cur = self.connection.cursor()
         cur.copy_from(output, self.table, null="")
         self.connection.commit()
@@ -89,7 +100,8 @@ class DB(object):
         self.df_rds.to_csv(filename)
         logging.info('Successfully wrote from RDS')
 
-    def clean_for_export(self, df):
+    @staticmethod
+    def clean_for_export(df):
         df = (df.loc[:, lambda df: vmc.datacol + dctc.COLS +
               ['Planned Net Cost', 'Net Cost Final']])
         df.rename(columns=lambda x: x.replace(' ', ''), inplace=True)

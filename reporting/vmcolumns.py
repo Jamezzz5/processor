@@ -74,7 +74,7 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            gplay6pc, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,
            conv9, conv10]
 
-vmkeys = vmkeys + datacol
+vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
 
 datecol = [startdate, enddate]

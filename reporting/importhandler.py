@@ -15,73 +15,75 @@ class ImportHandler(object):
         self.args = args
         self.matrix = matrix
 
-    def output(self, apimerge, apidf, filename, firstrow, lastrow, vk):
-        if str(apimerge) != 'nan':
-            apimergefile = vmc.pathraw + apimerge
-            if os.path.isfile(apimergefile):
+    def output(self, api_merge, api_df, filename, first_row, last_row, vk):
+        if str(api_merge) != 'nan':
+            api_merge_file = vmc.pathraw + str(api_merge)
+            if os.path.isfile(api_merge_file):
                 try:
-                    df = pd.read_csv(apimergefile, parse_dates=True)
-                    df = cln.firstlastadj(df, firstrow, lastrow)
-                    df = self.create_all_col(df)
-                    apidf = cln.firstlastadj(apidf, firstrow, lastrow)
-                    apidf = self.create_all_col(apidf)
-                    apidf = apidf[~apidf['ALL'].isin(df['ALL'])]
-                    df = df.append(apidf, ignore_index=True)
-                    df.drop('ALL', axis=1, inplace=True)
-                    df.to_csv(apimergefile, index=False)
-                    if firstrow != 0:
-                        self.matrix.vm_change(vk, vmc.firstrow, 0)
-                    if lastrow != 0:
-                        self.matrix.vm_change(vk, vmc.lastrow, 0)
+                    df = pd.read_csv(api_merge_file, parse_dates=True)
                 except IOError:
-                    logging.warn(apimerge + ' could not be opened.  ' +
+                    logging.warn(api_merge + ' could not be opened.  ' +
                                  'API data was not merged.')
-                    apidf.to_csv(apimergefile)
+                    api_df.to_csv(api_merge_file)
+                    return None
+                df = cln.first_last_adj(df, first_row, last_row)
+                df = self.create_all_col(df)
+                api_df = cln.first_last_adj(api_df, first_row, last_row)
+                api_df = self.create_all_col(api_df)
+                api_df = api_df[~api_df['ALL'].isin(df['ALL'])]
+                df = df.append(api_df, ignore_index=True)
+                df.drop('ALL', axis=1, inplace=True)
+                df.to_csv(api_merge_file, index=False)
+                if first_row != 0:
+                    self.matrix.vm_change(vk, vmc.firstrow, 0)
+                if last_row != 0:
+                    self.matrix.vm_change(vk, vmc.lastrow, 0)
             else:
-                logging.warn(apimerge + ' not found.  Creating file.')
+                logging.warn(api_merge + ' not found.  Creating file.')
                 df = pd.DataFrame()
-                df = df.append(apidf, ignore_index=True)
-                df.to_csv(apimergefile, index=False)
+                df = df.append(api_df, ignore_index=True)
+                df.to_csv(api_merge_file, index=False)
         else:
             try:
-                apidf.to_csv(vmc.pathraw + filename, index=False)
+                api_df.to_csv(vmc.pathraw + filename, index=False)
             except IOError:
-                    logging.warn(vmc.pathraw + filename + ' could not be ' +
-                                 'opened.  API data was not merged.')
-                    apidf.to_csv(apimergefile)
+                logging.warn(vmc.pathraw + filename + ' could not be ' +
+                             'opened.  API data was not saved.')
 
-    def create_all_col(self, df):
+    @staticmethod
+    def create_all_col(df):
         df['ALL'] = ''
         for col in df.columns:
             df['ALL'] = df['ALL'] + df[col].astype(str)
         return df
 
-    def arg_check(self, argcheck):
-        if self.args == argcheck or self.args == 'all':
+    def arg_check(self, arg_check):
+        if self.args == arg_check or self.args == 'all':
             return True
         else:
             return False
 
-    def date_check(self, date):
+    @staticmethod
+    def date_check(date):
         if date.date() == (dt.date.today() - dt.timedelta(weeks=520)):
             return True
         return False
 
-    def api_call(self, keylist, apiclass):
-        for vk in keylist:
+    def api_call(self, key_list, api_class):
+        for vk in key_list:
             params = self.matrix.vendor_set(vk)
-            apiclass.inputconfig(params[vmc.apifile])
-            startcheck = self.date_check(params[vmc.startdate])
-            endcheck = self.date_check(params[vmc.enddate])
-            if startcheck and endcheck:
-                df = apiclass.getdata()
-            elif startcheck:
-                df = apiclass.getdata(ed=params[vmc.enddate])
-            elif endcheck:
-                df = apiclass.getdata(sd=params[vmc.startdate])
+            api_class.input_config(params[vmc.apifile])
+            start_check = self.date_check(params[vmc.startdate])
+            end_check = self.date_check(params[vmc.enddate])
+            if start_check and end_check:
+                df = api_class.get_data()
+            elif start_check:
+                df = api_class.get_data(ed=params[vmc.enddate])
+            elif end_check:
+                df = api_class.get_data(sd=params[vmc.startdate])
             else:
-                df = apiclass.getdata(sd=params[vmc.startdate],
-                                      ed=params[vmc.enddate])
+                df = api_class.get_data(sd=params[vmc.startdate],
+                                        ed=params[vmc.enddate])
             self.output(params[vmc.apimerge], df, params[vmc.filename],
                         params[vmc.firstrow], params[vmc.lastrow], vk)
 
@@ -93,11 +95,11 @@ class ImportHandler(object):
         if self.arg_check('tw'):
             self.api_call(self.matrix.apitwkey, twapi.TwApi())
 
-    def ftp_load(self, ftpkey, ftpclass):
-        for vk in ftpkey:
+    def ftp_load(self, ftp_key, ftp_class):
+        for vk in ftp_key:
             params = self.matrix.vendor_set(vk)
-            ftpclass.inputconfig(params[vmc.apifile])
-            df = ftpclass.getdata()
+            ftp_class.input_config(params[vmc.apifile])
+            df = ftp_class.get_data()
             self.output(params[vmc.apimerge], df, params[vmc.filename],
                         params[vmc.firstrow], params[vmc.lastrow], vk)
 

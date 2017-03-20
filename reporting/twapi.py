@@ -5,6 +5,7 @@ import pytz
 import ast
 import datetime as dt
 import pandas as pd
+import pandas.io.json as pdjson
 import oauth2 as oauth
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
@@ -52,14 +53,24 @@ colnamedic = {'billed_charge_local_micro': 'Spend',
 class TwApi(object):
     def __init__(self):
         self.df = pd.DataFrame()
+        self.configfile = None
+        self.config = None
+        self.consumer_key = None
+        self.consumer_secret = None
+        self.access_token = None
+        self.access_token_secret = None
+        self.account_id = None
+        self.config_list = []
+        self.dates = None
+        self.cidname = None
 
-    def inputconfig(self, config):
+    def input_config(self, config):
         logging.info('Loading Twitter config file: ' + config)
         self.configfile = configpath + config
-        self.loadconfig()
-        self.checkconfig()
+        self.load_config()
+        self.check_config()
 
-    def loadconfig(self):
+    def load_config(self):
         try:
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
@@ -71,12 +82,12 @@ class TwApi(object):
         self.access_token = self.config['ACCESS_TOKEN']
         self.access_token_secret = self.config['ACCESS_TOKEN_SECRET']
         self.account_id = self.config['ACCOUNT_ID']
-        self.configlist = [self.consumer_key, self.consumer_secret,
-                           self.access_token, self.access_token_secret,
-                           self.account_id]
+        self.config_list = [self.consumer_key, self.consumer_secret,
+                            self.access_token, self.access_token_secret,
+                            self.account_id]
 
-    def checkconfig(self):
-        for item in self.configlist:
+    def check_config(self):
+        for item in self.config_list:
             if item == '':
                 logging.warn(item + 'not in Twitter config file.  Aborting.')
                 sys.exit(0)
@@ -90,32 +101,32 @@ class TwApi(object):
         response, content = client.request(url, method='GET')
         try:
             data = json.loads(content)
-        except:
+        except IOError:
             data = None
         return response, data
 
-    def getcids(self):
+    def get_cids(self):
         resource_url = DOMAIN + URLACC + '%s/%s' % (self.account_id, reqcamp)
         res_headers, res_data = self.request(resource_url)
-        cidname = {}
+        cid_name = {}
         for item in res_data[jsondata]:
-            if item[colcid] not in cidname.keys():
-                cidname[item[colcid]] = item[colcname]
-        return cidname
+            if item[colcid] not in cid_name.keys():
+                cid_name[item[colcid]] = item[colcname]
+        return cid_name
 
-    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
-                ed=(dt.datetime.today() - dt.timedelta(days=1)),
-                fields=def_fields):
+    def get_data(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
+                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
+                 fields=def_fields):
         ed = ed + dt.timedelta(days=1)
         if sd > ed:
             logging.warn('Start date greater than end date.  Start date was' +
                          'set to end date.')
             sd = ed - dt.timedelta(days=1)
-        full_date_list = self.listdates(sd, ed)
+        full_date_list = self.list_dates(sd, ed)
         date_lists = map(None, *(iter(full_date_list),) * 7)
-        stats_url = DOMAIN + URLSTACC + '%s?' % (self.account_id)
+        stats_url = DOMAIN + URLSTACC + '%s?' % self.account_id
         metric_groups = URLMG + '%s' % ','.join(fields)
-        self.cidname = self.getcids()
+        self.cidname = self.get_cids()
         ids_lists = map(None, *(iter(self.cidname.keys()),) * 20)
         for date_list in date_lists:
             date_list = filter(None, date_list)
@@ -130,18 +141,19 @@ class TwApi(object):
                 query_url = (stats_url + entity_ids + query_params +
                              metric_groups + PLACEMENT)
                 header, data = self.request(query_url)
-                self.dates = self.getdates(data)
-                iddf = pd.io.json.json_normalize(data[jsondata],
-                                                 [jsonidd], [colcid])
-                iddf = pd.concat([iddf,
-                                  iddf[jsonmet].apply(pd.Series)], axis=1)
-                df = df.append(iddf)
+                self.dates = self.get_dates(data)
+                id_df = pdjson.json_normalize(data[jsondata],
+                                                  [jsonidd], [colcid])
+                id_df = pd.concat([id_df,
+                                  id_df[jsonmet].apply(pd.Series)], axis=1)
+                df = df.append(id_df)
             df = self.clean_df(df)
             self.df = self.df.append(df)
-        self.df = self.renamecols()
+        self.df = self.rename_cols()
         return self.df
 
-    def date_format(self, date):
+    @staticmethod
+    def date_format(date):
         date = pytz.timezone('America/Los_Angeles').localize(date)
         date = date.astimezone(pytz.UTC)
         date = date.replace(tzinfo=None).isoformat() + 'Z'
@@ -151,38 +163,40 @@ class TwApi(object):
         df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
         for col in df.columns:
-            tdf = df[col].apply(lambda x: self.cleandata(x)).apply(pd.Series)
+            tdf = df[col].apply(lambda x: self.clean_data(x)).apply(pd.Series)
             tdf = tdf.unstack().reset_index()
             tdf = tdf.rename(columns={0: col, 'level_0': coldate})
             ndf = pd.merge(ndf, tdf, on=[coldate, colcid], how='outer')
         df = ndf
         df['campaign'] = df[colcid].map(self.cidname)
-        df[colspend] = df[colspend] / 1000000
+        df[colspend] /= 1000000
         df[coldate].replace(self.dates, inplace=True)
         return df
 
-    def cleandata(self, x):
+    @staticmethod
+    def clean_data(x):
         if str(x) == str('nan'):
             return 0
         x = str(x).strip('[]')
         return ast.literal_eval(x)
 
-    def getdates(self, data):
+    def get_dates(self, data):
         sd = dt.datetime.strptime(data[jsonreq][jsonparam][jsonst],
                                   reqdformat).date()
         ed = dt.datetime.strptime(data[jsonreq][jsonparam][jsonet],
                                   reqdformat).date()
-        dates = self.listdates(sd, ed - dt.timedelta(days=1))
+        dates = self.list_dates(sd, ed - dt.timedelta(days=1))
         dates = {k: v for k, v in enumerate(dates)}
         return dates
 
-    def listdates(self, sd, ed):
+    @staticmethod
+    def list_dates(sd, ed):
         dates = []
         while sd <= ed:
             dates.append(sd)
             sd = sd + dt.timedelta(days=1)
         return dates
 
-    def renamecols(self):
+    def rename_cols(self):
         self.df = self.df.rename(columns=colnamedic)
         return self.df

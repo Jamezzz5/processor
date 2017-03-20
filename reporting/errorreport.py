@@ -10,7 +10,7 @@ csvpath = 'ERROR REPORTS/'
 
 class ErrorReport(object):
     def __init__(self, df, dic, pn, filename):
-        cln.dircheck(csvpath)
+        cln.dir_check(csvpath)
         if str(filename) == 'nan':
             logging.error('No error report file provided.  Aborting.')
             sys.exit(0)

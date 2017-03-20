@@ -29,7 +29,7 @@ parser.add_argument('--db', action='store_true')
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
-dbconfigfile = 'dbconfig.json'
+db_config_file = 'dbconfig.json'
 
 
 def main():
@@ -45,7 +45,7 @@ def main():
         ftp = ih.ImportHandler(args.ftp, matrix)
         ftp.ftp_loop()
     if not args.noprocess:
-        df = matrix.vmloop()
+        df = matrix.vm_loop()
         df = cal.calculate_cost(df)
         try:
             df.to_csv(OUTPUT_FILE, index=False)
@@ -54,7 +54,7 @@ def main():
             logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
                          'Final Output not updated.')
     if args.db:
-        db = exp.DB(OUTPUT_FILE, dbconfigfile)
+        db = exp.DB(OUTPUT_FILE, db_config_file)
         db.export_to_rds()
 
 if __name__ == '__main__':

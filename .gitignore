@@ -40,6 +40,7 @@ Thumbs.db
 *.csv
 *.xlsx
 *.xlsm
+*.idea
 
 Config/
 Raw Data/

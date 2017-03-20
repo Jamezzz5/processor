@@ -15,37 +15,46 @@ def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
               'video_p25_watched_actions', 'video_p50_watched_actions',
               'video_p75_watched_actions', 'video_p100_watched_actions']
 
-nestedcol = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
-             'video_p50_watched_actions', 'video_p25_watched_actions',
-             'video_p75_watched_actions']
+nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
+              'video_p50_watched_actions', 'video_p25_watched_actions',
+              'video_p75_watched_actions']
 
-colnamedic = {'date_start': 'Reporting Starts', 'date_stop': 'Reporting Ends',
-              'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
-              'ad_name': 'Ad Name', 'impressions': 'Impressions',
-              'inline_link_clicks': 'Link Clicks',
-              'spend': 'Amount Spent (USD)',
-              'video_10_sec_watched_actions': '3-Second Video Views',
-              'video_p25_watched_actions': 'Video Watches at 25%',
-              'video_p50_watched_actions': 'Video Watches at 50%',
-              'video_p75_watched_actions': 'Video Watches at 75%',
-              'video_p100_watched_actions': 'Video Watches at 100%'}
+col_name_dic = {'date_start': 'Reporting Starts',
+                'date_stop': 'Reporting Ends',
+                'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
+                'ad_name': 'Ad Name', 'impressions': 'Impressions',
+                'inline_link_clicks': 'Link Clicks',
+                'spend': 'Amount Spent (USD)',
+                'video_10_sec_watched_actions': '3-Second Video Views',
+                'video_p25_watched_actions': 'Video Watches at 25%',
+                'video_p50_watched_actions': 'Video Watches at 50%',
+                'video_p75_watched_actions': 'Video Watches at 75%',
+                'video_p100_watched_actions': 'Video Watches at 100%'}
 
-configpath = 'Config/'
+config_path = 'Config/'
 
 
 class FbApi(object):
     def __init__(self):
         self.df = pd.DataFrame()
+        self.configfile = None
+        self.config = None
+        self.account = None
+        self.app_id = None
+        self.app_secret = None
+        self.access_token = None
+        self.act_id = None
+        self.config_list = []
 
-    def inputconfig(self, config):
+    def input_config(self, config):
         logging.info('Loading Facebook config file: ' + str(config))
-        self.configfile = configpath + config
-        self.loadconfig()
-        self.checkconfig()
+        self.configfile = config_path + config
+        self.load_config()
+        self.check_config()
         FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
         self.account = objects.AdAccount(self.config['act_id'])
 
-    def loadconfig(self):
+    def load_config(self):
         try:
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
@@ -56,25 +65,25 @@ class FbApi(object):
         self.app_secret = self.config['app_secret']
         self.access_token = self.config['access_token']
         self.act_id = self.config['act_id']
-        self.configlist = [self.app_id, self.app_secret, self.access_token,
-                           self.act_id]
+        self.config_list = [self.app_id, self.app_secret, self.access_token,
+                            self.act_id]
 
-    def checkconfig(self):
-        for item in self.configlist:
+    def check_config(self):
+        for item in self.config_list:
             if item == '':
                 logging.warn(item + 'not in FB config file.  Aborting.')
                 sys.exit(0)
 
-    def getdata(self, sd=(dt.datetime.today() - dt.timedelta(days=1)),
-                ed=(dt.datetime.today() - dt.timedelta(days=1)),
-                fields=def_fields):
+    def get_data(self, sd=(dt.datetime.today() - dt.timedelta(days=1)),
+                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
+                 fields=def_fields):
         sd = sd.date()
         ed = ed.date()
         if sd > ed:
             logging.warn('Start date greater than end date.  Start data was' +
                          'set to end date.')
             sd = ed
-        full_date_list = self.listdates(sd, ed)
+        full_date_list = self.list_dates(sd, ed)
         date_lists = map(None, *(iter(full_date_list),) * 7)
         for date_list in date_lists:
             date_list = filter(None, date_list)
@@ -111,27 +120,28 @@ class FbApi(object):
                     sys.exit(0)
             if not insights:
                 continue
-
             self.df = self.df.append(insights, ignore_index=True)
-        for col in nestedcol:
+        for col in nested_col:
             try:
-                self.df[col] = self.df[col].apply(lambda x: self.cleandata(x))
+                self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
             except KeyError:
                 continue
-        self.df = self.renamecols()
+        self.df = self.rename_cols()
         return self.df
 
-    def cleandata(self, x):
+    @staticmethod
+    def clean_data(x):
         if str(x) == str('nan'):
             return 0
         x = str(x).strip('[]')
         return ast.literal_eval(x)['value']
 
-    def renamecols(self):
-        self.df = self.df.rename(columns=colnamedic)
+    def rename_cols(self):
+        self.df = self.df.rename(columns=col_name_dic)
         return self.df
 
-    def listdates(self, sd, ed):
+    @staticmethod
+    def list_dates(sd, ed):
         dates = []
         while sd <= ed:
             dates.append(sd)

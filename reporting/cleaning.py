@@ -2,26 +2,25 @@ import logging
 import sys
 import os
 import datetime as dt
-import numpy as np
 import pandas as pd
 import vmcolumns as vmc
 
-RULEMETRIC = 'METRIC'
-RULEQUERY = 'QUERY'
-RULEFACTOR = 'FACTOR'
-RULECONST = [RULEMETRIC, RULEQUERY, RULEFACTOR]
+RULE_METRIC = 'METRIC'
+RULE_QUERY = 'QUERY'
+RULE_FACTOR = 'FACTOR'
+RULE_CONST = [RULE_METRIC, RULE_QUERY, RULE_FACTOR]
 PRE = 'PRE'
 POST = 'POST'
 
 
-def dircheck(directory):
+def dir_check(directory):
     if not os.path.isdir(directory):
         os.makedirs(directory)
 
 
-def exceldate_to_datetime(xlDate):
+def exceldate_to_datetime(excel_date):
     epoch = dt.datetime(1899, 12, 30)
-    delta = dt.timedelta(hours=round(xlDate*24))
+    delta = dt.timedelta(hours=round(excel_date * 24))
     return epoch + delta
 
 
@@ -55,8 +54,14 @@ def string_to_date(my_string):
         return my_string
 
 
-def data_to_type(df, floatcol=[], datecol=[], strcol=[]):
-    for col in floatcol:
+def data_to_type(df, float_col=None, date_col=None, str_col=None):
+    if float_col is None:
+        float_col = []
+    if date_col is None:
+        date_col = []
+    if str_col is None:
+        str_col = []
+    for col in float_col:
         if col not in df:
             continue
         df[col] = df[col].astype(str)
@@ -64,7 +69,7 @@ def data_to_type(df, floatcol=[], datecol=[], strcol=[]):
         df[col] = df[col].replace('nan', 0)
         df[col] = df[col].replace('NA', 0)
         df[col] = df[col].astype(float)
-    for col in datecol:
+    for col in date_col:
         if col not in df:
             continue
         df[col] = df[col].replace('1/0/1900', '0')
@@ -72,22 +77,22 @@ def data_to_type(df, floatcol=[], datecol=[], strcol=[]):
         df[col] = df[col].astype(str)
         df[col] = df[col].apply(lambda x: string_to_date(x))
         df[col] = df[col].astype('datetime64[ns]')
-    for col in strcol:
+    for col in str_col:
         if col not in df:
             continue
         df[col] = df[col].astype(str)
     return df
 
 
-def firstlastadj(df, firstrow, lastrow):
+def first_last_adj(df, first_row, last_row):
     logging.debug('Removing First & Last Rows')
-    firstrow = int(firstrow)
-    lastrow = int(lastrow)
-    if firstrow > 0:
-        df.columns = df.loc[firstrow-1]
-        df = df.ix[firstrow:]
-    if lastrow > 0:
-        df = df[:-lastrow]
+    first_row = int(first_row)
+    last_row = int(last_row)
+    if first_row > 0:
+        df.columns = df.loc[first_row - 1]
+        df = df.ix[first_row:]
+    if last_row > 0:
+        df = df[:-last_row]
     if pd.isnull(df.columns.values).any():
         logging.warn('At least one column name is undefined.  Your first row '
                      'is likely incorrect. For reference the first few rows '
@@ -96,16 +101,16 @@ def firstlastadj(df, firstrow, lastrow):
     return df
 
 
-def date_removal(df, datecolname, startdate, enddate):
-    if enddate.date() != (dt.date.today() - dt.timedelta(weeks=520)):
-        df = df[df[datecolname] <= enddate]
-    df = df[df[datecolname] >= startdate]
+def date_removal(df, date_col_name, start_date, end_date):
+    if end_date.date() != (dt.date.today() - dt.timedelta(weeks=520)):
+        df = df[df[date_col_name] <= end_date]
+    df = df[df[date_col_name] >= start_date]
     return df
 
 
-def col_removal(df, key, removalcols):
+def col_removal(df, key, removal_cols):
     logging.debug('Dropping unnecessary columns')
-    for col in removalcols:
+    for col in removal_cols:
         if col not in df:
             if col == 'nan':
                 continue
@@ -116,16 +121,16 @@ def col_removal(df, key, removalcols):
     return df
 
 
-def apply_rules(df, vmrules, pre_or_post, **kwargs):
-    for rule in vmrules:
-        for item in RULECONST:
-            if item not in vmrules[rule].keys():
+def apply_rules(df, vm_rules, pre_or_post, **kwargs):
+    for rule in vm_rules:
+        for item in RULE_CONST:
+            if item not in vm_rules[rule].keys():
                 logging.warn(item + ' not in vendormatrix for rule ' +
                              rule + '.  The rule did not run.')
                 return df
-        metrics = kwargs[vmrules[rule][RULEMETRIC]]
-        queries = kwargs[vmrules[rule][RULEQUERY]]
-        factor = kwargs[vmrules[rule][RULEFACTOR]]
+        metrics = kwargs[vm_rules[rule][RULE_METRIC]]
+        queries = kwargs[vm_rules[rule][RULE_QUERY]]
+        factor = kwargs[vm_rules[rule][RULE_FACTOR]]
         if (str(metrics) == 'nan' or str(queries) == 'nan' or
            str(factor) == 'nan'):
             continue

@@ -10,7 +10,7 @@ csvpath = 'Dictionaries/'
 
 class Dict(object):
     def __init__(self, filename):
-        cln.dircheck(csvpath)
+        cln.dir_check(csvpath)
         if str(filename) == 'nan':
             logging.error('No dictionary file provided.  Aborting.')
             sys.exit(0)
