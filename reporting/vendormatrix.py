@@ -31,8 +31,8 @@ class VendorMatrix(object):
         self.ftp_sz_key = []
         self.vm_rules_dict = {}
         self.ven_param = None
-        self.tdf = pd.DataFrame()
-        self.df = pd.DataFrame()
+        self.tdf = None
+        self.df = None
         self.vm_parse()
         self.vm_import_keys()
         self.vm_rules()

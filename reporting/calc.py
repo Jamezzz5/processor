@@ -112,7 +112,6 @@ def net_cost_calculation(df):
 
 
 def net_plan_comp(df):
-    df = df.replace(np.nan, 0)
     nc_pnc = df.groupby(dctc.PFPN)[dctc.PNC, vmc.cost].sum()
     nc_pnc[DIF_NC_PNC] = nc_pnc[vmc.cost] - nc_pnc[dctc.PNC]
     nc_pnc = nc_pnc.reset_index()

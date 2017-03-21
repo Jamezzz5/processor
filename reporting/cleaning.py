@@ -37,7 +37,7 @@ def string_to_date(my_string):
     elif len(my_string) == 8:
         return dt.datetime.strptime(my_string, '%Y%m%d')
     elif my_string == '0' or my_string == '0.0':
-        return dt.date.today() - dt.timedelta(weeks=520)
+        return pd.NaT
     elif ((len(my_string) == 22) and (':' in my_string) and
             ('+' in my_string)):
         my_string = my_string[:-6]
@@ -102,9 +102,10 @@ def first_last_adj(df, first_row, last_row):
 
 
 def date_removal(df, date_col_name, start_date, end_date):
-    if end_date.date() != (dt.date.today() - dt.timedelta(weeks=520)):
+    if end_date.date() is not pd.NaT:
         df = df[df[date_col_name] <= end_date]
-    df = df[df[date_col_name] >= start_date]
+    if start_date.date() is not pd.NaT:
+        df = df[df[date_col_name] >= start_date]
     return df
 
 

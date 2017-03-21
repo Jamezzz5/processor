@@ -65,7 +65,7 @@ class ImportHandler(object):
 
     @staticmethod
     def date_check(date):
-        if date.date() == (dt.date.today() - dt.timedelta(weeks=520)):
+        if date.date() is pd.NaT:
             return True
         return False
 
@@ -89,11 +89,11 @@ class ImportHandler(object):
 
     def api_loop(self):
         if self.arg_check('fb'):
-            self.api_call(self.matrix.apifbkey, fbapi.FbApi())
+            self.api_call(self.matrix.api_fb_key, fbapi.FbApi())
         if self.arg_check('aw'):
-            self.api_call(self.matrix.apiawkey, awapi.AwApi())
+            self.api_call(self.matrix.api_aw_key, awapi.AwApi())
         if self.arg_check('tw'):
-            self.api_call(self.matrix.apitwkey, twapi.TwApi())
+            self.api_call(self.matrix.api_tw_key, twapi.TwApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
@@ -105,4 +105,4 @@ class ImportHandler(object):
 
     def ftp_loop(self):
         if self.arg_check('sz'):
-            self.ftp_load(self.matrix.ftpszkey, szkftp.SzkFtp())
+            self.ftp_load(self.matrix.ftp_sz_key, szkftp.SzkFtp())
