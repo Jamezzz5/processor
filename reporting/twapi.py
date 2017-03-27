@@ -37,6 +37,7 @@ jsonseg = 'segment'
 jsonidd = 'id_data'
 jsonst = 'start_time'
 jsonet = 'end_time'
+jsontz = 'timezone'
 
 colnamedic = {'billed_charge_local_micro': 'Spend',
               'campaign': 'Campaign name',
@@ -124,14 +125,19 @@ class TwApi(object):
             sd = ed - dt.timedelta(days=1)
         full_date_list = self.list_dates(sd, ed)
         date_lists = map(None, *(iter(full_date_list),) * 7)
+        timezone = self.get_account_timezone()
         stats_url = DOMAIN + URLSTACC + '%s?' % self.account_id
         metric_groups = URLMG + '%s' % ','.join(fields)
         self.cidname = self.get_cids()
         ids_lists = map(None, *(iter(self.cidname.keys()),) * 20)
         for date_list in date_lists:
             date_list = filter(None, date_list)
-            sd = self.date_format(date_list[0])
-            ed = self.date_format(date_list[-1])
+            if date_list[0] == date_list[-1]:
+                sd = self.date_format(date_list[0] - dt.timedelta(days=1),
+                                      timezone)
+            else:
+                sd = self.date_format(date_list[0], timezone)
+            ed = self.date_format(date_list[-1], timezone)
             logging.info('Getting Twitter data from ' + sd + ' until ' + ed)
             query_params = (URLGST + '{}' + URLET + '{}').format(sd, ed)
             df = pd.DataFrame()
@@ -152,9 +158,14 @@ class TwApi(object):
         self.df = self.rename_cols()
         return self.df
 
+    def get_account_timezone(self):
+        acc_url = DOMAIN + URLACC + '%s/' % self.account_id
+        header, data = self.request(acc_url)
+        return data[jsondata][jsontz]
+
     @staticmethod
-    def date_format(date):
-        date = pytz.timezone('America/Los_Angeles').localize(date)
+    def date_format(date, timezone):
+        date = pytz.timezone(timezone).localize(date)
         date = date.astimezone(pytz.UTC)
         date = date.replace(tzinfo=None).isoformat() + 'Z'
         return date
