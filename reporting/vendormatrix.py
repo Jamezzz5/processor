@@ -201,6 +201,7 @@ def import_data(key, vm_rules, **kwargs):
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
                          kwargs[vmc.filenameerror])
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
+    dic.apply_relation()
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, vmc.datadatecol, **kwargs)
     df = cln.data_to_type(df, date_col=vmc.datadatecol)

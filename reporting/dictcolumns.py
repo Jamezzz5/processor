@@ -67,3 +67,21 @@ PFN = 'plannet_dictionary.csv'
 PNC = 'Planned Net Cost'
 PCOLS = [FPN, PNC]
 PFPN = 'PNC FPN'
+
+
+full_placement_cols = [FPN, CAM, VEN, COU, MC, TAR, CRE, COP, BM, BR, PD, SRV,
+                       RET, ENV, KPI]
+
+product_cols = [PRN, PRD]
+campaign_cols = [CAM, CTIM, CP, CT]
+vendor_cols = [VEN, VT]
+targeting_cols = [TAR, AGE, GEN, DT1, DT2, TB, GT]
+creative_cols = [CRE, SIZ, AF, AT, CTA]
+copy_cols = [COP]
+
+
+filename_rel_config= 'relational_dictionary_config.csv'
+RK = 'Relational_Key'
+FN = 'Filename'
+KEY = 'Key'
+DEP = 'Dependent'

@@ -16,6 +16,7 @@ class Dict(object):
             sys.exit(0)
         self.filename = filename
         self.dictfile = csvpath + self.filename
+        self.data_dict = pd.DataFrame()
         self.read()
 
     def read(self):
@@ -44,7 +45,7 @@ class Dict(object):
             i = 0
             for value in autodicord:
                 error[value] = error[placement].str.split('_').str[i]
-                i = i + 1
+                i += 1
             error = error.ix[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
             self.data_dict = self.data_dict.append(error)
             self.data_dict = self.data_dict[dctc.COLS]
@@ -52,6 +53,12 @@ class Dict(object):
             err.dic = self
             err.reset()
             self.clean()
+
+    def apply_relation(self):
+        rc = RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        self.data_dict = rc.loop(self.data_dict)
+        self.write(self.data_dict)
 
     def write(self, df=None):
         logging.info('Writing ' + self.filename)
@@ -68,8 +75,95 @@ class Dict(object):
                                           dctc.datecol, dctc.strcol)
 
 
+class RelationalConfig(object):
+    def __init__(self):
+        self.csvpath = 'Config/'
+        cln.dir_check('Config/')
+        self.df = pd.DataFrame()
+        self.rc = None
+        self.relational_params = None
+        self.key_list = []
+
+    def read(self, configfile):
+        filename = self.csvpath + configfile
+        try:
+            self.df = pd.read_csv(filename)
+        except IOError:
+            logging.debug('No Relational Dictionary config')
+            return None
+        self.key_list = self.df[dctc.RK].tolist()
+        self.rc = self.df.set_index(dctc.RK).to_dict()
+        self.rc[dctc.DEP] = ({key: list(str(value).split('|')) for key, value
+                              in self.rc[dctc.DEP].items()})
+
+    def get_relation_params(self, relational_key):
+        relational_params = {}
+        for param in self.rc:
+            value = self.rc[param][relational_key]
+            relational_params[param] = value
+        return relational_params
+
+    def loop(self, data_dict):
+        for key in self.key_list:
+            self.relational_params = self.get_relation_params(key)
+            dr = DictRelational(**self.relational_params)
+            data_dict = dr.apply_to_dict(data_dict)
+        return data_dict
+
+
+class DictRelational(object):
+    def __init__(self, **kwargs):
+        self.csvpath = 'Dictionaries/Relational/'
+        cln.dir_check(self.csvpath)
+        self.df = pd.DataFrame()
+        self.params = kwargs
+        self.filename = self.params[dctc.FN]
+        self.full_file_path = self.csvpath + self.filename
+        self.key = self.params[dctc.KEY]
+        self.dependents = self.params[dctc.DEP]
+        self.columns = [self.key] + self.dependents
+
+    def read(self):
+        if not os.path.isfile(self.full_file_path):
+            logging.info('Creating ' + self.filename)
+            df = pd.DataFrame(columns=self.columns, index=None)
+            df.to_csv(self.full_file_path, index=False)
+        self.df = pd.read_csv(self.full_file_path)
+
+    def add_key_values(self, data_dict):
+        keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
+        keys_list.dropna(subset=[self.key], inplace=True)
+        self.df = self.df.merge(keys_list, how='outer').reset_index(drop=True)
+        self.write(self.df)
+
+    def write(self, df):
+        logging.debug('Writing ' + self.filename)
+        if df is None:
+            df = self.df
+        try:
+            df.to_csv(self.full_file_path, index=False)
+        except IOError:
+            logging.warn(self.filename + ' could not be opened.  ' +
+                         'This dictionary was not saved.')
+
+    def apply_to_dict(self, data_dict):
+        self.read()
+        self.add_key_values(data_dict)
+        self.df.dropna()
+        data_dict = data_dict.merge(self.df, on=self.key, how='left')
+        for col in self.dependents:
+            col_x = col + '_x'
+            col_y = col + '_y'
+            data_dict[col] = data_dict[col_y]
+            data_dict = data_dict.drop([col_x, col_y], axis=1)
+        data_dict = data_dict[dctc.COLS]
+        return data_dict
+
+
 def dict_update():
     for filename in os.listdir(csvpath):
+        if filename == 'Relational':
+            continue
         if 'plannet' in filename:
             cols = dctc.PCOLS
         else:
