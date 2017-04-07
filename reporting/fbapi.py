@@ -10,10 +10,14 @@ from facebookads import objects
 from facebookads.adobjects.adsinsights import AdsInsights
 from facebookads.exceptions import FacebookRequestError
 
-def_fields = ['campaign_name', 'adset_name', 'ad_name', 'impressions',
-              'inline_link_clicks', 'spend', 'video_10_sec_watched_actions',
-              'video_p25_watched_actions', 'video_p50_watched_actions',
-              'video_p75_watched_actions', 'video_p100_watched_actions']
+def_params = ['campaign_name', 'adset_name', 'ad_name']
+
+def_metrics = ['impressions', 'inline_link_clicks', 'spend',
+               'video_10_sec_watched_actions', 'video_p25_watched_actions',
+               'video_p50_watched_actions', 'video_p75_watched_actions',
+               'video_p100_watched_actions']
+
+def_fields = def_params + def_metrics
 
 nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
               'video_p50_watched_actions', 'video_p25_watched_actions',
@@ -21,7 +25,7 @@ nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
 
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
-                'campaign_name': 'Campaign', 'adset_name': 'Ad Set',
+                'campaign_name': 'Campaign Name', 'adset_name': 'Ad Set Name',
                 'ad_name': 'Ad Name', 'impressions': 'Impressions',
                 'inline_link_clicks': 'Link Clicks',
                 'spend': 'Amount Spent (USD)',
@@ -45,6 +49,8 @@ class FbApi(object):
         self.access_token = None
         self.act_id = None
         self.config_list = []
+        self.date_lists = None
+        self.field_lists = None
 
     def input_config(self, config):
         logging.info('Loading Facebook config file: ' + str(config))
@@ -84,43 +90,28 @@ class FbApi(object):
                          'set to end date.')
             sd = ed
         full_date_list = self.list_dates(sd, ed)
-        date_lists = map(None, *(iter(full_date_list),) * 7)
-        for date_list in date_lists:
+        self.date_lists = map(None, *(iter(full_date_list),) * 7)
+        for date_list in self.date_lists:
             date_list = filter(None, date_list)
             sd = date_list[0]
             ed = date_list[-1]
-            logging.info('Getting FB data for ' + str(sd) + ' to ' + str(ed))
-            try:
-                insights = list(self.account.get_insights(
-                    fields=fields,
-                    params={'level': AdsInsights.Level.ad,
-                            'time_range': {'since': str(sd),
-                                           'until': str(ed), },
-                            'time_increment': 1, }))
-            except FacebookRequestError as e:
-                if e._api_error_code == 190:
-                    logging.error('Facebook Access Token invalid.  Aborting.')
-                    sys.exit(0)
-                elif e._api_error_code == 17:
-                    logging.warn('Facebook rate limit reached.  Pausing for ' +
-                                 '300 seconds.')
-                    time.sleep(300)
-                    date_lists.append(date_list)
+            self.field_lists = [fields]
+            for field_list in self.field_lists:
+                logging.info('Getting FB data for ' + str(sd) + ' to ' +
+                             str(ed))
+                try:
+                    insights = list(self.account.get_insights(
+                        fields=field_list,
+                        params={'level': AdsInsights.Level.ad,
+                                'time_range': {'since': str(sd),
+                                               'until': str(ed), },
+                                'time_increment': 1, }))
+                except FacebookRequestError as e:
+                    self.request_error(e, date_list, field_list)
                     continue
-                elif e._api_error_code == 1:
-                    logging.warn('Too much data queried.  Reducing time scale')
-                    fh = date_list[:len(date_list)/2]
-                    bh = date_list[len(date_list)/2:]
-                    date_lists.append(fh)
-                    date_lists.append(bh)
+                if not insights:
                     continue
-                else:
-                    logging.error('Aborting as the Facebook API call resulted '
-                                  'in the following error: ' + str(e))
-                    sys.exit(0)
-            if not insights:
-                continue
-            self.df = self.df.append(insights, ignore_index=True)
+                self.df = self.df.append(insights, ignore_index=True)
         for col in nested_col:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
@@ -128,6 +119,40 @@ class FbApi(object):
                 continue
         self.df = self.rename_cols()
         return self.df
+
+    def request_error(self, e, date_list, field_list):
+        if e._api_error_code == 190:
+            logging.error('Facebook Access Token invalid.  Aborting.')
+            sys.exit(0)
+        elif e._api_error_code == 17:
+            logging.warn('Facebook rate limit reached.  Pausing for ' +
+                         '300 seconds.')
+            time.sleep(300)
+            self.date_lists.append(date_list)
+            return True
+        elif e._api_error_code == 1:
+            if date_list[0] == date_list[-1]:
+                logging.warn('Already daily.  Reducing requested fields.')
+                metrics = [x for x in field_list if x not in def_params]
+                fh, bh = self.split_list(metrics)
+                self.field_lists.append(def_params + fh)
+                self.field_lists.append(def_params + bh)
+                return True
+            logging.warn('Too much data queried.  Reducing time scale')
+            fh, bh = self.split_list(date_list)
+            self.date_lists.append(fh)
+            self.date_lists.append(bh)
+            return True
+        else:
+            logging.error('Aborting as the Facebook API call resulted '
+                          'in the following error: ' + str(e))
+            sys.exit(0)
+
+    @staticmethod
+    def split_list(x):
+        first_half = x[:len(x)/2]
+        back_half = x[len(x)/2:]
+        return first_half, back_half
 
     @staticmethod
     def clean_data(x):
