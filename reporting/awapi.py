@@ -79,9 +79,18 @@ class AwApi(object):
             df[column] = (df[column] / 100) * df[VIEWS]
         return df
 
-    def get_data(self, sd=(dt.datetime.today() - dt.timedelta(days=1)),
-                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
-                 fields=def_fields):
+    @staticmethod
+    def get_data_default_check(sd, ed, fields):
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=1)
+        if ed is None:
+            ed = dt.datetime.today() - dt.timedelta(days=1)
+        if fields is None:
+            fields = def_fields
+        return sd, ed, fields
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd = sd.date()
         ed = ed.date()
         if sd > ed:

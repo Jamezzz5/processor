@@ -115,9 +115,18 @@ class TwApi(object):
                 cid_name[item[colcid]] = item[colcname]
         return cid_name
 
-    def get_data(self, sd=(dt.datetime.today() - dt.timedelta(days=2)),
-                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
-                 fields=def_fields):
+    @staticmethod
+    def get_data_default_check(sd, ed, fields):
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=1)
+        if ed is None:
+            ed = dt.datetime.today() - dt.timedelta(days=1)
+        if fields is None:
+            fields = def_fields
+        return sd, ed, fields
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         ed = ed + dt.timedelta(days=1)
         if sd > ed:
             logging.warn('Start date greater than end date.  Start date was' +

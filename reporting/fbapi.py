@@ -17,11 +17,15 @@ def_metrics = ['impressions', 'inline_link_clicks', 'spend',
                'video_p50_watched_actions', 'video_p75_watched_actions',
                'video_p100_watched_actions']
 
+fields_actions = ['actions', 'action_values']
+
 def_fields = def_params + def_metrics
 
 nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
               'video_p50_watched_actions', 'video_p25_watched_actions',
               'video_p75_watched_actions']
+
+nested_dict_col = ['actions']
 
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
@@ -29,7 +33,7 @@ col_name_dic = {'date_start': 'Reporting Starts',
                 'ad_name': 'Ad Name', 'impressions': 'Impressions',
                 'inline_link_clicks': 'Link Clicks',
                 'spend': 'Amount Spent (USD)',
-                'video_10_sec_watched_actions': '3-Second Video Views',
+                'video_10_sec_watched_actions': '10-Second Video Views',
                 'video_p25_watched_actions': 'Video Watches at 25%',
                 'video_p50_watched_actions': 'Video Watches at 50%',
                 'video_p75_watched_actions': 'Video Watches at 75%',
@@ -80,9 +84,26 @@ class FbApi(object):
                 logging.warn(item + 'not in FB config file.  Aborting.')
                 sys.exit(0)
 
-    def get_data(self, sd=(dt.datetime.today() - dt.timedelta(days=1)),
-                 ed=(dt.datetime.today() - dt.timedelta(days=1)),
-                 fields=def_fields):
+    @staticmethod
+    def parse_fields(fields):
+        for field in fields:
+            if field == 'Actions':
+                fields = def_fields + fields_actions
+        return fields
+
+    @staticmethod
+    def get_data_default_check(sd, ed, fields):
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=1)
+        if ed is None:
+            ed = dt.datetime.today() - dt.timedelta(days=1)
+        if fields is None:
+            fields = def_fields
+        return sd, ed, fields
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        fields = self.parse_fields(fields)
         sd = sd.date()
         ed = ed.date()
         if sd > ed:
@@ -117,6 +138,9 @@ class FbApi(object):
                 self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
             except KeyError:
                 continue
+        for col in nested_dict_col:
+            if col in self.df.columns:
+                self.nested_dicts_to_cols(col)
         self.df = self.rename_cols()
         return self.df
 
@@ -161,6 +185,13 @@ class FbApi(object):
         x = str(x).strip('[]')
         return ast.literal_eval(x)['value']
 
+    @staticmethod
+    def convert_dictionary(x):
+        if str(x) == str('nan'):
+            return 0
+        x = str(x).strip('[]')
+        return ast.literal_eval(x)
+
     def rename_cols(self):
         self.df = self.df.rename(columns=col_name_dic)
         return self.df
@@ -172,3 +203,28 @@ class FbApi(object):
             dates.append(sd)
             sd = sd + dt.timedelta(days=1)
         return dates
+
+    def nested_dicts_to_cols(self, nd_col):
+        self.df[nd_col] = (self.df[nd_col]
+                               .apply(lambda x: self.convert_dictionary(x)))
+        dict_df = self.df[nd_col].apply(pd.Series).fillna(0)
+        column_list = dict_df.columns.values.tolist()
+        column_list = [l for l in column_list if
+                       l not in ['action_type', 'value']]
+        clean_df = pd.DataFrame()
+        if 'action_type' in dict_df.columns:
+            clean_df = self.clean_nested_df(dict_df, clean_df)
+        for col in column_list:
+            dirty_df = dict_df[col].apply(pd.Series).fillna(0)
+            clean_df = self.clean_nested_df(dirty_df, clean_df)
+        self.df = pd.concat([clean_df, self.df], axis=1)
+        self.df = self.df.drop(nested_dict_col, axis=1)
+
+    @staticmethod
+    def clean_nested_df(dirty_df, clean_df):
+        dirty_df = (dirty_df.pivot(columns='action_type', values='value')
+                            .drop(0.0, axis=1).fillna(0))
+        dirty_df = dirty_df.apply(pd.to_numeric)
+        clean_df = pd.concat([clean_df, dirty_df], axis=1)
+        clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()
+        return clean_df

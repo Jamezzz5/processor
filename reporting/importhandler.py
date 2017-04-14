@@ -69,31 +69,31 @@ class ImportHandler(object):
             return True
         return False
 
-    def api_call(self, key_list, api_class):
+    def api_calls(self, key_list, api_class):
         for vk in key_list:
             params = self.matrix.vendor_set(vk)
             api_class.input_config(params[vmc.apifile])
             start_check = self.date_check(params[vmc.startdate])
             end_check = self.date_check(params[vmc.enddate])
-            if start_check and end_check:
-                df = api_class.get_data()
-            elif start_check:
-                df = api_class.get_data(ed=params[vmc.enddate])
-            elif end_check:
-                df = api_class.get_data(sd=params[vmc.startdate])
-            else:
-                df = api_class.get_data(sd=params[vmc.startdate],
-                                        ed=params[vmc.enddate])
+            if params[vmc.apifields] == ['nan']:
+                params[vmc.apifields] = None
+            if start_check:
+                params[vmc.startdate] = None
+            if end_check:
+                params[vmc.enddate] = None
+            df = api_class.get_data(sd=params[vmc.startdate],
+                                    ed=params[vmc.enddate],
+                                    fields=params[vmc.apifields])
             self.output(params[vmc.apimerge], df, params[vmc.filename],
                         params[vmc.firstrow], params[vmc.lastrow], vk)
 
     def api_loop(self):
         if self.arg_check('fb'):
-            self.api_call(self.matrix.api_fb_key, fbapi.FbApi())
+            self.api_calls(self.matrix.api_fb_key, fbapi.FbApi())
         if self.arg_check('aw'):
-            self.api_call(self.matrix.api_aw_key, awapi.AwApi())
+            self.api_calls(self.matrix.api_aw_key, awapi.AwApi())
         if self.arg_check('tw'):
-            self.api_call(self.matrix.api_tw_key, twapi.TwApi())
+            self.api_calls(self.matrix.api_tw_key, twapi.TwApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
