@@ -72,12 +72,11 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
     for col in date_col:
         if col not in df:
             continue
-        df[col] = df[col].replace('1/0/1900', '0')
+        df[col] = df[col].replace(['1/0/1900', '1/1/1970'], '0')
         df[col] = df[col].fillna(0)
         df[col] = df[col].astype(str)
         df[col] = df[col].apply(lambda x: string_to_date(x))
         df[col] = pd.to_datetime(df[col])
-        # df[col] = df[col].astype('datetime64[ns]')
     for col in str_col:
         if col not in df:
             continue

@@ -134,6 +134,7 @@ class DictRelational(object):
         keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
         keys_list.dropna(subset=[self.key], inplace=True)
         self.df = self.df.merge(keys_list, how='outer').reset_index(drop=True)
+        self.df.dropna(subset=[self.key], inplace=True)
         self.write(self.df)
 
     def write(self, df):
