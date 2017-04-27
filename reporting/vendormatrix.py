@@ -201,6 +201,7 @@ def import_data(key, vm_rules, **kwargs):
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
                          kwargs[vmc.filenameerror])
     dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
+    dic.apply_constants()
     dic.apply_relation()
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, vmc.datadatecol, **kwargs)
@@ -219,13 +220,15 @@ def import_data(key, vm_rules, **kwargs):
 def import_plan_data(key, df, **kwargs):
     df = df.loc[:, kwargs[vmc.fullplacename]]
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
-    dic = dct.Dict(kwargs[vmc.filenamedict])
-    er.ErrorReport(df, dic, kwargs[vmc.placement], kwargs[vmc.filenameerror])
-    df = dic.merge(df, dctc.FPN)
     df = df.drop_duplicates()
-    df[vmc.fullplacename] = (df[dctc.FPN].apply(lambda x:
-                             pd.Series([i for i in (x.split('|'))])))
-    return df
+    dic = dct.Dict(kwargs[vmc.filenamedict])
+    df_fpn = pd.DataFrame(df[dctc.FPN])
+    er.ErrorReport(df_fpn, dic, None, kwargs[vmc.filenameerror])
+    merge_col = list(set(dic.data_dict.columns).intersection(df.columns))
+    dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
+    dic.apply_constants()
+    dic.apply_relation()
+    return dic.data_dict
 
 
 def vm_update_rule_check(vm, vm_col):

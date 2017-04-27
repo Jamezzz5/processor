@@ -60,8 +60,14 @@ class Dict(object):
         self.data_dict = rc.loop(self.data_dict)
         self.write(self.data_dict)
 
+    def apply_constants(self):
+        dcc = DictConstantConfig()
+        dcc.read(dctc.filename_con_config)
+        self.data_dict = dcc.apply_constants_to_dict(self.data_dict)
+        self.write(self.data_dict)
+
     def write(self, df=None):
-        logging.info('Writing ' + self.filename)
+        logging.debug('Writing ' + self.filename)
         if df is None:
             df = self.data_dict
         try:
@@ -148,6 +154,8 @@ class DictRelational(object):
                          'This dictionary was not saved.')
 
     def apply_to_dict(self, data_dict):
+        if self.key not in data_dict.columns:
+            return data_dict
         self.read()
         self.add_key_values(data_dict)
         self.df.dropna()
@@ -155,9 +163,51 @@ class DictRelational(object):
         for col in self.dependents:
             col_x = col + '_x'
             col_y = col + '_y'
-            data_dict[col] = data_dict[col_y]
-            data_dict = data_dict.drop([col_x, col_y], axis=1)
-        data_dict = data_dict[dctc.COLS]
+            if col_y in data_dict.columns:
+                data_dict[col] = data_dict[col_y]
+                data_dict = data_dict.drop([col_x, col_y], axis=1)
+        data_dict = self.reorder_columns(data_dict)
+        return data_dict
+
+    @staticmethod
+    def reorder_columns(data_dict):
+        if set(data_dict.columns) == set(dctc.COLS):
+            data_dict = data_dict[dctc.COLS]
+        else:
+            first_cols = [dctc.FPN, dctc.PNC]
+            cols = [x for x in data_dict.columns if x not in first_cols]
+            data_dict = data_dict[first_cols + cols]
+        return data_dict
+
+
+class DictConstantConfig(object):
+    def __init__(self):
+        self.csvpath = 'Config/'
+        cln.dir_check('Config/')
+        self.df = pd.DataFrame()
+        self.dict_col_names = None
+        self.dict_col_values = None
+        self.dict_constants = None
+
+    def read(self, configfile):
+        filename = self.csvpath + configfile
+        try:
+            self.df = pd.read_csv(filename)
+        except IOError:
+            logging.debug('No Constant Dictionary config')
+            return None
+        self.dict_col_names = self.df[dctc.DICT_COL_NAME].tolist()
+        self.dict_constants = self.df.set_index(dctc.DICT_COL_NAME).to_dict()
+
+    def get(self):
+        return self.dict_constants
+
+    def apply_constants_to_dict(self, data_dict):
+        if self.dict_col_names is None:
+            return data_dict
+        for col in self.dict_col_names:
+            constant_value = self.dict_constants[dctc.DICT_COL_VALUE][col]
+            data_dict[col] = constant_value
         return data_dict
 
 

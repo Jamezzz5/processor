@@ -18,7 +18,7 @@ class DB(object):
         self.pw = None
         self.host = None
         self.port = None
-        self.table = None
+        self.database = None
         self.config_list = []
         self.configfile = None
         self.engine = None
@@ -49,9 +49,9 @@ class DB(object):
         self.pw = self.config['PASS']
         self.host = self.config['HOST']
         self.port = self.config['PORT']
-        self.table = self.config['TABLE']
+        self.database = self.config['DATABASE']
         self.config_list = [self.user, self.pw, self.host, self.port,
-                            self.table]
+                            self.database]
 
     def check_config(self):
         for item in self.config_list:
@@ -74,7 +74,7 @@ class DB(object):
                   CREATE TABLE {0}
                   (
                   {1}
-                  );'''.format(self.table, exc.db_columns)
+                  );'''.format(self.database, exc.db_columns)
             self.cursor.execute(command)
             self.connection.commit()
         logging.info('Writing to RDS')
@@ -84,14 +84,14 @@ class DB(object):
         output.seek(0)
         output.getvalue()
         cur = self.connection.cursor()
-        cur.copy_from(output, self.table, null="")
+        cur.copy_from(output, self.database, null="")
         self.connection.commit()
         cur.close()
         logging.info('Successfully wrote to RDS')
 
     def read_from_rds(self):
         logging.info('Reading from RDS')
-        self.df_rds = pd.read_sql_table(self.table, self.engine)
+        self.df_rds = pd.read_sql_table(self.database, self.engine)
         logging.info('Successfully read from RDS')
 
     def write_from_rds(self, filename):
@@ -114,9 +114,22 @@ class DB(object):
                   SELECT EXISTS(
                   SELECT * FROM information_schema.tables
                    WHERE table_name = '{0}')
-                  """.format(self.table)
+                  """.format(self.database)
         self.cursor.execute(command)
         if self.cursor.fetchone():
             return True
         else:
             return False
+
+
+def get_table_fact(df):
+    tdf = df[[dctc.FPN, dctc.PNC] + vmc.datacol]
+    tdf = pd.melt(tdf, [dctc.FPN, vmc.date], var_name='EventName',
+                  value_name='EventValue')
+    tdf = tdf.dropna()
+    return tdf
+
+
+def get_table_vendor(df):
+    tdf = df[dctc.vendor_cols]
+    return tdf

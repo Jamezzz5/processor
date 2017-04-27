@@ -56,8 +56,8 @@ MIS5 = 'mpMisc 5'
 MIS6 = 'mpMisc 6'
 COLS = [FPN, PN, CLI, BUD, FRA, CAM, CTIM, CT, CP, VEN, COU, VT, MC, TAR, CRE,
         COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE, GEN, CTA, URL, PRN,
-        PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT, AF, CD, BR2, BR3, BR4,
-        BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT, AF, CD, BR2, BR3,
+        BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, BR2, BR3]
 datecol = [PD, PD2, PD3, PD4, PD5]
@@ -80,8 +80,12 @@ creative_cols = [CRE, SIZ, AF, AT, CTA]
 copy_cols = [COP]
 
 
-filename_rel_config= 'relational_dictionary_config.csv'
+filename_rel_config = 'relational_dictionary_config.csv'
 RK = 'Relational_Key'
 FN = 'Filename'
 KEY = 'Key'
 DEP = 'Dependent'
+
+filename_con_config = 'constant_dictionary_config.csv'
+DICT_COL_NAME = 'Column Name'
+DICT_COL_VALUE = 'Value'

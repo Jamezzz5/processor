@@ -18,6 +18,8 @@ class ErrorReport(object):
         self.dic = dic
         self.pn = pn
         self.filename = filename
+        self.data_err = None
+        self.dictionary = None
         self.reset()
 
     def reset(self):
@@ -32,8 +34,12 @@ class ErrorReport(object):
         data_err = pd.merge(self.df, self.dictionary, on=dctc.FPN,
                             how='left', indicator=True)
         data_err = data_err[data_err['_merge'] == 'left_only']
-        data_err = data_err[[dctc.FPN, self.pn]].drop_duplicates()
-        data_err.columns = [dctc.FPN, dctc.PN]
+        if self.pn is None:
+            data_err = data_err[[dctc.FPN]].drop_duplicates()
+            data_err.columns = [dctc.FPN]
+        else:
+            data_err = data_err[[dctc.FPN, self.pn]].drop_duplicates()
+            data_err.columns = [dctc.FPN, dctc.PN]
         return data_err
 
     def get(self):
@@ -48,7 +54,7 @@ class ErrorReport(object):
                              ' was deleted.')
             except OSError:
                 logging.info('All placements defined!')
-                next
+                # next
         else:
             try:
                 self.data_err.to_csv(errfile, index=False)
