@@ -76,7 +76,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
         df[col] = df[col].fillna(0)
         df[col] = df[col].astype(str)
         df[col] = df[col].apply(lambda x: string_to_date(x))
-        df[col] = pd.to_datetime(df[col])
+        df[col] = pd.to_datetime(df[col], errors='coerce')
     for col in str_col:
         if col not in df:
             continue

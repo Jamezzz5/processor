@@ -1,6 +1,7 @@
 
 FPN = 'Full Placement Name'
 PN = 'mpPlacement Name'
+AGY = 'mpAgency'
 CLI = 'mpClient'
 BUD = 'mpBudget'
 FRA = 'mpFranchise'
@@ -54,9 +55,9 @@ MIS3 = 'mpMisc 3'
 MIS4 = 'mpMisc 4'
 MIS5 = 'mpMisc 5'
 MIS6 = 'mpMisc 6'
-COLS = [FPN, PN, CLI, BUD, FRA, CAM, CTIM, CT, CP, VEN, COU, VT, MC, TAR, CRE,
-        COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE, GEN, CTA, URL, PRN,
-        PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT, AF, CD, BR2, BR3,
+COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CP, VEN, COU, VT, MC, TAR,
+        CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE, GEN, CTA, URL,
+        PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT, AF, CD, BR2, BR3,
         BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, BR2, BR3]
