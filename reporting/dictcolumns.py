@@ -11,6 +11,7 @@ CT = 'mpCampaign Type'
 CP = 'mpCampaign Phase'
 VEN = 'mpVendor'
 COU = 'mpCountry/Region'
+REG = 'mpRegion'
 VT = 'mpVendor Type'
 MC = 'mpMedia Channel'
 TAR = 'mpTargeting'
@@ -26,6 +27,7 @@ RET = 'mpRetailer'
 AM = 'mpAd Model'
 AR = 'mpAd Rate'
 AGE = 'mpAge'
+DEM = 'mpDemographic'
 GEN = 'mpGender'
 CTA = 'mpCTA'
 URL = 'mpClickthrough URL'
@@ -42,6 +44,12 @@ DN = 'mpDescriptive Name'
 AT = 'mpAd Type'
 AF = 'mpAd Format'
 CD = 'mpCreative Description'
+AD = 'mpAd'
+DL1 = 'mpDescription Line 1'
+DL2 = 'mpDescription Line 2'
+HL1 = 'mpHeadline 1'
+HL2 = 'mpHeadline 2'
+DUL = 'mpDisplay URL'
 BR2 = 'mpBuy Rate 2'
 BR3 = 'mpBuy Rate 3'
 BR4 = 'mpBuy Rate 4'
@@ -55,10 +63,11 @@ MIS3 = 'mpMisc 3'
 MIS4 = 'mpMisc 4'
 MIS5 = 'mpMisc 5'
 MIS6 = 'mpMisc 6'
-COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CP, VEN, COU, VT, MC, TAR,
-        CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE, GEN, CTA, URL,
-        PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT, AF, CD, BR2, BR3,
-        BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CP, VEN, COU, REG,
+        VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE,
+        DEM, GEN, CTA, URL, PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, KPI, DN, AT,
+        AF, CD, AD, DL1, DL2, HL1, HL2, DUL, BR2, BR3, BR4, BR5, PD2, PD3,
+        PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, BR2, BR3]
 datecol = [PD, PD2, PD3, PD4, PD5]
