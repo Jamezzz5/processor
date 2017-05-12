@@ -1,7 +1,9 @@
 import logging
 import json
 import sys
+import os
 import cStringIO
+import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine
 import expcolumns as exc
@@ -43,7 +45,7 @@ class DBUpload(object):
         df_rds = self.format_and_read_rds(table, pk_config, ul_df)
         db_values = self.values_for_db(df_rds, ul_df, self.id_col, self.name)
         if not db_values.empty:
-            self.db.copy_from(db_values, self.db, table, ul_df.columns)
+            self.db.copy_from(db_values, table, ul_df.columns)
 
     def set_parent(self, ul_df):
         if not self.dbs.parent:
@@ -52,13 +54,16 @@ class DBUpload(object):
         self.parent_table = self.table
         self.parent_id = self.id_col
         self.parent_name = self.name
-        self.parent_values = self.values
+        self.parent_values = ul_df[self.parent_id].values.tolist()
+        self.dbs.fk = {k: v for k, v in self.dbs.fk.items()
+                       if k not in self.dbs.parent}
         return ul_df
 
     def add_ids_to_df(self, id_config, sliced_df):
-        for table in id_config:
-            df_rds = self.format_and_read_rds(table, id_config, sliced_df)
+        for id_table in id_config:
+            df_rds = self.format_and_read_rds(id_table, id_config, sliced_df)
             sliced_df = sliced_df.merge(df_rds, how='outer', on=self.name)
+            sliced_df = sliced_df.drop_duplicates()
             sliced_df = sliced_df.drop(self.name, axis=1)
         return sliced_df
 
@@ -73,8 +78,6 @@ class DBUpload(object):
         self.table = table
         self.id_col = id_config[table][0]
         self.name = id_config[table][1]
-        print self.table, self.id_col, self.name
-        print sliced_df
         self.values = sliced_df[self.name].tolist()
 
     @staticmethod
@@ -141,8 +144,8 @@ class DB(object):
                   encoding='utf-8')
         self.output.seek(0)
 
-    def copy_from(self, df, db, table, columns):
-        table_path = db + '.' + table
+    def copy_from(self, df, table, columns):
+        table_path = self.db + '.' + table
         self.connect()
         logging.info('Writing to RDS')
         self.df_to_output(df)
@@ -173,7 +176,7 @@ class DB(object):
                                  ', '.join(['%s'] * len(where_val)),
                                  parent_table, parent_id,
                                  ', '.join(['%s'] * len(parent_value)))
-            self.cursor.execute(command, where_val, parent_value)
+            self.cursor.execute(command, where_val + parent_value)
         data = self.cursor.fetchall()
         data = pd.DataFrame(data=data, columns=[select_col, where_col])
         return data
@@ -241,6 +244,10 @@ class DFTranslation(object):
         self.df_columns = None
         self.df = None
         self.sliced_df = None
+        self.type_columns = None
+        self.translation = None
+        self.translation_type = None
+        self.upload_id = None
         self.load_translation(self.full_config_file)
         self.load_df(self.data_file)
 
@@ -248,8 +255,11 @@ class DFTranslation(object):
         df = pd.read_csv(config_file)
         self.db_columns = df[exc.translation_db].tolist()
         self.df_columns = df[exc.translation_df].tolist()
+        self.type_columns = df[exc.translation_type].tolist()
         self.translation = dict(zip(df[exc.translation_df],
                                     df[exc.translation_db]))
+        self.translation_type = dict(zip(df[exc.translation_db],
+                                         df[exc.translation_type]))
 
     def load_df(self, datafile):
         self.df = pd.read_csv(datafile, encoding='iso-8859-1')
@@ -257,8 +267,36 @@ class DFTranslation(object):
                            if x in list(self.df.columns)]
         self.df = self.df[self.df_columns]
         self.df = self.df.rename(columns=self.translation)
+        self.get_upload_id()
+
+    def get_upload_id(self):
+        ul_id_file_path = config_path + exc.upload_id_col
+        if not os.path.isfile(ul_id_file_path):
+            ul_id_df = pd.DataFrame(data=['None'], columns=[exc.upload_id_col])
+            ul_id_df.to_csv(ul_id_file_path)
+        ul_id_df = pd.read_csv(ul_id_file_path)
+        self.upload_id = ul_id_df[exc.upload_id_col][0]
+        self.df[exc.upload_id_col] = self.upload_id
+
+    def add_new_cols(self):
+        self.df = None
 
     def slice_for_upload(self, columns):
         exp_cols = [x for x in columns if x in list(self.df.columns)]
         sliced_df = self.df[exp_cols].drop_duplicates()
+        sliced_df = self.clean_types_for_upload(sliced_df)
         return sliced_df
+
+    def clean_types_for_upload(self, df):
+        for col in df.columns:
+            data_type = self.translation_type[col]
+            if data_type == 'TEXT':
+                df[col] = df[col].replace(np.nan, 'None')
+                df[col] = df[col].astype(str)
+            if data_type == 'REAL':
+                df[col] = df[col].replace(np.nan, 0)
+                df[col] = df[col].astype(float)
+            if data_type == 'DATE':
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+                df[col] = df[col].replace(pd.NaT, None)
+        return df
