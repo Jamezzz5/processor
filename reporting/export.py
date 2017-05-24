@@ -3,6 +3,7 @@ import json
 import sys
 import os
 import cStringIO
+import datetime as dt
 import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine
@@ -21,10 +22,6 @@ class DBUpload(object):
         self.id_col = None
         self.name = None
         self.values = None
-        self.parent_table = None
-        self.parent_id = None
-        self.parent_name = None
-        self.parent_values = None
 
     def upload_to_db(self, db_file, schema_file, translation_file, data_file):
         self.db = DB(db_file)
@@ -39,28 +36,81 @@ class DBUpload(object):
         logging.info('Uploading table ' + table + ' to ' + self.db.db)
         cols = self.dbs.get_cols_for_export(table)
         ul_df = self.dft.slice_for_upload(cols)
-        ul_df = self.set_parent(ul_df)
         ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
         pk_config = {table: self.dbs.pk.keys() + self.dbs.pk.values()}
-        df_rds = self.format_and_read_rds(table, pk_config, ul_df)
-        db_values = self.values_for_db(df_rds, ul_df, self.id_col, self.name)
-        if not db_values.empty:
-            self.db.copy_from(db_values, table, ul_df.columns)
+        self.set_id_info(table, pk_config, ul_df)
+        if exc.upload_id_col in ul_df.columns:
+            # self.set_id_info(table, pk_config, ul_df)
+            # df_rds = self.read_rds_table(table, list(ul_df.columns))
+            #df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
+            #              indicator=True)
+            df_rds = self.read_rds_table(table, list(ul_df.columns), exc.upload_id_col, [self.dft.upload_id])
+            df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
+                          indicator=True)
+            self.update_rows(df, ul_df.columns, table)
+            self.delete_rows(df, table)
+            self.upload_rows(df, table)
+        else:
+            df_rds = self.db.read_rds(table, self.id_col, self.name,
+                                      self.values)
+            df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
+                          indicator=True)
+            self.upload_rows(df, table)
+        # df_rds = self.format_and_read_rds(table, pk_config, ul_df)
+        #db_values = self.values_for_db(df_rds, ul_df, self.id_col, self.name)
+        #if not db_values.empty:
+        #    self.db.copy_from(table, db_values, ul_df.columns)
 
-    def set_parent(self, ul_df):
-        if not self.dbs.parent:
-            return ul_df
-        ul_df = self.add_ids_to_df(self.dbs.parent, ul_df)
-        self.parent_table = self.table
-        self.parent_id = self.id_col
-        self.parent_name = self.name
-        self.parent_values = ul_df[self.parent_id].values.tolist()
-        self.dbs.fk = {k: v for k, v in self.dbs.fk.items()
-                       if k not in self.dbs.parent}
-        return ul_df
+    def read_rds_table(self, table, cols, where_col, where_val):
+        df_rds = self.db.read_rds_table(table, where_col, where_val)
+        df_rds = df_rds[cols]
+        df_rds = self.dft.clean_types_for_upload(df_rds)
+        return df_rds
+
+    def update_rows(self, df, cols, table):
+        df_update = df[df['_merge'] == 'both']
+        updated_index = []
+        for col in [x for x in cols if x not in [self.name]]:
+            df_changed = (df_update[df_update[col + '_y'] !=
+                                    df_update[col + '_x']]
+                          [[self.name, col + '_y']])
+            updated_index.extend(df_changed.index)
+        if updated_index:
+            upload_cols = [x for x in df_update.columns if x[-2:] == '_y']
+            df_update = df_update[[self.name] + upload_cols]
+            df_update.columns = ([self.name] + [x[:-2] for x in
+                                                df_update.columns if
+                                                x[-2:] == '_y'])
+            df_update = df_update.iloc[updated_index]
+            set_cols = [x for x in cols if x != self.name]
+            set_vals = df_update.values
+            self.db.update_rows(table, set_cols, set_vals[0], self.name)
+
+    def delete_rows(self, df, table):
+        df_delete = df[df['_merge'] == 'left_only']
+        delete_vals = df_delete[self.name].tolist()
+        if delete_vals:
+            self.db.delete_rows(table, exc.upload_id_col, self.dft.upload_id,
+                                self.name, delete_vals)
+
+    def upload_rows(self, df, table):
+        df_upload = df[df['_merge'] == 'right_only']
+        print df_upload.columns
+        upload_vals = df_upload.drop([[self.id_col, '_merge']], axis=1)
+        if not upload_vals.empty:
+            self.db.copy_from(table, upload_vals, df_upload.columns)
+
+    def format_df(self, df):
+        upload_cols = [x for x in df.columns if x[-2:] == '_y']
+        df = df[[self.name] + upload_cols]
+        df.columns = ([self.name] + [x[:-2] for x in df.columns
+                       if x[-2:] == '_y'])
+        return df
 
     def add_ids_to_df(self, id_config, sliced_df):
         for id_table in id_config:
+            if id_table == exc.upload_tbl:
+                continue
             df_rds = self.format_and_read_rds(id_table, id_config, sliced_df)
             sliced_df = sliced_df.merge(df_rds, how='outer', on=self.name)
             sliced_df = sliced_df.drop_duplicates()
@@ -69,9 +119,7 @@ class DBUpload(object):
 
     def format_and_read_rds(self, table, id_config, sliced_df):
         self.set_id_info(table, id_config, sliced_df)
-        df_rds = self.db.read_from_rds(table, self.id_col, self.name,
-                                       self.values, self.parent_table,
-                                       self.parent_id, self.parent_values)
+        df_rds = self.db.read_rds(table, self.id_col, self.name, self.values)
         return df_rds
 
     def set_id_info(self, table, id_config, sliced_df):
@@ -88,6 +136,7 @@ class DBUpload(object):
         return df
 
 
+# noinspection SqlResolve
 class DB(object):
     def __init__(self, config):
         self.user = None
@@ -144,42 +193,108 @@ class DB(object):
                   encoding='utf-8')
         self.output.seek(0)
 
-    def copy_from(self, df, table, columns):
+    def copy_from(self, table, df, columns):
         table_path = self.db + '.' + table
         self.connect()
-        logging.info('Writing to RDS')
+        logging.info('Writing ' + str(len(df)) + ' row(s) to ' + table)
         self.df_to_output(df)
         cur = self.connection.cursor()
         cur.copy_from(self.output, table=table_path, columns=columns)
         self.connection.commit()
         cur.close()
-        logging.info('Successfully wrote to RDS')
 
-    def read_from_rds(self, table, select_col, where_col, where_val,
-                      parent_table, parent_id, parent_value):
+    def insert_rds(self, table, columns, values, return_col):
         self.connect()
-        if parent_table is None:
+        command = """
+                  INSERT INTO {0}.{1} ({2})
+                   VALUES ({3})
+                   RETURNING ({4})
+                  """.format(self.db, table, ', '.join(columns),
+                             ', '.join(['%s'] * len(values)), return_col)
+        self.cursor.execute(command, values)
+        self.connection.commit()
+        data = self.cursor.fetchall()
+        data = pd.DataFrame(data=data, columns=[return_col])
+        return data
+
+    def delete_rows(self, table, where_col, where_val,
+                    where_col2, where_vals2):
+        logging.info('Deleting ' + str(len(where_vals2)) +
+                     ' row(s) from ' + table)
+        self.connect()
+        command = """
+                  DELETE FROM {0}.{1}
+                   WHERE {0}.{1}.{2} IN ({3})
+                   AND {0}.{1}.{4} IN ({5})
+                  """.format(self.db, table, where_col, where_val, where_col2,
+                             ', '.join(['%s'] * len(where_vals2)))
+        self.cursor.execute(command, where_vals2)
+        self.connection.commit()
+
+    def read_rds(self, table, select_col, where_col, where_val):
+        self.connect()
+        if select_col == where_col:
+            command = """
+                      SELECT {0}.{1}.{2}
+                       FROM {0}.{1}
+                       WHERE {0}.{1}.{3} IN ({4})
+                      """.format(self.db, table, select_col, where_col,
+                                 ', '.join(['%s'] * len(where_val)))
+        else:
             command = """
                       SELECT {0}.{1}.{2}, {0}.{1}.{3}
                        FROM {0}.{1}
                        WHERE {0}.{1}.{3} IN ({4})
                       """.format(self.db, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)))
-            self.cursor.execute(command, where_val)
-        else:
-            command = """
-                      SELECT {0}.{1}.{2}, {0}.{1}.{3}
-                       FROM {0}.{1}, {0}.{5}
-                       WHERE {0}.{1}.{3} IN ({4})
-                        AND {0}.{5}.{6} IN ({7})
-                      """.format(self.db, table, select_col, where_col,
-                                 ', '.join(['%s'] * len(where_val)),
-                                 parent_table, parent_id,
-                                 ', '.join(['%s'] * len(parent_value)))
-            self.cursor.execute(command, where_val + parent_value)
+        self.cursor.execute(command, where_val)
         data = self.cursor.fetchall()
-        data = pd.DataFrame(data=data, columns=[select_col, where_col])
+        if select_col == where_col:
+            data = pd.DataFrame(data=data, columns=[select_col])
+        else:
+            data = pd.DataFrame(data=data, columns=[select_col, where_col])
         return data
+
+    def read_rds_table(self, table, where_col, where_val):
+        self.connect()
+        command = """
+                  SELECT *
+                   FROM {0}.{1}
+                   WHERE {0}.{1}.{2} IN ({3})
+                  """.format(self.db, table, where_col,
+                             ', '.join(['%s'] * len(where_val)))
+        self.cursor.execute(command, where_val)
+        data = self.cursor.fetchall()
+        self.connect()
+        command = """
+                  SELECT *
+                  FROM information_schema.columns
+                  WHERE table_schema = '{0}'
+                  AND table_name = '{1}'
+                  """.format(self.db, table)
+        self.cursor.execute(command)
+        columns = self.cursor.fetchall()
+        columns = [x[3] for x in columns]
+        data = pd.DataFrame(data=data, columns=columns)
+        return data
+
+    def update_rows(self, table, set_cols, set_vals, where_col):
+        logging.info('Updating ' + str(set_vals.size / len(set_cols)) +
+                     ' row(s) from ' + table)
+        self.connect()
+        command = """
+                  UPDATE {0}.{1} AS t
+                   SET {2}
+                   FROM (VALUES({3}))
+                   AS c({4})
+                   WHERE c.{5} = t.{5}
+                  """.format(self.db, table,
+                             (', '.join(x + ' = c.' + x
+                              for x in [where_col] + set_cols)),
+                             ', '.join(['%s'] * len(set_vals)),
+                             ', '.join([where_col] + set_cols), where_col)
+        self.cursor.execute(command, set_vals)
+        self.connection.commit()
 
 
 class DBSchema(object):
@@ -191,7 +306,6 @@ class DBSchema(object):
         self.pk = None
         self.cols = None
         self.fk = None
-        self.parent = None
         self.load_config(self.full_config_file)
 
     def load_config(self, config_file):
@@ -223,15 +337,13 @@ class DBSchema(object):
         self.pk = self.config[exc.pk][table]
         self.cols = self.config[exc.columns][table]
         self.fk = self.config[exc.fk][table]
-        self.parent = self.config[exc.parent][table]
 
     def get_cols_for_export(self, table):
         self.set_table(table)
-        parent_list = [self.parent[x][1] for x in self.parent]
         fk_list = [self.fk[x][1] for x in self.fk]
-        fk_list = [x for x in fk_list if x not in parent_list]
         cols_list = self.cols.keys()
-        return parent_list + fk_list + cols_list
+        cols_list = [x for x in cols_list if x not in fk_list]
+        return fk_list + cols_list
 
 
 class DFTranslation(object):
@@ -247,6 +359,9 @@ class DFTranslation(object):
         self.type_columns = None
         self.translation = None
         self.translation_type = None
+        self.text_columns = None
+        self.date_columns = None
+        self.int_columns = None
         self.upload_id = None
         self.load_translation(self.full_config_file)
         self.load_df(self.data_file)
@@ -260,6 +375,14 @@ class DFTranslation(object):
                                     df[exc.translation_db]))
         self.translation_type = dict(zip(df[exc.translation_db],
                                          df[exc.translation_type]))
+        self.text_columns = {k: v for k, v in self.translation_type.items()
+                             if v == 'TEXT'}.keys()
+        self.date_columns = {k: v for k, v in self.translation_type.items()
+                             if v == 'DATE'}.keys()
+        self.int_columns = {k: v for k, v in self.translation_type.items()
+                            if v == 'INT'}.keys()
+        self.real_columns = {k: v for k, v in self.translation_type.items()
+                            if v == 'REAL'}.keys()
 
     def load_df(self, datafile):
         self.df = pd.read_csv(datafile, encoding='iso-8859-1')
@@ -268,18 +391,49 @@ class DFTranslation(object):
         self.df = self.df[self.df_columns]
         self.df = self.df.rename(columns=self.translation)
         self.get_upload_id()
+        self.df = self.clean_types_for_upload(self.df)
+        self.add_event_name()
+        self.df = self.df.groupby(self.text_columns + self.date_columns +
+                                  self.int_columns).sum().reset_index()
+        real_columns = [x for x in self.real_columns if x in self.df.columns]
+        self.df = self.df[self.df[real_columns].sum(axis=1)!=0].reset_index()
 
     def get_upload_id(self):
-        ul_id_file_path = config_path + exc.upload_id_col
+        self.add_upload_cols()
+        ul_id_file_path = config_path + exc.upload_id_file
         if not os.path.isfile(ul_id_file_path):
-            ul_id_df = pd.DataFrame(data=['None'], columns=[exc.upload_id_col])
-            ul_id_df.to_csv(ul_id_file_path)
+            ul_id_df = pd.DataFrame(columns=[exc.upload_id_col])
+            ul_id_df.to_csv(ul_id_file_path, index=False)
         ul_id_df = pd.read_csv(ul_id_file_path)
-        self.upload_id = ul_id_df[exc.upload_id_col][0]
+        if ul_id_df.empty:
+            ul_id_df = self.new_upload()
+            ul_id_df.to_csv(ul_id_file_path, index=False)
+        self.upload_id = ul_id_df[exc.upload_id_col][0].astype(int)
         self.df[exc.upload_id_col] = self.upload_id
 
-    def add_new_cols(self):
-        self.df = None
+    def new_upload(self):
+        db = DB(exc.db_config_file)
+        upload_df = self.slice_for_upload(exc.upload_cols)
+        ul_id_df = db.insert_rds(exc.upload_tbl, exc.upload_cols,
+                                 upload_df.values[0], exc.upload_id_col)
+        return ul_id_df
+
+    def add_upload_cols(self):
+        self.df[exc.upload_last_upload_date] = dt.datetime.today()
+        self.df[exc.upload_data_ed] = self.df[exc.event_date].dropna().max()
+        self.df[exc.upload_data_sd] = self.df[exc.event_date].dropna().min()
+        self.add_upload_name()
+
+    def add_upload_name(self):
+        upload_name_items = [x for param in exc.upload_name_param for x in
+                             self.df[param].drop_duplicates()]
+        upload_name = '_'.join(x for x in upload_name_items)
+        self.df[exc.upload_name] = upload_name
+
+    def add_event_name(self):
+        self.df[exc.event_name] = (self.df[exc.event_date].astype(str) +
+                                   self.df[exc.full_placement_name])
+        self.df[exc.plan_name] = self.df[exc.event_name]
 
     def slice_for_upload(self, columns):
         exp_cols = [x for x in columns if x in list(self.df.columns)]
@@ -289,6 +443,8 @@ class DFTranslation(object):
 
     def clean_types_for_upload(self, df):
         for col in df.columns:
+            if col not in self.translation_type.keys():
+                continue
             data_type = self.translation_type[col]
             if data_type == 'TEXT':
                 df[col] = df[col].replace(np.nan, 'None')
@@ -299,4 +455,7 @@ class DFTranslation(object):
             if data_type == 'DATE':
                 df[col] = pd.to_datetime(df[col], errors='coerce')
                 df[col] = df[col].replace(pd.NaT, None)
+            if data_type == 'INT':
+                df[col] = df[col].replace(np.nan, 0)
+                df[col] = df[col].astype(int)
         return df

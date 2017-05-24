@@ -1,5 +1,5 @@
-Pandas==0.18.1
-Numpy==1.11.2
+Pandas==0.20.1
+Numpy==1.12.1
 Facebookads==2.8.1
 googleads==4.8.0
 win_inet_pton==1.0.1
