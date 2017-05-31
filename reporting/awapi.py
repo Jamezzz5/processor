@@ -22,7 +22,16 @@ def_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
               'Impressions', 'Clicks', 'Cost', 'VideoViews',
               'VideoQuartile25Rate', 'VideoQuartile50Rate',
               'VideoQuartile75Rate', 'VideoQuartile100Rate']
-
+"""
+conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
+              'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
+              'HeadlinePart2', 'Description', 'Description1', 'Description2',
+              'ConversionValue']
+"""
+conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
+               'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
+               'HeadlinePart2', 'Description', 'Description1', 'Description2',
+               'ConversionTypeName', 'Conversions']
 
 class AwApi(object):
     def __init__(self):
@@ -89,10 +98,18 @@ class AwApi(object):
             fields = def_fields
         return sd, ed, fields
 
+    @staticmethod
+    def parse_fields(fields):
+        for field in fields:
+            if field == 'Conversions':
+                    fields = conv_fields
+        return fields
+
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd = sd.date()
         ed = ed.date()
+        fields = self.parse_fields(fields)
         if sd > ed:
             logging.warn('Start date greater than end date.  Start date was ' +
                          'set to end date.')
@@ -100,6 +117,7 @@ class AwApi(object):
         logging.info('Getting Adwords data from ' + str(sd) + ' until ' +
                      str(ed))
         report_downloader = self.adwords_client.GetReportDownloader('v201609')
+        # print fields
         report = {
             'reportName': 'Adwords_Report',
             'dateRangeType': 'CUSTOM_DATE',
@@ -113,6 +131,8 @@ class AwApi(object):
                                          skip_report_summary=True)
         r.seek(0)
         self.df = pd.read_csv(r, parse_dates=True)
-        self.df['Cost'] /= 1000000
-        self.df = self.video_calc(self.df)
+        if 'Cost' in self.df.columns:
+            self.df['Cost'] /= 1000000
+        if 'Views' in self.df.columns:
+            self.df = self.video_calc(self.df)
         return self.df
