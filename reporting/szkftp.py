@@ -52,8 +52,8 @@ class SzkFtp(object):
 
     def ftp_init(self):
         self.ftp = ftplib.FTP_TLS(self.ftp_host)
-        self.ftp.login(self.username, self.password)
-        self.ftp.prot_p()
+        self.ftp.sendcmd('USER {}'.format(self.username))
+        self.ftp.sendcmd('PASS {}'.format(self.password))
         self.ftp.cwd(self.ftp_path)
 
     def get_data(self):
@@ -84,7 +84,7 @@ class SzkFtp(object):
 
     def ftp_read_file(self, read_file):
         r = StringIO()
-        self.ftp.retrbinary('RETR ' + self.ftp_path + read_file, r.write)
+        self.ftp.retrbinary('RETR ' + read_file, r.write)
         self.ftp.quit()
         r.seek(0)
         if read_file[-4:] == '.zip':

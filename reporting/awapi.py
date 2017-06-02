@@ -22,16 +22,12 @@ def_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
               'Impressions', 'Clicks', 'Cost', 'VideoViews',
               'VideoQuartile25Rate', 'VideoQuartile50Rate',
               'VideoQuartile75Rate', 'VideoQuartile100Rate']
-"""
-conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
-              'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
-              'HeadlinePart2', 'Description', 'Description1', 'Description2',
-              'ConversionValue']
-"""
+
 conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
                'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
                'HeadlinePart2', 'Description', 'Description1', 'Description2',
                'ConversionTypeName', 'Conversions']
+
 
 class AwApi(object):
     def __init__(self):
