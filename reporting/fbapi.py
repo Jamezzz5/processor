@@ -159,8 +159,11 @@ class FbApi(object):
                 logging.warn('Already daily.  Reducing requested fields.')
                 metrics = [x for x in field_list if x not in def_params]
                 fh, bh = self.split_list(metrics)
-                self.field_lists.append(def_params + fh)
-                self.field_lists.append(def_params + bh)
+                if fh and bh:
+                    self.field_lists.append(def_params + fh)
+                    self.field_lists.append(def_params + bh)
+                else:
+                    self.field_lists.append(field_list)
                 return True
             logging.warn('Too much data queried.  Reducing time scale')
             fh, bh = self.split_list(date_list)
