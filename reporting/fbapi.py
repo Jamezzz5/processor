@@ -126,7 +126,18 @@ class FbApi(object):
                         params={'level': AdsInsights.Level.ad,
                                 'time_range': {'since': str(sd),
                                                'until': str(ed), },
-                                'time_increment': 1, }))
+                                'time_increment': 1,
+                                'filtering': [{'field': 'ad.effective_status',
+                                               'operator': 'IN',
+                                               'value': ['ACTIVE', 'PAUSED',
+                                                         'DELETED',
+                                                         'PENDING_REVIEW',
+                                                         'DISAPPROVED',
+                                                         'PREAPPROVED',
+                                                         'PENDING_BILLING_INFO',
+                                                         'CAMPAIGN_PAUSED',
+                                                         'ARCHIVED',
+                                                         'ADSET_PAUSED']}]}))
                 except FacebookRequestError as e:
                     self.request_error(e, date_list, field_list)
                     continue
