@@ -126,24 +126,24 @@ class FbApi(object):
                         params={'level': AdsInsights.Level.ad,
                                 'time_range': {'since': str(sd),
                                                'until': str(ed), },
+                                'time_increment': 1, }))
+                    deleted = list(self.account.get_insights(
+                        fields=field_list,
+                        params={'level': AdsInsights.Level.ad,
+                                'time_range': {'since': str(sd),
+                                               'until': str(ed), },
                                 'time_increment': 1,
                                 'filtering': [{'field': 'ad.effective_status',
                                                'operator': 'IN',
-                                               'value': ['ACTIVE', 'PAUSED',
-                                                         'DELETED',
-                                                         'PENDING_REVIEW',
-                                                         'DISAPPROVED',
-                                                         'PREAPPROVED',
-                                                         'PENDING_BILLING_INFO',
-                                                         'CAMPAIGN_PAUSED',
-                                                         'ARCHIVED',
-                                                         'ADSET_PAUSED']}]}))
+                                               'value': ['DELETED',
+                                                         'ARCHIVED']}]}))
                 except FacebookRequestError as e:
                     self.request_error(e, date_list, field_list)
                     continue
-                if not insights:
-                    continue
-                self.df = self.df.append(insights, ignore_index=True)
+                if insights:
+                    self.df = self.df.append(insights, ignore_index=True)
+                if deleted:
+                    self.df = self.df.append(deleted, ignore_index=True)
         for col in nested_col:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
