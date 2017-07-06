@@ -37,29 +37,25 @@ class DBUpload(object):
         cols = self.dbs.get_cols_for_export(table)
         ul_df = self.dft.slice_for_upload(cols)
         ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
+        self.dbs.set_table(table)
         pk_config = {table: self.dbs.pk.keys() + self.dbs.pk.values()}
         self.set_id_info(table, pk_config, ul_df)
         if exc.upload_id_col in ul_df.columns:
-            # self.set_id_info(table, pk_config, ul_df)
-            # df_rds = self.read_rds_table(table, list(ul_df.columns))
-            #df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
-            #              indicator=True)
-            df_rds = self.read_rds_table(table, list(ul_df.columns), exc.upload_id_col, [self.dft.upload_id])
+            df_rds = self.read_rds_table(table, list(ul_df.columns),
+                                         exc.upload_id_col,
+                                         [self.dft.upload_id])
             df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
                           indicator=True)
-            self.update_rows(df, ul_df.columns, table)
+            df = df.drop_duplicates(self.name).reset_index()
+            self.update_rows(df, df_rds.columns, table)
             self.delete_rows(df, table)
-            self.upload_rows(df, table)
+            self.insert_rows(df, table)
         else:
             df_rds = self.db.read_rds(table, self.id_col, self.name,
                                       self.values)
             df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
                           indicator=True)
-            self.upload_rows(df, table)
-        # df_rds = self.format_and_read_rds(table, pk_config, ul_df)
-        #db_values = self.values_for_db(df_rds, ul_df, self.id_col, self.name)
-        #if not db_values.empty:
-        #    self.db.copy_from(table, db_values, ul_df.columns)
+            self.insert_rows(df, table)
 
     def read_rds_table(self, table, cols, where_col, where_val):
         df_rds = self.db.read_rds_table(table, where_col, where_val)
@@ -70,21 +66,18 @@ class DBUpload(object):
     def update_rows(self, df, cols, table):
         df_update = df[df['_merge'] == 'both']
         updated_index = []
-        for col in [x for x in cols if x not in [self.name]]:
+        set_cols = [x for x in cols if x not in [self.name, self.id_col]]
+        for col in set_cols:
             df_changed = (df_update[df_update[col + '_y'] !=
                                     df_update[col + '_x']]
                           [[self.name, col + '_y']])
             updated_index.extend(df_changed.index)
         if updated_index:
-            upload_cols = [x for x in df_update.columns if x[-2:] == '_y']
-            df_update = df_update[[self.name] + upload_cols]
-            df_update.columns = ([self.name] + [x[:-2] for x in
-                                                df_update.columns if
-                                                x[-2:] == '_y'])
+            df_update = self.get_right_df(df_update)
             df_update = df_update.iloc[updated_index]
-            set_cols = [x for x in cols if x != self.name]
-            set_vals = df_update.values
-            self.db.update_rows(table, set_cols, set_vals[0], self.name)
+            df_update = df_update[[self.name] + set_cols]
+            set_vals = [tuple(x) for x in df_update.values]
+            self.db.update_rows(table, set_cols, set_vals, self.name)
 
     def delete_rows(self, df, table):
         df_delete = df[df['_merge'] == 'left_only']
@@ -93,18 +86,19 @@ class DBUpload(object):
             self.db.delete_rows(table, exc.upload_id_col, self.dft.upload_id,
                                 self.name, delete_vals)
 
-    def upload_rows(self, df, table):
-        df_upload = df[df['_merge'] == 'right_only']
-        print df_upload.columns
-        upload_vals = df_upload.drop([[self.id_col, '_merge']], axis=1)
-        if not upload_vals.empty:
-            self.db.copy_from(table, upload_vals, df_upload.columns)
+    def insert_rows(self, df, table):
+        df_insert = df[df['_merge'] == 'right_only']
+        df_insert = self.get_right_df(df_insert)
+        if self.id_col in df_insert.columns:
+            df_insert = df_insert.drop([self.id_col], axis=1)
+        if not df_insert.empty:
+            self.db.copy_from(table, df_insert, df_insert.columns)
 
-    def format_df(self, df):
-        upload_cols = [x for x in df.columns if x[-2:] == '_y']
-        df = df[[self.name] + upload_cols]
+    def get_right_df(self, df):
+        cols = [x for x in df.columns if x[-2:] == '_y']
+        df = df[[self.name] + cols]
         df.columns = ([self.name] + [x[:-2] for x in df.columns
-                       if x[-2:] == '_y'])
+                      if x[-2:] == '_y'])
         return df
 
     def add_ids_to_df(self, id_config, sliced_df):
@@ -119,7 +113,14 @@ class DBUpload(object):
 
     def format_and_read_rds(self, table, id_config, sliced_df):
         self.set_id_info(table, id_config, sliced_df)
-        df_rds = self.db.read_rds(table, self.id_col, self.name, self.values)
+        self.dbs.set_table(table)
+        if exc.upload_id_col in self.dbs.cols:
+            df_rds = self.db.read_rds_two_where(table, self.id_col, self.name,
+                                                self.values, exc.upload_id_col,
+                                                self.dft.upload_id)
+        else:
+            df_rds = self.db.read_rds(table, self.id_col, self.name,
+                                      self.values)
         return df_rds
 
     def set_id_info(self, table, id_config, sliced_df):
@@ -127,13 +128,6 @@ class DBUpload(object):
         self.id_col = id_config[table][0]
         self.name = id_config[table][1]
         self.values = sliced_df[self.name].tolist()
-
-    @staticmethod
-    def values_for_db(df_db, df_raw, id_col, name_col):
-        df = df_raw.merge(df_db, how='outer', on=name_col)
-        df = df[pd.isnull(df[id_col])]
-        df = df.drop(id_col, axis=1)
-        return df
 
 
 # noinspection SqlResolve
@@ -231,6 +225,35 @@ class DB(object):
         self.cursor.execute(command, where_vals2)
         self.connection.commit()
 
+    def read_rds_two_where(self, table, select_col, where_col, where_val,
+                           where_col2, where_val2):
+        self.connect()
+        if select_col == where_col:
+            command = """
+                      SELECT {0}.{1}.{2}
+                       FROM {0}.{1}
+                       WHERE {0}.{1}.{3} IN ({4})
+                       AND {0}.{1}.{5} IN ({6})
+                      """.format(self.db, table, select_col, where_col,
+                                 ', '.join(['%s'] * len(where_val)),
+                                 where_col2, where_val2)
+        else:
+            command = """
+                      SELECT {0}.{1}.{2}, {0}.{1}.{3}
+                       FROM {0}.{1}
+                       WHERE {0}.{1}.{3} IN ({4})
+                       AND {0}.{1}.{5} IN ({6})
+                      """.format(self.db, table, select_col, where_col,
+                                 ', '.join(['%s'] * len(where_val)),
+                                 where_col2, where_val2)
+        self.cursor.execute(command, where_val)
+        data = self.cursor.fetchall()
+        if select_col == where_col:
+            data = pd.DataFrame(data=data, columns=[select_col])
+        else:
+            data = pd.DataFrame(data=data, columns=[select_col, where_col])
+        return data
+
     def read_rds(self, table, select_col, where_col, where_val):
         self.connect()
         if select_col == where_col:
@@ -279,13 +302,13 @@ class DB(object):
         return data
 
     def update_rows(self, table, set_cols, set_vals, where_col):
-        logging.info('Updating ' + str(set_vals.size / len(set_cols)) +
+        logging.info('Updating ' + str(len(set_vals)) +
                      ' row(s) from ' + table)
         self.connect()
         command = """
                   UPDATE {0}.{1} AS t
                    SET {2}
-                   FROM (VALUES({3}))
+                   FROM (VALUES {3})
                    AS c({4})
                    WHERE c.{5} = t.{5}
                   """.format(self.db, table,
@@ -362,6 +385,7 @@ class DFTranslation(object):
         self.text_columns = None
         self.date_columns = None
         self.int_columns = None
+        self.real_columns = None
         self.upload_id = None
         self.load_translation(self.full_config_file)
         self.load_df(self.data_file)
@@ -382,7 +406,7 @@ class DFTranslation(object):
         self.int_columns = {k: v for k, v in self.translation_type.items()
                             if v == 'INT'}.keys()
         self.real_columns = {k: v for k, v in self.translation_type.items()
-                            if v == 'REAL'}.keys()
+                             if v == 'REAL' or v == 'DECIMAL'}.keys()
 
     def load_df(self, datafile):
         self.df = pd.read_csv(datafile, encoding='iso-8859-1')
@@ -396,7 +420,7 @@ class DFTranslation(object):
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
         real_columns = [x for x in self.real_columns if x in self.df.columns]
-        self.df = self.df[self.df[real_columns].sum(axis=1)!=0].reset_index()
+        self.df = self.df[self.df[real_columns].sum(axis=1) != 0].reset_index()
 
     def get_upload_id(self):
         self.add_upload_cols()
