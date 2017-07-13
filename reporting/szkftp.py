@@ -84,7 +84,12 @@ class SzkFtp(object):
 
     def ftp_read_file(self, read_file):
         r = StringIO()
-        self.ftp.retrbinary('RETR ' + read_file, r.write)
+        try:
+            self.ftp.retrbinary('RETR ' + read_file, r.write)
+        except ftplib.all_errors as e:
+            logging.warning('Connection to the FTP was closed due to below ' +
+                            'error, retrying. ' + str(e))
+            self.ftp_read_file(read_file)
         self.ftp.quit()
         r.seek(0)
         if read_file[-4:] == '.zip':
