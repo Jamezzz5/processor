@@ -2,6 +2,7 @@ import logging
 import fbapi
 import awapi
 import twapi
+import ttdapi
 import szkftp
 import os
 import datetime as dt
@@ -94,6 +95,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_aw_key, awapi.AwApi())
         if self.arg_check('tw'):
             self.api_calls(self.matrix.api_tw_key, twapi.TwApi())
+        if self.arg_check('ttd'):
+            self.api_calls(self.matrix.api_ttd_key, ttdapi.TtdApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
