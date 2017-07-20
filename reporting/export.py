@@ -51,8 +51,8 @@ class DBUpload(object):
             self.delete_rows(df, table)
             self.insert_rows(df, table)
         else:
-            df_rds = self.db.read_rds(table, self.id_col, self.name,
-                                      self.values)
+            df_rds = self.read_rds_table(table, list(ul_df.columns),
+                                         self.name, self.values)
             df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
                           indicator=True)
             df = df.drop_duplicates(self.name).reset_index()
