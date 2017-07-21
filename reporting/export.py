@@ -56,6 +56,7 @@ class DBUpload(object):
             df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
                           indicator=True)
             df = df.drop_duplicates(self.name).reset_index()
+            self.update_rows(df, df_rds.columns, table)
             self.insert_rows(df, table)
 
     def read_rds_table(self, table, cols, where_col, where_val):
@@ -79,8 +80,12 @@ class DBUpload(object):
             df_update = df_update.loc[updated_index]
             df_update = df_update[[self.name] + set_cols]
             set_vals = [tuple(x) for x in df_update.values]
-            self.db.update_rows(table, set_cols, set_vals, self.name,
-                                exc.upload_id_col, self.dft.upload_id)
+            if exc.upload_id_col in df_update.columns:
+                self.db.update_rows_two_where(table, set_cols, set_vals,
+                                              self.name, exc.upload_id_col,
+                                              self.dft.upload_id)
+            else:
+                self.db.update_rows(table, set_cols, set_vals, self.name)
 
     def delete_rows(self, df, table):
         df_delete = df[df['_merge'] == 'left_only']
@@ -303,8 +308,27 @@ class DB(object):
         data = pd.DataFrame(data=data, columns=columns)
         return data
 
-    def update_rows(self, table, set_cols, set_vals, where_col, where_col2,
-                    where_val2):
+    def update_rows(self, table, set_cols, set_vals, where_col):
+        logging.info('Updating ' + str(len(set_vals)) +
+                     ' row(s) from ' + table)
+        self.connect()
+        command = """
+                  UPDATE {0}.{1} AS t
+                   SET {2}
+                   FROM (VALUES {3})
+                   AS c({4})
+                   WHERE c.{5} = t.{5}
+                  """.format(self.db, table,
+                             (', '.join(x + ' = c.' + x
+                              for x in [where_col] + set_cols)),
+                             ', '.join(['%s'] * len(set_vals)),
+                             ', '.join([where_col] + set_cols),
+                             where_col)
+        self.cursor.execute(command, set_vals)
+        self.connection.commit()
+
+    def update_rows_two_where(self, table, set_cols, set_vals, where_col,
+                              where_col2, where_val2):
         logging.info('Updating ' + str(len(set_vals)) +
                      ' row(s) from ' + table)
         self.connect()
