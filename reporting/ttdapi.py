@@ -21,7 +21,7 @@ class TtdApi(object):
         self.login = None
         self.password = None
         self.ad_id = None
-        self.ex_id = None
+        self.report_name = None
         self.auth_token = None
         self.headers = None
 
@@ -41,13 +41,13 @@ class TtdApi(object):
         self.login = self.config['LOGIN']
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
-        self.ex_id = self.config['EXID']
+        self.report_name = self.config['Report Name']
         self.config_list = [self.login, self.password]
 
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in TTD config file.  Aborting.')
+                logging.warn(item + ' not in TTD config file.  Aborting.')
                 sys.exit(0)
 
     def authenticate(self):
@@ -74,13 +74,16 @@ class TtdApi(object):
                         'TTD-Auth': auth_token}
         r = requests.post(rep_url, headers=self.headers, json=payload)
         data = json.loads(r.content)
-        dl_url = [x['ReportDeliveries'][0]['DownloadURL'] for x
-                  in data['Result']
-                  if x['ReportExecutionId'] == int(self.ex_id)]
-        return dl_url[0]
+        data = data['Result']
+        data = [x for x in data if
+                x['ReportScheduleName'] == self.report_name and
+                x['ReportExecutionState'] == 'Complete']
+        last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
+        dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
+        return dl_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        logging.info('Getting TTD data for execution id: ' + str(self.ex_id))
+        logging.info('Getting TTD data for report: ' + str(self.report_name))
         dl_url = self.get_download_url()
         r = requests.get(dl_url, headers=self.headers)
         self.df = pd.read_csv(StringIO(r.content.decode('utf-8')))
