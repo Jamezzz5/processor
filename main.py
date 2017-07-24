@@ -6,6 +6,7 @@ import reporting.dictionary as dct
 import reporting.importhandler as ih
 import reporting.calc as cal
 import reporting.export as exp
+import reporting.expcolumns as exc
 
 logging.basicConfig(stream=sys.stdout,
                     filename='logfile.log',
@@ -29,7 +30,6 @@ parser.add_argument('--db', action='store_true')
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
-db_config_file = 'dbconfig.json'
 
 
 def main():
@@ -54,8 +54,9 @@ def main():
             logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
                          'Final Output not updated.')
     if args.db:
-        db = exp.DB(OUTPUT_FILE, db_config_file)
-        db.export_to_rds()
+        dbu = exp.DBUpload()
+        dbu.upload_to_db(exc.db_config_file, exc.db_schema_file,
+                        exc.db_translation_file, OUTPUT_FILE)
 
 if __name__ == '__main__':
     main()

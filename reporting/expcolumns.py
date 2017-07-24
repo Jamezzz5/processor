@@ -1,102 +1,32 @@
-db_columns = '''
-Date date,
-Impressions real,
-Clicks real,
-NetCost real,
-VideoViews real,
-VideoViews25 real,
-VideoViews50 real,
-VideoViews75 real,
-VideoViews100 real,
-LandingPage real,
-Homepage real,
-ButtonClick real,
-Purchase real,
-SignUp real,
-GamePlayed real,
-GamesPlayed3 real,
-GamesPlayed6 real,
-LandingPage_PostImpression real,
-Homepage_PostImpression real,
-ButtonClick_PostImpression real,
-Purchase_PostImpression real,
-SignUp_PostImpression real,
-GamePlayed_PostImpression real,
-GamesPlayed3_PostImpression real,
-GamesPlayed6_PostImpression real,
-LandingPage_PostClick real,
-Homepage_PostClick real,
-ButtonClick_PostClick real,
-Purchase_PostClick real,
-SignUp_PostClick real,
-GamePlayed_PostClick real,
-GamesPlayed3_PostClick real,
-GamesPlayed6_PostClick real,
-Conv1_CPA real,
-Conv2 real,
-Conv3 real,
-Conv4 real,
-Conv5 real,
-Conv6 real,
-Conv7 real,
-Conv8 real,
-Conv9 real,
-Conv10 real,
-FullPlacementName char(500),
-mpPlacementName char(500),
-mpClient char(500),
-mpBudget char(500),
-mpFranchise char(500),
-mpCampaign char(500),
-mpCampaignTiming char(500),
-mpCampaignType char(500),
-mpCampaignPhase char(500),
-mpVendor char(500),
-mpCountry_Region char(500),
-mpVendorType char(500),
-mpMediaChannel char(500),
-mpTargeting char(500),
-mpCreative char(500),
-mpCopy char(500),
-mpSize char(500),
-mpBuyModel char(500),
-mpBuyRate char(500),
-mpPlacementDate char(500),
-mpServing char(500),
-mpMisc char(500),
-mpRetailer char(500),
-mpAdModel char(500),
-mpAdRate char(500),
-mpAge char(500),
-mpGender char(500),
-mpCTA char(500),
-mpClickthroughURL char(500),
-mpProductName char(500),
-mpProductDetail char(500),
-mpFormat char(500),
-mpEnvironment char(500),
-mpDataType1 char(500),
-mpDataType2 char(500),
-mpTargetingBucket char(500),
-mpGenreTargeting char(500),
-mpKPI char(500),
-mpDescriptiveName char(500),
-mpAdType char(500),
-mpAdFormat char(500),
-mpCreativeDescription char(500),
-mpBuyRate2 char(500),
-mpBuyRate3 char(500),
-mpBuyRate4 char(500),
-mpBuyRate5 char(500),
-mpPlacementDate2 char(500),
-mpPlacementDate3 char(500),
-mpPlacementDate4 char(500),
-mpPlacementDate5 char(500),
-mpMisc2 char(500),
-mpMisc3 char(500),
-mpMisc4 char(500),
-mpMisc5 char(500),
-mpMisc6 char(500),
-PlannedNetCost real,
-NetCostFinal real
-'''
+db_config_file = 'dbconfig.json'
+
+db_schema_file = 'dbschema.csv'
+table = 'Table'
+pk = 'PK'
+columns = 'Columns'
+fk = 'FK'
+split_columns = [pk, columns, fk]
+dirty_columns = {pk: ':', columns: ' ', fk: ':'}
+
+db_translation_file = 'db_df_translation.csv'
+translation_db = 'DB'
+translation_df = 'DF'
+translation_type = 'TYPE'
+
+upload_id_file = 'upload_id_file.csv'
+upload_tbl = 'upload'
+upload_id_col = 'uploadid'
+upload_data_ed = 'dataenddate'
+upload_last_upload_date = 'lastuploaddate'
+upload_name = 'uploadname'
+upload_data_sd = 'datastartdate'
+
+upload_cols = [upload_data_ed, upload_last_upload_date,
+               upload_name, upload_data_sd]
+
+event_date = 'eventdate'
+upload_name_param = ['agencyname', 'clientname', 'productname', 'campaignname']
+
+event_name = 'eventname'
+plan_name = 'planname'
+full_placement_name = 'fullplacementname'
