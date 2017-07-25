@@ -72,7 +72,7 @@ MIS6 = 'mpMisc 6'
 COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
         VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE,
         DEM, GEN, CTA, URL, PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, GTF, KPI, DN,
-        AT, AF, CD, CH, CM, LI, LEN, CD, AD, DL1, DL2, HL1, HL2, DUL, BR2, BR3,
+        AT, AF, CD, CH, CM, LI, LEN, AD, DL1, DL2, HL1, HL2, DUL, BR2, BR3,
         BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, BR2, BR3]
@@ -83,18 +83,6 @@ PFN = 'plannet_dictionary.csv'
 PNC = 'Planned Net Cost'
 PCOLS = [FPN, PNC]
 PFPN = 'PNC FPN'
-
-
-full_placement_cols = [FPN, CAM, VEN, COU, MC, TAR, CRE, COP, BM, BR, PD, SRV,
-                       RET, ENV, KPI]
-
-product_cols = [PRN, PRD]
-campaign_cols = [CAM, CTIM, CP, CT]
-vendor_cols = [VEN, VT]
-targeting_cols = [TAR, AGE, GEN, DT1, DT2, TB, GT]
-creative_cols = [CRE, SIZ, AF, AT, CTA]
-copy_cols = [COP]
-
 
 filename_rel_config = 'relational_dictionary_config.csv'
 RK = 'Relational_Key'
