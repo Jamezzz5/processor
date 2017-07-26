@@ -231,6 +231,7 @@ def import_plan_data(key, df, **kwargs):
     dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
     dic.apply_constants()
     dic.apply_relation()
+    dic.data_dict = cln.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
     return dic.data_dict
 
 
