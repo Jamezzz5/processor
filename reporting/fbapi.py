@@ -101,49 +101,22 @@ class FbApi(object):
             fields = def_fields
         return sd, ed, fields
 
-    def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields = self.parse_fields(fields)
+    @staticmethod
+    def date_check(sd, ed):
         sd = sd.date()
         ed = ed.date()
         if sd > ed:
             logging.warn('Start date greater than end date.  Start data was' +
                          'set to end date.')
             sd = ed
-        full_date_list = self.list_dates(sd, ed)
-        self.date_lists = map(None, *(iter(full_date_list),) * 7)
-        for date_list in self.date_lists:
-            date_list = filter(None, date_list)
-            sd = date_list[0]
-            ed = date_list[-1]
-            self.field_lists = [fields]
-            for field_list in self.field_lists:
-                logging.info('Getting FB data for ' + str(sd) + ' to ' +
-                             str(ed))
-                try:
-                    insights = list(self.account.get_insights(
-                        fields=field_list,
-                        params={'level': AdsInsights.Level.ad,
-                                'time_range': {'since': str(sd),
-                                               'until': str(ed), },
-                                'time_increment': 1, }))
-                    deleted = list(self.account.get_insights(
-                        fields=field_list,
-                        params={'level': AdsInsights.Level.ad,
-                                'time_range': {'since': str(sd),
-                                               'until': str(ed), },
-                                'time_increment': 1,
-                                'filtering': [{'field': 'ad.effective_status',
-                                               'operator': 'IN',
-                                               'value': ['DELETED',
-                                                         'ARCHIVED']}]}))
-                except FacebookRequestError as e:
-                    self.request_error(e, date_list, field_list)
-                    continue
-                if insights:
-                    self.df = self.df.append(insights, ignore_index=True)
-                if deleted:
-                    self.df = self.df.append(deleted, ignore_index=True)
+        return sd, ed
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        fields = self.parse_fields(fields)
+        sd, ed = self.date_check(sd, ed)
+        self.date_lists = self.set_full_date_lists(sd, ed)
+        self.get_raw_data(fields)
         for col in nested_col:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
@@ -154,6 +127,39 @@ class FbApi(object):
                 self.nested_dicts_to_cols(col)
         self.df = self.rename_cols()
         return self.df
+
+    def get_raw_data(self, fields):
+        for date_list in self.date_lists:
+            date_list = filter(None, date_list)
+            sd = date_list[0]
+            ed = date_list[-1]
+            self.field_lists = [fields]
+            for field_list in self.field_lists:
+                self.make_request(sd, ed, date_list, field_list)
+
+    def make_request(self, sd, ed, date_list, field_list):
+        logging.info('Getting FB data for ' + str(sd) + ' to ' + str(ed))
+        try:
+            insights = list(self.account.get_insights(
+                fields=field_list,
+                params={'level': AdsInsights.Level.ad,
+                        'time_range': {'since': str(sd), 'until': str(ed), },
+                        'time_increment': 1, }))
+            deleted = list(self.account.get_insights(
+                fields=field_list,
+                params={'level': AdsInsights.Level.ad,
+                        'time_range': {'since': str(sd), 'until': str(ed), },
+                        'time_increment': 1,
+                        'filtering': [{'field': 'ad.effective_status',
+                                       'operator': 'IN',
+                                       'value': ['DELETED', 'ARCHIVED']}]}))
+        except FacebookRequestError as e:
+            self.request_error(e, date_list, field_list)
+            return True
+        if insights:
+            self.df = self.df.append(insights, ignore_index=True)
+        if deleted:
+            self.df = self.df.append(deleted, ignore_index=True)
 
     def request_error(self, e, date_list, field_list):
         if e._api_error_code == 190:
@@ -211,12 +217,13 @@ class FbApi(object):
         return self.df
 
     @staticmethod
-    def list_dates(sd, ed):
+    def set_full_date_lists(sd, ed):
         dates = []
         while sd <= ed:
             dates.append(sd)
             sd = sd + dt.timedelta(days=1)
-        return dates
+        date_lists = map(None, *(iter(dates),) * 7)
+        return date_lists
 
     def nested_dicts_to_cols(self, nd_col):
         self.df[nd_col] = (self.df[nd_col]
@@ -237,7 +244,9 @@ class FbApi(object):
     @staticmethod
     def clean_nested_df(dirty_df, clean_df):
         dirty_df = (dirty_df.pivot(columns='action_type', values='value')
-                            .drop(0.0, axis=1).fillna(0))
+                    .fillna(0))
+        for col in [x for x in [0.0, 'action_type'] if x in dirty_df.columns]:
+            dirty_df = dirty_df.drop(col, axis=1)
         dirty_df = dirty_df.apply(pd.to_numeric)
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()
