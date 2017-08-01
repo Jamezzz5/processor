@@ -68,7 +68,7 @@ class TtdApi(object):
         payload = {
             'AdvertiserIds': [self.ad_id],
             'PageStartIndex': 0,
-            'PageSize': 10
+            'PageSize': 10000
         }
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
