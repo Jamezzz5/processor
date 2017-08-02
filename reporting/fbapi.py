@@ -27,6 +27,11 @@ nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
 
 nested_dict_col = ['actions']
 
+breakdown_age = ['age']
+breakdown_gender = ['gender']
+breakdown_placement = ['placement']
+
+
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
                 'campaign_name': 'Campaign Name', 'adset_name': 'Ad Set Name',
@@ -85,11 +90,19 @@ class FbApi(object):
                 sys.exit(0)
 
     @staticmethod
-    def parse_fields(fields):
-        for field in fields:
-            if field == 'Actions':
-                fields = def_fields + fields_actions
-        return fields
+    def parse_fields(items):
+        breakdowns = []
+        fields = def_fields
+        for item in items:
+            if item == 'Actions':
+                fields.extend(fields_actions)
+            if item == 'Age':
+                breakdowns.extend(breakdown_age)
+            if item == 'Gender':
+                breakdowns.extend(breakdown_gender)
+            if item == 'Placement':
+                breakdowns.extend(breakdown_placement)
+        return fields, breakdowns
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -113,10 +126,10 @@ class FbApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields = self.parse_fields(fields)
+        fields, breakdowns = self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
-        self.get_raw_data(fields)
+        self.get_raw_data(fields, breakdowns)
         for col in nested_col:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
@@ -128,26 +141,28 @@ class FbApi(object):
         self.df = self.rename_cols()
         return self.df
 
-    def get_raw_data(self, fields):
+    def get_raw_data(self, fields, breakdowns):
         for date_list in self.date_lists:
             date_list = filter(None, date_list)
             sd = date_list[0]
             ed = date_list[-1]
             self.field_lists = [fields]
             for field_list in self.field_lists:
-                self.make_request(sd, ed, date_list, field_list)
+                self.make_request(sd, ed, date_list, field_list, breakdowns)
 
-    def make_request(self, sd, ed, date_list, field_list):
+    def make_request(self, sd, ed, date_list, field_list, breakdowns):
         logging.info('Getting FB data for ' + str(sd) + ' to ' + str(ed))
         try:
             insights = list(self.account.get_insights(
                 fields=field_list,
                 params={'level': AdsInsights.Level.ad,
+                        'breakdowns': breakdowns,
                         'time_range': {'since': str(sd), 'until': str(ed), },
                         'time_increment': 1, }))
             deleted = list(self.account.get_insights(
                 fields=field_list,
                 params={'level': AdsInsights.Level.ad,
+                        'breakdowns': breakdowns,
                         'time_range': {'since': str(sd), 'until': str(ed), },
                         'time_increment': 1,
                         'filtering': [{'field': 'ad.effective_status',
