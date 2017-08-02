@@ -116,6 +116,7 @@ class DBUpload(object):
             df_rds = self.format_and_read_rds(id_table, id_config, sliced_df)
             sliced_df = sliced_df.merge(df_rds, how='outer', on=self.name)
             sliced_df = sliced_df.drop(self.name, axis=1)
+            sliced_df = self.dft.df_col_to_type(sliced_df, self.id_col, 'INT')
         return sliced_df
 
     def format_and_read_rds(self, table, id_config, sliced_df):
@@ -433,12 +434,13 @@ class DFTranslation(object):
         self.date_columns = {k: v for k, v in self.translation_type.items()
                              if v == 'DATE'}.keys()
         self.int_columns = {k: v for k, v in self.translation_type.items()
-                            if v == 'INT'}.keys()
+                            if v == 'INT' or v == 'BIGINT'
+                            or v == 'BIGSERIAL'}.keys()
         self.real_columns = {k: v for k, v in self.translation_type.items()
                              if v == 'REAL' or v == 'DECIMAL'}.keys()
 
     def load_df(self, datafile):
-        self.df = pd.read_csv(datafile, encoding='iso-8859-1')
+        self.df = pd.read_csv(datafile, encoding='utf-8')
         self.df_columns = [x for x in self.df_columns
                            if x in list(self.df.columns)]
         self.df = self.df[self.df_columns]
@@ -450,6 +452,7 @@ class DFTranslation(object):
                                   self.int_columns).sum().reset_index()
         real_columns = [x for x in self.real_columns if x in self.df.columns]
         self.df = self.df[self.df[real_columns].sum(axis=1) != 0].reset_index()
+        self.df.replace(['"'], [''], regex=True, inplace=True)
 
     def get_upload_id(self):
         self.add_upload_cols()
@@ -500,18 +503,23 @@ class DFTranslation(object):
             if col not in self.translation_type.keys():
                 continue
             data_type = self.translation_type[col]
-            if data_type == 'TEXT':
-                df[col] = df[col].replace(np.nan, 'None')
-                df[col] = df[col].astype(str)
-            if data_type == 'REAL':
-                df[col] = df[col].replace(np.nan, 0)
-                df[col] = df[col].astype(float)
-            if data_type == 'DATE':
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-                df[col] = df[col].replace(pd.NaT, None)
-            if data_type == 'INT':
-                df[col] = df[col].replace(np.nan, 0)
-                df[col] = df[col].astype(int)
+            df = self.df_col_to_type(df, col, data_type)
+        return df
+
+    @staticmethod
+    def df_col_to_type(df, col, data_type):
+        if data_type == 'TEXT':
+            df[col] = df[col].replace(np.nan, 'None')
+            df[col] = df[col].astype(unicode)
+        if data_type == 'REAL':
+            df[col] = df[col].replace(np.nan, 0)
+            df[col] = df[col].astype(float)
+        if data_type == 'DATE':
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+            df[col] = df[col].replace(pd.NaT, None)
+        if data_type == 'INT':
+            df[col] = df[col].replace(np.nan, 0)
+            df[col] = df[col].astype(int)
         return df
 
     def remove_zero_rows(self, df):
