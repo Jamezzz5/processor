@@ -17,6 +17,7 @@ class ImportHandler(object):
         self.matrix = matrix
 
     def output(self, api_merge, api_df, filename, first_row, last_row, vk):
+        cln.dir_check(vmc.pathraw)
         if str(api_merge) != 'nan':
             api_merge_file = vmc.pathraw + str(api_merge)
             if os.path.isfile(api_merge_file):
