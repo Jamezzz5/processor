@@ -46,7 +46,6 @@ class DBUpload(object):
                                          [self.dft.upload_id])
             df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
                           indicator=True)
-            df = df.drop_duplicates(self.name).reset_index()
             self.update_rows(df, df_rds.columns, table)
             self.delete_rows(df, table)
             self.insert_rows(df, table)
@@ -55,7 +54,6 @@ class DBUpload(object):
                                          self.name, self.values)
             df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
                           indicator=True)
-            df = df.drop_duplicates(self.name).reset_index()
             self.update_rows(df, df_rds.columns, table)
             self.insert_rows(df, table)
 
@@ -440,7 +438,10 @@ class DFTranslation(object):
                              if v == 'REAL' or v == 'DECIMAL'}.keys()
 
     def load_df(self, datafile):
-        self.df = pd.read_csv(datafile, encoding='utf-8')
+        try:
+            self.df = pd.read_csv(datafile, encoding='utf-8')
+        except UnicodeDecodeError:
+            self.df = pd.read_csv(datafile, encoding='iso-8859-1')
         self.df_columns = [x for x in self.df_columns
                            if x in list(self.df.columns)]
         self.df = self.df[self.df_columns]
