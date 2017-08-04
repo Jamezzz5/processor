@@ -166,17 +166,24 @@ class DictRelational(object):
             if col_y in data_dict.columns:
                 data_dict[col] = data_dict[col_y]
                 data_dict = data_dict.drop([col_x, col_y], axis=1)
+        self.rename_y_columns(data_dict)
         data_dict = self.reorder_columns(data_dict)
         return data_dict
 
     @staticmethod
+    def rename_y_columns(df):
+        for x in df.columns:
+            if x[-2:] == '_y':
+                df.rename(columns={x: x[:-2]}, inplace=True)
+
+    @staticmethod
     def reorder_columns(data_dict):
-        if set(data_dict.columns) == set(dctc.COLS):
-            data_dict = data_dict[dctc.COLS]
-        else:
+        if dctc.PNC in data_dict.columns:
             first_cols = [dctc.FPN, dctc.PNC]
             cols = [x for x in data_dict.columns if x not in first_cols]
             data_dict = data_dict[first_cols + cols]
+        else:
+            data_dict = data_dict[dctc.COLS]
         return data_dict
 
 
