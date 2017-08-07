@@ -41,21 +41,18 @@ class DBUpload(object):
         pk_config = {table: self.dbs.pk.keys() + self.dbs.pk.values()}
         self.set_id_info(table, pk_config, ul_df)
         if exc.upload_id_col in ul_df.columns:
-            df_rds = self.read_rds_table(table, list(ul_df.columns),
-                                         exc.upload_id_col,
-                                         [self.dft.upload_id])
-            df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
-                          indicator=True)
-            self.update_rows(df, df_rds.columns, table)
-            self.delete_rows(df, table)
-            self.insert_rows(df, table)
+            where_col = exc.upload_id_col
+            where_val = [self.dft.upload_id]
         else:
-            df_rds = self.read_rds_table(table, list(ul_df.columns),
-                                         self.name, self.values)
-            df = pd.merge(df_rds, ul_df, how='outer', on=self.name,
-                          indicator=True)
-            self.update_rows(df, df_rds.columns, table)
-            self.insert_rows(df, table)
+            where_col = self.name
+            where_val = self.values
+        df_rds = self.read_rds_table(table, list(ul_df.columns),
+                                     where_col, where_val)
+        df = pd.merge(df_rds, ul_df, how='outer', on=self.name, indicator=True)
+        df = df.drop_duplicates(self.name).reset_index()
+        self.update_rows(df, df_rds.columns, table)
+        self.delete_rows(df, table)
+        self.insert_rows(df, table)
 
     def read_rds_table(self, table, cols, where_col, where_val):
         df_rds = self.db.read_rds_table(table, where_col, where_val)
@@ -86,6 +83,8 @@ class DBUpload(object):
                 self.db.update_rows(table, set_cols, set_vals, self.name)
 
     def delete_rows(self, df, table):
+        if exc.upload_id_col not in df.columns:
+            return None
         df_delete = df[df['_merge'] == 'left_only']
         delete_vals = df_delete[self.name].tolist()
         if delete_vals:
@@ -95,6 +94,10 @@ class DBUpload(object):
     def insert_rows(self, df, table):
         df_insert = df[df['_merge'] == 'right_only']
         df_insert = self.get_right_df(df_insert)
+        for fk_table in self.dbs.fk:
+            col = self.dbs.fk[fk_table][0]
+            if col in df_insert.columns:
+                df_insert = self.dft.df_col_to_type(df_insert, col, 'INT')
         if self.id_col in df_insert.columns:
             df_insert = df_insert.drop([self.id_col], axis=1)
         if not df_insert.empty:
@@ -484,7 +487,7 @@ class DFTranslation(object):
     def add_upload_name(self):
         upload_name_items = [x for param in exc.upload_name_param for x in
                              self.df[param].drop_duplicates()]
-        upload_name = '_'.join(x for x in upload_name_items)
+        upload_name = '_'.join(str(x) for x in upload_name_items)
         self.df[exc.upload_name] = upload_name
 
     def add_event_name(self):
