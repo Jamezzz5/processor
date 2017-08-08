@@ -6,7 +6,7 @@ import ast
 import datetime as dt
 import pandas as pd
 from facebookads.api import FacebookAdsApi
-from facebookads import objects
+from facebookads.adobjects.adaccount import AdAccount
 from facebookads.adobjects.adsinsights import AdsInsights
 from facebookads.exceptions import FacebookRequestError
 
@@ -67,7 +67,7 @@ class FbApi(object):
         self.load_config()
         self.check_config()
         FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
-        self.account = objects.AdAccount(self.config['act_id'])
+        self.account = AdAccount(self.config['act_id'])
 
     def load_config(self):
         try:
