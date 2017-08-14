@@ -1,9 +1,8 @@
 Pandas==0.20.1
 Numpy==1.12.1
 Facebookads==2.10.1
-googleads==4.8.0
+googleads==6.1.0
 win_inet_pton==1.0.1
-requests==2.12.5
 oauth2==1.9.0.post1
 psycopg2==2.6.2
 pyyaml==3.12
