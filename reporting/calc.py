@@ -184,7 +184,7 @@ def agency_fees_calculation(df):
 
 def total_cost_calculation(df):
     logging.info('Calculating Total Cost')
-    if vmc.AD_COST not in df.columns:
+    if AGENCY_FEES not in df.columns:
         logging.warning('Agency Fees not in dataframe.  '
                         'Update dict and run again to calculate total cost.')
         return df

@@ -180,10 +180,11 @@ class DictRelational(object):
     def reorder_columns(data_dict):
         if dctc.PNC in data_dict.columns:
             first_cols = [dctc.FPN, dctc.PNC]
-            cols = [x for x in data_dict.columns if x not in first_cols]
-            data_dict = data_dict[first_cols + cols]
+            back_cols = [x for x in data_dict.columns if x not in first_cols]
+            cols = first_cols + back_cols
         else:
-            data_dict = data_dict[dctc.COLS]
+            cols = [x for x in dctc.COLS if x in data_dict.columns]
+        data_dict = data_dict[cols]
         return data_dict
 
 
