@@ -173,6 +173,10 @@ def net_cost_final_calculation(df):
 
 def agency_fees_calculation(df):
     logging.info('Calculating Agency Fees')
+    if dctc.AGF not in df.columns:
+        logging.warning('Agency Fee Rates not in dict.  '
+                        'Update dict and run again to calculate agency fees.')
+        return df
     df = cln.data_to_type(df, float_col=[NCF, dctc.AGF])
     df[AGENCY_FEES] = df[dctc.AGF] * df[NCF]
     return df
@@ -180,6 +184,10 @@ def agency_fees_calculation(df):
 
 def total_cost_calculation(df):
     logging.info('Calculating Total Cost')
+    if vmc.AD_COST not in df.columns:
+        logging.warning('Agency Fees not in dataframe.  '
+                        'Update dict and run again to calculate total cost.')
+        return df
     df = cln.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST])
     df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES] + df[vmc.AD_COST]
     return df
