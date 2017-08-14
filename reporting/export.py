@@ -83,7 +83,7 @@ class DBUpload(object):
                 self.db.update_rows(table, set_cols, set_vals, self.name)
 
     def delete_rows(self, df, table):
-        if exc.upload_id_col not in df.columns:
+        if exc.upload_id_col + '_x' not in df.columns:
             return None
         df_delete = df[df['_merge'] == 'left_only']
         delete_vals = df_delete[self.name].tolist()
