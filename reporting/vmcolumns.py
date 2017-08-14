@@ -83,3 +83,6 @@ datafloatcol = datacol[:]
 datafloatcol.remove(date)
 
 pathraw = 'Raw Data/'
+
+AD_COST = 'Adserving Cost'
+AM_CPM = 'CPM'

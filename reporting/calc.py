@@ -25,6 +25,9 @@ BM_FLATDATE = 'FlatDate'
 
 NCF = 'Net Cost Final'
 
+AGENCY_FEES = 'Agency Fees'
+TOTAL_COST = 'Total Cost'
+
 CLI_PN_PD = 'Clicks by Placement & Placement Date'
 CLI_PD = 'Clicks by Placement Date'
 PLACE_DATE = 'Placement Date'
@@ -168,7 +171,23 @@ def net_cost_final_calculation(df):
     return df
 
 
+def agency_fees_calculation(df):
+    logging.info('Calculating Agency Fees')
+    df = cln.data_to_type(df, float_col=[NCF, dctc.AGF])
+    df[AGENCY_FEES] = df[dctc.AGF] * df[NCF]
+    return df
+
+
+def total_cost_calculation(df):
+    logging.info('Calculating Total Cost')
+    df = cln.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST])
+    df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES] + df[vmc.AD_COST]
+    return df
+
+
 def calculate_cost(df):
     df = net_cost_calculation(df)
     df = net_cost_final_calculation(df)
+    df = agency_fees_calculation(df)
+    df = total_cost_calculation(df)
     return df

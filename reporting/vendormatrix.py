@@ -15,8 +15,6 @@ log = logging.getLogger()
 csv_path = 'Config/'
 csv = csv_path + 'Vendormatrix.csv'
 plan_key = 'Plan Net'
-AD_COST = 'Adserving Cost'
-AM_CPM = 'CPM'
 
 
 class VendorMatrix(object):
@@ -190,7 +188,7 @@ def combining_data(df, key, columns, **kwargs):
 def ad_cost_calculation(df):
     if (vmc.impressions not in df) or (vmc.clicks not in df):
         return df
-    df[AD_COST] = np.where(df[dctc.AM] == AM_CPM,
+    df[vmc.AD_COST] = np.where(df[dctc.AM] == vmc.AM_CPM,
                            df[dctc.AR] * df[vmc.impressions] / 1000,
                            df[dctc.AR] * df[vmc.clicks])
     return df

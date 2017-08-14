@@ -1,4 +1,4 @@
-Pandas==0.20.1
+pandas==0.20.3
 Numpy==1.12.1
 Facebookads==2.10.1
 googleads==6.1.0

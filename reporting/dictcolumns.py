@@ -27,6 +27,7 @@ MIS = 'mpMisc'
 RET = 'mpRetailer'
 AM = 'mpAd Model'
 AR = 'mpAd Rate'
+AGF = 'mpAgency Fees Rate'
 AGE = 'mpAge'
 DEM = 'mpDemographic'
 GEN = 'mpGender'
@@ -70,12 +71,12 @@ MIS4 = 'mpMisc 4'
 MIS5 = 'mpMisc 5'
 MIS6 = 'mpMisc 6'
 COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
-        VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGE,
-        DEM, GEN, CTA, URL, PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, GTF, KPI, DN,
-        AT, AF, CD, CH, CM, LI, LEN, AD, DL1, DL2, HL1, HL2, DUL, BR2, BR3,
-        BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGF,
+        AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, GTF,
+        KPI, DN, AT, AF, CD, CH, CM, LI, LEN, AD, DL1, DL2, HL1, HL2, DUL, BR2,
+        BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
-floatcol = [BR, AR, BR2, BR3]
+floatcol = [BR, AR, BR2, BR3, AGF]
 datecol = [PD, PD2, PD3, PD4, PD5]
 strcol = [BM, AM, VEN]
 
