@@ -521,6 +521,7 @@ class DFTranslation(object):
         if data_type == 'DATE':
             df[col] = pd.to_datetime(df[col], errors='coerce')
             df[col] = df[col].replace(pd.NaT, None)
+            df[col] = df[col].replace(pd.NaT, dt.datetime.today())
         if data_type == 'INT':
             df[col] = df[col].replace(np.nan, 0)
             df[col] = df[col].astype(int)
