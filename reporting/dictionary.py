@@ -29,6 +29,7 @@ class Dict(object):
             data_dict.to_csv(self.dictfile, index=False)
         self.data_dict = pd.read_csv(self.dictfile)
         self.clean()
+        self.data_dict = self.data_dict.drop_duplicates()
 
     def get(self):
         return self.data_dict
@@ -49,6 +50,7 @@ class Dict(object):
             error = error.ix[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
             self.data_dict = self.data_dict.append(error)
             self.data_dict = self.data_dict[dctc.COLS]
+            self.clean()
             self.write()
             err.dic = self
             err.reset()
@@ -58,12 +60,14 @@ class Dict(object):
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
         self.data_dict = rc.loop(self.data_dict)
+        self.clean()
         self.write(self.data_dict)
 
     def apply_constants(self):
         dcc = DictConstantConfig()
         dcc.read(dctc.filename_con_config)
         self.data_dict = dcc.apply_constants_to_dict(self.data_dict)
+        self.clean()
         self.write(self.data_dict)
 
     def write(self, df=None):
@@ -79,6 +83,8 @@ class Dict(object):
     def clean(self):
         self.data_dict = cln.data_to_type(self.data_dict, dctc.floatcol,
                                           dctc.datecol, dctc.strcol)
+        self.data_dict = self.data_dict.drop_duplicates(dctc.FPN)
+        self.data_dict = self.data_dict.reset_index(drop=True)
 
 
 class RelationalConfig(object):
