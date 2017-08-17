@@ -64,6 +64,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
     for col in float_col:
         if col not in df:
             continue
+        df[col] = pd.to_numeric(df[col], errors='coerce')
         df[col] = df[col].astype(str)
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
         df[col] = df[col].replace('nan', 0)
