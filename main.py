@@ -48,7 +48,7 @@ def main():
         df = matrix.vm_loop()
         df = cal.calculate_cost(df)
         try:
-            df.to_csv(OUTPUT_FILE, index=False)
+            df.to_csv(OUTPUT_FILE, index=False, encoding = 'utf-8')
             logging.info('Final Output Successfully generated')
         except IOError:
             logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
