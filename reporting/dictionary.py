@@ -43,10 +43,10 @@ class Dict(object):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
             logging.info('Populating ' + self.filename)
-            i = 0
-            for value in autodicord:
+            for i, value in enumerate(autodicord):
                 error[value] = error[placement].str.split('_').str[i]
-                i += 1
+            error = self.auto_combine(error)
+            error = self.auto_split(error)
             error = error.ix[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
             self.data_dict = self.data_dict.append(error)
             self.data_dict = self.data_dict[dctc.COLS]
@@ -54,7 +54,38 @@ class Dict(object):
             self.write()
             err.dic = self
             err.reset()
-            self.clean()
+
+    @staticmethod
+    def auto_combine(error):
+        comb_key = ':::'
+        comb_cols = [x for x in error.columns if comb_key in x]
+        for col in sorted(comb_cols):
+            final_col = col.split(comb_key)[0]
+            delimit_str = col.split(comb_key)[2]
+            if final_col not in error.columns:
+                error[final_col] = error[col].astype(str)
+            else:
+                error[final_col] = (error[final_col] + delimit_str +
+                                    error[col].astype(str))
+            error.drop([col], axis=1, inplace=True)
+        return error
+
+    @staticmethod
+    def auto_split(error):
+        split_key = '::'
+        split_cols = [x for x in error.columns if '::' in x]
+        for col in split_cols:
+            params = col.split(split_key)
+            delimit_list = params[1::2]
+            delimit_list = ', '.join(delimit_list)
+            new_col_list = params[::2]
+            df = pd.DataFrame(error[col].str.split(delimit_list, 1).tolist(),
+                              columns=new_col_list, index=error.index)
+            new_col_list.append(col)
+            drop_cols = [x for x in new_col_list if x in error.columns]
+            error.drop(drop_cols, axis=1, inplace=True)
+            error = pd.concat([error, df], axis=1)
+        return error
 
     def apply_relation(self):
         rc = RelationalConfig()
