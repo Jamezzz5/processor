@@ -65,19 +65,25 @@ class TtdApi(object):
     def get_download_url(self):
         auth_token = self.authenticate()
         rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
-        payload = {
-            'AdvertiserIds': [self.ad_id],
-            'PageStartIndex': 0,
-            'PageSize': 10000
-        }
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
-        r = requests.post(rep_url, headers=self.headers, json=payload)
-        data = json.loads(r.content)
-        data = data['Result']
-        data = [x for x in data if
-                x['ReportScheduleName'] == self.report_name and
-                x['ReportExecutionState'] == 'Complete']
+        data = []
+        i = 0
+        result_data = [1]
+        while len(result_data) != 0:
+            payload = {
+                'AdvertiserIds': [self.ad_id],
+                'PageStartIndex': i * 99,
+                'PageSize': 100
+            }
+            r = requests.post(rep_url, headers=self.headers, json=payload)
+            raw_data = json.loads(r.content)
+            result_data = raw_data['Result']
+            match_data = [x for x in result_data if
+                          x['ReportScheduleName'] == self.report_name and
+                          x['ReportExecutionState'] == 'Complete']
+            data.extend(match_data)
+            i += 1
         last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
         dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
         return dl_url
