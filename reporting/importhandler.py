@@ -3,9 +3,9 @@ import fbapi
 import awapi
 import twapi
 import ttdapi
+import gaapi
 import szkftp
 import os
-import datetime as dt
 import pandas as pd
 import vmcolumns as vmc
 import cleaning as cln
@@ -48,6 +48,9 @@ class ImportHandler(object):
         else:
             try:
                 api_df.to_csv(vmc.pathraw + filename, index=False)
+            except UnicodeEncodeError:
+                api_df.to_csv(vmc.pathraw + filename, index=False,
+                              encoding='utf-8')
             except IOError:
                 logging.warn(vmc.pathraw + filename + ' could not be ' +
                              'opened.  API data was not saved.')
@@ -98,6 +101,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_tw_key, twapi.TwApi())
         if self.arg_check('ttd'):
             self.api_calls(self.matrix.api_ttd_key, ttdapi.TtdApi())
+        if self.arg_check('ga'):
+            self.api_calls(self.matrix.api_ga_key, gaapi.GaApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:

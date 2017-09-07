@@ -22,7 +22,7 @@ console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd'])
+parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--noprocess', action='store_true')
 parser.add_argument('--update', choices=['all', 'vm', 'dct'])
