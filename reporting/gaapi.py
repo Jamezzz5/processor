@@ -13,8 +13,6 @@ def_metrics = ['sessions', 'goal1Completions', 'goal2Completions', 'users',
 def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
             'adContent', 'country']
 
-devices = ['Desktop', 'Tablet', 'Mobile']
-
 
 class GaApi(object):
     def __init__(self):
@@ -29,6 +27,7 @@ class GaApi(object):
         self.config_list = None
         self.client = None
         self.df = pd.DataFrame()
+        self.r = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -84,7 +83,7 @@ class GaApi(object):
             fields = def_dims
         return sd, ed, fields
 
-    def create_url(self, sd, ed, device):
+    def create_url(self, sd, ed, start_index):
         ids_url = '?ids=ga:{}'.format(self.ga_id)
         sd_url = '&start-date={}'.format(sd)
         ed_url = '&end-date={}'.format(ed)
@@ -92,9 +91,10 @@ class GaApi(object):
                                                    for x in def_dims))
         metrics_url = '&metrics={}'.format(','.join('ga:' + x
                                                     for x in def_metrics))
-        device_url = '&filter=ga:deviceCategory={}'.format(device)
+        start_index_url = '&start-index={}'.format(start_index)
+        max_results_url = '&max-results=10000'
         full_url = (base_url + ids_url + sd_url + ed_url + dim_url +
-                    metrics_url + device_url)
+                    metrics_url + start_index_url + max_results_url)
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -106,13 +106,21 @@ class GaApi(object):
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         self.get_client()
-        for device in devices:
-            full_url = self.create_url(sd, ed, device)
-            r = self.client.get(full_url)
-            tdf = self.data_to_df(r)
-            tdf['deviceCategory'] = device
-            self.df = self.df.append(tdf)
+        start_index = 1
+        self.get_raw_data(sd, ed, start_index)
+        total_results = self.r.json()['totalResults']
+        total_pages = range(total_results // 10000 +
+                            ((total_results % 10000) > 0))[1:]
+        start_indices = [(10000 * x) + 1 for x in total_pages]
+        for start_index in start_indices:
+            self.get_raw_data(sd, ed, start_index)
         return self.df
+
+    def get_raw_data(self, sd, ed, start_index):
+        full_url = self.create_url(sd, ed, start_index)
+        self.r = self.client.get(full_url)
+        tdf = self.data_to_df(self.r)
+        self.df = self.df.append(tdf)
 
     @staticmethod
     def data_to_df(r):
