@@ -31,10 +31,10 @@ def string_to_date(my_string):
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
             ':' not in my_string):
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
-    elif ((len(my_string) == 5) or
+    elif (((len(my_string) == 5) and (my_string[0] == '4')) or
             ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
-    elif len(my_string) == 8:
+    elif len(my_string) == 8 and my_string[0].isdigit():
         return dt.datetime.strptime(my_string, '%Y%m%d')
     elif my_string == '0' or my_string == '0.0':
         return pd.NaT
@@ -91,7 +91,7 @@ def first_last_adj(df, first_row, last_row):
     last_row = int(last_row)
     if first_row > 0:
         df.columns = df.loc[first_row - 1]
-        df = df.ix[first_row:]
+        df = df.iloc[first_row:]
     if last_row > 0:
         df = df[:-last_row]
     if pd.isnull(df.columns.values).any():
@@ -163,4 +163,29 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 continue
             df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
                                   factor.astype(float))
+    return df
+
+
+def df_transform(df, transform):
+    if str(transform) == 'nan':
+        return df
+    transform = transform.split('::')
+    transform_type = transform[0]
+    if transform_type == 'MixedDateColumn':
+        mixed_col = transform[1]
+        date_col = transform[2]
+        df[date_col] = df[mixed_col]
+        df = data_to_type(df, date_col=[date_col])
+        df['temp'] = df[date_col]
+        df[date_col] = df[date_col].fillna(method='ffill')
+        df = df[df['temp'].isnull()].reset_index(drop=True)
+        df.drop('temp', axis=1, inplace=True)
+    return df
+
+
+def add_header(df, header, first_row):
+    if str(header) == 'nan' or first_row == 0:
+        return df
+    df[header] = df.columns[0]
+    df.set_value(first_row - 1, header, header)
     return df

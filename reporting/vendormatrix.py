@@ -36,6 +36,8 @@ class VendorMatrix(object):
         self.vm_parse()
         self.vm_import_keys()
         self.vm_rules()
+        self.plan_omit_list = [k for k, v in self.vm[vmc.omit_plan].items()
+                               if str(v)!=str('nan')]
 
     def read(self):
         if not os.path.isfile(csv):
@@ -115,7 +117,8 @@ class VendorMatrix(object):
         self.ven_param = self.vendor_set(vk)
         logging.info('Initializing ' + vk)
         if vk == plan_key:
-            self.tdf = import_plan_data(vk, self.df, **self.ven_param)
+            self.tdf = import_plan_data(vk, self.df, self.plan_omit_list,
+                                        **self.ven_param)
         else:
             self.tdf = import_data(vk, self.vm_rules_dict, **self.ven_param)
         return self.tdf
@@ -199,7 +202,9 @@ def ad_cost_calculation(df):
 
 def import_data(key, vm_rules, **kwargs):
     df = import_read_csv(vmc.pathraw, kwargs[vmc.filename])
+    df = cln.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
     df = cln.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
+    df = cln.df_transform(df, kwargs[vmc.transform])
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     dic = dct.Dict(kwargs[vmc.filenamedict])
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
@@ -218,10 +223,12 @@ def import_data(key, vm_rules, **kwargs):
     df = ad_cost_calculation(df)
     df = cln.col_removal(df, key, kwargs[vmc.dropcol])
     df = cln.apply_rules(df, vm_rules, cln.POST, **kwargs)
+    df[vmc.vendorkey] = key
     return df
 
 
-def import_plan_data(key, df, **kwargs):
+def import_plan_data(key, df, plan_omit_list, **kwargs):
+    df = df.loc[~df[vmc.vendorkey].isin(plan_omit_list)]
     df = df.loc[:, kwargs[vmc.fullplacename]]
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     df = df.drop_duplicates()

@@ -17,6 +17,9 @@ autodicord = 'AUTO DICTIONARY ORDER'
 apifile = 'API_FILE'
 apifields = 'API_FIELDS'
 apimerge = 'API_MERGE'
+transform = 'TRANSFORM'
+header = 'HEADER'
+omit_plan = 'OMIT_PLAN'
 date = 'Date'
 impressions = 'Impressions'
 clicks = 'Clicks'
@@ -63,8 +66,8 @@ conv10 = 'Conv10'
 
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
-          filenameerror, startdate, enddate, dropcol, autodicplace,
-          autodicord, apifile, apifields, apimerge]
+          filenameerror, startdate, enddate, dropcol, autodicplace, autodicord,
+          apifile, apifields, apimerge, transform, header, omit_plan]
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            views100, landingpage, homepage, btnclick, purchase, signup,
