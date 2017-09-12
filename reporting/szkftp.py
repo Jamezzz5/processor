@@ -88,7 +88,8 @@ class SzkFtp(object):
             self.ftp.retrbinary('RETR ' + read_file, r.write)
         except ftplib.all_errors as e:
             logging.warning('Connection to the FTP was closed due to below ' +
-                            'error, retrying. ' + str(e))
+                            'error, pausing for 30 seconds. ' + str(e))
+            time.sleep(30)
             self.ftp_read_file(read_file)
         self.ftp.quit()
         r.seek(0)
@@ -102,6 +103,6 @@ class SzkFtp(object):
             file_info = item.split()[8]
             if file_info != newest_file:
                 try:
-                    self.ftp.delete(self.ftp_path + file_info)
+                    self.ftp.delete(self.ftp_path + '/' + file_info)
                 except ftplib.error_perm:
                     continue
