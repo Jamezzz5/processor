@@ -90,6 +90,8 @@ class SzkFtp(object):
             logging.warning('Connection to the FTP was closed due to below ' +
                             'error, pausing for 30 seconds. ' + str(e))
             time.sleep(30)
+            self.ftp.quit()
+            self.ftp_init()
             self.ftp_read_file(read_file)
         self.ftp.quit()
         r.seek(0)
