@@ -108,6 +108,7 @@ class ImportHandler(object):
         for vk in ftp_key:
             params = self.matrix.vendor_set(vk)
             ftp_class.input_config(params[vmc.apifile])
+            ftp_class.header = params[vmc.firstrow]
             df = ftp_class.get_data()
             self.output(params[vmc.apimerge], df, params[vmc.filename],
                         params[vmc.firstrow], params[vmc.lastrow], vk)

@@ -21,6 +21,7 @@ class SzkFtp(object):
         self.ftp_file = None
         self.username = None
         self.password = None
+        self.header = None
         self.config_list = []
 
     def input_config(self, config):
@@ -64,7 +65,8 @@ class SzkFtp(object):
         if newest_file == '.' or newest_file == '..':
             logging.warn('No files found, returning empty Dataframe.')
             return self.df
-        self.ftp_read_file(newest_file)
+        r = self.ftp_read_file(newest_file)
+        self.string_to_df(newest_file, r)
         return self.df
 
     def ftp_newest_file(self):
@@ -90,15 +92,32 @@ class SzkFtp(object):
             logging.warning('Connection to the FTP was closed due to below ' +
                             'error, pausing for 30 seconds. ' + str(e))
             time.sleep(30)
-            self.ftp.quit()
             self.ftp_init()
             self.ftp_read_file(read_file)
         self.ftp.quit()
         r.seek(0)
+        return r
+
+    def string_to_df(self, read_file, r):
         if read_file[-4:] == '.zip':
-            self.df = pd.read_csv(r, compression='zip')
+            try:
+                self.df = pd.read_csv(r, compression='zip')
+            except pd.errors.ParserError:
+                r.seek(0)
+                self.df = pd.read_csv(r, header=self.header, compression='zip')
+                self.add_dummy_header()
         else:
-            self.df = pd.read_csv(r)
+            try:
+                self.df = pd.read_csv(r)
+            except pd.errors.ParserError:
+                r.seek(0)
+                self.df = pd.read_csv(r, header=self.header)
+                self.add_dummy_header()
+
+    def add_dummy_header(self):
+        cols = self.df.columns
+        dummy_df = pd.DataFrame(data=[cols] * self.header, columns=cols)
+        self.df = dummy_df.append(self.df).reset_index(drop=True)
 
     def ftp_remove_files(self, newest_file):
         for item in self.files:

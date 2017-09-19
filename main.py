@@ -56,7 +56,7 @@ def main():
     if args.db:
         dbu = exp.DBUpload()
         dbu.upload_to_db(exc.db_config_file, exc.db_schema_file,
-                        exc.db_translation_file, OUTPUT_FILE)
+                         exc.db_translation_file, OUTPUT_FILE)
 
 if __name__ == '__main__':
     main()
