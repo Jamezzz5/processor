@@ -9,6 +9,8 @@ from facebookads.api import FacebookAdsApi
 from facebookads.adobjects.adaccount import AdAccount
 from facebookads.adobjects.adsinsights import AdsInsights
 from facebookads.exceptions import FacebookRequestError
+from facebookads.adobjects.adreportrun import AdReportRun
+
 
 def_params = ['campaign_name', 'adset_name', 'ad_name']
 
@@ -60,6 +62,7 @@ class FbApi(object):
         self.config_list = []
         self.date_lists = None
         self.field_lists = None
+        self.async_requests = []
 
     def input_config(self, config):
         logging.info('Loading Facebook config file: ' + str(config))
@@ -129,7 +132,8 @@ class FbApi(object):
         fields, breakdowns = self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
-        self.get_raw_data(fields, breakdowns)
+        self.make_all_requests(fields, breakdowns)
+        self.check_and_get_async_jobs(self.async_requests)
         for col in nested_col:
             try:
                 self.df[col] = self.df[col].apply(lambda x: self.clean_data(x))
@@ -141,7 +145,7 @@ class FbApi(object):
         self.df = self.rename_cols()
         return self.df
 
-    def get_raw_data(self, fields, breakdowns):
+    def make_all_requests(self, fields, breakdowns):
         for date_list in self.date_lists:
             date_list = filter(None, date_list)
             sd = date_list[0]
@@ -151,7 +155,7 @@ class FbApi(object):
                 self.make_request(sd, ed, date_list, field_list, breakdowns)
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns):
-        logging.info('Getting FB data for ' + str(sd) + ' to ' + str(ed))
+        logging.info('Making FB request for ' + str(sd) + ' to ' + str(ed))
         try:
             insights = self.account.get_insights(
                 fields=field_list,
@@ -173,16 +177,38 @@ class FbApi(object):
         except FacebookRequestError as e:
             self.request_error(e, date_list, field_list)
             return True
-        for async_job in [insights, deleted]:
-            percent = self.async_job_check(async_job)
+        self.async_requests.append(insights)
+        self.async_requests.append(deleted)
+
+    def check_and_get_async_jobs(self, async_jobs):
+        self.async_requests = []
+        for job in async_jobs:
+            ar = AdReportRun(job['id'])
+            report = ar.remote_read()
+            percent = report['async_percent_completion']
+            logging.info('FB async_job #' + str(job['id']) +
+                         ' percent done: ' + str(percent) + '%')
+            if percent == 100:
+                complete_job = list(ar.get_result())
+                if complete_job:
+                    self.df = self.df.append(complete_job, ignore_index=True)
+            else:
+                self.async_requests.append(job)
+        if self.async_requests:
+            time.sleep(30)
+            self.check_and_get_async_jobs(self.async_requests)
+
+    def get_all_async_jobs(self, async_jobs):
+        for async_job in async_jobs:
+            percent = self.get_async_job_percent(async_job)
             while percent < 100 and type(percent) is int:
-                percent = self.async_job_check(async_job)
+                percent = self.get_async_job_percent(async_job)
             complete_job = list(async_job.get_result())
             if complete_job:
                 self.df = self.df.append(complete_job, ignore_index=True)
 
     @staticmethod
-    def async_job_check(async_job):
+    def get_async_job_percent(async_job):
         job = async_job.remote_read()
         percent = job['async_percent_completion']
         logging.info('FB async_job #' + str(async_job['id']) +
