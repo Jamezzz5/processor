@@ -153,13 +153,14 @@ class FbApi(object):
     def make_request(self, sd, ed, date_list, field_list, breakdowns):
         logging.info('Getting FB data for ' + str(sd) + ' to ' + str(ed))
         try:
-            insights = list(self.account.get_insights(
+            insights = self.account.get_insights(
                 fields=field_list,
                 params={'level': AdsInsights.Level.ad,
                         'breakdowns': breakdowns,
                         'time_range': {'since': str(sd), 'until': str(ed), },
-                        'time_increment': 1, }))
-            deleted = list(self.account.get_insights(
+                        'time_increment': 1, },
+                async=True)
+            deleted = self.account.get_insights(
                 fields=field_list,
                 params={'level': AdsInsights.Level.ad,
                         'breakdowns': breakdowns,
@@ -167,14 +168,27 @@ class FbApi(object):
                         'time_increment': 1,
                         'filtering': [{'field': 'ad.effective_status',
                                        'operator': 'IN',
-                                       'value': ['DELETED', 'ARCHIVED']}]}))
+                                       'value': ['DELETED', 'ARCHIVED']}]},
+                async=True)
         except FacebookRequestError as e:
             self.request_error(e, date_list, field_list)
             return True
-        if insights:
-            self.df = self.df.append(insights, ignore_index=True)
-        if deleted:
-            self.df = self.df.append(deleted, ignore_index=True)
+        for async_job in [insights, deleted]:
+            percent = self.async_job_check(async_job)
+            while percent < 100 and type(percent) is int:
+                percent = self.async_job_check(async_job)
+            complete_job = list(async_job.get_result())
+            if complete_job:
+                self.df = self.df.append(complete_job, ignore_index=True)
+
+    @staticmethod
+    def async_job_check(async_job):
+        job = async_job.remote_read()
+        percent = job['async_percent_completion']
+        logging.info('FB async_job #' + str(async_job['id']) +
+                     ' percent done: ' + str(percent) + '%')
+        time.sleep(30)
+        return percent
 
     def request_error(self, e, date_list, field_list):
         if e._api_error_code == 190:
@@ -189,6 +203,7 @@ class FbApi(object):
         elif e._api_error_code == 1:
             if date_list[0] == date_list[-1]:
                 logging.warn('Already daily.  Reducing requested fields.')
+                logging.warn('Error as follows: ' + str(e))
                 metrics = [x for x in field_list if x not in def_params]
                 fh, bh = self.split_list(metrics)
                 if fh and bh:
