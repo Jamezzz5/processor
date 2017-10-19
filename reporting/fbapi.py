@@ -188,7 +188,7 @@ class FbApi(object):
             percent = report['async_percent_completion']
             logging.info('FB async_job #' + str(job['id']) +
                          ' percent done: ' + str(percent) + '%')
-            if percent == 100:
+            if percent == 100 and (report['async_status'] == 'Job Completed'):
                 complete_job = list(ar.get_result())
                 if complete_job:
                     self.df = self.df.append(complete_job, ignore_index=True)
