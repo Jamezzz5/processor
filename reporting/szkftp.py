@@ -90,11 +90,15 @@ class SzkFtp(object):
             self.ftp.retrbinary('RETR ' + read_file, r.write)
         except ftplib.all_errors as e:
             logging.warning('Connection to the FTP was closed due to below ' +
-                            'error, pausing for 30 seconds. ' + str(e))
+                            'error, retrying in 30 seconds. ' + str(e))
             time.sleep(30)
             self.ftp_init()
             self.ftp_read_file(read_file)
-        self.ftp.quit()
+        try:
+            self.ftp.quit()
+        except ftplib.all_errors as e:
+            logging.warning('FTP could not quit due to the below ' +
+                            'error, continuing. ' + str(e))
         r.seek(0)
         return r
 
