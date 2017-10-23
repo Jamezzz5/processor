@@ -141,7 +141,7 @@ class DBUpload(object):
 
 # noinspection SqlResolve
 class DB(object):
-    def __init__(self, config):
+    def __init__(self, config=None):
         self.user = None
         self.pw = None
         self.host = None
@@ -153,16 +153,18 @@ class DB(object):
         self.connection = None
         self.cursor = None
         self.output = None
+        self.conn_string = None
         self.config = config
-        self.input_config(self.config)
-        self.conn_string = ('postgresql://{0}:{1}@{2}:{3}/{4}'.
-                            format(*self.config_list))
+        if self.config:
+            self.input_config(self.config)
 
     def input_config(self, config):
         logging.info('Loading DB config file: ' + str(config))
         self.configfile = config_path + config
         self.load_config()
         self.check_config()
+        self.conn_string = ('postgresql://{0}:{1}@{2}:{3}/{4}'.
+                            format(*self.config_list))
 
     def load_config(self):
         try:
@@ -349,6 +351,21 @@ class DB(object):
                              where_col, where_col2, where_val2)
         self.cursor.execute(command, set_vals)
         self.connection.commit()
+
+    @staticmethod
+    def read_file(self, filename):
+        with open('config/' + str(filename), 'r') as f:
+            sqlfile = f.read()
+        return sqlfile
+
+    def get_data(self, sd, ed, filename):
+        logging.info('Querying ')
+        self.connect()
+        command = self.read_file(filename)
+        self.cursor.execute(command)
+        data = self.cursor.fetchall()
+        df = pd.DataFrame(data=data)
+        return df
 
 
 class DBSchema(object):

@@ -29,6 +29,7 @@ class VendorMatrix(object):
         self.api_ttd_key = []
         self.api_ga_key = []
         self.ftp_sz_key = []
+        self.db_dna_key = []
         self.vm_rules_dict = {}
         self.ven_param = None
         self.tdf = None
@@ -85,6 +86,10 @@ class VendorMatrix(object):
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)
+            if vk_split[vk][0] == 'DB':
+                if vk_split[vk][1] == 'DNA':
+                    self.db_dna_key.append(vk)
+
 
     def vm_rules(self):
         for key in self.vm:
