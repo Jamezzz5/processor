@@ -353,7 +353,7 @@ class DB(object):
         self.connection.commit()
 
     @staticmethod
-    def read_file(self, filename):
+    def read_file(filename):
         with open('config/' + str(filename), 'r') as f:
             sqlfile = f.read()
         return sqlfile
@@ -466,14 +466,14 @@ class DFTranslation(object):
                            if x in list(self.df.columns)]
         self.df = self.df[self.df_columns]
         self.df = self.df.rename(columns=self.translation)
-        self.get_upload_id()
         self.df = self.clean_types_for_upload(self.df)
+        self.get_upload_id()
         self.add_event_name()
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
         real_columns = [x for x in self.real_columns if x in self.df.columns]
         self.df = self.df[self.df[real_columns].sum(axis=1) != 0].reset_index()
-        replace_dict = {'"':'', "\\\\":'/'}
+        replace_dict = {'"': '', "\\\\": '/'}
         self.df.replace(replace_dict, regex=True, inplace=True)
 
     def get_upload_id(self):
