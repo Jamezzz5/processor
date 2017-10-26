@@ -510,7 +510,8 @@ class DFTranslation(object):
 
     def add_event_name(self):
         self.df[exc.event_name] = (self.df[exc.event_date].astype(str) +
-                                   self.df[exc.full_placement_name])
+                                   self.df[exc.full_placement_name] +
+                                   str(self.upload_id))
         self.df[exc.plan_name] = self.df[exc.event_name]
 
     def slice_for_upload(self, columns):
