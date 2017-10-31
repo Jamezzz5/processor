@@ -5,6 +5,7 @@ import twapi
 import ttdapi
 import gaapi
 import szkftp
+import awss3
 import export
 import os
 import pandas as pd
@@ -137,3 +138,22 @@ class ImportHandler(object):
     def db_loop(self):
         if self.arg_check('dna'):
             self.db_load(self.matrix.db_dna_key, export.DB())
+
+    def s3_load(self, s3_key, s3_class):
+        for vk in s3_key:
+            params = self.matrix.vendor_set(vk)
+            s3_class.input_config(params[vmc.apifile])
+            start_check = self.date_check(params[vmc.startdate])
+            end_check = self.date_check(params[vmc.enddate])
+            if start_check:
+                params[vmc.startdate] = None
+            if end_check:
+                params[vmc.enddate] = None
+            df = s3_class.get_data(sd=params[vmc.startdate],
+                                   ed=params[vmc.enddate])
+            self.output(params[vmc.apimerge], df, params[vmc.filename],
+                        params[vmc.firstrow], params[vmc.lastrow], vk)
+
+    def s3_loop(self):
+        if self.arg_check('dna'):
+            self.s3_load(self.matrix.s3_dna_key, awss3.S3())

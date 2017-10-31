@@ -25,6 +25,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--dbi', choices=['all', 'dna'])
+parser.add_argument('--s3', choices=['all', 'dna'])
 parser.add_argument('--noprocess', action='store_true')
 parser.add_argument('--update', choices=['all', 'vm', 'dct'])
 parser.add_argument('--db', action='store_true')
@@ -48,6 +49,9 @@ def main():
     if args.dbi:
         dbi = ih.ImportHandler(args.dbi, matrix)
         dbi.db_loop()
+    if args.s3:
+        s3 = ih.ImportHandler(args.s3, matrix)
+        s3.s3_loop()
     if not args.noprocess:
         df = matrix.vm_loop()
         df = cal.calculate_cost(df)
