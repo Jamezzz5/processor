@@ -17,7 +17,7 @@ def_params = ['campaign_name', 'adset_name', 'ad_name']
 def_metrics = ['impressions', 'inline_link_clicks', 'spend',
                'video_10_sec_watched_actions', 'video_p25_watched_actions',
                'video_p50_watched_actions', 'video_p75_watched_actions',
-               'video_p100_watched_actions']
+               'video_p100_watched_actions', 'reach', 'frequency']
 
 fields_actions = ['actions', 'action_values']
 
@@ -44,7 +44,9 @@ col_name_dic = {'date_start': 'Reporting Starts',
                 'video_p25_watched_actions': 'Video Watches at 25%',
                 'video_p50_watched_actions': 'Video Watches at 50%',
                 'video_p75_watched_actions': 'Video Watches at 75%',
-                'video_p100_watched_actions': 'Video Watches at 100%'}
+                'video_p100_watched_actions': 'Video Watches at 100%',
+                'reach': 'Reach',
+                'frequency': 'Frequency'}
 
 config_path = 'Config/'
 
