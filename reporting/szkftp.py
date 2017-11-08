@@ -3,7 +3,7 @@ import logging
 import json
 import sys
 import time
-from StringIO import StringIO
+from io import BytesIO
 import pandas as pd
 
 config_path = 'Config/'
@@ -48,7 +48,7 @@ class SzkFtp(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in Sizmek config file.  Aborting.')
+                logging.warning(item + 'not in Sizmek config file.  Aborting.')
                 sys.exit(0)
 
     def ftp_init(self):
@@ -63,7 +63,7 @@ class SzkFtp(object):
         newest_file = self.ftp_newest_file()
         self.ftp_remove_files(newest_file)
         if newest_file == '.' or newest_file == '..':
-            logging.warn('No files found, returning empty Dataframe.')
+            logging.warning('No files found, returning empty Dataframe.')
             return self.df
         r = self.ftp_read_file(newest_file)
         self.string_to_df(newest_file, r)
@@ -72,7 +72,11 @@ class SzkFtp(object):
     def ftp_newest_file(self):
         file_dict = {}
         self.files = []
-        self.ftp.dir(self.files.append)
+        try:
+            self.ftp.dir(self.files.append)
+        except ftplib.all_errors as e:
+            self.ftp_force_close_error(e)
+            self.ftp_newest_file()
         for item in self.files:
             file_info = item.split()
             file_date = ' '.join(item.split()[5:8])
@@ -85,14 +89,11 @@ class SzkFtp(object):
         return newest_file
 
     def ftp_read_file(self, read_file):
-        r = StringIO()
+        r = BytesIO()
         try:
             self.ftp.retrbinary('RETR ' + read_file, r.write)
         except ftplib.all_errors as e:
-            logging.warning('Connection to the FTP was closed due to below ' +
-                            'error, retrying in 30 seconds. ' + str(e))
-            time.sleep(30)
-            self.ftp_init()
+            self.ftp_force_close_error(e)
             self.ftp_read_file(read_file)
         try:
             self.ftp.quit()
@@ -101,6 +102,12 @@ class SzkFtp(object):
                             'error, continuing. ' + str(e))
         r.seek(0)
         return r
+
+    def ftp_force_close_error(self, e):
+        logging.warning('Connection to the FTP was closed due to below ' +
+                        'error, retrying in 30 seconds. ' + str(e))
+        time.sleep(30)
+        self.ftp_init()
 
     def string_to_df(self, read_file, r):
         if read_file[-4:] == '.zip':
