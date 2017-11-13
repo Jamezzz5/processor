@@ -42,12 +42,18 @@ class Dict(object):
     def auto(self, err, autodicord, placement):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
+            if placement not in error.columns:
+                logging.warning(
+                    str(placement) + ' not in error report.  Use ' +
+                    'Full Placement Name or mpPlacement Name.  ' +
+                    'Dictionary was not automatically populated')
+                return True
             logging.info('Populating ' + self.filename)
             for i, value in enumerate(autodicord):
                 error[value] = error[placement].str.split('_').str[i]
             error = self.auto_combine(error)
             error = self.auto_split(error)
-            error = error.ix[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
+            error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
             self.data_dict = self.data_dict.append(error)
             self.data_dict = self.data_dict[dctc.COLS]
             self.clean()
@@ -56,7 +62,7 @@ class Dict(object):
             err.reset()
 
     @staticmethod
-    def auto_combine(error):
+    def auto_combine(error=pd.DataFrame()):
         comb_key = ':::'
         comb_cols = [x for x in error.columns if comb_key in x]
         for col in sorted(comb_cols):
@@ -71,7 +77,7 @@ class Dict(object):
         return error
 
     @staticmethod
-    def auto_split(error):
+    def auto_split(error=pd.DataFrame()):
         split_key = '::'
         split_cols = [x for x in error.columns if '::' in x]
         for col in split_cols:
