@@ -21,6 +21,17 @@ formatter = logging.Formatter('%(asctime)s [%(module)14s]' +
 console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    logging.critical("Uncaught exception: ",
+                     exc_info=(exc_type, exc_value, exc_traceback))
+
+
+sys.excepthook = handle_exception
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
