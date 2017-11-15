@@ -3,11 +3,11 @@ import sys
 import os.path
 import pandas as pd
 import numpy as np
-import vmcolumns as vmc
-import cleaning as cln
-import dictionary as dct
-import dictcolumns as dctc
-import errorreport as er
+import reporting.vmcolumns as vmc
+import reporting.cleaning as cln
+import reporting.dictionary as dct
+import reporting.dictcolumns as dctc
+import reporting.errorreport as er
 import pandas.io.common as pdioc
 
 log = logging.getLogger()
@@ -39,7 +39,7 @@ class VendorMatrix(object):
         self.vm_import_keys()
         self.vm_rules()
         self.plan_omit_list = [k for k, v in self.vm[vmc.omit_plan].items()
-                               if str(v)!=str('nan')]
+                               if str(v) != str('nan')]
 
     def read(self):
         if not os.path.isfile(csv):
@@ -163,10 +163,10 @@ def full_placement_creation(df, key, full_col, full_place_cols):
     i = 0
     for col in full_place_cols:
         if col not in df:
-            logging.warn(col + ' was not in ' + key + '.  It was not ' +
-                         'included in Full Placement Name.  For reference '
-                         'column names are as follows: \n' +
-                         str(df.columns.values.tolist()))
+            logging.warning(col + ' was not in ' + key + '.  It was not ' +
+                            'included in Full Placement Name.  For reference '
+                            'column names are as follows: \n' +
+                            str(df.columns.values.tolist()))
             continue
         df[col] = df[col].astype(str)
         if i == 0:
@@ -186,8 +186,8 @@ def combining_data(df, key, columns, **kwargs):
             if str(item) == 'nan':
                 continue
             if item not in df:
-                logging.warn(item + ' is not in ' + key +
-                             '.  It was not put in ' + col)
+                logging.warning(item + ' is not in ' + key +
+                                '.  It was not put in ' + col)
                 continue
             if col == item:
                 continue
@@ -203,8 +203,8 @@ def ad_cost_calculation(df):
     if (vmc.impressions not in df) or (vmc.clicks not in df):
         return df
     df[vmc.AD_COST] = np.where(df[dctc.AM] == vmc.AM_CPM,
-                           df[dctc.AR] * df[vmc.impressions] / 1000,
-                           df[dctc.AR] * df[vmc.clicks])
+                               df[dctc.AR] * df[vmc.impressions] / 1000,
+                               df[dctc.AR] * df[vmc.clicks])
     return df
 
 
@@ -260,9 +260,9 @@ def vm_update_rule_check(vm, vm_col):
     return vm
 
 
-def vm_update(old_file='Config/OldVendorMatrix.csv'):
+def vm_update(old_path='Config/', old_file='OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
-    ovm = pd.read_csv(old_file)
+    ovm = import_read_csv(path=old_path, filename=old_file)
     rules = [col for col in ovm.columns if 'RULE_' in col]
     rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
@@ -272,7 +272,8 @@ def vm_update(old_file='Config/OldVendorMatrix.csv'):
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
-    vm[vmc.autodicplace] = vm[vmc.placement]
+    if vmc.autodicplace not in ovm.columns:
+        vm[vmc.autodicplace] = vmc.fullplacename
     vm = cln.col_removal(vm, 'vm',
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
     vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)

@@ -29,11 +29,20 @@ views25 = 'Video Views 25'
 views50 = 'Video Views 50'
 views75 = 'Video Views 75'
 views100 = 'Video Views 100'
+reach = 'Reach'
+frequency = 'Frequency'
+engagements = 'Engagements'
+likes = 'Likes'
+revenue = 'Revenue'
 landingpage = 'Landing Page'
 homepage = 'Homepage'
 btnclick = 'Button Click'
 purchase = 'Purchase'
 signup = 'Sign Up'
+newuser = 'New User'
+activeuser = 'Active User'
+download = 'Download'
+login = 'Login'
 gplay = 'Game Played'
 gplay3 = 'Games Played 3'
 gplay6 = 'Games Played 6'
@@ -42,6 +51,10 @@ homepagepi = 'Homepage' + postimp
 btnclickpi = 'Button Click' + postimp
 purchasepi = 'Purchase' + postimp
 signuppi = 'Sign Up' + postimp
+newuserpi = 'New User' + postimp
+activeuserpi = 'Active User' + postimp
+downloadpi = 'Download' + postimp
+loginpi = 'Login' + postimp
 gplaypi = 'Game Played' + postimp
 gplay3pi = 'Games Played 3' + postimp
 gplay6pi = 'Games Played 6' + postimp
@@ -50,6 +63,10 @@ homepagepc = 'Homepage' + postclick
 btnclickpc = 'Button Click' + postclick
 purchasepc = 'Purchase' + postclick
 signuppc = 'Sign Up' + postclick
+newuserpc = 'New User' + postclick
+activeuserpc = 'Active User' + postclick
+downloadpc = 'Download' + postclick
+loginpc = 'Login' + postclick
 gplaypc = 'Game Played' + postclick
 gplay3pc = 'Games Played 3' + postclick
 gplay6pc = 'Games Played 6' + postclick
@@ -70,10 +87,13 @@ vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
           apifile, apifields, apimerge, transform, header, omit_plan]
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
-           views100, landingpage, homepage, btnclick, purchase, signup,
-           gplay, gplay3, gplay6, landingpagepi, homepagepi, btnclickpi,
-           purchasepi, signuppi, gplaypi, gplay3pi, gplay6pi, landingpagepc,
-           homepagepc, btnclickpc, purchasepc, signuppc, gplaypc, gplay3pc,
+           views100, reach, frequency, engagements, likes, revenue,
+           landingpage, homepage, btnclick, purchase, signup, newuser,
+           activeuser, download, login, gplay, gplay3, gplay6, landingpagepi,
+           homepagepi, btnclickpi, purchasepi, signuppi, newuserpi,
+           activeuserpi, downloadpi, loginpi, gplaypi, gplay3pi, gplay6pi,
+           landingpagepc, homepagepc, btnclickpc, purchasepc, signuppc,
+           newuserpc, activeuserpc, downloadpc, loginpc, gplaypc, gplay3pc,
            gplay6pc, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,
            conv9, conv10]
 
