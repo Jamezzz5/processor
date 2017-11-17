@@ -97,7 +97,7 @@ class SzkFtp(object):
             self.ftp_read_file(read_file)
         try:
             self.ftp.quit()
-        except ftplib.all_errors as e:
+        except AttributeError as e:
             logging.warning('FTP could not quit due to the below ' +
                             'error, continuing. ' + str(e))
         r.seek(0)
