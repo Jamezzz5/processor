@@ -517,9 +517,19 @@ class DFTranslation(object):
     def slice_for_upload(self, columns):
         exp_cols = [x for x in columns if x in list(self.df.columns)]
         sliced_df = self.df[exp_cols].drop_duplicates()
+        sliced_df = self.group_for_upload(sliced_df, exp_cols)
         sliced_df = self.clean_types_for_upload(sliced_df)
         sliced_df = self.remove_zero_rows(sliced_df)
         return sliced_df
+
+    def group_for_upload(self, df, exp_cols):
+        if any(x in exp_cols for x in self.real_columns):
+            group_cols = [x for x in exp_cols if x in
+                          (self.text_columns + self.date_columns +
+                           self.int_columns)]
+            if group_cols:
+                df = df.groupby(group_cols).sum().reset_index()
+        return df
 
     def clean_types_for_upload(self, df):
         for col in df.columns:
