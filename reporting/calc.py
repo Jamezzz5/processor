@@ -1,9 +1,9 @@
 import logging
 import numpy as np
 import pandas as pd
-import dictcolumns as dctc
-import vmcolumns as vmc
-import cleaning as cln
+import reporting.dictcolumns as dctc
+import reporting.vmcolumns as vmc
+import reporting.cleaning as cln
 
 BM_CPM = 'CPM'
 BM_CPC = 'CPC'

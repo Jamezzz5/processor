@@ -90,7 +90,7 @@ class TwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in Twitter config file.  Aborting.')
+                logging.warning(item + 'not in config file.  Aborting.')
                 sys.exit(0)
 
     def request(self, url):
@@ -129,18 +129,18 @@ class TwApi(object):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         ed = ed + dt.timedelta(days=1)
         if sd > ed:
-            logging.warn('Start date greater than end date.  Start date was' +
-                         'set to end date.')
+            logging.warning('Start date greater than end date.  Start date'
+                            'was set to end date.')
             sd = ed - dt.timedelta(days=1)
         full_date_list = self.list_dates(sd, ed)
-        date_lists = map(None, *(iter(full_date_list),) * 7)
+        date_lists = [full_date_list[i:i + 7] for i
+                      in range(0, len(full_date_list), 7)]
         timezone = self.get_account_timezone()
         stats_url = DOMAIN + URLSTACC + '%s?' % self.account_id
         metric_groups = URLMG + '%s' % ','.join(fields)
         self.cidname = self.get_cids()
         ids_lists = map(None, *(iter(self.cidname.keys()),) * 20)
         for date_list in date_lists:
-            date_list = filter(None, date_list)
             if date_list[0] == date_list[-1]:
                 sd = self.date_format(date_list[0] - dt.timedelta(days=1),
                                       timezone)

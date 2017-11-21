@@ -1,16 +1,16 @@
 import logging
-import fbapi
-import awapi
-import twapi
-import ttdapi
-import gaapi
-import szkftp
-import awss3
-import export
+import reporting.fbapi as fbapi
+import reporting.awapi as awapi
+import reporting.twapi as twapi
+import reporting.ttdapi as ttdapi
+import reporting.gaapi as gaapi
+import reporting.szkftp as szkftp
+import reporting.awss3 as awss3
+import reporting.export as export
 import os
 import pandas as pd
-import vmcolumns as vmc
-import cleaning as cln
+import reporting.vmcolumns as vmc
+import reporting.cleaning as cln
 
 
 class ImportHandler(object):
@@ -26,8 +26,8 @@ class ImportHandler(object):
                 try:
                     df = pd.read_csv(api_merge_file, parse_dates=True)
                 except IOError:
-                    logging.warn(api_merge + ' could not be opened.  ' +
-                                 'API data was not merged.')
+                    logging.warning(api_merge + ' could not be opened.  ' +
+                                    'API data was not merged.')
                     api_df.to_csv(api_merge_file)
                     return None
                 df = cln.first_last_adj(df, first_row, last_row)
@@ -43,7 +43,7 @@ class ImportHandler(object):
                 if last_row != 0:
                     self.matrix.vm_change(vk, vmc.lastrow, 0)
             else:
-                logging.warn(api_merge + ' not found.  Creating file.')
+                logging.warning(api_merge + ' not found.  Creating file.')
                 df = pd.DataFrame()
                 df = df.append(api_df, ignore_index=True)
                 df.to_csv(api_merge_file, index=False)
@@ -54,8 +54,8 @@ class ImportHandler(object):
                 api_df.to_csv(vmc.pathraw + filename, index=False,
                               encoding='utf-8')
             except IOError:
-                logging.warn(vmc.pathraw + filename + ' could not be ' +
-                             'opened.  API data was not saved.')
+                logging.warning(vmc.pathraw + filename + ' could not be ' +
+                                'opened.  API data was not saved.')
 
     @staticmethod
     def create_all_col(df):

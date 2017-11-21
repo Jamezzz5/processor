@@ -2,8 +2,8 @@ import logging
 import os.path
 import sys
 import pandas as pd
-import cleaning as cln
-import dictcolumns as dctc
+import reporting.cleaning as cln
+import reporting.dictcolumns as dctc
 
 csvpath = 'ERROR REPORTS/'
 
@@ -29,8 +29,8 @@ class ErrorReport(object):
 
     def create(self):
         if dctc.FPN not in self.df:
-            logging.warn('Full Placement Name not in ' + self.filename + '.' +
-                         '  Delete that dictionary and try rebuilding.')
+            logging.warning('Full Placement Name not in ' + self.filename +
+                            '.  Delete that dictionary and try rebuilding.')
         data_err = pd.merge(self.df, self.dictionary, on=dctc.FPN,
                             how='left', indicator=True)
         data_err = data_err[data_err['_merge'] == 'left_only']
@@ -54,12 +54,11 @@ class ErrorReport(object):
                              ' was deleted.')
             except OSError:
                 logging.info('All placements defined!')
-                # next
         else:
             try:
                 self.data_err.to_csv(errfile, index=False)
-                logging.warn('Not all placements defined.  ' + filename +
-                             ' was generated')
+                logging.warning('Not all placements defined.  ' + filename +
+                                ' was generated')
             except IOError:
-                logging.warn(filename + 'cannot be opened.' +
-                             '  It was not updated.')
+                logging.warning(filename + 'cannot be opened.' +
+                                '  It was not updated.')

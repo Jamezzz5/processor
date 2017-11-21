@@ -8,18 +8,18 @@ import reporting.calc as cal
 import reporting.export as exp
 import reporting.expcolumns as exc
 
-logging.basicConfig(stream=sys.stdout,
-                    filename='logfile.log',
-                    filemode='w',
-                    level=logging.INFO,
-                    disable_existing_loggers=False,
-                    format=('%(asctime)s [%(module)14s]' +
-                            '[%(levelname)8s] %(message)s'))
-console = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter('%(asctime)s [%(module)14s]' +
                               '[%(levelname)8s] %(message)s')
+log = logging.getLogger()
+log.setLevel(logging.INFO)
+
+console = logging.StreamHandler(sys.stdout)
 console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
+log.addHandler(console)
+
+file = logging.FileHandler('logfile.log', mode='w')
+file.setFormatter(formatter)
+log.addHandler(file)
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):

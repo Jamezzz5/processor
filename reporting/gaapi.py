@@ -31,7 +31,8 @@ class GaApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warn('Config file name not in vendor matrix.  Aborting.')
+            logging.warning('Config file name not in vendor matrix.  ' +
+                            'Aborting.')
             sys.exit(0)
         logging.info('Loading GA config file: ' + str(config))
         self.config_file = config_path + config
@@ -58,7 +59,7 @@ class GaApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in GA config file.  Aborting.')
+                logging.warning(item + 'not in GA config file.  Aborting.')
                 sys.exit(0)
 
     def get_client(self):
@@ -100,8 +101,8 @@ class GaApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         if sd > ed:
-            logging.warn('Start date greater than end date.  Start date was ' +
-                         'set to end date.')
+            logging.warning('Start date greater than end date.  Start date' +
+                            'was set to end date.')
             sd = ed
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')

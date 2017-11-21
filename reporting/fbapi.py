@@ -91,7 +91,7 @@ class FbApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in FB config file.  Aborting.')
+                logging.warning(item + 'not in FB config file.  Aborting.')
                 sys.exit(0)
 
     @staticmethod
@@ -124,8 +124,8 @@ class FbApi(object):
         sd = sd.date()
         ed = ed.date()
         if sd > ed:
-            logging.warn('Start date greater than end date.  Start data was' +
-                         'set to end date.')
+            logging.warning('Start date greater than end date.  Start data' +
+                            'was set to end date.')
             sd = ed
         return sd, ed
 
@@ -149,7 +149,6 @@ class FbApi(object):
 
     def make_all_requests(self, fields, breakdowns):
         for date_list in self.date_lists:
-            date_list = filter(None, date_list)
             sd = date_list[0]
             ed = date_list[-1]
             self.field_lists = [fields]
@@ -223,15 +222,15 @@ class FbApi(object):
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
         elif e._api_error_code == 17:
-            logging.warn('Facebook rate limit reached.  Pausing for ' +
-                         '300 seconds.')
+            logging.warning('Facebook rate limit reached.  Pausing for ' +
+                            '300 seconds.')
             time.sleep(300)
             self.date_lists.append(date_list)
             return True
         elif e._api_error_code == 1:
             if date_list[0] == date_list[-1]:
-                logging.warn('Already daily.  Reducing requested fields.')
-                logging.warn('Error as follows: ' + str(e))
+                logging.warning('Already daily.  Reducing requested fields.' +
+                                'Error as follows: ' + str(e))
                 metrics = [x for x in field_list if x not in def_params]
                 fh, bh = self.split_list(metrics)
                 if fh and bh:
@@ -240,7 +239,7 @@ class FbApi(object):
                 else:
                     self.field_lists.append(field_list)
                 return True
-            logging.warn('Too much data queried.  Reducing time scale')
+            logging.warning('Too much data queried.  Reducing time scale')
             fh, bh = self.split_list(date_list)
             self.date_lists.append(fh)
             self.date_lists.append(bh)
@@ -280,7 +279,7 @@ class FbApi(object):
         while sd <= ed:
             dates.append(sd)
             sd = sd + dt.timedelta(days=1)
-        date_lists = map(None, *(iter(dates),) * 7)
+        date_lists = [dates[i:i + 7] for i in range(0, len(dates), 7)]
         return date_lists
 
     def nested_dicts_to_cols(self, nd_col):

@@ -1,6 +1,6 @@
 import logging
 from googleads import adwords
-from StringIO import StringIO
+from io import BytesIO
 import datetime as dt
 import pandas as pd
 import numpy as np
@@ -44,7 +44,8 @@ class AwApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warn('Config file name not in vendor matrix.  Aborting.')
+            logging.warning('Config file name not in vendor matrix. ' +
+                            'Aborting.')
             sys.exit(0)
         logging.info('Loading Adwords config file: ' + str(config))
         self.configfile = config_path + config
@@ -74,7 +75,7 @@ class AwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in Sizmek config file.  Aborting.')
+                logging.warning(item + 'not in Sizmek config file.  Aborting.')
                 sys.exit(0)
 
     @staticmethod
@@ -107,8 +108,8 @@ class AwApi(object):
         ed = ed.date()
         fields = self.parse_fields(fields)
         if sd > ed:
-            logging.warn('Start date greater than end date.  Start date was ' +
-                         'set to end date.')
+            logging.warning('Start date greater than end date.  Start date' +
+                            'was set to end date.')
             sd = ed
         logging.info('Getting Adwords data from ' + str(sd) + ' until ' +
                      str(ed))
@@ -120,7 +121,7 @@ class AwApi(object):
             'downloadFormat': 'CSV',
             'selector': {'fields': fields,
                          'dateRange': {'min': sd, 'max': ed}}}
-        r = StringIO()
+        r = BytesIO()
         report_downloader.DownloadReport(report, r,
                                          skip_report_header=True,
                                          skip_report_summary=True)

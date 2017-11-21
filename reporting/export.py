@@ -2,12 +2,12 @@ import logging
 import json
 import sys
 import os
-import cStringIO
+from io import BytesIO
 import datetime as dt
 import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine
-import expcolumns as exc
+import reporting.expcolumns as exc
 
 log = logging.getLogger()
 config_path = 'Config/'
@@ -38,7 +38,7 @@ class DBUpload(object):
         ul_df = self.dft.slice_for_upload(cols)
         ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
         self.dbs.set_table(table)
-        pk_config = {table: self.dbs.pk.keys() + self.dbs.pk.values()}
+        pk_config = {table: self.dbs.pk.items()[0]}
         self.set_id_info(table, pk_config, ul_df)
         if exc.upload_id_col in ul_df.columns:
             where_col = exc.upload_id_col
@@ -183,7 +183,7 @@ class DB(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in DB config file.  Aborting.')
+                logging.warning(item + 'not in DB config file.  Aborting.')
                 sys.exit(0)
 
     def connect(self):
@@ -193,7 +193,7 @@ class DB(object):
         self.cursor = self.connection.cursor()
 
     def df_to_output(self, df):
-        self.output = cStringIO.StringIO()
+        self.output = BytesIO()
         df.to_csv(self.output, sep='\t', header=False, index=False,
                   encoding='utf-8')
         self.output.seek(0)
@@ -447,15 +447,15 @@ class DFTranslation(object):
                                     df[exc.translation_db]))
         self.translation_type = dict(zip(df[exc.translation_db],
                                          df[exc.translation_type]))
-        self.text_columns = {k: v for k, v in self.translation_type.items()
-                             if v == 'TEXT'}.keys()
-        self.date_columns = {k: v for k, v in self.translation_type.items()
-                             if v == 'DATE'}.keys()
-        self.int_columns = {k: v for k, v in self.translation_type.items()
+        self.text_columns = [k for k, v in self.translation_type.items()
+                             if v == 'TEXT']
+        self.date_columns = [k for k, v in self.translation_type.items()
+                             if v == 'DATE']
+        self.int_columns = [k for k, v in self.translation_type.items()
                             if v == 'INT' or v == 'BIGINT'
-                            or v == 'BIGSERIAL'}.keys()
-        self.real_columns = {k: v for k, v in self.translation_type.items()
-                             if v == 'REAL' or v == 'DECIMAL'}.keys()
+                            or v == 'BIGSERIAL']
+        self.real_columns = [k for k, v in self.translation_type.items()
+                             if v == 'REAL' or v == 'DECIMAL']
 
     def load_df(self, datafile):
         try:
@@ -543,7 +543,7 @@ class DFTranslation(object):
     def df_col_to_type(df, col, data_type):
         if data_type == 'TEXT':
             df[col] = df[col].replace(np.nan, 'None')
-            df[col] = df[col].astype(unicode)
+            df[col] = df[col].astype('U')
         if data_type == 'REAL':
             df[col] = df[col].replace(np.nan, 0)
             df[col] = df[col].astype(float)

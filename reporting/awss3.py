@@ -3,8 +3,7 @@ import json
 import logging
 import boto
 import gzip
-import cStringIO
-from StringIO import StringIO
+from io import BytesIO, StringIO
 import pandas as pd
 import datetime as dt
 from boto.s3.connection import S3Connection
@@ -49,7 +48,7 @@ class S3(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + 'not in S3 config file.  Aborting.')
+                logging.warning(item + 'not in S3 config file.  Aborting.')
                 sys.exit(0)
 
     @staticmethod
@@ -70,14 +69,14 @@ class S3(object):
     @staticmethod
     def get_file_as_str(key):
         s3_string = key.get_contents_as_string()
-        data = cStringIO.StringIO(s3_string)
+        data = StringIO(s3_string)
         data = gzip.GzipFile(fileobj=data).read()
         return data
 
     def get_file_as_df(self, key):
         logging.info('Downloading: ' + str(key.name))
         data = self.get_file_as_str(key)
-        r = StringIO(data)
+        r = BytesIO(data)
         df = pd.read_csv(r)
         return df
 

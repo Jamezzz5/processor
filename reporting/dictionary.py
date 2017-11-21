@@ -2,8 +2,8 @@ import sys
 import os.path
 import logging
 import pandas as pd
-import cleaning as cln
-import dictcolumns as dctc
+import reporting.cleaning as cln
+import reporting.dictcolumns as dctc
 
 csvpath = 'Dictionaries/'
 
@@ -114,8 +114,8 @@ class Dict(object):
         try:
             df.to_csv(self.dictfile, index=False)
         except IOError:
-            logging.warn(self.filename + ' could not be opened.  ' +
-                         'This dictionary was not saved.')
+            logging.warning(self.filename + ' could not be opened.  ' +
+                            'This dictionary was not saved.')
 
     def clean(self):
         self.data_dict = cln.data_to_type(self.data_dict, dctc.floatcol,
@@ -193,8 +193,8 @@ class DictRelational(object):
         try:
             df.to_csv(self.full_file_path, index=False)
         except IOError:
-            logging.warn(self.filename + ' could not be opened.  ' +
-                         'This dictionary was not saved.')
+            logging.warning(self.filename + ' could not be opened.  ' +
+                            'This dictionary was not saved.')
 
     def apply_to_dict(self, data_dict):
         if self.key not in data_dict.columns:

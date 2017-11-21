@@ -3,7 +3,7 @@ import logging
 import json
 import sys
 import pandas as pd
-from StringIO import StringIO
+from io import StringIO
 
 configfile = 'Config/ttdconfig.json'
 
@@ -47,7 +47,7 @@ class TtdApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warn(item + ' not in TTD config file.  Aborting.')
+                logging.warning(item + ' not in TTD config file.  Aborting.')
                 sys.exit(0)
 
     def authenticate(self):

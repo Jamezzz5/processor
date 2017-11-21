@@ -3,7 +3,7 @@ import sys
 import os
 import datetime as dt
 import pandas as pd
-import vmcolumns as vmc
+import reporting.vmcolumns as vmc
 
 RULE_METRIC = 'METRIC'
 RULE_QUERY = 'QUERY'
@@ -64,7 +64,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
     for col in float_col:
         if col not in df:
             continue
-        df[col] = df[col].astype(str)
+        df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
         df[col] = df[col].replace('nan', 0)
         df[col] = df[col].replace('NA', 0)
@@ -75,13 +75,13 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
             continue
         df[col] = df[col].replace(['1/0/1900', '1/1/1970'], '0')
         df[col] = df[col].fillna(0)
-        df[col] = df[col].astype(str)
+        df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: string_to_date(x))
         df[col] = pd.to_datetime(df[col], errors='coerce')
     for col in str_col:
         if col not in df:
             continue
-        df[col] = df[col].astype(str)
+        df[col] = df[col].astype('U')
     return df
 
 
@@ -95,9 +95,9 @@ def first_last_adj(df, first_row, last_row):
     if last_row > 0:
         df = df[:-last_row]
     if pd.isnull(df.columns.values).any():
-        logging.warn('At least one column name is undefined.  Your first row '
-                     'is likely incorrect. For reference the first few rows '
-                     'are:\n' + str(df.head()))
+        logging.warning('At least one column name is undefined.  Your first'
+                        'row is likely incorrect. For reference the first few'
+                        'rows are:\n' + str(df.head()))
         sys.exit(0)
     return df
 
@@ -116,8 +116,8 @@ def col_removal(df, key, removal_cols):
         if col not in df:
             if col == 'nan':
                 continue
-            logging.warn(col + ' is not or is no longer in ' +
-                         key + '.  It was not removed.')
+            logging.warning(col + ' is not or is no longer in ' +
+                            key + '.  It was not removed.')
             continue
         df = df.drop(col, axis=1)
     return df
@@ -127,8 +127,8 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
     for rule in vm_rules:
         for item in RULE_CONST:
             if item not in vm_rules[rule].keys():
-                logging.warn(item + ' not in vendormatrix for rule ' +
-                             rule + '.  The rule did not run.')
+                logging.warning(item + ' not in vendormatrix for rule ' +
+                                rule + '.  The rule did not run.')
                 return df
         metrics = kwargs[vm_rules[rule][RULE_METRIC]]
         queries = kwargs[vm_rules[rule][RULE_QUERY]]
@@ -146,8 +146,8 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
             query = query.split('::')
             values = query[1].split(',')
             if query[0] not in df:
-                logging.warn(query[0] + ' not in data for rule ' +
-                             rule + '.  The rule did not run.')
+                logging.warning(query[0] + ' not in data for rule ' +
+                                rule + '.  The rule did not run.')
                 return df
             if query[0] == vmc.date:
                 sd = string_to_date(values[0])
@@ -158,8 +158,8 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         tdf = list(tdf.index.values)
         for metric in metrics:
             if metric not in df:
-                logging.warn(metric + ' not in data for rule ' +
-                             rule + '.  The rule did not run.')
+                logging.warning(metric + ' not in data for rule ' +
+                                rule + '.  The rule did not run.')
                 continue
             df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
                                   factor.astype(float))

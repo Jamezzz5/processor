@@ -46,7 +46,10 @@ class VendorMatrix(object):
             logging.info('Creating Vendor Matrix.  Populate it and run again')
             vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
             vm.to_csv(csv, index=False)
-        self.vm = pd.read_csv(csv)
+        try:
+            self.vm = pd.read_csv(csv, encoding='utf-8')
+        except UnicodeDecodeError:
+            self.vm = pd.read_csv(csv, encoding='iso-8859-1')
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
@@ -67,7 +70,7 @@ class VendorMatrix(object):
         self.vl = self.vm[vmc.vendorkey].tolist()
         self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
         for col in vmc.barsplitcol:
-            self.vm[col] = ({key: list(str(value).split('|')) for key, value in
+            self.vm[col] = ({key: list(value.split('|')) for key, value in
                             self.vm[col].items()})
 
     def vm_import_keys(self):
