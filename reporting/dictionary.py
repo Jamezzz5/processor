@@ -71,7 +71,7 @@ class Dict(object):
             if final_col not in error.columns:
                 error[final_col] = error[col].astype(str)
             else:
-                error[final_col] = (error[final_col] + delimit_str +
+                error[final_col] = (error[final_col] + str(delimit_str) +
                                     error[col].astype(str))
             error.drop([col], axis=1, inplace=True)
         return error
