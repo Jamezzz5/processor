@@ -32,6 +32,7 @@ nested_dict_col = ['actions']
 breakdown_age = ['age']
 breakdown_gender = ['gender']
 breakdown_placement = ['placement']
+breakdown_country = ['country']
 
 
 col_name_dic = {'date_start': 'Reporting Starts',
@@ -107,6 +108,8 @@ class FbApi(object):
                 breakdowns.extend(breakdown_gender)
             if item == 'Placement':
                 breakdowns.extend(breakdown_placement)
+            if item == 'Country':
+                breakdowns.extend(breakdown_country)
         return fields, breakdowns
 
     @staticmethod
