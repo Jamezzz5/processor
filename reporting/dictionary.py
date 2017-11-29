@@ -85,6 +85,9 @@ class Dict(object):
             delimit_list = params[1::2]
             delimit_list = ', '.join(delimit_list)
             new_col_list = params[::2]
+            error[col] = error[col].astype(str)
+            error[col] = error[col].apply(lambda x: x + delimit_list
+                                          if delimit_list not in x else x)
             df = pd.DataFrame(error[col].str.split(delimit_list, 1).tolist(),
                               columns=new_col_list, index=error.index)
             new_col_list.append(col)
