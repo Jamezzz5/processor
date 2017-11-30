@@ -69,8 +69,9 @@ class TtdApi(object):
                         'TTD-Auth': auth_token}
         data = []
         i = 0
+        error_response_count = 0
         result_data = [1]
-        while len(result_data) != 0:
+        while len(result_data) != 0 and error_response_count < 100:
             payload = {
                 'AdvertiserIds': [self.ad_id],
                 'PageStartIndex': i * 99,
@@ -78,12 +79,19 @@ class TtdApi(object):
             }
             r = requests.post(rep_url, headers=self.headers, json=payload)
             raw_data = json.loads(r.content)
-            result_data = raw_data['Result']
-            match_data = [x for x in result_data if
-                          x['ReportScheduleName'] == self.report_name and
-                          x['ReportExecutionState'] == 'Complete']
-            data.extend(match_data)
-            i += 1
+            if 'Result' in raw_data:
+                result_data = raw_data['Result']
+                match_data = [x for x in result_data if
+                              x['ReportScheduleName'] == self.report_name and
+                              x['ReportExecutionState'] == 'Complete']
+                data.extend(match_data)
+                i += 1
+            else:
+                logging.warning('Retrying.  Unknown response :' + raw_data)
+                error_response_count += 1
+                if error_response_count >= 100:
+                    logging.error('Error count exceeded 100.  Aborting.')
+                    sys.exit(0)
         last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
         dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
         return dl_url
