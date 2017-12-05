@@ -87,7 +87,8 @@ class TtdApi(object):
                 data.extend(match_data)
                 i += 1
             else:
-                logging.warning('Retrying.  Unknown response :' + raw_data)
+                logging.warning('Retrying.  Unknown response :' +
+                                str(raw_data))
                 error_response_count += 1
                 if error_response_count >= 100:
                     logging.error('Error count exceeded 100.  Aborting.')
