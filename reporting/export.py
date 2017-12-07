@@ -38,7 +38,7 @@ class DBUpload(object):
         ul_df = self.dft.slice_for_upload(cols)
         ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
         self.dbs.set_table(table)
-        pk_config = {table: self.dbs.pk.items()[0]}
+        pk_config = {table: list(self.dbs.pk.items())[0]}
         self.set_id_info(table, pk_config, ul_df)
         if exc.upload_id_col in ul_df.columns:
             where_col = exc.upload_id_col
@@ -75,7 +75,7 @@ class DBUpload(object):
             df_update = df_update.loc[updated_index]
             df_update = df_update[[self.name] + set_cols]
             set_vals = [tuple(x) for x in df_update.values]
-            if exc.upload_id_col in df_update.columns:
+            if exc.upload_id_col + '_x' in df.columns:
                 self.db.update_rows_two_where(table, set_cols, set_vals,
                                               self.name, exc.upload_id_col,
                                               self.dft.upload_id)
