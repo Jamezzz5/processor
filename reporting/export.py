@@ -58,6 +58,18 @@ class DBUpload(object):
         df_rds = self.db.read_rds_table(table, where_col, where_val)
         df_rds = df_rds[cols]
         df_rds = self.dft.clean_types_for_upload(df_rds)
+        df_rds = self.delete_rds_duplicates(df_rds, table, cols,
+                                            where_col, where_val)
+        return df_rds
+
+    def delete_rds_duplicates(self, df_rds, table, cols, where_col, where_val):
+        if exc.upload_id_col in df_rds.columns:
+            del_vals = (df_rds[df_rds[self.name].duplicated()]
+                        [self.name].tolist())
+            if del_vals:
+                self.db.delete_rows(table, exc.upload_id_col,
+                                    self.dft.upload_id, self.name, del_vals)
+                df_rds = self.read_rds_table(table, cols, where_col, where_val)
         return df_rds
 
     def update_rows(self, df, cols, table):
