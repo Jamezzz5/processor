@@ -17,6 +17,15 @@ def dir_check(directory):
     if not os.path.isdir(directory):
         os.makedirs(directory)
 
+def import_read_csv(path, filename):
+    raw_file = path + filename
+    try:
+        df = pd.read_csv(raw_file, parse_dates=True)
+    except pd.io.common.CParserError:
+        df = pd.read_csv(raw_file, parse_dates=True, sep=None, engine='python')
+    except UnicodeDecodeError:
+        df = pd.read_csv(raw_file, parse_dates = True, encoding='iso-8859-1')
+    return df
 
 def exceldate_to_datetime(excel_date):
     epoch = dt.datetime(1899, 12, 30)

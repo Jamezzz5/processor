@@ -4,11 +4,10 @@ import os.path
 import pandas as pd
 import numpy as np
 import reporting.vmcolumns as vmc
-import reporting.cleaning as cln
+import reporting.utils as utl
 import reporting.dictionary as dct
 import reporting.dictcolumns as dctc
 import reporting.errorreport as er
-import pandas.io.common as pdioc
 
 log = logging.getLogger()
 
@@ -20,7 +19,7 @@ plan_key = 'Plan Net'
 class VendorMatrix(object):
     def __init__(self):
         log.info('Initializing Vendor Matrix')
-        cln.dir_check(csv_path)
+        utl.dir_check(csv_path)
         self.vm = None
         self.vl = []
         self.api_fb_key = []
@@ -62,11 +61,11 @@ class VendorMatrix(object):
         self.plan_net_check()
         drop = [item for item in self.vm.columns.values.tolist()
                 if (item[0] == '|')]
-        self.vm = cln.col_removal(self.vm, 'vm', drop)
+        self.vm = utl.col_removal(self.vm, 'vm', drop)
         plan_row = (self.vm.loc[self.vm[vmc.vendorkey] == plan_key])
         self.vm = self.vm[self.vm[vmc.vendorkey] != plan_key]
         self.vm = self.vm.append(plan_row).reset_index()
-        self.vm = cln.data_to_type(self.vm, [], vmc.datecol, vmc.barsplitcol)
+        self.vm = utl.data_to_type(self.vm, [], vmc.datecol, vmc.barsplitcol)
         self.vl = self.vm[vmc.vendorkey].tolist()
         self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
         for col in vmc.barsplitcol:
@@ -151,15 +150,6 @@ class VendorMatrix(object):
         return self.df
 
 
-def import_read_csv(path, filename):
-    raw_file = path + filename
-    try:
-        df = pd.read_csv(raw_file, parse_dates=True)
-    except pd.io.common.CParserError:
-        df = pd.read_csv(raw_file, parse_dates=True, sep=None, engine='python')
-    return df
-
-
 def full_placement_creation(df, key, full_col, full_place_cols):
     logging.debug('Creating Full Placement Name')
     df[full_col] = ''
@@ -195,7 +185,7 @@ def combining_data(df, key, columns, **kwargs):
             if col == item:
                 continue
             if col in vmc.datafloatcol:
-                df = cln.data_to_type(df, float_col=[col, item])
+                df = utl.data_to_type(df, float_col=[col, item])
                 df[col] += df[item]
             else:
                 df[col] = df[item]
@@ -212,10 +202,10 @@ def ad_cost_calculation(df):
 
 
 def import_data(key, vm_rules, **kwargs):
-    df = import_read_csv(vmc.pathraw, kwargs[vmc.filename])
-    df = cln.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
-    df = cln.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
-    df = cln.df_transform(df, kwargs[vmc.transform])
+    df = utl.import_read_csv(vmc.pathraw, kwargs[vmc.filename])
+    df = utl.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
+    df = utl.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
+    df = utl.df_transform(df, kwargs[vmc.transform])
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     dic = dct.Dict(kwargs[vmc.filenamedict])
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
@@ -225,15 +215,15 @@ def import_data(key, vm_rules, **kwargs):
     dic.apply_relation()
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, vmc.datadatecol, **kwargs)
-    df = cln.data_to_type(df, date_col=vmc.datadatecol)
-    df = cln.apply_rules(df, vm_rules, cln.PRE, **kwargs)
+    df = utl.data_to_type(df, date_col=vmc.datadatecol)
+    df = utl.apply_rules(df, vm_rules, utl.PRE, **kwargs)
     df = combining_data(df, key, vmc.datafloatcol, **kwargs)
-    df = cln.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
-    df = cln.date_removal(df, vmc.date, kwargs[vmc.startdate],
+    df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
+    df = utl.date_removal(df, vmc.date, kwargs[vmc.startdate],
                           kwargs[vmc.enddate])
     df = ad_cost_calculation(df)
-    df = cln.col_removal(df, key, kwargs[vmc.dropcol])
-    df = cln.apply_rules(df, vm_rules, cln.POST, **kwargs)
+    df = utl.col_removal(df, key, kwargs[vmc.dropcol])
+    df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
     df[vmc.vendorkey] = key
     return df
 
@@ -250,7 +240,7 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
     dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
     dic.apply_constants()
     dic.apply_relation()
-    dic.data_dict = cln.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
+    dic.data_dict = utl.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
     return dic.data_dict
 
 
@@ -265,7 +255,7 @@ def vm_update_rule_check(vm, vm_col):
 
 def vm_update(old_path='Config/', old_file='OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
-    ovm = import_read_csv(path=old_path, filename=old_file)
+    ovm = utl.import_read_csv(path=old_path, filename=old_file)
     rules = [col for col in ovm.columns if 'RULE_' in col]
     rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
@@ -277,7 +267,7 @@ def vm_update(old_path='Config/', old_file='OldVendorMatrix.csv'):
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
     if vmc.autodicplace not in ovm.columns:
         vm[vmc.autodicplace] = vmc.fullplacename
-    vm = cln.col_removal(vm, 'vm',
+    vm = utl.col_removal(vm, 'vm',
                          ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
     vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)
     for col in rule_metrics:

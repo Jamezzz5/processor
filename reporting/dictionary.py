@@ -2,7 +2,7 @@ import sys
 import os.path
 import logging
 import pandas as pd
-import reporting.cleaning as cln
+import reporting.utils as utl
 import reporting.dictcolumns as dctc
 
 csvpath = 'Dictionaries/'
@@ -10,24 +10,25 @@ csvpath = 'Dictionaries/'
 
 class Dict(object):
     def __init__(self, filename):
-        cln.dir_check(csvpath)
+        utl.dir_check(csvpath)
         if str(filename) == 'nan':
             logging.error('No dictionary file provided.  Aborting.')
             sys.exit(0)
         self.filename = filename
-        self.dictfile = csvpath + self.filename
+        self.dict_path = csvpath
+        self.dict_path_filename = self.dict_path + self.filename
         self.data_dict = pd.DataFrame()
         self.read()
 
     def read(self):
-        if not os.path.isfile(self.dictfile):
+        if not os.path.isfile(self.dict_path_filename):
             logging.info('Creating ' + self.filename)
             if self.filename == dctc.PFN:
                 data_dict = pd.DataFrame(columns=dctc.PCOLS, index=None)
             else:
                 data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
-            data_dict.to_csv(self.dictfile, index=False)
-        self.data_dict = pd.read_csv(self.dictfile)
+            data_dict.to_csv(self.dict_path_filename, index=False)
+        self.data_dict = utl.import_read_csv(self.dict_path, self.filename)
         self.clean()
         self.data_dict = self.data_dict.drop_duplicates()
 
@@ -115,13 +116,13 @@ class Dict(object):
         if df is None:
             df = self.data_dict
         try:
-            df.to_csv(self.dictfile, index=False)
+            df.to_csv(self.dict_path_filename, index=False)
         except IOError:
             logging.warning(self.filename + ' could not be opened.  ' +
                             'This dictionary was not saved.')
 
     def clean(self):
-        self.data_dict = cln.data_to_type(self.data_dict, dctc.floatcol,
+        self.data_dict = utl.data_to_type(self.data_dict, dctc.floatcol,
                                           dctc.datecol, dctc.strcol)
         self.data_dict = self.data_dict.drop_duplicates(dctc.FPN)
         self.data_dict = self.data_dict.reset_index(drop=True)
@@ -130,7 +131,7 @@ class Dict(object):
 class RelationalConfig(object):
     def __init__(self):
         self.csvpath = 'Config/'
-        cln.dir_check('Config/')
+        utl.dir_check('Config/')
         self.df = pd.DataFrame()
         self.rc = None
         self.relational_params = None
@@ -166,7 +167,7 @@ class RelationalConfig(object):
 class DictRelational(object):
     def __init__(self, **kwargs):
         self.csvpath = 'Dictionaries/Relational/'
-        cln.dir_check(self.csvpath)
+        utl.dir_check(self.csvpath)
         self.df = pd.DataFrame()
         self.params = kwargs
         self.filename = self.params[dctc.FN]
@@ -237,7 +238,7 @@ class DictRelational(object):
 class DictConstantConfig(object):
     def __init__(self):
         self.csvpath = 'Config/'
-        cln.dir_check('Config/')
+        utl.dir_check('Config/')
         self.df = pd.DataFrame()
         self.dict_col_names = None
         self.dict_col_values = None

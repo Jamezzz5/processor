@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import reporting.dictcolumns as dctc
 import reporting.vmcolumns as vmc
-import reporting.cleaning as cln
+import reporting.utils as utl
 
 BM_CPM = 'CPM'
 BM_CPC = 'CPC'
@@ -158,7 +158,7 @@ def net_cost_final(df):
     else:
         df[NC_CUM_SUM_MIN_DATE] = 0
         df[NCF] = df[vmc.cost]
-    df = cln.col_removal(df, 'Raw Data', DROP_COL)
+    df = utl.col_removal(df, 'Raw Data', DROP_COL)
     return df
 
 
@@ -177,7 +177,7 @@ def agency_fees_calculation(df):
         logging.warning('Agency Fee Rates not in dict.  '
                         'Update dict and run again to calculate agency fees.')
         return df
-    df = cln.data_to_type(df, float_col=[NCF, dctc.AGF])
+    df = utl.data_to_type(df, float_col=[NCF, dctc.AGF])
     df[AGENCY_FEES] = df[dctc.AGF] * df[NCF]
     return df
 
@@ -188,7 +188,7 @@ def total_cost_calculation(df):
         logging.warning('Agency Fees not in dataframe.  '
                         'Update dict and run again to calculate total cost.')
         return df
-    df = cln.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST])
+    df = utl.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST])
     df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES] + df[vmc.AD_COST]
     return df
 

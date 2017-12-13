@@ -2,7 +2,7 @@ import logging
 import os.path
 import sys
 import pandas as pd
-import reporting.cleaning as cln
+import reporting.utils as utl
 import reporting.dictcolumns as dctc
 
 csvpath = 'ERROR REPORTS/'
@@ -10,7 +10,7 @@ csvpath = 'ERROR REPORTS/'
 
 class ErrorReport(object):
     def __init__(self, df, dic, pn, filename):
-        cln.dir_check(csvpath)
+        utl.dir_check(csvpath)
         if str(filename) == 'nan':
             logging.error('No error report file provided.  Aborting.')
             sys.exit(0)

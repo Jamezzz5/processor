@@ -10,7 +10,7 @@ import reporting.export as export
 import os
 import pandas as pd
 import reporting.vmcolumns as vmc
-import reporting.cleaning as cln
+import reporting.utils as utl
 
 
 class ImportHandler(object):
@@ -19,7 +19,7 @@ class ImportHandler(object):
         self.matrix = matrix
 
     def output(self, api_merge, api_df, filename, first_row, last_row, vk):
-        cln.dir_check(vmc.pathraw)
+        utl.dir_check(vmc.pathraw)
         if str(api_merge) != 'nan':
             api_merge_file = vmc.pathraw + str(api_merge)
             if os.path.isfile(api_merge_file):
@@ -30,9 +30,9 @@ class ImportHandler(object):
                                     'API data was not merged.')
                     api_df.to_csv(api_merge_file)
                     return None
-                df = cln.first_last_adj(df, first_row, last_row)
+                df = utl.first_last_adj(df, first_row, last_row)
                 df = self.create_all_col(df)
-                api_df = cln.first_last_adj(api_df, first_row, last_row)
+                api_df = utl.first_last_adj(api_df, first_row, last_row)
                 api_df = self.create_all_col(api_df)
                 api_df = api_df[~api_df['ALL'].isin(df['ALL'])]
                 df = df.append(api_df, ignore_index=True)
