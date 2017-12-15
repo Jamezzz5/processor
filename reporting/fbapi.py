@@ -31,7 +31,8 @@ nested_dict_col = ['actions']
 
 breakdown_age = ['age']
 breakdown_gender = ['gender']
-breakdown_placement = ['placement']
+breakdown_placement = ['publisher_platform', 'platform_position',
+                       'impression_device']
 breakdown_country = ['country']
 
 
