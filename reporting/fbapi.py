@@ -194,7 +194,12 @@ class FbApi(object):
             logging.info('FB async_job #' + str(job['id']) +
                          ' percent done: ' + str(percent) + '%')
             if percent == 100 and (report['async_status'] == 'Job Completed'):
-                complete_job = list(ar.get_result())
+                try:
+                    complete_job = list(ar.get_result())
+                except FacebookRequestError as e:
+                    self.request_error(e)
+                    self.async_requests.append(job)
+                    complete_job = None
                 if complete_job:
                     self.df = self.df.append(complete_job, ignore_index=True)
             else:
@@ -221,10 +226,13 @@ class FbApi(object):
         time.sleep(30)
         return percent
 
-    def request_error(self, e, date_list, field_list):
+    def request_error(self, e, date_list=None, field_list=None):
         if e._api_error_code == 190:
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
+        elif e._api_error_code == 2:
+            logging.warning('An unexpected error occurred.  Retrying request later.')
+            return True
         elif e._api_error_code == 17:
             logging.warning('Facebook rate limit reached.  Pausing for ' +
                             '300 seconds.')
