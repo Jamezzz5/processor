@@ -8,9 +8,52 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine
 import reporting.expcolumns as exc
+import reporting.ftp as ftp
 
 log = logging.getLogger()
 config_path = 'Config/'
+
+
+class ExportHandler(object):
+    def __init__(self):
+        self.export_list = None
+        self.config = None
+        self.args = None
+        self.config_file = 'Config/export_handler.csv'
+        self.load_config(self.config_file)
+
+    def load_config(self, config_file):
+        df = pd.read_csv(config_file)
+        self.export_list = df[exc.export_key].tolist()
+        self.config = df.set_index(exc.export_key).to_dict()
+
+    def export_loop(self, args):
+        self.args = args
+        for exp_key in self.export_list:
+            self.export_item_check_type(exp_key)
+
+    def export_item_check_type(self, exp_key):
+        if (self.config[exc.export_type][exp_key] == 'DB' and
+           (self.args == 'db' or self.args == 'all')):
+            self.export_db(exp_key)
+        elif (self.config[exc.export_type][exp_key] == 'FTP' and
+              (self.args == 'ftp' or self.args == 'all')):
+            self.export_ftp(exp_key)
+
+    def export_db(self, exp_key):
+        dbu = DBUpload()
+        dbu.upload_to_db(self.config[exc.config_file][exp_key],
+                         self.config[exc.schema_file][exp_key],
+                         self.config[exc.translation_file][exp_key],
+                         self.config[exc.output_file][exp_key])
+
+    def export_ftp(self, exp_key):
+        ftp_class = ftp.FTP()
+        dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
+                                  self.config[exc.output_file][exp_key])
+        ftp_class.input_config(self.config[exc.config_file][exp_key])
+        ftp_class.ftp_write_file(dft_class.df,
+                                 self.config[exc.output_file][exp_key])
 
 
 class DBUpload(object):
@@ -488,7 +531,8 @@ class DFTranslation(object):
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
         real_columns = [x for x in self.real_columns if x in self.df.columns]
-        self.df = self.df[self.df[real_columns].sum(axis=1) != 0].reset_index()
+        self.df = self.df[self.df[real_columns].sum(axis=1) != 0]
+        self.df = self.df.reset_index(drop=True)
         replace_dict = {'"': '', "\\\\": '/'}
         self.df.replace(replace_dict, regex=True, inplace=True)
 

@@ -9,7 +9,7 @@ import pandas as pd
 config_path = 'Config/'
 
 
-class SzkFtp(object):
+class FTP(object):
     def __init__(self):
         self.df = pd.DataFrame()
         self.files = []
@@ -25,7 +25,7 @@ class SzkFtp(object):
         self.config_list = []
 
     def input_config(self, config):
-        logging.info('Loading Sizmek config file: ' + config)
+        logging.info('Loading FTP config file: ' + config)
         self.config_file = config_path + config
         self.load_config()
         self.check_config()
@@ -48,17 +48,22 @@ class SzkFtp(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in Sizmek config file.  Aborting.')
+                logging.warning(item + 'not in FTP config file.  Aborting.')
                 sys.exit(0)
 
     def ftp_init(self):
         self.ftp = ftplib.FTP_TLS(self.ftp_host)
-        self.ftp.sendcmd('USER {}'.format(self.username))
-        self.ftp.sendcmd('PASS {}'.format(self.password))
+        try:
+            self.ftp.sendcmd('USER {}'.format(self.username))
+            self.ftp.sendcmd('PASS {}'.format(self.password))
+        except ftplib.all_errors:
+            self.ftp = ftplib.FTP_TLS(self.ftp_host, user=self.username,
+                                      passwd=self.password)
+            self.ftp.prot_p()
         self.ftp.cwd(self.ftp_path)
 
     def get_data(self):
-        logging.info('Getting Sizmek data from ' + str(self.ftp))
+        logging.info('Getting FTP data from ' + str(self.ftp_host))
         self.ftp_init()
         newest_file = self.ftp_newest_file()
         self.ftp_remove_files(newest_file)
@@ -87,6 +92,16 @@ class SzkFtp(object):
         date_list = list([key for key, value in file_dict.items()])
         newest_file = file_dict[max(date_list)]
         return newest_file
+
+    def ftp_write_file(self, df, write_file):
+        logging.info('Writing ' + str(write_file) + ' to ' +
+                     str(self.ftp_host))
+        self.ftp_init()
+        r = BytesIO()
+        df.to_csv(r, index=False)
+        r.seek(0)
+        self.ftp.storbinary('STOR ' + write_file, r)
+        self.ftp.quit()
 
     def ftp_read_file(self, read_file):
         r = BytesIO()

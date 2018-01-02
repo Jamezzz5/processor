@@ -17,9 +17,9 @@ console = logging.StreamHandler(sys.stdout)
 console.setFormatter(formatter)
 log.addHandler(console)
 
-file = logging.FileHandler('logfile.log', mode='w')
-file.setFormatter(formatter)
-log.addHandler(file)
+log_file = logging.FileHandler('logfile.log', mode='w')
+log_file.setFormatter(formatter)
+log.addHandler(log_file)
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
@@ -39,7 +39,7 @@ parser.add_argument('--dbi', choices=['all', 'dna'])
 parser.add_argument('--s3', choices=['all', 'dna'])
 parser.add_argument('--noprocess', action='store_true')
 parser.add_argument('--update', choices=['all', 'vm', 'dct'])
-parser.add_argument('--db', action='store_true')
+parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
@@ -72,10 +72,10 @@ def main():
         except IOError:
             logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
                          'Final Output not updated.')
-    if args.db:
-        dbu = exp.DBUpload()
-        dbu.upload_to_db(exc.db_config_file, exc.db_schema_file,
-                         exc.db_translation_file, OUTPUT_FILE)
+    if args.exp:
+        exp_class = exp.ExportHandler()
+        exp_class.export_loop(args.exp)
+
 
 if __name__ == '__main__':
     main()

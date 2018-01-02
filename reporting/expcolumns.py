@@ -1,3 +1,10 @@
+export_key = 'Export_Key'
+export_type = 'Export_Type'
+output_file = 'Output_File'
+config_file = 'Config_File'
+translation_file = 'Translation_File'
+schema_file = 'Schema_File'
+
 db_config_file = 'dbconfig.json'
 
 db_schema_file = 'dbschema.csv'

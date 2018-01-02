@@ -4,7 +4,7 @@ import reporting.awapi as awapi
 import reporting.twapi as twapi
 import reporting.ttdapi as ttdapi
 import reporting.gaapi as gaapi
-import reporting.szkftp as szkftp
+import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.export as export
 import os
@@ -117,7 +117,7 @@ class ImportHandler(object):
 
     def ftp_loop(self):
         if self.arg_check('sz'):
-            self.ftp_load(self.matrix.ftp_sz_key, szkftp.SzkFtp())
+            self.ftp_load(self.matrix.ftp_sz_key, ftp.FTP())
 
     def db_load(self, db_key, db_class):
         for vk in db_key:
