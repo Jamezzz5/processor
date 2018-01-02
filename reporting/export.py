@@ -201,7 +201,10 @@ class DB(object):
     def connect(self):
         logging.debug('Connecting to DB at Host: ' + self.host)
         self.engine = create_engine(self.conn_string)
-        self.connection = self.engine.raw_connection()
+        try:
+            self.connection = self.engine.raw_connection()
+        except AssertionError:
+            self.connection = self.engine.raw_connection()
         self.cursor = self.connection.cursor()
 
     def df_to_output(self, df):
@@ -370,13 +373,14 @@ class DB(object):
             sqlfile = f.read()
         return sqlfile
 
-    def get_data(self, sd, ed, filename):
+    def get_data(self, filename):
         logging.info('Querying ')
         self.connect()
         command = self.read_file(filename)
         self.cursor.execute(command)
         data = self.cursor.fetchall()
-        df = pd.DataFrame(data=data)
+        columns = [i[0] for i in self.cursor.description]
+        df = pd.DataFrame(data=data, columns=columns)
         return df
 
 

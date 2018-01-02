@@ -123,15 +123,7 @@ class ImportHandler(object):
         for vk in db_key:
             params = self.matrix.vendor_set(vk)
             db_class.input_config(params[vmc.apifile])
-            start_check = self.date_check(params[vmc.startdate])
-            end_check = self.date_check(params[vmc.enddate])
-            if start_check:
-                params[vmc.startdate] = None
-            if end_check:
-                params[vmc.enddate] = None
-            df = db_class.get_data(sd=params[vmc.startdate],
-                                   ed=params[vmc.enddate],
-                                   filename=params[vmc.apifields][0])
+            df = db_class.get_data(filename=params[vmc.apifields][0])
             self.output(params[vmc.apimerge], df, params[vmc.filename],
                         params[vmc.firstrow], params[vmc.lastrow], vk)
 
