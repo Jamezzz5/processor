@@ -3,6 +3,7 @@ import logging
 import json
 import sys
 import time
+import datetime as dt
 from io import BytesIO
 import pandas as pd
 
@@ -85,9 +86,13 @@ class FTP(object):
         for item in self.files:
             file_info = item.split()
             file_date = ' '.join(item.split()[5:8])
+            file_date = '{0} {1}'.format(file_date,
+                                         str(dt.datetime.today().year))
+            file_date = dt.datetime.strptime(file_date, '%b %d %H:%M %Y')
+            if file_date.date() > dt.date.today():
+                file_date = file_date.replace(year=file_date.year - 1)
             if file_info[8] != '.' and file_info[8] != '..':
-                item_dict = {time.strptime(file_date, '%b %d %H:%M'):
-                             file_info[8]}
+                item_dict = {file_date: file_info[8]}
                 file_dict.update(item_dict)
         date_list = list([key for key, value in file_dict.items()])
         newest_file = file_dict[max(date_list)]
