@@ -111,6 +111,13 @@ class Dict(object):
         self.clean()
         self.write(self.data_dict)
 
+    def apply_translation(self):
+        tc = DictTranslationConfig()
+        tc.read(dctc.filename_tran_config)
+        self.data_dict = tc.apply_translation_to_dict(self.data_dict)
+        self.clean()
+        self.write(self.data_dict)
+
     def write(self, df=None):
         logging.debug('Writing ' + self.filename)
         if df is None:
@@ -263,6 +270,34 @@ class DictConstantConfig(object):
         for col in self.dict_col_names:
             constant_value = self.dict_constants[dctc.DICT_COL_VALUE][col]
             data_dict[col] = constant_value
+        return data_dict
+
+
+class DictTranslationConfig(object):
+    def __init__(self):
+        self.csvpath = 'Dictionaries/Translational/'
+        utl.dir_check('Dictionaries/Translational/')
+        self.df = pd.DataFrame()
+
+    def read(self, configfile):
+        filename = self.csvpath + configfile
+        try:
+            self.df = pd.read_csv(filename)
+        except IOError:
+            logging.debug('No Translational Dictionary config')
+            return None
+
+    def apply_translation_to_dict(self, data_dict):
+        if self.df.empty:
+            return data_dict
+        for col in self.df[dctc.DICT_COL_NAME].unique():
+            if col not in data_dict.columns:
+                continue
+            tdf = self.df[self.df[dctc.DICT_COL_NAME] == col]
+            tdf = tdf[[dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]]
+            replace_dict = dict(zip(tdf[dctc.DICT_COL_VALUE],
+                                    tdf[dctc.DICT_COL_NVALUE]))
+            data_dict[col] = data_dict[col].astype(str).replace(replace_dict)
         return data_dict
 
 

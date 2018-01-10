@@ -6,7 +6,6 @@ import reporting.dictionary as dct
 import reporting.importhandler as ih
 import reporting.calc as cal
 import reporting.export as exp
-import reporting.expcolumns as exc
 
 formatter = logging.Formatter('%(asctime)s [%(module)14s]' +
                               '[%(levelname)8s] %(message)s')

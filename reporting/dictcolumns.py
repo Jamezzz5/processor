@@ -94,3 +94,6 @@ DEP = 'Dependent'
 filename_con_config = 'constant_dictionary_config.csv'
 DICT_COL_NAME = 'Column Name'
 DICT_COL_VALUE = 'Value'
+
+filename_tran_config = 'translational_dictionary_config.csv'
+DICT_COL_NVALUE = 'New Value'
