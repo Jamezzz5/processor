@@ -72,6 +72,7 @@ class FTP(object):
             logging.warning('No files found, returning empty Dataframe.')
             return self.df
         r = self.ftp_read_file(newest_file)
+        self.ftp.quit()
         self.string_to_df(newest_file, r)
         return self.df
 
@@ -114,13 +115,7 @@ class FTP(object):
             self.ftp.retrbinary('RETR ' + read_file, r.write)
         except ftplib.all_errors as e:
             self.ftp_force_close_error(e)
-            self.ftp_read_file(read_file)
-        try:
-            self.ftp.quit()
-        except AttributeError as e:
-            logging.warning('FTP could not quit due to the below ' +
-                            'error, continuing. ' + str(e))
-        r.seek(0)
+            r = self.ftp_read_file(read_file)
         return r
 
     def ftp_force_close_error(self, e):
@@ -130,20 +125,17 @@ class FTP(object):
         self.ftp_init()
 
     def string_to_df(self, read_file, r):
+        r.seek(0)
         if read_file[-4:] == '.zip':
-            try:
-                self.df = pd.read_csv(r, compression='zip')
-            except pd.errors.ParserError:
-                r.seek(0)
-                self.df = pd.read_csv(r, header=self.header, compression='zip')
-                self.add_dummy_header()
+            comp = 'zip'
         else:
-            try:
-                self.df = pd.read_csv(r)
-            except pd.errors.ParserError:
-                r.seek(0)
-                self.df = pd.read_csv(r, header=self.header)
-                self.add_dummy_header()
+            comp = 'infer'
+        try:
+            self.df = pd.read_csv(r, compression=comp)
+        except pd.errors.ParserError:
+            r.seek(0)
+            self.df = pd.read_csv(r, header=self.header, compression=comp)
+            self.add_dummy_header()
 
     def add_dummy_header(self):
         cols = self.df.columns
