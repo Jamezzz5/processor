@@ -1,4 +1,3 @@
-
 FPN = 'Full Placement Name'
 PN = 'mpPlacement Name'
 AGY = 'mpAgency'
@@ -43,6 +42,9 @@ TB = 'mpTargeting Bucket'
 GT = 'mpGenre Targeting'
 GTF = 'mpGenre Targeting Fine'
 KPI = 'mpKPI'
+FAC = 'mpFaction'
+PLA = 'mpPlatform'
+TP = 'mpTransaction Product'
 DN = 'mpDescriptive Name'
 AT = 'mpAd Type'
 AF = 'mpAd Format'
@@ -73,8 +75,9 @@ MIS6 = 'mpMisc 6'
 COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
         VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, AGF,
         AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR, ENV, DT1, DT2, TB, GT, GTF,
-        KPI, DN, AT, AF, CD, CH, CM, LI, LEN, AD, DL1, DL2, HL1, HL2, DUL, BR2,
-        BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        KPI, FAC, PLA, TP, DN, AT, AF, CD, CH, CM, LI, LEN, AD, DL1, DL2, HL1,
+        HL2, DUL, BR2, BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4,
+        MIS5, MIS6]
 
 floatcol = [BR, AR, BR2, BR3, AGF]
 datecol = [PD, PD2, PD3, PD4, PD5]
