@@ -32,7 +32,8 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 sys.excepthook = handle_exception
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga'])
+parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga',
+                                      'nb'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--dbi', choices=['all', 'dna'])
 parser.add_argument('--s3', choices=['all', 'dna'])

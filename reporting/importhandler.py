@@ -1,14 +1,15 @@
+import os
 import logging
+import pandas as pd
 import reporting.fbapi as fbapi
 import reporting.awapi as awapi
 import reporting.twapi as twapi
 import reporting.ttdapi as ttdapi
 import reporting.gaapi as gaapi
+import reporting.nbapi as nbapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.export as export
-import os
-import pandas as pd
 import reporting.vmcolumns as vmc
 import reporting.utils as utl
 
@@ -105,6 +106,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_ttd_key, ttdapi.TtdApi())
         if self.arg_check('ga'):
             self.api_calls(self.matrix.api_ga_key, gaapi.GaApi())
+        if self.arg_check('nb'):
+            self.api_calls(self.matrix.api_nb_key, nbapi.NbApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
