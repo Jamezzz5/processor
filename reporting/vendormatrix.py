@@ -28,6 +28,7 @@ class VendorMatrix(object):
         self.api_ttd_key = []
         self.api_ga_key = []
         self.api_nb_key = []
+        self.api_af_key = []
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -89,6 +90,8 @@ class VendorMatrix(object):
                     self.api_ga_key.append(vk)
                 if vk_split[vk][1] == 'Netbase':
                     self.api_nb_key.append(vk)
+                if vk_split[vk][1] == 'AppsFlyer':
+                    self.api_af_key.append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)

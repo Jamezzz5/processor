@@ -9,6 +9,7 @@ import reporting.gaapi as gaapi
 import reporting.nbapi as nbapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
+import reporting.afapi as afapi
 import reporting.export as export
 import reporting.vmcolumns as vmc
 import reporting.utils as utl
@@ -108,6 +109,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_ga_key, gaapi.GaApi())
         if self.arg_check('nb'):
             self.api_calls(self.matrix.api_nb_key, nbapi.NbApi())
+        if self.arg_check('af'):
+            self.api_calls(self.matrix.api_af_key, afapi.AfApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
