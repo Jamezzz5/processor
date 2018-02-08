@@ -1,5 +1,6 @@
 import sys
 import json
+import time
 import logging
 import datetime as dt
 import pandas as pd
@@ -9,6 +10,14 @@ config_path = 'Config/'
 
 auth_url = 'https://api.netbase.com/cb/oauth/authorize?'
 metric_url = 'https://api.netbase.com:443/cb/insight-api/2/metricValues?'
+
+def_metrics = ['TotalBuzz', 'TotalBuzzPost', 'TotalReplies', 'TotalReposts',
+               'OriginalPosts', 'Impressions', 'PositiveSentiment',
+               'NegativeSentiment', 'Passion', 'UniqueAuthor', 'StrongEmotion',
+               'WeakEmotion', 'EngagementLikes', 'EngagementComments',
+               'EngagementShares', 'EngagementViews', 'EngagementDislikes',
+               'EngagementTotal']
+metric_col_name_dic = {x: 'Social Metrics - ' + x for x in def_metrics}
 
 
 class NbApi(object):
@@ -83,9 +92,9 @@ class NbApi(object):
 
     def create_url(self, sd, ed):
         ids_url = 'topicIds={}'.format(self.topic_id)
-        met_url = '&metricSeries=TotalBuzz&metricSeries=NetSentiment'
+        met_url = ''.join('&metricSeries={}'.format(x) for x in def_metrics)
         date_url = '&datetimeISO=true&timeUnits=Day&smoothing=false'
-        sded_url = '&publishedDate={}&alertDatetime={}'.format(sd, ed)
+        sded_url = '&publishedDate={}&publishedDate={}'.format(sd, ed)
         full_url = (metric_url + ids_url + met_url + date_url + sded_url)
         return full_url
 
@@ -97,15 +106,31 @@ class NbApi(object):
             sd = ed
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
-        self.get_client()
-        self.get_raw_data(sd, ed)
+        self.make_request(sd, ed)
+        self.get_raw_data()
         return self.df
 
-    def get_raw_data(self, sd, ed):
+    def make_request(self, sd, ed):
+        self.get_client()
         full_url = self.create_url(sd, ed)
         self.r = self.client.get(full_url)
+        if 'error' in self.r.json():
+            self.request_error()
+            self.make_request(sd, ed)
+
+    def request_error(self):
+        if self.r.json()['error'] == 'Rate limit exceeded':
+            logging.warning('Rate limit exceeded. Retrying after 120s pause.')
+            time.sleep(120)
+            return True
+        else:
+            logging.warning('Unkown error occured: ' + str(self.r.json()))
+            sys.exit(0)
+
+    def get_raw_data(self):
         tdf = self.data_to_df(self.r)
         self.df = self.df.append(tdf)
+        self.df = self.df.rename(columns=metric_col_name_dic)
         self.df['Topic ID'] = 'Netbase Topic: ' + str(self.topic_id)
 
     @staticmethod
