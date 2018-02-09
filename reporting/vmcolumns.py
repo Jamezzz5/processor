@@ -123,7 +123,7 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            gplay6pc, sm_totalbuzz, sm_totalbuzzpost, sm_totalreplies,
            sm_totalreposts, sm_originalposts, sm_impressions,
            sm_positivesentiment, sm_negativesentiment, sm_passion,
-           sm_uniqueauthors,sm_strongemotion, sm_weakemotion, conv1, conv2,
+           sm_uniqueauthors, sm_strongemotion, sm_weakemotion, conv1, conv2,
            conv3, conv4, conv5, conv6, conv7, conv8, conv9, conv10]
 
 vmkeys += datacol
@@ -133,8 +133,6 @@ datecol = [startdate, enddate]
 datadatecol = [date]
 datafloatcol = datacol[:]
 datafloatcol.remove(date)
-
-pathraw = 'Raw Data/'
 
 AD_COST = 'Adserving Cost'
 AM_CPM = 'CPM'

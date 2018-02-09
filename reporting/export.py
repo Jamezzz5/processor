@@ -9,9 +9,10 @@ import pandas as pd
 from sqlalchemy import create_engine
 import reporting.expcolumns as exc
 import reporting.ftp as ftp
+import reporting.utils as utl
 
 log = logging.getLogger()
-config_path = 'Config/'
+config_path = utl.config_path
 
 
 class ExportHandler(object):
@@ -19,7 +20,7 @@ class ExportHandler(object):
         self.export_list = None
         self.config = None
         self.args = None
-        self.config_file = 'Config/export_handler.csv'
+        self.config_file = 'config/export_handler.csv'
         self.load_config(self.config_file)
 
     def load_config(self, config_file):

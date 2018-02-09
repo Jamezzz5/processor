@@ -11,7 +11,7 @@ import reporting.errorreport as er
 
 log = logging.getLogger()
 
-csv_path = 'Config/'
+csv_path = utl.config_path
 csv = csv_path + 'Vendormatrix.csv'
 plan_key = 'Plan Net'
 
@@ -120,7 +120,7 @@ class VendorMatrix(object):
         return ven_param
 
     def vendor_check(self, vk):
-        if (os.path.isfile(vmc.pathraw + self.vm[vmc.filename][vk]) or
+        if (os.path.isfile(utl.raw_path + self.vm[vmc.filename][vk]) or
            vk == plan_key):
             return True
         else:
@@ -208,7 +208,7 @@ def ad_cost_calculation(df):
 
 
 def import_data(key, vm_rules, **kwargs):
-    df = utl.import_read_csv(vmc.pathraw, kwargs[vmc.filename])
+    df = utl.import_read_csv(utl.raw_path, kwargs[vmc.filename])
     df = utl.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
     df = utl.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
     df = utl.df_transform(df, kwargs[vmc.transform])
@@ -261,7 +261,7 @@ def vm_update_rule_check(vm, vm_col):
     return vm
 
 
-def vm_update(old_path='Config/', old_file='OldVendorMatrix.csv'):
+def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
     ovm = utl.import_read_csv(path=old_path, filename=old_file)
     rules = [col for col in ovm.columns if 'RULE_' in col]

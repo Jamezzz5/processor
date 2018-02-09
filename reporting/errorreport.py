@@ -5,7 +5,7 @@ import pandas as pd
 import reporting.utils as utl
 import reporting.dictcolumns as dctc
 
-csvpath = 'ERROR REPORTS/'
+csvpath = utl.error_path
 
 
 class ErrorReport(object):

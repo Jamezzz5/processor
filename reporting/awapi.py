@@ -1,13 +1,14 @@
-import logging
-from googleads import adwords
-from io import BytesIO
-import datetime as dt
-import pandas as pd
-import numpy as np
-import yaml
 import sys
+import yaml
+import logging
+import numpy as np
+import pandas as pd
+import datetime as dt
+import reporting.utils as utl
+from io import BytesIO
+from googleads import adwords
 
-config_path = 'Config/'
+config_path = utl.config_path
 
 VIEWS = 'Views'
 VIEWS25 = 'Video played to 25%'

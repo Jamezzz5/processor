@@ -4,9 +4,10 @@ import time
 import logging
 import datetime as dt
 import pandas as pd
+import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
-config_path = 'Config/'
+config_path = utl.config_path
 
 auth_url = 'https://api.netbase.com/cb/oauth/authorize?'
 metric_url = 'https://api.netbase.com:443/cb/insight-api/2/metricValues?'

@@ -5,6 +5,7 @@ import sys
 import ast
 import datetime as dt
 import pandas as pd
+import reporting.utils as utl
 from facebookads.api import FacebookAdsApi
 from facebookads.adobjects.adaccount import AdAccount
 from facebookads.adobjects.adsinsights import AdsInsights
@@ -50,7 +51,7 @@ col_name_dic = {'date_start': 'Reporting Starts',
                 'reach': 'Reach',
                 'frequency': 'Frequency'}
 
-config_path = 'Config/'
+config_path = utl.config_path
 
 
 class FbApi(object):

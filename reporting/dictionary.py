@@ -5,7 +5,7 @@ import pandas as pd
 import reporting.utils as utl
 import reporting.dictcolumns as dctc
 
-csvpath = 'Dictionaries/'
+csvpath = utl.dict_path
 
 
 class Dict(object):
@@ -137,8 +137,8 @@ class Dict(object):
 
 class RelationalConfig(object):
     def __init__(self):
-        self.csvpath = 'Config/'
-        utl.dir_check('Config/')
+        self.csvpath = utl.config_path
+        utl.dir_check(utl.config_path)
         self.df = pd.DataFrame()
         self.rc = None
         self.relational_params = None
@@ -244,8 +244,8 @@ class DictRelational(object):
 
 class DictConstantConfig(object):
     def __init__(self):
-        self.csvpath = 'Config/'
-        utl.dir_check('Config/')
+        self.csvpath = utl.config_path
+        utl.dir_check(utl.config_path)
         self.df = pd.DataFrame()
         self.dict_col_names = None
         self.dict_col_values = None

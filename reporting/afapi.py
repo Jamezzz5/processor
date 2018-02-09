@@ -6,8 +6,9 @@ import logging
 import requests
 import datetime as dt
 import pandas as pd
+import reporting.utils as utl
 
-config_path = 'Config/'
+config_path = utl.config_path
 
 base_url = 'https://hq.appsflyer.com/export/'
 

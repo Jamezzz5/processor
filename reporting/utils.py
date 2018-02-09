@@ -5,6 +5,11 @@ import datetime as dt
 import pandas as pd
 import reporting.vmcolumns as vmc
 
+config_path = 'config/'
+raw_path = 'raw_data/'
+error_path = 'ERROR_REPORTS/'
+dict_path = 'dictionaries/'
+
 RULE_METRIC = 'METRIC'
 RULE_QUERY = 'QUERY'
 RULE_FACTOR = 'FACTOR'

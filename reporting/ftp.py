@@ -6,8 +6,9 @@ import time
 import datetime as dt
 from io import BytesIO
 import pandas as pd
+import reporting.utils as utl
 
-config_path = 'Config/'
+config_path = utl.config_path
 
 
 class FTP(object):

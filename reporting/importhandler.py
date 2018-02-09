@@ -21,9 +21,9 @@ class ImportHandler(object):
         self.matrix = matrix
 
     def output(self, api_merge, api_df, filename, first_row, last_row, vk):
-        utl.dir_check(vmc.pathraw)
+        utl.dir_check(utl.raw_path)
         if str(api_merge) != 'nan':
-            api_merge_file = vmc.pathraw + str(api_merge)
+            api_merge_file = utl.raw_path + str(api_merge)
             if os.path.isfile(api_merge_file):
                 try:
                     df = pd.read_csv(api_merge_file, parse_dates=True)
@@ -51,12 +51,12 @@ class ImportHandler(object):
                 df.to_csv(api_merge_file, index=False)
         else:
             try:
-                api_df.to_csv(vmc.pathraw + filename, index=False)
+                api_df.to_csv(utl.raw_path + filename, index=False)
             except UnicodeEncodeError:
-                api_df.to_csv(vmc.pathraw + filename, index=False,
+                api_df.to_csv(utl.raw_path + filename, index=False,
                               encoding='utf-8')
             except IOError:
-                logging.warning(vmc.pathraw + filename + ' could not be ' +
+                logging.warning(utl.raw_path + filename + ' could not be ' +
                                 'opened.  API data was not saved.')
 
     @staticmethod

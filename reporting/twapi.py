@@ -7,9 +7,10 @@ import datetime as dt
 import pandas as pd
 import pandas.io.json as pdjson
 import oauth2 as oauth
+import reporting.utils as utl
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
-configpath = 'Config/'
+configpath = utl.config_path
 
 DOMAIN = 'https://ads-api.twitter.com'
 PLACEMENT = '&placement=ALL_ON_TWITTER'

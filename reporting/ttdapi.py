@@ -4,12 +4,11 @@ import json
 import sys
 import pandas as pd
 from io import StringIO
-
-configfile = 'Config/ttdconfig.json'
+import reporting.utils as utl
 
 
 url = 'https://api.thetradedesk.com/v3'
-configpath = 'Config/'
+configpath = utl.config_path
 
 
 class TtdApi(object):

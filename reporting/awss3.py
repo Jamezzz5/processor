@@ -7,8 +7,9 @@ from io import BytesIO, StringIO
 import pandas as pd
 import datetime as dt
 from boto.s3.connection import S3Connection
+import reporting.utils as utl
 
-config_path = 'Config/'
+config_path = utl.config_path
 
 
 class S3(object):

@@ -3,9 +3,10 @@ import json
 import logging
 import datetime as dt
 import pandas as pd
+import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
-config_path = 'Config/'
+config_path = utl.config_path
 base_url = 'https://www.googleapis.com/analytics/v3/data/ga'
 def_metrics = ['sessions', 'goal1Completions', 'goal2Completions', 'users',
                'newUsers', 'bounces', 'pageviews', 'totalEvents',
