@@ -232,7 +232,8 @@ class FbApi(object):
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
         elif e._api_error_code == 2:
-            logging.warning('An unexpected error occurred.  Retrying request later.')
+            logging.warning('An unexpected error occurred.' +
+                            'Retrying request later.')
             return True
         elif e._api_error_code == 17:
             logging.warning('Facebook rate limit reached.  Pausing for ' +
@@ -240,7 +241,7 @@ class FbApi(object):
             time.sleep(300)
             self.date_lists.append(date_list)
             return True
-        elif e._api_error_code == 1:
+        elif e._api_error_code == 1 and date_list is not None:
             if date_list[0] == date_list[-1]:
                 logging.warning('Already daily.  Reducing requested fields.' +
                                 'Error as follows: ' + str(e))

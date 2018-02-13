@@ -12,6 +12,10 @@ config_path = utl.config_path
 
 base_url = 'https://hq.appsflyer.com/export/'
 
+report_types = ['geo_by_date_report', 'partners_by_date_report',
+                'installs_report', 'in_app_events_report', 'geo_report',
+                'daily_report', 'partners_report']
+
 
 class AfApi(object):
     def __init__(self):
@@ -52,51 +56,66 @@ class AfApi(object):
                 sys.exit(0)
 
     @staticmethod
-    def get_data_default_check(sd, ed, fields):
+    def parse_fields(items):
+        sources = []
+        field = None
+        for item in items:
+            if item in report_types:
+                field = item
+            else:
+                sources.append(item)
+        if not field:
+            field = 'partners_by_date_report'
+        return field, sources
+
+    @staticmethod
+    def get_data_default_check(sd, ed):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        if fields is None:
-            fields = None
-        return sd, ed, fields
+        return sd, ed
 
-    def create_url(self, sd, ed, field):
-        field_url = '/{}/v5?'.format(field)
+    def create_url(self, sd, ed, field, sources):
+        report_url = '/{}/v5?'.format(field)
         token_url = 'api_token={}'.format(self.api_token)
         sded_url = '&from={}&to={}'.format(sd, ed)
         tz_url = '&timezone=America/Los_Angeles'
-        full_url = (base_url + self.app_id + field_url + token_url + sded_url +
-                    tz_url)
+        full_url = (base_url + self.app_id + report_url + token_url +
+                    sded_url + tz_url)
+        if sources:
+            source_url = '&media_source={}'.format(','.join(sources))
+            full_url += source_url
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        self.df = pd.DataFrame()
+        sd, ed = self.get_data_default_check(sd, ed)
         if sd > ed:
             logging.warning('Start date greater than end date.  Start date' +
                             'was set to end date.')
             sd = ed
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
-        for field in fields:
-            self.get_raw_data(sd, ed, field)
+        field, sources = self.parse_fields(fields)
+        self.get_raw_data(sd, ed, field, sources)
         return self.df
 
-    def get_raw_data(self, sd, ed, field):
-        full_url = self.create_url(sd, ed, field)
+    def get_raw_data(self, sd, ed, field, sources):
+        full_url = self.create_url(sd, ed, field, sources)
         self.r = requests.get(full_url)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
             self.df = self.df.append(tdf)
         else:
-            self.request_error(sd, ed, field)
+            self.request_error(sd, ed, field, sources)
 
-    def request_error(self, sd, ed, field):
-        limit_error = 'Limit reached for country-daily-report'
-        if self.r.status_code == 403 and self.r.text == limit_error:
+    def request_error(self, sd, ed, field, sources):
+        limit_error = 'Limit reached for'
+        if self.r.status_code == 403 and self.r.text[:17] == limit_error:
             logging.warning('Limit reached pausing for 120 seconds.')
             time.sleep(120)
-            self.get_raw_data(sd, ed, field)
+            self.get_raw_data(sd, ed, field, sources)
         else:
             logging.warning('Unknown error: ' + str(self.r.text))
             sys.exit(0)
