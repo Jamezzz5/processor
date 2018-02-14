@@ -86,7 +86,7 @@ class NbApi(object):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
-            ed = dt.datetime.today() - dt.timedelta(days=1)
+            ed = dt.datetime.today()
         if fields is None:
             fields = None
         return sd, ed, fields
