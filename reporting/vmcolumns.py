@@ -54,6 +54,7 @@ payuser = 'Paying User'
 download = 'Download'
 login = 'Login'
 transaction = 'Transaction'
+transaction_revenue = 'Transaction Revenue'
 mplay = 'Match Played'
 gplay = 'Game Played'
 gplay3 = 'Games Played 3'
@@ -115,12 +116,12 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            ret_day3, ret_day7, ret_day14, ret_day30, ret_day60, ret_day90,
            ret_day120, landingpage, homepage, btnclick, purchase, signup,
            newuser, activeuser, totaluser, payuser, download, login,
-           transaction, mplay, gplay, gplay3, gplay6, landingpagepi,
-           homepagepi, btnclickpi, purchasepi, signuppi, newuserpi,
-           activeuserpi, downloadpi, loginpi, gplaypi, gplay3pi, gplay6pi,
-           landingpagepc, homepagepc, btnclickpc, purchasepc, signuppc,
-           newuserpc, activeuserpc, downloadpc, loginpc, gplaypc, gplay3pc,
-           gplay6pc, sm_totalbuzz, sm_totalbuzzpost, sm_totalreplies,
+           transaction, transaction_revenue, mplay, gplay, gplay3, gplay6,
+           landingpagepi, homepagepi, btnclickpi, purchasepi, signuppi,
+           newuserpi, activeuserpi, downloadpi, loginpi, gplaypi, gplay3pi,
+           gplay6pi, landingpagepc, homepagepc, btnclickpc, purchasepc,
+           signuppc, newuserpc, activeuserpc, downloadpc, loginpc, gplaypc,
+           gplay3pc, gplay6pc, sm_totalbuzz, sm_totalbuzzpost, sm_totalreplies,
            sm_totalreposts, sm_originalposts, sm_impressions,
            sm_positivesentiment, sm_negativesentiment, sm_passion,
            sm_uniqueauthors, sm_strongemotion, sm_weakemotion, conv1, conv2,

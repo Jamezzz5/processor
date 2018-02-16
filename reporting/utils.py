@@ -1,8 +1,9 @@
-import logging
-import sys
 import os
-import datetime as dt
+import sys
+import logging
+import numpy as np
 import pandas as pd
+import datetime as dt
 import reporting.vmcolumns as vmc
 
 config_path = 'config/'
@@ -22,6 +23,7 @@ def dir_check(directory):
     if not os.path.isdir(directory):
         os.makedirs(directory)
 
+
 def import_read_csv(path, filename):
     raw_file = path + filename
     try:
@@ -29,8 +31,9 @@ def import_read_csv(path, filename):
     except pd.io.common.CParserError:
         df = pd.read_csv(raw_file, parse_dates=True, sep=None, engine='python')
     except UnicodeDecodeError:
-        df = pd.read_csv(raw_file, parse_dates = True, encoding='iso-8859-1')
+        df = pd.read_csv(raw_file, parse_dates=True, encoding='iso-8859-1')
     return df
+
 
 def exceldate_to_datetime(excel_date):
     epoch = dt.datetime(1899, 12, 30)
@@ -76,7 +79,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
     if str_col is None:
         str_col = []
     for col in float_col:
-        if col not in df:
+        if (col not in df) or (df[col].dtype == np.float64):
             continue
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
