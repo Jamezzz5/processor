@@ -214,10 +214,7 @@ def import_data(key, vm_rules, **kwargs):
     dic = dct.Dict(kwargs[vmc.filenamedict])
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
                          kwargs[vmc.filenameerror])
-    dic.auto(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
-    dic.apply_constants()
-    dic.apply_translation()
-    dic.apply_relation()
+    dic.auto_functions(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
     df = dic.merge(df, dctc.FPN)
     df = combining_data(df, key, vmc.datadatecol, **kwargs)
     df = utl.data_to_type(df, date_col=vmc.datadatecol)
@@ -243,9 +240,7 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
     er.ErrorReport(df_fpn, dic, None, kwargs[vmc.filenameerror])
     merge_col = list(set(dic.data_dict.columns).intersection(df.columns))
     dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
-    dic.apply_constants()
-    dic.apply_translation()
-    dic.apply_relation()
+    dic.apply_functions()
     dic.data_dict = utl.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
     return dic.data_dict
 

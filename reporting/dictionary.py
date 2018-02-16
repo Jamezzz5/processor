@@ -40,6 +40,10 @@ class Dict(object):
         df = df.merge(self.data_dict, on=colname, how='left')
         return df
 
+    def auto_functions(self, err, autodicord, placement):
+        self.auto(err, autodicord, placement)
+        self.apply_functions()
+
     def auto(self, err, autodicord, placement):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
@@ -57,8 +61,6 @@ class Dict(object):
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
             self.data_dict = self.data_dict.append(error)
             self.data_dict = self.data_dict[dctc.COLS]
-            self.clean()
-            self.write()
             err.dic = self
             err.reset()
 
@@ -97,26 +99,27 @@ class Dict(object):
             error = pd.concat([error, df], axis=1)
         return error
 
+    def apply_functions(self):
+        self.apply_constants()
+        self.apply_translation()
+        self.apply_relation()
+        self.clean()
+        self.write()
+
     def apply_relation(self):
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
         self.data_dict = rc.loop(self.data_dict)
-        self.clean()
-        self.write(self.data_dict)
 
     def apply_constants(self):
         dcc = DictConstantConfig()
         dcc.read(dctc.filename_con_config)
         self.data_dict = dcc.apply_constants_to_dict(self.data_dict)
-        self.clean()
-        self.write(self.data_dict)
 
     def apply_translation(self):
         tc = DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         self.data_dict = tc.apply_translation_to_dict(self.data_dict)
-        self.clean()
-        self.write(self.data_dict)
 
     def write(self, df=None):
         logging.debug('Writing ' + self.filename)
