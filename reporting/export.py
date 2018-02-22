@@ -2,6 +2,7 @@ import logging
 import json
 import sys
 import os
+import math
 from io import BytesIO
 import datetime as dt
 import numpy as np
@@ -131,12 +132,23 @@ class DBUpload(object):
             df_update = df_update.loc[updated_index]
             df_update = df_update[[self.name] + set_cols]
             set_vals = [tuple(x) for x in df_update.values]
-            if exc.upload_id_col + '_x' in df.columns:
-                self.db.update_rows_two_where(table, set_cols, set_vals,
-                                              self.name, exc.upload_id_col,
-                                              self.dft.upload_id)
-            else:
-                self.db.update_rows(table, set_cols, set_vals, self.name)
+            set_vals = self.size_check_and_split(set_vals)
+            for set_val in set_vals:
+                if exc.upload_id_col + '_x' in df.columns:
+                    self.db.update_rows_two_where(table, set_cols, set_val,
+                                                  self.name, exc.upload_id_col,
+                                                  self.dft.upload_id)
+                else:
+                    self.db.update_rows(table, set_cols, set_val, self.name)
+
+    @staticmethod
+    def size_check_and_split(set_vals):
+        size = sys.getsizeof(set_vals)
+        max_mem = 1048576.0
+        lists_needed = size / max_mem
+        n = int(math.ceil(len(set_vals) / lists_needed))
+        set_vals = [set_vals[i:i + n] for i in range(0, len(set_vals), n)]
+        return set_vals
 
     def delete_rows(self, df, table):
         if exc.upload_id_col + '_x' not in df.columns:
