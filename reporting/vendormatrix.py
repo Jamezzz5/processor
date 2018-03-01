@@ -64,9 +64,6 @@ class VendorMatrix(object):
         drop = [item for item in self.vm.columns.values.tolist()
                 if (item[0] == '|')]
         self.vm = utl.col_removal(self.vm, 'vm', drop)
-        plan_row = (self.vm.loc[self.vm[vmc.vendorkey] == plan_key])
-        self.vm = self.vm[self.vm[vmc.vendorkey] != plan_key]
-        self.vm = self.vm.append(plan_row).reset_index()
         self.vm = utl.data_to_type(self.vm, [], vmc.datecol, vmc.barsplitcol)
         self.vl = self.vm[vmc.vendorkey].tolist()
         self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
@@ -113,18 +110,8 @@ class VendorMatrix(object):
                     self.vm_rules_dict[key_split[1]] = {key_split[2]: key}
 
     def vendor_set(self, vk):
-        ven_param = {}
-        for key in self.vm:
-            value = self.vm[key][vk]
-            ven_param[key] = value
+        ven_param = {x: self.vm[x][vk] for x in self.vm}
         return ven_param
-
-    def vendor_check(self, vk):
-        if (os.path.isfile(utl.raw_path + self.vm[vmc.filename][vk]) or
-           vk == plan_key):
-            return True
-        else:
-            return False
 
     def vm_change(self, vk, col, newvalue):
         self.vm[col][vk] = newvalue
@@ -139,13 +126,21 @@ class VendorMatrix(object):
             self.tdf = import_data(vk, self.vm_rules_dict, **self.ven_param)
         return self.tdf
 
+    def sort_vendor_list(self):
+        self.vl = sorted((x for x in self.vl
+                          if os.path.isfile(
+                            utl.raw_path + self.vm[vmc.filename][x])),
+                         key=lambda x:
+                         os.stat(utl.raw_path + self.vm[vmc.filename][x]))
+        self.vl.append(plan_key)
+
     def vm_loop(self):
         logging.info('Initializing Vendor Matrix Loop')
         self.df = pd.DataFrame(columns=[vmc.datacol])
+        self.sort_vendor_list()
         for vk in self.vl:
-            if self.vendor_check(vk):
-                self.tdf = self.vendor_get(vk)
-                self.df = self.df.append(self.tdf, ignore_index=True)
+            self.tdf = self.vendor_get(vk)
+            self.df = self.df.append(self.tdf, ignore_index=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csvpath):
@@ -153,6 +148,7 @@ class VendorMatrix(object):
                 logging.info('All placements defined.  Deleting Error report' +
                              ' directory.')
                 os.rmdir(er.csvpath)
+        self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
 
 
