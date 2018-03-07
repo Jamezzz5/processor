@@ -176,7 +176,7 @@ class RelationalConfig(object):
 
 class DictRelational(object):
     def __init__(self, **kwargs):
-        self.csvpath = 'Dictionaries/Relational/'
+        self.csvpath = csvpath + 'Relational/'
         utl.dir_check(self.csvpath)
         self.df = pd.DataFrame()
         self.params = kwargs
@@ -278,8 +278,8 @@ class DictConstantConfig(object):
 
 class DictTranslationConfig(object):
     def __init__(self):
-        self.csvpath = 'Dictionaries/Translational/'
-        utl.dir_check('Dictionaries/Translational/')
+        self.csvpath = csvpath + 'Translational/'
+        utl.dir_check(self.csvpath)
         self.df = pd.DataFrame()
 
     def read(self, configfile):
