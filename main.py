@@ -70,8 +70,8 @@ def main():
             df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')
         except IOError:
-            logging.warn(OUTPUT_FILE + ' could not be opened.  ' +
-                         'Final Output not updated.')
+            logging.warning(OUTPUT_FILE + ' could not be opened.  ' +
+                            'Final Output not updated.')
     if args.exp:
         exp_class = exp.ExportHandler()
         exp_class.export_loop(args.exp)

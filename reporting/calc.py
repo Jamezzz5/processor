@@ -51,11 +51,12 @@ DROP_COL = ([CLI_PD, NC_CUM_SUM, NC_SUM_DATE, PLACE_DATE,
 def clicks_by_place_date(df):
     df[dctc.PN] = df[dctc.PN].replace(np.nan, 'None')
     df[PLACE_DATE] = (df[vmc.date].astype(str) + df[dctc.PN])
-    df_click_place_date = (df.groupby([PLACE_DATE])[[vmc.clicks]]
-                           .apply(lambda x: x/float(x.sum())).astype(float))
-    df_click_place_date = df_click_place_date.replace(np.nan, 0).astype(float)
-    df_click_place_date.columns = [CLI_PD]
-    df = pd.concat([df, df_click_place_date], axis=1)
+    df_cpd = df.loc[df[dctc.BM].isin([BM_FLAT, BM_FLAT2])]
+    df_cpd = df_cpd.groupby([PLACE_DATE])[[vmc.clicks]].apply(
+                            lambda x: x / float(x.sum())).astype(float)
+    df_cpd.columns = [CLI_PD]
+    df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
+    df[CLI_PD] = df[CLI_PD].replace(np.nan, 0).astype(float)
     return df
 
 
