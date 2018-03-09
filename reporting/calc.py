@@ -10,25 +10,21 @@ BM_CPC = 'CPC'
 BM_AV = 'AV'
 BM_FLAT = 'FLAT'
 BM_FLAT2 = 'Flat'
-BM_FB = 'Facebook'
-BM_GS = 'Google'
 BM_PA = 'Programmaddict'
-BM_TW = 'Twitter'
-BM_BS = 'Bing'
-BM_CPI = 'CPI'
 BM_CPA = 'CPA'
 BM_CPA2 = 'CPA2'
 BM_CPA3 = 'CPA3'
 BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
+BUY_MODELS = [BM_CPM, BM_CPC, BM_AV, BM_FLAT, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2,
+              BM_CPA3, BM_CPA4, BM_CPA5, BM_FLATDATE]
 
 NCF = 'Net Cost Final'
 
 AGENCY_FEES = 'Agency Fees'
 TOTAL_COST = 'Total Cost'
 
-CLI_PN_PD = 'Clicks by Placement & Placement Date'
 CLI_PD = 'Clicks by Placement Date'
 PLACE_DATE = 'Placement Date'
 
@@ -111,7 +107,8 @@ def net_cost(df):
 def net_cost_calculation(df):
     logging.info('Calculating Net Cost')
     df = clicks_by_place_date(df)
-    df[vmc.cost] = df.apply(net_cost, axis=1)
+    calc_ser = df[df[dctc.BM].isin(BUY_MODELS)].apply(net_cost, axis=1)
+    df[vmc.cost].update(calc_ser)
     return df
 
 

@@ -67,6 +67,7 @@ def main():
         df = matrix.vm_loop()
         df = cal.calculate_cost(df)
         try:
+            logging.info('Writing to: ' + OUTPUT_FILE)
             df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')
         except IOError:
