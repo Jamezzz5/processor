@@ -109,7 +109,8 @@ def net_cost_calculation(df):
     logging.info('Calculating Net Cost')
     df = clicks_by_place_date(df)
     calc_ser = df[df[dctc.BM].isin(BUY_MODELS)].apply(net_cost, axis=1)
-    df[vmc.cost].update(calc_ser)
+    if not calc_ser.empty:
+        df[vmc.cost].update(calc_ser)
     return df
 
 
