@@ -48,11 +48,12 @@ def clicks_by_place_date(df):
     df[dctc.PN] = df[dctc.PN].replace(np.nan, 'None')
     df[PLACE_DATE] = (df[vmc.date].astype(str) + df[dctc.PN])
     df_cpd = df.loc[df[dctc.BM].isin([BM_FLAT, BM_FLAT2])]
-    df_cpd = df_cpd.groupby([PLACE_DATE])[[vmc.clicks]].apply(
-                            lambda x: x / float(x.sum())).astype(float)
-    df_cpd.columns = [CLI_PD]
-    df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
-    df[CLI_PD] = df[CLI_PD].replace(np.nan, 0).astype(float)
+    if not df_cpd.empty:
+        df_cpd = df_cpd.groupby([PLACE_DATE])[[vmc.clicks]].apply(
+                                lambda x: x / float(x.sum())).astype(float)
+        df_cpd.columns = [CLI_PD]
+        df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
+        df[CLI_PD] = df[CLI_PD].replace(np.nan, 0).astype(float)
     return df
 
 
