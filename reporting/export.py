@@ -79,9 +79,9 @@ class DBUpload(object):
 
     def upload_table_to_db(self, table):
         logging.info('Uploading table ' + table + ' to ' + self.db.db)
-        cols = self.dbs.get_cols_for_export(table)
-        ul_df = self.dft.slice_for_upload(cols)
-        ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
+        ul_df = self.get_upload_df(table)
+        if ul_df.empty:
+            return None
         self.dbs.set_table(table)
         pk_config = {table: list(self.dbs.pk.items())[0]}
         self.set_id_info(table, pk_config, ul_df)
@@ -98,6 +98,12 @@ class DBUpload(object):
         self.update_rows(df, df_rds.columns, table)
         self.delete_rows(df, table)
         self.insert_rows(df, table)
+
+    def get_upload_df(self, table):
+        cols = self.dbs.get_cols_for_export(table)
+        ul_df = self.dft.slice_for_upload(cols)
+        ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
+        return ul_df
 
     def read_rds_table(self, table, cols, where_col, where_val):
         df_rds = self.db.read_rds_table(table, where_col, where_val)
