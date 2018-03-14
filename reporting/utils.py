@@ -83,18 +83,17 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
             continue
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
-        df[col] = df[col].replace('nan', 0)
-        df[col] = df[col].replace('NA', 0)
+        df[col] = df[col].replace(['nan', 'NA'], 0)
         df[col] = pd.to_numeric(df[col], errors='coerce')
         df[col] = df[col].astype(float)
     for col in date_col:
         if col not in df:
             continue
         df[col] = df[col].replace(['1/0/1900', '1/1/1970'], '0')
-        df[col] = df[col].fillna(0)
+        df[col] = df[col].fillna(dt.date.today())
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: string_to_date(x))
-        df[col] = pd.to_datetime(df[col], errors='coerce')
+        df[col] = pd.to_datetime(df[col], errors='coerce').dt.normalize()
     for col in str_col:
         if col not in df:
             continue
