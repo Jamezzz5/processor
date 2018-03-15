@@ -119,9 +119,11 @@ def first_last_adj(df, first_row, last_row):
 
 
 def date_removal(df, date_col_name, start_date, end_date):
-    if end_date.date() is not pd.NaT:
+    if (end_date.date() is not pd.NaT and
+            end_date.date() != dt.date.today()):
         df = df[df[date_col_name] <= end_date]
-    if start_date.date() is not pd.NaT:
+    if (start_date.date() is not pd.NaT and
+            start_date.date() != dt.date.today()):
         df = df[df[date_col_name] >= start_date]
     return df
 
