@@ -79,7 +79,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
     if str_col is None:
         str_col = []
     for col in float_col:
-        if (col not in df) or (df[col].dtype == np.float64):
+        if col not in df:
             continue
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
