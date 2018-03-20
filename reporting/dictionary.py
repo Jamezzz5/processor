@@ -191,7 +191,7 @@ class DictRelational(object):
             logging.info('Creating ' + self.filename)
             df = pd.DataFrame(columns=self.columns, index=None)
             df.to_csv(self.full_file_path, index=False)
-        self.df = pd.read_csv(self.full_file_path)
+        self.df = utl.import_read_csv(self.csvpath, self.filename)
 
     def add_key_values(self, data_dict):
         keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
