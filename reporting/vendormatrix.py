@@ -206,6 +206,8 @@ def ad_cost_calculation(df):
 
 def import_data(key, vm_rules, **kwargs):
     df = utl.import_read_csv(utl.raw_path, kwargs[vmc.filename])
+    if df is None:
+        return df
     df = utl.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
     df = utl.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
     df = utl.df_transform(df, kwargs[vmc.transform])

@@ -35,6 +35,7 @@ engagements = 'Engagements'
 likes = 'Likes'
 revenue = 'Revenue'
 revenue_userstart = 'Revenue - User Start'
+revenue_userstart_30day = 'Revenue - User Start 30 Day'
 ret_day1 = 'Retention - Day 1'
 ret_day3 = 'Retention - Day 3'
 ret_day7 = 'Retention - Day 7'
@@ -117,16 +118,17 @@ vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            views100, reach, frequency, engagements, likes, revenue,
-           revenue_userstart, ret_day1, ret_day3, ret_day7, ret_day14,
-           ret_day30, ret_day60, ret_day90, ret_day120, landingpage, homepage,
-           btnclick, purchase, signup, newuser, activeuser, totaluser, payuser,
-           download, login, transaction, transaction_revenue, mplay, gplay,
-           gplay3, gplay6, landingpagepi, homepagepi, btnclickpi, purchasepi,
-           signuppi, newuserpi, activeuserpi, downloadpi, loginpi, gplaypi,
-           gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
-           purchasepc, signuppc, newuserpc, activeuserpc, downloadpc, loginpc,
-           gplaypc, gplay3pc, gplay6pc, sm_totalbuzz, sm_totalbuzzpost,
-           sm_totalreplies, sm_totalreposts, sm_originalposts, sm_impressions,
+           revenue_userstart, revenue_userstart_30day, ret_day1, ret_day3,
+           ret_day7, ret_day14, ret_day30, ret_day60, ret_day90, ret_day120,
+           landingpage, homepage, btnclick, purchase, signup, newuser,
+           activeuser, totaluser, payuser, download, login, transaction,
+           transaction_revenue, mplay, gplay, gplay3, gplay6, landingpagepi,
+           homepagepi, btnclickpi, purchasepi, signuppi, newuserpi,
+           activeuserpi, downloadpi, loginpi, gplaypi, gplay3pi, gplay6pi,
+           landingpagepc, homepagepc, btnclickpc, purchasepc, signuppc,
+           newuserpc, activeuserpc, downloadpc, loginpc, gplaypc, gplay3pc,
+           gplay6pc, sm_totalbuzz, sm_totalbuzzpost, sm_totalreplies,
+           sm_totalreposts, sm_originalposts, sm_impressions,
            sm_positivesentiment, sm_negativesentiment, sm_passion,
            sm_uniqueauthors, sm_strongemotion, sm_weakemotion, modelcoefa,
            modelcoefb, modelcoefc, conv1, conv2, conv3, conv4, conv5, conv6,
