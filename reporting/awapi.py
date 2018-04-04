@@ -114,7 +114,7 @@ class AwApi(object):
             sd = ed
         logging.info('Getting Adwords data from ' + str(sd) + ' until ' +
                      str(ed))
-        report_downloader = self.adwords_client.GetReportDownloader('v201708')
+        report_downloader = self.adwords_client.GetReportDownloader('v201802')
         report = {
             'reportName': 'Adwords_Report',
             'dateRangeType': 'CUSTOM_DATE',
