@@ -262,7 +262,8 @@ class DB(object):
 
     def connect(self):
         logging.debug('Connecting to DB at Host: ' + self.host)
-        self.engine = create_engine(self.conn_string)
+        self.engine = create_engine(self.conn_string,
+                                    connect_args={'sslmode': 'prefer'})
         try:
             self.connection = self.engine.raw_connection()
         except AssertionError:
