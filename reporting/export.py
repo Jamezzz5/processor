@@ -221,6 +221,7 @@ class DB(object):
         self.host = None
         self.port = None
         self.db = None
+        self.schema = None
         self.config_list = []
         self.configfile = None
         self.engine = None
@@ -252,7 +253,12 @@ class DB(object):
         self.host = self.config['HOST']
         self.port = self.config['PORT']
         self.db = self.config['DATABASE']
-        self.config_list = [self.user, self.pw, self.host, self.port, self.db]
+        if 'SCHEMA' not in self.config.keys():
+            self.schema = self.db
+        else:
+            self.schema = self.config['SCHEMA']
+        self.config_list = [self.user, self.pw, self.host, self.port, self.db,
+                            self.schema]
 
     def check_config(self):
         for item in self.config_list:
@@ -277,7 +283,7 @@ class DB(object):
         self.output.seek(0)
 
     def copy_from(self, table, df, columns):
-        table_path = self.db + '.' + table
+        table_path = self.schema + '.' + table
         self.connect()
         logging.info('Writing ' + str(len(df)) + ' row(s) to ' + table)
         self.df_to_output(df)
@@ -292,7 +298,7 @@ class DB(object):
                   INSERT INTO {0}.{1} ({2})
                    VALUES ({3})
                    RETURNING ({4})
-                  """.format(self.db, table, ', '.join(columns),
+                  """.format(self.schema, table, ', '.join(columns),
                              ', '.join(['%s'] * len(values)), return_col)
         self.cursor.execute(command, values)
         self.connection.commit()
@@ -309,7 +315,8 @@ class DB(object):
                   DELETE FROM {0}.{1}
                    WHERE {0}.{1}.{2} IN ({3})
                    AND {0}.{1}.{4} IN ({5})
-                  """.format(self.db, table, where_col, where_val, where_col2,
+                  """.format(self.schema, table, where_col, where_val,
+                             where_col2,
                              ', '.join(['%s'] * len(where_vals2)))
         self.cursor.execute(command, where_vals2)
         self.connection.commit()
@@ -323,7 +330,7 @@ class DB(object):
                        FROM {0}.{1}
                        WHERE {0}.{1}.{3} IN ({4})
                        AND {0}.{1}.{5} IN ({6})
-                      """.format(self.db, table, select_col, where_col,
+                      """.format(self.schema, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)),
                                  where_col2, where_val2)
         else:
@@ -332,7 +339,7 @@ class DB(object):
                        FROM {0}.{1}
                        WHERE {0}.{1}.{3} IN ({4})
                        AND {0}.{1}.{5} IN ({6})
-                      """.format(self.db, table, select_col, where_col,
+                      """.format(self.schema, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)),
                                  where_col2, where_val2)
         self.cursor.execute(command, where_val)
@@ -350,14 +357,14 @@ class DB(object):
                       SELECT {0}.{1}.{2}
                        FROM {0}.{1}
                        WHERE {0}.{1}.{3} IN ({4})
-                      """.format(self.db, table, select_col, where_col,
+                      """.format(self.schema, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)))
         else:
             command = """
                       SELECT {0}.{1}.{2}, {0}.{1}.{3}
                        FROM {0}.{1}
                        WHERE {0}.{1}.{3} IN ({4})
-                      """.format(self.db, table, select_col, where_col,
+                      """.format(self.schema, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)))
         self.cursor.execute(command, where_val)
         data = self.cursor.fetchall()
@@ -373,7 +380,7 @@ class DB(object):
                   SELECT *
                    FROM {0}.{1}
                    WHERE {0}.{1}.{2} IN ({3})
-                  """.format(self.db, table, where_col,
+                  """.format(self.schema, table, where_col,
                              ', '.join(['%s'] * len(where_val)))
         self.cursor.execute(command, where_val)
         data = self.cursor.fetchall()
@@ -383,7 +390,7 @@ class DB(object):
                   FROM information_schema.columns
                   WHERE table_schema = '{0}'
                   AND table_name = '{1}'
-                  """.format(self.db, table)
+                  """.format(self.schema, table)
         self.cursor.execute(command)
         columns = self.cursor.fetchall()
         columns = [x[3] for x in columns]
@@ -400,7 +407,7 @@ class DB(object):
                    FROM (VALUES {3})
                    AS c({4})
                    WHERE c.{5} = t.{5}
-                  """.format(self.db, table,
+                  """.format(self.schema, table,
                              (', '.join(x + ' = c.' + x
                               for x in [where_col] + set_cols)),
                              ', '.join(['%s'] * len(set_vals)),
@@ -421,7 +428,7 @@ class DB(object):
                    AS c({4})
                    WHERE c.{5} = t.{5}
                    AND t.{6} = {7}
-                  """.format(self.db, table,
+                  """.format(self.schema, table,
                              (', '.join(x + ' = c.' + x
                               for x in [where_col] + set_cols)),
                              ', '.join(['%s'] * len(set_vals)),
