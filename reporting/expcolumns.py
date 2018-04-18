@@ -5,9 +5,6 @@ config_file = 'Config_File'
 translation_file = 'Translation_File'
 schema_file = 'Schema_File'
 
-db_config_file = 'dbconfig.json'
-
-db_schema_file = 'dbschema.csv'
 table = 'Table'
 pk = 'PK'
 columns = 'Columns'
@@ -15,7 +12,6 @@ fk = 'FK'
 split_columns = [pk, columns, fk]
 dirty_columns = {pk: ':', columns: ' ', fk: ':'}
 
-db_translation_file = 'db_df_translation.csv'
 translation_db = 'DB'
 translation_df = 'DF'
 translation_type = 'TYPE'

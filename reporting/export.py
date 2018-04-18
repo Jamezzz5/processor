@@ -72,7 +72,7 @@ class DBUpload(object):
         self.db = DB(db_file)
         logging.info('Uploading ' + data_file + ' to ' + self.db.db)
         self.dbs = DBSchema(schema_file)
-        self.dft = DFTranslation(translation_file, data_file)
+        self.dft = DFTranslation(translation_file, data_file, self.db)
         for table in self.dbs.table_list:
             self.upload_table_to_db(table)
         logging.info(data_file + ' successfully upload to ' + self.db.db)
@@ -504,10 +504,11 @@ class DBSchema(object):
 
 
 class DFTranslation(object):
-    def __init__(self, config_file, data_file):
+    def __init__(self, config_file, data_file, db=None):
         self.config_file = config_file
         self.full_config_file = config_path + self.config_file
         self.data_file = data_file
+        self.db = db
         self.translation = None
         self.db_columns = None
         self.df_columns = None
@@ -553,7 +554,8 @@ class DFTranslation(object):
         self.df = self.df[self.df_columns]
         self.df = self.df.rename(columns=self.translation)
         self.df = self.clean_types_for_upload(self.df)
-        self.get_upload_id()
+        if self.db:
+            self.get_upload_id()
         self.add_event_name()
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
@@ -575,13 +577,22 @@ class DFTranslation(object):
             ul_id_df.to_csv(ul_id_file_path, index=False)
         self.upload_id = ul_id_df[exc.upload_id_col][0].astype(int)
         self.df[exc.upload_id_col] = self.upload_id
+        self.check_db_for_upload()
 
     def new_upload(self):
-        db = DB(exc.db_config_file)
         upload_df = self.slice_for_upload(exc.upload_cols)
-        ul_id_df = db.insert_rds(exc.upload_tbl, exc.upload_cols,
-                                 upload_df.values[0], exc.upload_id_col)
+        ul_id_df = self.db.insert_rds(exc.upload_tbl, exc.upload_cols,
+                                      upload_df.values[0], exc.upload_id_col)
         return ul_id_df
+
+    def check_db_for_upload(self):
+        df = self.db.read_rds(exc.upload_tbl, exc.upload_id_col,
+                              exc.upload_id_col, [self.upload_id])
+        if df.empty:
+            full_upload_cols = exc.upload_cols + [exc.upload_id_col]
+            upload_df = self.slice_for_upload(full_upload_cols)
+            self.db.insert_rds(exc.upload_tbl, full_upload_cols,
+                               upload_df.values[0], exc.upload_id_col)
 
     def add_upload_cols(self):
         self.df[exc.upload_last_upload_date] = dt.datetime.today()
