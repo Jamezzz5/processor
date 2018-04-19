@@ -102,7 +102,8 @@ class DBUpload(object):
     def get_upload_df(self, table):
         cols = self.dbs.get_cols_for_export(table)
         ul_df = self.dft.slice_for_upload(cols)
-        ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
+        if not ul_df.empty:
+            ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
         return ul_df
 
     def read_rds_table(self, table, cols, where_col, where_val):
