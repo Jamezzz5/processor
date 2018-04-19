@@ -58,15 +58,18 @@ class AfApi(object):
     @staticmethod
     def parse_fields(items):
         sources = []
+        category = None
         field = None
         for item in items:
             if item in report_types:
                 field = item
+            elif item == 'standard':
+                category = 'standard'
             else:
                 sources.append(item)
         if not field:
             field = 'partners_by_date_report'
-        return field, sources
+        return field, sources, category
 
     @staticmethod
     def get_data_default_check(sd, ed):
@@ -76,7 +79,7 @@ class AfApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         return sd, ed
 
-    def create_url(self, sd, ed, field, sources):
+    def create_url(self, sd, ed, field, sources,  category):
         report_url = '/{}/v5?'.format(field)
         token_url = 'api_token={}'.format(self.api_token)
         sded_url = '&from={}&to={}'.format(sd, ed)
@@ -86,6 +89,9 @@ class AfApi(object):
         if sources:
             source_url = '&media_source={}'.format(','.join(sources))
             full_url += source_url
+        if category:
+            cat_url = '&category={}'.format(category)
+            full_url += cat_url
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -97,25 +103,26 @@ class AfApi(object):
             sd = ed
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
-        field, sources = self.parse_fields(fields)
-        self.get_raw_data(sd, ed, field, sources)
+        field, sources, category = self.parse_fields(fields)
+        self.get_raw_data(sd, ed, field, sources, category)
         return self.df
 
-    def get_raw_data(self, sd, ed, field, sources):
-        full_url = self.create_url(sd, ed, field, sources)
+    def get_raw_data(self, sd, ed, field, sources, category):
+        full_url = self.create_url(sd, ed, field, sources, category)
+        print(full_url)
         self.r = requests.get(full_url)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
             self.df = self.df.append(tdf)
         else:
-            self.request_error(sd, ed, field, sources)
+            self.request_error(sd, ed, field, sources, category)
 
-    def request_error(self, sd, ed, field, sources):
+    def request_error(self, sd, ed, field, sources, category):
         limit_error = 'Limit reached for'
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:
             logging.warning('Limit reached pausing for 120 seconds.')
             time.sleep(120)
-            self.get_raw_data(sd, ed, field, sources)
+            self.get_raw_data(sd, ed, field, sources, category)
         else:
             logging.warning('Unknown error: ' + str(self.r.text))
             sys.exit(0)
