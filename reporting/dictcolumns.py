@@ -84,7 +84,7 @@ COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
 
 floatcol = [BR, AR, BR2, BR3, AGF]
 datecol = [PD, PD2, PD3, PD4, PD5]
-strcol = [BM, AM, VEN]
+strcol = [BM, AM]
 
 PFN = 'plannet_dictionary.csv'
 PNC = 'Planned Net Cost'

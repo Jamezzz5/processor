@@ -588,7 +588,7 @@ class DFTranslation(object):
 
     def check_db_for_upload(self):
         df = self.db.read_rds(exc.upload_tbl, exc.upload_id_col,
-                              exc.upload_id_col, [self.upload_id])
+                              exc.upload_id_col, [int(self.upload_id)])
         if df.empty:
             full_upload_cols = exc.upload_cols + [exc.upload_id_col]
             upload_df = self.slice_for_upload(full_upload_cols)
