@@ -3,6 +3,7 @@ import logging
 import sys
 import pytz
 import ast
+import time
 import datetime as dt
 import pandas as pd
 import pandas.io.json as pdjson
@@ -14,8 +15,8 @@ configpath = utl.config_path
 
 DOMAIN = 'https://ads-api.twitter.com'
 PLACEMENT = '&placement=ALL_ON_TWITTER'
-URLACC = '/1/accounts/'
-URLSTACC = '/1/stats/accounts/'
+URLACC = '/3/accounts/'
+URLSTACC = '/3/stats/accounts/'
 URLEIDS = 'entity_ids='
 URLCEN = '&entity=CAMPAIGN'
 URLMG = '&metric_groups='
@@ -67,7 +68,7 @@ class TwApi(object):
         self.cidname = None
 
     def input_config(self, config):
-        logging.info('Loading Twitter config file: ' + config)
+        logging.info('Loading Twitter config file: %s', config)
         self.configfile = configpath + config
         self.load_config()
         self.check_config()
@@ -77,7 +78,7 @@ class TwApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.configfile + ' not found.  Aborting.')
+            logging.error('%s not found.  Aborting.', self.configfile)
             sys.exit(0)
         self.consumer_key = self.config['CONSUMER_KEY']
         self.consumer_secret = self.config['CONSUMER_SECRET']
@@ -91,7 +92,7 @@ class TwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in config file.  Aborting.')
+                logging.warning('%s not in config file.  Aborting.', item)
                 sys.exit(0)
 
     def request(self, url):
@@ -105,6 +106,10 @@ class TwApi(object):
             data = json.loads(content)
         except IOError:
             data = None
+        except ValueError:
+            logging.warning('Rate limit exceeded.  Restarting after 300s.')
+            time.sleep(300)
+            response, data = self.request(url)
         return response, data
 
     def get_cids(self):
@@ -148,7 +153,7 @@ class TwApi(object):
             else:
                 sd = self.date_format(date_list[0], timezone)
             ed = self.date_format(date_list[-1], timezone)
-            logging.info('Getting Twitter data from ' + sd + ' until ' + ed)
+            logging.info('Getting Twitter data from %s until %s', sd, ed)
             query_params = (URLGST + '{}' + URLET + '{}').format(sd, ed)
             df = pd.DataFrame()
             for ids in ids_lists:
