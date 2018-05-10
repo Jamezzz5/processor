@@ -29,6 +29,11 @@ conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
                'HeadlinePart2', 'Description', 'Description1', 'Description2',
                'ConversionTypeName', 'Conversions']
 
+uac_fields = ['Date', 'AccountDescriptiveName', 'CampaignName',
+              'Impressions', 'Clicks', 'Cost', 'VideoViews',
+              'VideoQuartile25Rate', 'VideoQuartile50Rate',
+              'VideoQuartile75Rate', 'VideoQuartile100Rate', 'Conversions']
+
 
 class AwApi(object):
     def __init__(self):
@@ -42,6 +47,7 @@ class AwApi(object):
         self.client_customer_id = None
         self.config_list = []
         self.adwords_client = None
+        self.report_type = 'AD_PERFORMANCE_REPORT'
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -96,11 +102,13 @@ class AwApi(object):
             fields = def_fields
         return sd, ed, fields
 
-    @staticmethod
-    def parse_fields(fields):
+    def parse_fields(self, fields):
         for field in fields:
             if field == 'Conversions':
-                    fields = conv_fields
+                fields = conv_fields
+            if field == 'UAC':
+                fields = uac_fields
+                self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
         return fields
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -118,10 +126,16 @@ class AwApi(object):
         report = {
             'reportName': 'Adwords_Report',
             'dateRangeType': 'CUSTOM_DATE',
-            'reportType': 'AD_PERFORMANCE_REPORT',
+            'reportType': self.report_type,
             'downloadFormat': 'CSV',
-            'selector': {'fields': fields,
-                         'dateRange': {'min': sd, 'max': ed}}}
+            }
+        selector = {'fields': fields,
+                    'dateRange': {'min': sd, 'max': ed}}
+        if self.report_type == 'UAC':
+            selector['predicates'] = {'field': 'advertisingChannelSubType',
+                                      'operator': 'EQUALS',
+                                      'values': 'UNIVERSAL_APP_CAMPAIGN'}
+        report['selector'] = selector
         r = BytesIO()
         report_downloader.DownloadReport(report, r,
                                          skip_report_header=True,
