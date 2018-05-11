@@ -11,8 +11,10 @@ config_path = utl.config_path
 
 base_url = 'http://api.adjust.com/kpis/v1/'
 
-def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus']
-def_groupings = ['days', 'countries', 'campaigns', 'adgroups', 'creatives']
+def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus',
+              'events']
+def_groupings = ['days', 'countries', 'campaigns', 'adgroups', 'creatives',
+                 'events']
 
 
 class AjApi(object):
