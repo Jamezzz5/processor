@@ -6,11 +6,11 @@ import ast
 import datetime as dt
 import pandas as pd
 import reporting.utils as utl
-from facebookads.api import FacebookAdsApi
-from facebookads.adobjects.adaccount import AdAccount
-from facebookads.adobjects.adsinsights import AdsInsights
-from facebookads.exceptions import FacebookRequestError
-from facebookads.adobjects.adreportrun import AdReportRun
+from facebook_business.api import FacebookAdsApi
+from facebook_business.adobjects.adaccount import AdAccount
+from facebook_business.adobjects.adsinsights import AdsInsights
+from facebook_business.exceptions import FacebookRequestError
+from facebook_business.adobjects.adreportrun import AdReportRun
 
 
 def_params = ['campaign_name', 'adset_name', 'ad_name']
