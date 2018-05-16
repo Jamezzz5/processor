@@ -168,7 +168,11 @@ class FbApi(object):
                 params={'level': AdsInsights.Level.ad,
                         'breakdowns': breakdowns,
                         'time_range': {'since': str(sd), 'until': str(ed), },
-                        'time_increment': 1, },
+                        'time_increment': 1,
+                        'filtering': [{'field': 'ad.effective_status',
+                                       'operator': 'IN',
+                                       'value': ['ACTIVE', 'PAUSED']}]
+                        },
                 async=True)
             deleted = self.account.get_insights(
                 fields=field_list,
