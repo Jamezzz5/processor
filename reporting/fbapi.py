@@ -171,7 +171,12 @@ class FbApi(object):
                         'time_increment': 1,
                         'filtering': [{'field': 'ad.effective_status',
                                        'operator': 'IN',
-                                       'value': ['ACTIVE', 'PAUSED']}]
+                                       'value': ['ACTIVE', 'PAUSED',
+                                                 'PENDING_REVIEW',
+                                                 'DISAPPROVED', 'PREAPPROVED',
+                                                 'CAMPAIGN_PAUSED',
+                                                 'ADSET_PAUSED',
+                                                 'PENDING_BILLING_INFO']}]
                         },
                 async=True)
             deleted = self.account.get_insights(
