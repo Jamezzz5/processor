@@ -10,6 +10,7 @@ import reporting.nbapi as nbapi
 import reporting.scapi as scapi
 import reporting.ajapi as ajapi
 import reporting.dcapi as dcapi
+import reporting.rsapi as rsapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -120,6 +121,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_aj_key, ajapi.AjApi())
         if self.arg_check('dc'):
             self.api_calls(self.matrix.api_dc_key, dcapi.DcApi())
+        if self.arg_check('rs'):
+            self.api_calls(self.matrix.api_rs_key, rsapi.RsApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
