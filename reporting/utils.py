@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import numpy as np
 import pandas as pd
 import datetime as dt
 import reporting.vmcolumns as vmc
@@ -184,30 +183,6 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 continue
             df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
                                   factor.astype(float))
-    return df
-
-
-def df_transform(df, transform):
-    if str(transform) == 'nan':
-        return df
-    transform = transform.split('::')
-    transform_type = transform[0]
-    if transform_type == 'MixedDateColumn':
-        mixed_col = transform[1]
-        date_col = transform[2]
-        df[date_col] = df[mixed_col]
-        df = data_to_type(df, date_col=[date_col])
-        df['temp'] = df[date_col]
-        df[date_col] = df[date_col].fillna(method='ffill')
-        df = df[df['temp'].isnull()].reset_index(drop=True)
-        df.drop('temp', axis=1, inplace=True)
-    if transform_type == 'Pivot':
-        pivot_col = transform[1]
-        val_col = transform[2]
-        df = df.fillna(0)
-        index_cols = [x for x in df.columns if x not in [pivot_col, val_col]]
-        df = pd.pivot_table(df, values=val_col, index=index_cols,
-                            columns=[pivot_col], aggfunc='sum').reset_index()
     return df
 
 

@@ -219,7 +219,7 @@ def import_data(key, vm_rules, **kwargs):
         return df
     df = utl.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
     df = utl.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
-    df = utl.df_transform(df, kwargs[vmc.transform])
+    df = df_transform(df, kwargs[vmc.transform])
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     dic = dct.Dict(kwargs[vmc.filenamedict])
     err = er.ErrorReport(df, dic, kwargs[vmc.placement],
@@ -262,6 +262,42 @@ def vm_update_rule_check(vm, vm_col):
                 vm[vm_col],
                 'POST::' + (vm[vm_col]).astype(str))
     return vm
+
+
+def df_transform(df, transform):
+    if str(transform) == 'nan':
+        return df
+    transform = transform.split('::')
+    transform_type = transform[0]
+    if transform_type == 'MixedDateColumn':
+        mixed_col = transform[1]
+        date_col = transform[2]
+        df[date_col] = df[mixed_col]
+        df = utl.data_to_type(df, date_col=[date_col])
+        df['temp'] = df[date_col]
+        df[date_col] = df[date_col].fillna(method='ffill')
+        df = df[df['temp'].isnull()].reset_index(drop=True)
+        df.drop('temp', axis=1, inplace=True)
+    if transform_type == 'Pivot':
+        pivot_col = transform[1]
+        val_col = transform[2]
+        df = df.fillna(0)
+        index_cols = [x for x in df.columns if x not in [pivot_col, val_col]]
+        df = pd.pivot_table(df, values=val_col, index=index_cols,
+                            columns=[pivot_col], aggfunc='sum').reset_index()
+    if transform_type == 'Merge':
+        merge_file = transform[1]
+        left_merge = transform[2]
+        right_merge = transform[3]
+        merge_df = pd.read_csv(merge_file)
+        df[left_merge] = df[left_merge].astype('U')
+        merge_df[right_merge] = merge_df[right_merge].astype('U')
+        filename = 'Merge-{}-{}.csv'.format(left_merge, right_merge)
+        err = er.ErrorReport(df, merge_df, None, filename,
+                             merge_col=[left_merge, right_merge])
+        df = err.merge_df
+        df = df.drop('_merge', axis=1)
+    return df
 
 
 def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
