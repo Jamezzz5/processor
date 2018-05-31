@@ -109,7 +109,6 @@ class AfApi(object):
 
     def get_raw_data(self, sd, ed, field, sources, category):
         full_url = self.create_url(sd, ed, field, sources, category)
-        print(full_url)
         self.r = requests.get(full_url)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
