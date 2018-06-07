@@ -86,7 +86,7 @@ class Dict(object):
         for col in split_cols:
             params = col.split(split_key)
             delimit_list = params[1::2]
-            delimit_list = ', '.join(delimit_list)
+            delimit_list = str(', '.join(delimit_list))
             new_col_list = params[::2]
             error[col] = error[col].astype(str)
             error[col] = error[col].apply(lambda x: x + delimit_list
