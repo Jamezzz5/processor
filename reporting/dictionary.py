@@ -86,17 +86,16 @@ class Dict(object):
         for col in split_cols:
             params = col.split(split_key)
             delimit_list = params[1::2]
-            delimit_list = str(', '.join(delimit_list))
             new_col_list = params[::2]
-            error[col] = error[col].astype(str)
-            error[col] = error[col].apply(lambda x: x + delimit_list
-                                          if delimit_list not in x else x)
-            df = pd.DataFrame(error[col].str.split(delimit_list, 1).tolist(),
-                              columns=new_col_list, index=error.index)
-            new_col_list.append(col)
-            drop_cols = [x for x in new_col_list if x in error.columns]
-            error.drop(drop_cols, axis=1, inplace=True)
-            error = pd.concat([error, df], axis=1)
+            for idx, c in enumerate(delimit_list):
+                cur_del = delimit_list[idx]
+                cur_col = new_col_list[idx]
+                error[cur_col] = error[col].str.split(cur_del).str[0]
+                error[col] = error[col].str.split(cur_del).str[1:]
+                error[col] = error[col].apply(lambda x:
+                                              cur_del.join(map(str, x)))
+            error[new_col_list[-1]] = error[col]
+            error.drop([col], axis=1, inplace=True)
         return error
 
     def apply_functions(self):
