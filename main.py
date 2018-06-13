@@ -33,7 +33,8 @@ sys.excepthook = handle_exception
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga',
-                                      'nb', 'af', 'sc', 'aj', 'dc', 'rs'])
+                                      'nb', 'af', 'sc', 'aj', 'dc', 'rs',
+                                      'db'])
 parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--dbi', choices=['all', 'dna'])
 parser.add_argument('--s3', choices=['all', 'dna'])
@@ -67,12 +68,12 @@ def main():
         df = matrix.vm_loop()
         df = cal.calculate_cost(df)
         try:
-            logging.info('Writing to: ' + OUTPUT_FILE)
+            logging.info('Writing to: {}'.format(OUTPUT_FILE))
             df.to_csv(OUTPUT_FILE, index=False)
             logging.info('Final Output Successfully generated')
         except IOError:
-            logging.warning(OUTPUT_FILE + ' could not be opened.  ' +
-                            'Final Output not updated.')
+            logging.warning('{} could not be opened.  '
+                            'Final Output not updated.'.format(OUTPUT_FILE))
     if args.exp:
         exp_class = exp.ExportHandler()
         exp_class.export_loop(args.exp)
