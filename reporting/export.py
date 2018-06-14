@@ -563,7 +563,7 @@ class DFTranslation(object):
         real_columns = [x for x in self.real_columns if x in self.df.columns]
         self.df = self.df[self.df[real_columns].sum(axis=1) != 0]
         self.df = self.df.reset_index(drop=True)
-        replace_dict = {'"': '', "\\\\": '/'}
+        replace_dict = {'"': '', "\\\\": '/', '\r': '', '\n': ''}
         self.df.replace(replace_dict, regex=True, inplace=True)
 
     def get_upload_id(self):
