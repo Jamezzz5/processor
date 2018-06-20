@@ -188,11 +188,12 @@ def total_cost_calculation(df):
         logging.warning('Agency Fees not in dataframe.  '
                         'Update dict and run again to calculate total cost.')
         return df
-    df = utl.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST])
-    if vmc.AD_COST in df.columns:
-        df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES] + df[vmc.AD_COST]
-    else:
-        df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES]
+    df = utl.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST,
+                                         vmc.dcm_service_fee, vmc.REP_COST])
+    df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES]
+    for col in [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST]:
+        if col in df.columns:
+            df[TOTAL_COST] += df[col]
     return df
 
 

@@ -213,6 +213,9 @@ def ad_cost_calculation(df):
     df[vmc.AD_COST] = np.where(df[dctc.AM] == vmc.AM_CPM,
                                df[dctc.AR] * df[vmc.impressions] / 1000,
                                df[dctc.AR] * df[vmc.clicks])
+    df[vmc.REP_COST] = np.where(df[dctc.RFM] == vmc.AM_CPM,
+                                df[dctc.RFR] * df[vmc.impressions] / 1000,
+                                df[dctc.RFR] * df[vmc.clicks])
     return df
 
 
@@ -238,6 +241,8 @@ def import_data(key, vm_rules, **kwargs):
                           kwargs[vmc.enddate])
     df = ad_cost_calculation(df)
     df = utl.col_removal(df, key, kwargs[vmc.dropcol])
+    if key == 'API_DCM':
+        df.to_csv('test.csv')
     df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
     df[vmc.vendorkey] = key
     return df

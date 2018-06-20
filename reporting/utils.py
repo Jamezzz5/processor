@@ -159,6 +159,9 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
             continue
+        if len(metrics) == 3:
+            df[metrics[2]] = df[metrics[1]]
+            metrics[1] = metrics[2]
         tdf = df
         metrics = metrics[1].split('|')
         queries = queries.split('|')

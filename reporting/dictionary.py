@@ -305,6 +305,7 @@ class DictTranslationConfig(object):
 
 def dict_update():
     for filename in os.listdir(csvpath):
+        print(filename)
         if filename[-4:] != '.csv':
             continue
         if 'plannet' in filename:
