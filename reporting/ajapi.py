@@ -12,9 +12,9 @@ config_path = utl.config_path
 base_url = 'http://api.adjust.com/kpis/v1/'
 
 def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus',
-              'events']
-def_groupings = ['days', 'countries', 'campaigns', 'adgroups', 'creatives',
-                 'events']
+              'events', 'clicks', 'impressions', 'cost']
+def_groupings = ['days', 'countries', 'events', 'os_names',
+                 'partners', 'trackers']
 
 
 class AjApi(object):
@@ -49,8 +49,7 @@ class AjApi(object):
         self.app_token = self.config['app_token']
         self.tracker_token = self.config['tracker_token']
         self.api_token = self.config['api_token']
-        self.config_list = [self.config, self.app_token, self.tracker_token,
-                            self.api_token]
+        self.config_list = [self.config, self.app_token, self.api_token]
 
     def check_config(self):
         for item in self.config_list:
@@ -84,6 +83,9 @@ class AjApi(object):
         group_url = '&grouping={}'.format(','.join(def_groupings))
         full_url = (base_url + app_url + token_url + kpi_url + sded_url +
                     group_url)
+        if self.tracker_token:
+            track_url = '&tracker_filter={}'.format(self.tracker_token)
+            full_url += track_url
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
