@@ -122,8 +122,12 @@ class AfApi(object):
             logging.warning('Limit reached pausing for 120 seconds.')
             time.sleep(120)
             self.get_raw_data(sd, ed, field, sources, category)
+        elif self.r.status_code == 504:
+            logging.warning('Gateway timeout.  Pausing for 120 seconds.')
+            time.sleep(120)
+            self.get_raw_data(sd, ed, field, sources, category)
         else:
-            logging.warning('Unknown error: ' + str(self.r.text))
+            logging.warning('Unknown error: '.format(self.r.text))
             sys.exit(0)
 
     @staticmethod
