@@ -267,6 +267,9 @@ class FbApi(object):
             self.date_lists.append(fh)
             self.date_lists.append(bh)
             return True
+        elif e._api_error_code == 1:
+            logging.warning('Unknown FB error has occurred. Retrying.')
+            return True
         else:
             logging.error('Aborting as the Facebook API call resulted '
                           'in the following error: ' + str(e))
