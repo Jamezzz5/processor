@@ -91,7 +91,8 @@ strcol = [BM, AM, RFM]
 
 PFN = 'plannet_dictionary.csv'
 PNC = 'Planned Net Cost'
-PCOLS = [FPN, PNC]
+UNC = 'Uncapped'
+PCOLS = [FPN, PNC, UNC]
 PFPN = 'PNC FPN'
 
 filename_rel_config = 'relational_dictionary_config.csv'

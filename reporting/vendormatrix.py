@@ -191,7 +191,7 @@ def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
     for col in columns:
         for item in kwargs[col]:
-            if item.decode('utf-8') == 'nan' or col == item:
+            if str(item) == 'nan' or col == item:
                 continue
             if item not in df:
                 logging.warning(item + ' is not in ' + key +
