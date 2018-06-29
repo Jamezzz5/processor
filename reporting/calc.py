@@ -12,13 +12,14 @@ BM_FLAT = 'FLAT'
 BM_FLAT2 = 'Flat'
 BM_PA = 'Programmaddict'
 BM_CPA = 'CPA'
+BM_CPACPM = 'CPA/CPM'
 BM_CPA2 = 'CPA2'
 BM_CPA3 = 'CPA3'
 BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
 BUY_MODELS = [BM_CPM, BM_CPC, BM_AV, BM_FLAT, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2,
-              BM_CPA3, BM_CPA4, BM_CPA5, BM_FLATDATE]
+              BM_CPA3, BM_CPA4, BM_CPA5, BM_FLATDATE, BM_CPACPM]
 
 NCF = 'Net Cost Final'
 
@@ -67,6 +68,11 @@ def net_cost(df):
     elif df[dctc.BM] == BM_FLAT or df[dctc.BM] == BM_FLAT2:
         if df[vmc.date] == df[dctc.PD]:
             return df[dctc.BR] * df[CLI_PD]
+    elif df[dctc.BM] == BM_CPACPM:
+        if df[vmc.date] < df[dctc.PD]:
+            return df[dctc.BR] * df[vmc.conv1]
+        else:
+            return df[dctc.BR2] * (df[vmc.impressions] / 1000)
     elif df[dctc.BM] == BM_CPA:
         return df[dctc.BR] * df[vmc.conv1]
     elif df[dctc.BM] == BM_CPA2:

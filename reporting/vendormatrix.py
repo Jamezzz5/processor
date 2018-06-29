@@ -241,8 +241,6 @@ def import_data(key, vm_rules, **kwargs):
                           kwargs[vmc.enddate])
     df = ad_cost_calculation(df)
     df = utl.col_removal(df, key, kwargs[vmc.dropcol])
-    if key == 'API_DCM':
-        df.to_csv('test.csv')
     df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
     df[vmc.vendorkey] = key
     return df
