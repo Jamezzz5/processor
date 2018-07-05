@@ -303,10 +303,9 @@ class FbApi(object):
     def set_full_date_lists(sd, ed):
         dates = []
         while sd <= ed:
-            dates.append(sd)
+            dates.append([sd])
             sd = sd + dt.timedelta(days=1)
-        date_lists = [dates[i:i + 7] for i in range(0, len(dates), 7)]
-        return date_lists
+        return dates
 
     def nested_dicts_to_cols(self, nd_col):
         self.df[nd_col] = (self.df[nd_col]
