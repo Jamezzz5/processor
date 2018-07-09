@@ -101,6 +101,9 @@ sm_passion = 'Social Metrics - Passion'
 sm_uniqueauthors = 'UniqueAuthors'
 sm_strongemotion = 'Social Metrics - StrongEmotion'
 sm_weakemotion = 'Social Metrics - WeakEmotion'
+view_imps = 'Viewable Impressions'
+view_total_imps = 'Viewable Total Impressions'
+view_fraud = 'Fraud Incidents'
 modelcoefa = 'modelcoefa'
 modelcoefb = 'modelcoefb'
 modelcoefc = 'modelcoefc'
@@ -134,9 +137,10 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            gplaypc, gplay3pc, gplay6pc, sm_totalbuzz, sm_totalbuzzpost,
            sm_totalreplies, sm_totalreposts, sm_originalposts, sm_impressions,
            sm_positivesentiment, sm_negativesentiment, sm_passion,
-           sm_uniqueauthors, sm_strongemotion, sm_weakemotion, modelcoefa,
-           modelcoefb, modelcoefc, conv1, conv2, conv3, conv4, conv5, conv6,
-           conv7, conv8, conv9, conv10]
+           sm_uniqueauthors, sm_strongemotion, sm_weakemotion, view_imps,
+           view_total_imps, view_fraud, modelcoefa, modelcoefb, modelcoefc,
+           conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
+           conv10]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
