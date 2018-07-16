@@ -12,7 +12,7 @@ import reporting.errorreport as er
 log = logging.getLogger()
 
 csv_path = utl.config_path
-csv = csv_path + 'Vendormatrix.csv'
+csv_file = 'Vendormatrix.csv'
 plan_key = 'Plan Net'
 
 
@@ -48,14 +48,11 @@ class VendorMatrix(object):
                                if str(v) != str('nan')]
 
     def read(self):
-        if not os.path.isfile(csv):
+        if not os.path.isfile(os.path.join(csv_path, csv_file)):
             logging.info('Creating Vendor Matrix.  Populate it and run again')
             vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
             vm.to_csv(csv, index=False)
-        try:
-            self.vm = pd.read_csv(csv, encoding='utf-8')
-        except UnicodeDecodeError:
-            self.vm = pd.read_csv(csv, encoding='iso-8859-1')
+        self.vm = utl.import_read_csv(csv_path, csv_file)
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():

@@ -16,7 +16,7 @@ class Dict(object):
             sys.exit(0)
         self.filename = filename
         self.dict_path = csvpath
-        self.dict_path_filename = self.dict_path + self.filename
+        self.dict_path_filename = os.path.join(self.dict_path, self.filename)
         self.data_dict = pd.DataFrame()
         self.read()
 
@@ -147,9 +147,8 @@ class RelationalConfig(object):
         self.key_list = []
 
     def read(self, configfile):
-        filename = self.csvpath + configfile
         try:
-            self.df = pd.read_csv(filename)
+            self.df = utl.import_read_csv(self.csvpath, configfile)
         except IOError:
             logging.debug('No Relational Dictionary config')
             return None
@@ -175,12 +174,12 @@ class RelationalConfig(object):
 
 class DictRelational(object):
     def __init__(self, **kwargs):
-        self.csvpath = csvpath + 'Relational/'
+        self.csvpath = os.path.join(csvpath, 'Relational/')
         utl.dir_check(self.csvpath)
         self.df = pd.DataFrame()
         self.params = kwargs
         self.filename = self.params[dctc.FN]
-        self.full_file_path = self.csvpath + self.filename
+        self.full_file_path = os.path.join(self.csvpath, self.filename)
         self.key = self.params[dctc.KEY]
         self.dependents = self.params[dctc.DEP]
         self.columns = [self.key] + self.dependents
@@ -254,9 +253,8 @@ class DictConstantConfig(object):
         self.dict_constants = None
 
     def read(self, configfile):
-        filename = self.csvpath + configfile
         try:
-            self.df = pd.read_csv(filename)
+            self.df = utl.import_read_csv(self.csvpath, configfile)
         except IOError:
             logging.debug('No Constant Dictionary config')
             return None
@@ -277,14 +275,13 @@ class DictConstantConfig(object):
 
 class DictTranslationConfig(object):
     def __init__(self):
-        self.csvpath = csvpath + 'Translational/'
+        self.csvpath = os.path.join(csvpath, 'Translational/')
         utl.dir_check(self.csvpath)
         self.df = pd.DataFrame()
 
     def read(self, configfile):
-        filename = self.csvpath + configfile
         try:
-            self.df = pd.read_csv(filename)
+            self.df = utl.import_read_csv(self.csvpath, configfile)
         except IOError:
             logging.debug('No Translational Dictionary config')
             return None

@@ -24,7 +24,7 @@ def dir_check(directory):
 
 
 def import_read_csv(path, filename):
-    raw_file = path + filename
+    raw_file = os.path.join(path, filename)
     try:
         df = pd.read_csv(raw_file, parse_dates=True)
     except pd.io.common.CParserError:
