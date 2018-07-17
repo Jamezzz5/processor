@@ -35,7 +35,7 @@ class ImportHandler(object):
                 except IOError:
                     logging.warning(api_merge + ' could not be opened.  ' +
                                     'API data was not merged.')
-                    api_df.to_csv(api_merge_file)
+                    api_df.to_csv(api_merge_file, encoding='utf-8')
                     return None
                 df = utl.first_last_adj(df, first_row, last_row)
                 df = self.create_all_col(df)
@@ -44,7 +44,7 @@ class ImportHandler(object):
                 api_df = api_df[~api_df['ALL'].isin(df['ALL'])]
                 df = df.append(api_df, ignore_index=True)
                 df.drop('ALL', axis=1, inplace=True)
-                df.to_csv(api_merge_file, index=False)
+                df.to_csv(api_merge_file, index=False, encoding='utf-8')
                 if first_row != 0:
                     self.matrix.vm_change(vk, vmc.firstrow, 0)
                 if last_row != 0:
@@ -53,11 +53,9 @@ class ImportHandler(object):
                 logging.warning(api_merge + ' not found.  Creating file.')
                 df = pd.DataFrame()
                 df = df.append(api_df, ignore_index=True)
-                df.to_csv(api_merge_file, index=False)
+                df.to_csv(api_merge_file, index=False, encoding='utf-8')
         else:
             try:
-                api_df.to_csv(utl.raw_path + filename, index=False)
-            except UnicodeEncodeError:
                 api_df.to_csv(utl.raw_path + filename, index=False,
                               encoding='utf-8')
             except IOError:
@@ -68,7 +66,7 @@ class ImportHandler(object):
     def create_all_col(df):
         df['ALL'] = ''
         for col in df.columns:
-            df['ALL'] = df['ALL'] + df[col].astype(str)
+            df['ALL'] = df['ALL'] + df[col].astype('U')
         return df
 
     def arg_check(self, arg_check):

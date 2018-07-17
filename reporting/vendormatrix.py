@@ -52,7 +52,7 @@ class VendorMatrix(object):
         if not os.path.isfile(os.path.join(csv_path, csv_file)):
             logging.info('Creating Vendor Matrix.  Populate it and run again')
             vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
-            vm.to_csv(csv, index=False)
+            vm.to_csv(csv, index=False, encoding='utf-8')
         self.vm = utl.import_read_csv(csv_path, csv_file)
 
     def plan_net_check(self):
@@ -258,11 +258,11 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
 
 
 def vm_update_rule_check(vm, vm_col):
-    vm[vm_col] = vm[vm_col].astype(str)
+    vm[vm_col] = vm[vm_col].astype('U')
     vm[vm_col] = np.where(
                 vm[vm_col].str.contains('|'.join(['PRE::', 'POST::', 'nan'])),
                 vm[vm_col],
-                'POST::' + (vm[vm_col]).astype(str))
+                'POST::' + (vm[vm_col]).astype('U'))
     return vm
 
 
@@ -310,7 +310,7 @@ def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
     vm = nvm.append(ovm)
     for col in [vmc.fullplacename, vmc.dropcol, vmc.autodicord]:
-        vm[col] = vm[col].astype(str).replace({'_': '|'}, regex=True)
+        vm[col] = vm[col].astype('U').replace({'_': '|'}, regex=True)
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
@@ -323,4 +323,4 @@ def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
         vm = vm_update_rule_check(vm, col)
     vm = vm.fillna('')
     vm = vm.replace('nan', '')
-    vm.to_csv(csv, index=False)
+    vm.to_csv(csv, index=False, encoding='utf-8')

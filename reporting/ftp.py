@@ -105,7 +105,7 @@ class FTP(object):
                      str(self.ftp_host))
         self.ftp_init()
         r = BytesIO()
-        df.to_csv(r, index=False)
+        df.to_csv(r, index=False, encoding='utf-8')
         r.seek(0)
         self.ftp.storbinary('STOR ' + write_file, r)
         self.ftp.quit()

@@ -571,11 +571,11 @@ class DFTranslation(object):
         ul_id_file_path = config_path + exc.upload_id_file
         if not os.path.isfile(ul_id_file_path):
             ul_id_df = pd.DataFrame(columns=[exc.upload_id_col])
-            ul_id_df.to_csv(ul_id_file_path, index=False)
+            ul_id_df.to_csv(ul_id_file_path, index=False, encoding='utf-8')
         ul_id_df = pd.read_csv(ul_id_file_path)
         if ul_id_df.empty:
             ul_id_df = self.new_upload()
-            ul_id_df.to_csv(ul_id_file_path, index=False)
+            ul_id_df.to_csv(ul_id_file_path, index=False, encoding='utf-8')
         self.upload_id = ul_id_df[exc.upload_id_col][0].astype(int)
         self.df[exc.upload_id_col] = int(self.upload_id)
         self.check_db_for_upload()
@@ -610,7 +610,7 @@ class DFTranslation(object):
     def add_event_name(self):
         self.df[exc.full_placement_name] = (self.df[exc.full_placement_name] +
                                             str(self.upload_id))
-        self.df[exc.event_name] = (self.df[exc.event_date].astype(str) +
+        self.df[exc.event_name] = (self.df[exc.event_date].astype('U') +
                                    self.df[exc.full_placement_name])
         self.df[exc.plan_name] = self.df[exc.event_name]
 

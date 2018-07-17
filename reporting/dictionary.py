@@ -27,7 +27,8 @@ class Dict(object):
                 data_dict = pd.DataFrame(columns=dctc.PCOLS, index=None)
             else:
                 data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
-            data_dict.to_csv(self.dict_path_filename, index=False)
+            data_dict.to_csv(self.dict_path_filename, index=False,
+                             encoding='utf-8')
         self.data_dict = utl.import_read_csv(self.dict_path, self.filename)
         self.clean()
         self.data_dict = self.data_dict.drop_duplicates()
@@ -72,10 +73,10 @@ class Dict(object):
             final_col = col.split(comb_key)[0]
             delimit_str = col.split(comb_key)[2]
             if final_col not in error.columns:
-                error[final_col] = error[col].astype(str)
+                error[final_col] = error[col].astype('U')
             else:
                 error[final_col] = (error[final_col] + str(delimit_str) +
-                                    error[col].astype(str))
+                                    error[col].astype('U'))
             error.drop([col], axis=1, inplace=True)
         return error
 
@@ -188,7 +189,7 @@ class DictRelational(object):
         if not os.path.isfile(self.full_file_path):
             logging.info('Creating ' + self.filename)
             df = pd.DataFrame(columns=self.columns, index=None)
-            df.to_csv(self.full_file_path, index=False)
+            df.to_csv(self.full_file_path, index=False, encoding='utf-8')
         self.df = utl.import_read_csv(self.csvpath, self.filename)
 
     def add_key_values(self, data_dict):
@@ -203,7 +204,7 @@ class DictRelational(object):
         if df is None:
             df = self.df
         try:
-            df.to_csv(self.full_file_path, index=False)
+            df.to_csv(self.full_file_path, index=False, encoding='utf-8')
         except IOError:
             logging.warning('{} could not be opened.  This dictionary'
                             'was not saved.'.format(self.filename))
@@ -296,7 +297,7 @@ class DictTranslationConfig(object):
             tdf = tdf[[dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]]
             replace_dict = dict(zip(tdf[dctc.DICT_COL_VALUE],
                                     tdf[dctc.DICT_COL_NVALUE]))
-            data_dict[col] = data_dict[col].astype(str).replace(replace_dict)
+            data_dict[col] = data_dict[col].astype('U').replace(replace_dict)
         return data_dict
 
 
