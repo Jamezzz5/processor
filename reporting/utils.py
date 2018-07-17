@@ -26,7 +26,7 @@ def dir_check(directory):
 def import_read_csv(path, filename):
     raw_file = os.path.join(path, filename)
     try:
-        df = pd.read_csv(raw_file, parse_dates=True)
+        df = pd.read_csv(raw_file, parse_dates=True, encoding='utf-8')
     except pd.io.common.CParserError:
         df = pd.read_csv(raw_file, parse_dates=True, sep=None, engine='python')
     except UnicodeDecodeError:

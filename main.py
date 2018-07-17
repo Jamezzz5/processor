@@ -69,7 +69,7 @@ def main():
         df = cal.calculate_cost(df)
         try:
             logging.info('Writing to: {}'.format(OUTPUT_FILE))
-            df.to_csv(OUTPUT_FILE, index=False)
+            df.to_csv(OUTPUT_FILE, index=False, encoding='utf-8')
             logging.info('Final Output Successfully generated')
         except IOError:
             logging.warning('{} could not be opened.  '

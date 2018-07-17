@@ -22,7 +22,7 @@ class Dict(object):
 
     def read(self):
         if not os.path.isfile(self.dict_path_filename):
-            logging.info('Creating ' + self.filename)
+            logging.info('Creating {}'.format(self.filename))
             if self.filename == dctc.PFN:
                 data_dict = pd.DataFrame(columns=dctc.PCOLS, index=None)
             else:
@@ -36,7 +36,7 @@ class Dict(object):
         return self.data_dict
 
     def merge(self, df, colname):
-        logging.info('Merging ' + self.filename)
+        logging.info('Merging {}'.format(self.filename))
         df = df.merge(self.data_dict, on=colname, how='left')
         return df
 
@@ -49,9 +49,9 @@ class Dict(object):
         if not autodicord == ['nan'] and not error.empty:
             if placement not in error.columns:
                 logging.warning(
-                    str(placement) + ' not in error report.  Use ' +
-                    'Full Placement Name or mpPlacement Name.  ' +
-                    'Dictionary was not automatically populated')
+                    '{} not in error report.  Use  Full Placement Name'
+                    'or mpPlacement Name.  Dictionary was not automatically'
+                    ' populated'.format(placement))
                 return True
             logging.info('Populating ' + self.filename)
             for i, value in enumerate(autodicord):
@@ -125,10 +125,10 @@ class Dict(object):
         if df is None:
             df = self.data_dict
         try:
-            df.to_csv(self.dict_path_filename, index=False)
+            df.to_csv(self.dict_path_filename, index=False, encoding='utf-8')
         except IOError:
-            logging.warning(self.filename + ' could not be opened.  ' +
-                            'This dictionary was not saved.')
+            logging.warning('{} could not be opened.  This dictionary'
+                            'was not saved.'.format(self.filename))
 
     def clean(self):
         self.data_dict = utl.data_to_type(self.data_dict, dctc.floatcol,
@@ -205,8 +205,8 @@ class DictRelational(object):
         try:
             df.to_csv(self.full_file_path, index=False)
         except IOError:
-            logging.warning(self.filename + ' could not be opened.  ' +
-                            'This dictionary was not saved.')
+            logging.warning('{} could not be opened.  This dictionary'
+                            'was not saved.'.format(self.filename))
 
     def apply_to_dict(self, data_dict):
         if self.key not in data_dict.columns:

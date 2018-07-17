@@ -66,19 +66,19 @@ class ErrorReport(object):
         return self.data_err
 
     def write(self, filename):
-        errfile = csvpath + filename
+        errfile = os.path.join(csvpath, filename)
         if self.data_err.empty:
             try:
                 os.remove(errfile)
-                logging.info('All placements defined!  ' + filename +
-                             ' was deleted.')
+                logging.info('All placements defined!'
+                             '{} was deleted.'.format(filename))
             except OSError:
                 logging.info('All placements defined!')
         else:
             try:
-                self.data_err.to_csv(errfile, index=False)
-                logging.warning('Not all placements defined.  ' + filename +
-                                ' was generated')
+                self.data_err.to_csv(errfile, index=False, encoding='utf-8')
+                logging.warning('Not all placements defined.  {}'
+                                ' was generated'.format(filename))
             except IOError:
-                logging.warning(filename + 'cannot be opened.' +
-                                '  It was not updated.')
+                logging.warning('{} cannot be opened.'
+                                '  It was not updated.'.format(filename))

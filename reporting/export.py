@@ -577,7 +577,7 @@ class DFTranslation(object):
             ul_id_df = self.new_upload()
             ul_id_df.to_csv(ul_id_file_path, index=False)
         self.upload_id = ul_id_df[exc.upload_id_col][0].astype(int)
-        self.df[exc.upload_id_col] = self.upload_id
+        self.df[exc.upload_id_col] = int(self.upload_id)
         self.check_db_for_upload()
 
     def new_upload(self):

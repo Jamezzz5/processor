@@ -13,6 +13,7 @@ log = logging.getLogger()
 
 csv_path = utl.config_path
 csv_file = 'Vendormatrix.csv'
+csv = os.path.join(csv_path, csv_file)
 plan_key = 'Plan Net'
 
 
@@ -130,7 +131,7 @@ class VendorMatrix(object):
 
     def vendor_get(self, vk):
         self.ven_param = self.vendor_set(vk)
-        logging.info('Initializing ' + vk)
+        logging.info('Initializing {}'.format(vk))
         if vk == plan_key:
             self.tdf = import_plan_data(vk, self.df, self.plan_omit_list,
                                         **self.ven_param)
@@ -167,20 +168,18 @@ class VendorMatrix(object):
 def full_placement_creation(df, key, full_col, full_place_cols):
     logging.debug('Creating Full Placement Name')
     df[full_col] = ''
-    i = 0
-    for col in full_place_cols:
+    df = utl.data_to_type(df, str_col=full_place_cols)
+    for idx, col in enumerate(full_place_cols):
         if col not in df:
-            logging.warning(col + ' was not in ' + key + '.  It was not ' +
-                            'included in Full Placement Name.  For reference '
-                            'column names are as follows: \n' +
-                            str(df.columns.values.tolist()))
+            logging.warning('{} was not in {}.  It was not included in '
+                            'Full Placement Name.  For reference column names'
+                            ' are as follows: \n {}'
+                            .format(col, key, df.columns.values.tolist()))
             continue
-        df[col] = df[col].astype(str)
-        if i == 0:
+        if idx == 0:
             df[full_col] = df[col]
         else:
             df[full_col] = (df[full_col] + '_' + df[col])
-        i += 1
     return df
 
 
@@ -191,8 +190,8 @@ def combining_data(df, key, columns, **kwargs):
             if str(item) == 'nan' or col == item:
                 continue
             if item not in df:
-                logging.warning(item + ' is not in ' + key +
-                                '.  It was not put in ' + col)
+                logging.warning('{} is not in {}.  It was not'
+                                'put in {}'.format(item, key, col))
                 continue
             if col not in df.columns:
                 df[col] = 0
