@@ -87,7 +87,7 @@ class DBUpload(object):
         self.set_id_info(table, pk_config, ul_df)
         if exc.upload_id_col in ul_df.columns:
             where_col = exc.upload_id_col
-            where_val = [self.dft.upload_id]
+            where_val = [int(self.dft.upload_id)]
         else:
             where_col = self.name
             where_val = self.values
@@ -653,7 +653,7 @@ class DFTranslation(object):
             df[col] = df[col].replace(pd.NaT, dt.datetime.today())
         if data_type == 'INT':
             df[col] = df[col].replace(np.nan, 0)
-            df[col] = df[col].astype(int)
+            df[col] = df[col].astype(np.int64)
         return df
 
     def remove_zero_rows(self, df):
