@@ -134,7 +134,8 @@ class Dict(object):
     def clean(self):
         self.data_dict = utl.data_to_type(self.data_dict, dctc.floatcol,
                                           dctc.datecol, dctc.strcol)
-        self.data_dict = self.data_dict.drop_duplicates(dctc.FPN)
+        if dctc.FPN in self.data_dict.columns:
+            self.data_dict = self.data_dict.drop_duplicates(dctc.FPN)
         self.data_dict = self.data_dict.reset_index(drop=True)
 
 
