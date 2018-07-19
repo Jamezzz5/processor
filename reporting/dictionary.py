@@ -313,6 +313,8 @@ def dict_update():
             cols = dctc.COLS
         ndic = pd.DataFrame(columns=cols, index=None)
         dic = Dict(filename)
+        if dctc.FPN not in dic.data_dict.columns:
+            continue
         odic = dic.get()
         df = ndic.append(odic)
         if 'pncFull Placement Name' in df.columns:
