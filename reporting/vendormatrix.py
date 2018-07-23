@@ -186,6 +186,8 @@ def full_placement_creation(df, key, full_col, full_place_cols):
 def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
     for col in columns:
+        if col in df.columns and col not in kwargs[col]:
+            df[col] = 0
         for item in kwargs[col]:
             if str(item) == 'nan' or col == item:
                 continue
