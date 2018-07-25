@@ -18,7 +18,7 @@ PLACEMENT = '&placement=ALL_ON_TWITTER'
 URLACC = '/3/accounts/'
 URLSTACC = '/3/stats/accounts/'
 URLEIDS = 'entity_ids='
-URLCEN = '&entity=CAMPAIGN'
+URLCEN = '&entity=PROMOTED_TWEET'
 URLMG = '&metric_groups='
 URLGST = '&granularity=DAY&start_time='
 URLET = '&end_time='
@@ -112,6 +112,20 @@ class TwApi(object):
             response, data = self.request(url)
         return response, data
 
+    def get_ids(self, entity, eid, name, parent):
+        url = '{}{}{}/{}'.format(DOMAIN, URLACC, self.account_id, entity)
+        headers, data = self.request(url)
+        id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
+                   for x in data['data']}
+        return id_dict
+
+    def get_all_id_dicts(self):
+        self.cid_dict = self.get_ids('campaigns', 'id', 'name', 'account_id')
+        self.asid_dict = self.get_ids('line_items', 'id',
+                                      'name', 'campaign_id')
+        self.adid_dict = self.get_ids('promoted_tweets', 'id',
+                                      'tweet_id', 'line_item_id')
+
     def get_cids(self):
         resource_url = DOMAIN + URLACC + '%s/%s' % (self.account_id, reqcamp)
         res_headers, res_data = self.request(resource_url)
@@ -139,20 +153,15 @@ class TwApi(object):
                             'was set to end date.')
             sd = ed - dt.timedelta(days=1)
         full_date_list = self.list_dates(sd, ed)
-        date_lists = [full_date_list[i:i + 7] for i
-                      in range(0, len(full_date_list), 7)]
         timezone = self.get_account_timezone()
         stats_url = DOMAIN + URLSTACC + '%s?' % self.account_id
         metric_groups = URLMG + '%s' % ','.join(fields)
-        self.cidname = self.get_cids()
-        ids_lists = map(None, *(iter(self.cidname.keys()),) * 20)
-        for date_list in date_lists:
-            if date_list[0] == date_list[-1]:
-                sd = self.date_format(date_list[0] - dt.timedelta(days=1),
-                                      timezone)
-            else:
-                sd = self.date_format(date_list[0], timezone)
-            ed = self.date_format(date_list[-1], timezone)
+        self.get_all_id_dicts()
+        ids_lists = [list(self.adid_dict.keys())[i:i + 20] for i
+                     in range(0, len(full_date_list), 20)]
+        for date in full_date_list:
+            sd = self.date_format(date, timezone)
+            ed = self.date_format(date + dt.timedelta(days=1), timezone)
             logging.info('Getting Twitter data from %s until %s', sd, ed)
             query_params = (URLGST + '{}' + URLET + '{}').format(sd, ed)
             df = pd.DataFrame()
@@ -169,7 +178,8 @@ class TwApi(object):
                                   id_df[jsonmet].apply(pd.Series)], axis=1)
                 df = df.append(id_df)
             df = self.clean_df(df)
-            self.df = self.df.append(df)
+            self.df = self.df.append(df).reset_index(drop=True)
+        self.df = self.add_parents(self.df)
         self.df = self.rename_cols()
         return self.df
 
@@ -185,6 +195,15 @@ class TwApi(object):
         date = date.replace(tzinfo=None).isoformat() + 'Z'
         return date
 
+    def add_parents(self, df):
+        for parent in [[self.adid_dict, 'tweetid'], [self.asid_dict,'adset'],
+                        [self.cid_dict, 'campaign']]:
+            df['id'] = df['id'].map(parent[0])
+            df = df.join(df['id'].apply(pd.Series))
+            df = df.drop('id', axis=1)
+            df = df.rename(columns={'name': parent[1], 'parent': 'id'})
+        return df
+
     def clean_df(self, df):
         df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
@@ -194,7 +213,6 @@ class TwApi(object):
             tdf = tdf.rename(columns={0: col, 'level_0': coldate})
             ndf = pd.merge(ndf, tdf, on=[coldate, colcid], how='outer')
         df = ndf
-        df['campaign'] = df[colcid].map(self.cidname)
         df[colspend] /= 1000000
         df[coldate].replace(self.dates, inplace=True)
         return df
