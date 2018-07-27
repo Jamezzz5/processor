@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 import sys
@@ -13,17 +14,7 @@ import reporting.utils as utl
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 configpath = utl.config_path
 
-DOMAIN = 'https://ads-api.twitter.com'
-PLACEMENT = '&placement=ALL_ON_TWITTER'
-URLACC = '/3/accounts/'
-URLSTACC = '/3/stats/accounts/'
-URLEIDS = 'entity_ids='
-URLCEN = '&entity=PROMOTED_TWEET'
-URLMG = '&metric_groups='
-URLGST = '&granularity=DAY&start_time='
-URLET = '&end_time='
-
-reqcamp = 'campaigns'
+base_url = 'https://ads-api.twitter.com'
 reqdformat = '%Y-%m-%dT%H:%M:%SZ'
 
 colspend = 'billed_charge_local_micro'
@@ -65,11 +56,15 @@ class TwApi(object):
         self.account_id = None
         self.config_list = []
         self.dates = None
-        self.cidname = None
+        self.client = None
+        self.cid_dict = None
+        self.asid_dict = None
+        self.adid_dict = None
+        self.tweet_dict = None
 
     def input_config(self, config):
-        logging.info('Loading Twitter config file: %s', config)
-        self.configfile = configpath + config
+        logging.info('Loading Twitter config file: {}.'.format(config))
+        self.configfile = os.path.join(configpath, config)
         self.load_config()
         self.check_config()
 
@@ -78,7 +73,7 @@ class TwApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('%s not found.  Aborting.', self.configfile)
+            logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
         self.consumer_key = self.config['CONSUMER_KEY']
         self.consumer_secret = self.config['CONSUMER_SECRET']
@@ -92,16 +87,20 @@ class TwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('%s not in config file.  Aborting.', item)
+                logging.warning('{} not in config file. '
+                                ' Aborting.'.format(item))
                 sys.exit(0)
 
-    def request(self, url):
+    def get_client(self):
         consumer = oauth.Consumer(key=self.consumer_key,
                                   secret=self.consumer_secret)
         token = oauth.Token(key=self.access_token,
                             secret=self.access_token_secret)
-        client = oauth.Client(consumer, token)
-        response, content = client.request(url, method='GET')
+        self.client = oauth.Client(consumer, token)
+
+    def request(self, url):
+        self.get_client()
+        response, content = self.client.request(url, method='GET')
         try:
             data = json.loads(content)
         except IOError:
@@ -113,7 +112,7 @@ class TwApi(object):
         return response, data
 
     def get_ids(self, entity, eid, name, parent):
-        url = '{}{}{}/{}'.format(DOMAIN, URLACC, self.account_id, entity)
+        url = self.create_base_url(entity)
         headers, data = self.request(url)
         id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
                    for x in data['data']}
@@ -125,15 +124,7 @@ class TwApi(object):
                                       'name', 'campaign_id')
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
                                       'tweet_id', 'line_item_id')
-
-    def get_cids(self):
-        resource_url = DOMAIN + URLACC + '%s/%s' % (self.account_id, reqcamp)
-        res_headers, res_data = self.request(resource_url)
-        cid_name = {}
-        for item in res_data[jsondata]:
-            if item[colcid] not in cid_name.keys():
-                cid_name[item[colcid]] = item[colcname]
-        return cid_name
+        self.tweet_dict = self.get_ids('scoped_timeline', 'id', 'text', 'id')
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -145,47 +136,70 @@ class TwApi(object):
             fields = def_fields
         return sd, ed, fields
 
+    def create_stats_url(self, fields=None, ids=None, sd=None, ed=None):
+        act_url = '/3/stats/accounts/{}?'.format(self.account_id)
+        ent_url = 'entity_ids={}&entity=PROMOTED_TWEET'.format(','.join(ids))
+        sded_url = '&granularity=DAY&start_time={}&end_time={}'.format(sd, ed)
+        metric_url = '&metric_groups={}'.format(','.join(fields))
+        place_url = '&placement=ALL_ON_TWITTER'
+        url = base_url + act_url + ent_url + sded_url + metric_url + place_url
+        return url
+
+    def create_base_url(self, entity=None):
+        act_url = '/3/accounts/{}'.format(self.account_id)
+        url = base_url + act_url
+        if entity:
+            url += '/{}'.format(entity)
+        return url
+
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        ed = ed + dt.timedelta(days=1)
-        if sd > ed:
-            logging.warning('Start date greater than end date.  Start date'
-                            'was set to end date.')
-            sd = ed - dt.timedelta(days=1)
+        sd, ed = self.get_date_info(sd, ed)
+        self.df = self.get_df_for_all_dates(sd, ed, fields)
+        self.df = self.add_parents(self.df)
+        self.df = self.rename_cols()
+        return self.df
+
+    def get_df_for_all_dates(self, sd, ed, fields):
         full_date_list = self.list_dates(sd, ed)
         timezone = self.get_account_timezone()
-        stats_url = DOMAIN + URLSTACC + '%s?' % self.account_id
-        metric_groups = URLMG + '%s' % ','.join(fields)
         self.get_all_id_dicts()
         ids_lists = [list(self.adid_dict.keys())[i:i + 20] for i
                      in range(0, len(full_date_list), 20)]
         for date in full_date_list:
             sd = self.date_format(date, timezone)
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
-            logging.info('Getting Twitter data from %s until %s', sd, ed)
-            query_params = (URLGST + '{}' + URLET + '{}').format(sd, ed)
-            df = pd.DataFrame()
-            for ids in ids_lists:
-                ids = filter(None, ids)
-                entity_ids = (URLEIDS + '{}' + URLCEN).format(','.join(ids))
-                query_url = (stats_url + entity_ids + query_params +
-                             metric_groups + PLACEMENT)
-                header, data = self.request(query_url)
-                self.dates = self.get_dates(data)
-                id_df = pdjson.json_normalize(data[jsondata],
-                                                  [jsonidd], [colcid])
-                id_df = pd.concat([id_df,
-                                  id_df[jsonmet].apply(pd.Series)], axis=1)
-                df = df.append(id_df)
+            logging.info('Getting Twitter data from '
+                         '{} until {}'.format(sd, ed))
+            df = self.get_df_for_date(ids_lists, fields, sd, ed)
             df = self.clean_df(df)
             self.df = self.df.append(df).reset_index(drop=True)
-        self.df = self.add_parents(self.df)
-        self.df = self.rename_cols()
         return self.df
 
+    def get_df_for_date(self, ids_lists, fields, sd, ed):
+        df = pd.DataFrame()
+        for ids in ids_lists:
+            ids = filter(None, ids)
+            url = self.create_stats_url(fields, ids, sd, ed)
+            header, data = self.request(url)
+            self.dates = self.get_dates(data)
+            id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
+            id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
+            df = df.append(id_df)
+        return df
+
+    @staticmethod
+    def get_date_info(sd, ed):
+        ed = ed + dt.timedelta(days=1)
+        if sd > ed:
+            logging.warning('Start date greater than end date.  Start date'
+                            'was set to end date.')
+            sd = ed - dt.timedelta(days=1)
+        return sd, ed
+
     def get_account_timezone(self):
-        acc_url = DOMAIN + URLACC + '%s/' % self.account_id
-        header, data = self.request(acc_url)
+        url = self.create_base_url()
+        header, data = self.request(url)
         return data[jsondata][jsontz]
 
     @staticmethod
@@ -196,12 +210,20 @@ class TwApi(object):
         return date
 
     def add_parents(self, df):
-        for parent in [[self.adid_dict, 'tweetid'], [self.asid_dict,'adset'],
-                        [self.cid_dict, 'campaign']]:
-            df['id'] = df['id'].map(parent[0])
-            df = df.join(df['id'].apply(pd.Series))
-            df = df.drop('id', axis=1)
-            df = df.rename(columns={'name': parent[1], 'parent': 'id'})
+        parent_maps = [[self.adid_dict, 'tweetid'],
+                       [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
+        for parent in parent_maps:
+            df = self.replace_with_parent(df, parent, 'id')
+        # parent = [self.tweet_dict, 'text']
+        # df = self.replace_with_parent(df, parent, 'tweetid')
+        return df
+
+    @staticmethod
+    def replace_with_parent(df, parent, id_col):
+        df[id_col] = df[id_col].map(parent[0])
+        df = df.join(df[id_col].apply(pd.Series))
+        df = df.drop(id_col, axis=1)
+        df = df.rename(columns={'name': parent[1], 'parent': id_col})
         return df
 
     def clean_df(self, df):
