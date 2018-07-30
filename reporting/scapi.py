@@ -96,14 +96,12 @@ class ScApi(object):
         return sd, ed
 
     @staticmethod
-    def create_url(sd, ed, cid):
+    def create_url(cid):
         camp_url = 'campaigns/{}/stats?'.format(cid)
         break_url = 'breakdown=ad'
         field_url = '&fields={}'.format(','.join(def_fields))
-        sded_url = '&start_time={}&end_time={}'.format(sd, ed)
         gran_url = '&granularity=DAY'
-        full_url = (base_url + camp_url + break_url + field_url + sded_url +
-                    gran_url)
+        full_url = (base_url + camp_url + break_url + field_url + gran_url)
         return full_url
 
     def make_request(self, add_url):
@@ -152,8 +150,9 @@ class ScApi(object):
         return self.df
 
     def get_raw_data(self, sd, ed, cid):
-        full_url = self.create_url(sd, ed, cid)
-        self.r = self.client.get(full_url)
+        full_url = self.create_url(cid)
+        self.r = self.client.get(full_url,
+                                 params={'start_time': sd, 'end_time': ed})
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
             self.df = self.df.append(tdf)
@@ -176,9 +175,9 @@ class ScApi(object):
         data = (r.json()['timeseries_stats'][0]['timeseries_stat']
                         ['breakdown_stats']['ad'])
         for ad_data in data:
-            tdf = pd.DataFrame(ad_data['timeseries'])
+            tdf = pd.DataFrame(ad_data['timeseries'])  # type: pd.DataFrame
             tdf = pd.concat([tdf, tdf['stats'].apply(pd.Series)], axis=1)
-            tdf['id'] = ad_data['id']
+            tdf['id'] = ad_data['id']  # type: pd.DataFrame
             df = df.append(tdf)
         df['spend'] = df['spend'] / 1000000
         df = df.reset_index()
@@ -186,9 +185,9 @@ class ScApi(object):
 
     def add_names_to_df(self):
         adids = self.get_ads()
-        self.df = self.dict_to_cols(self.df, 'id', adids)
+        self.df = self.dict_to_cols(self.df, 'id', adids)  # type: pd.DataFrame
         asids = self.get_adsquads()
-        self.df = self.dict_to_cols(self.df, 'ad_squad_id', asids)
+        self.df = self.dict_to_cols(self.df, 'ad_squad_id', asids)  # type: pd.DataFrame
         self.df = self.df.rename(columns={'ad_squad_id': 'Ad Set Name',
                                           'name': 'Ad Name'})
         self.df = utl.col_removal(self.df, 'API_Snapchat',
