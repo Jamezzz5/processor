@@ -93,26 +93,27 @@ class AwApi(object):
         return df
 
     @staticmethod
-    def get_data_default_check(sd, ed, fields):
+    def get_data_default_check(sd, ed):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        if fields is None:
-            fields = def_fields
-        return sd, ed, fields
+        return sd, ed
 
     def parse_fields(self, fields):
+        api_fields = def_fields
+        if 'Conversions' in fields:
+            api_fields = conv_fields
+        if 'UAC' in fields:
+            api_fields = uac_fields
+            self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
         for field in fields:
-            if field == 'Conversions':
-                fields = conv_fields
-            if field == 'UAC':
-                fields = uac_fields
-                self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
-        return fields
+            if field == 'Device':
+                api_fields += ['Device']
+        return api_fields
 
     def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        sd, ed = self.get_data_default_check(sd, ed)
         sd = sd.date()
         ed = ed.date()
         fields = self.parse_fields(fields)
