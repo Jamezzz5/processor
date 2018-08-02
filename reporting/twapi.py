@@ -165,7 +165,7 @@ class TwApi(object):
         timezone = self.get_account_timezone()
         self.get_all_id_dicts()
         ids_lists = [list(self.adid_dict.keys())[i:i + 20] for i
-                     in range(0, len(full_date_list), 20)]
+                     in range(0, len(self.adid_dict.keys()), 20)]
         for date in full_date_list:
             sd = self.date_format(date, timezone)
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
@@ -214,8 +214,36 @@ class TwApi(object):
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
             df = self.replace_with_parent(df, parent, 'id')
-        # parent = [self.tweet_dict, 'text']
-        # df = self.replace_with_parent(df, parent, 'tweetid')
+        df = self.add_tweets(df)
+        df = self.add_cards(df)
+        return df
+
+    def add_tweets(self, df):
+        tweet_ids = df['tweetid'].unique()
+        url = ('https://api.twitter.com/1.1/statuses/lookup.json?'
+               'id={}&include_card_uri=true'
+               .format(','.join([str(x) for x in tweet_ids])))
+        h, d = self.request(url)
+        id_dict = {}
+        for x in d:
+            if 'card_uri' in x:
+                id_dict[str(x['id'])] = {'name': x['text'],
+                                         'Card name': x['card_uri']}
+            else:
+                id_dict[str(x['id'])] = {'name': x['text'], 'Card name': None}
+        df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
+        return df
+
+    def add_cards(self, df):
+        card_uris = df['Card name'].unique()
+        card_uris = [x for x in card_uris if x is not None]
+        uri_dict = {}
+        for uri in card_uris:
+            url = self.create_base_url('cards')
+            url += '?card_uri={}'.format(uri)
+            h, d = self.request(url)
+            uri_dict[uri] = d['data']['name']
+        df['Card name'] = df['Card name'].map(uri_dict)
         return df
 
     @staticmethod
