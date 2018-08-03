@@ -284,11 +284,14 @@ def df_transform(df, transform):
         df.drop('temp', axis=1, inplace=True)
     if transform_type == 'Pivot':
         pivot_col = transform[1]
-        val_col = transform[2]
+        val_col = transform[2].split('|')
         df = df.fillna(0)
-        index_cols = [x for x in df.columns if x not in [pivot_col, val_col]]
-        df = pd.pivot_table(df, values=val_col, index=index_cols,
-                            columns=[pivot_col], aggfunc='sum').reset_index()
+        index_cols = [x for x in df.columns if x not in val_col + [pivot_col]]
+        df = pd.pivot_table(df, index=index_cols, columns=[pivot_col],
+                            aggfunc='sum')
+        if len(val_col) != 1:
+            df.columns = df.columns.map('_'.join)
+        df = df.reset_index()
     if transform_type == 'Merge':
         merge_file = transform[1]
         left_merge = transform[2]

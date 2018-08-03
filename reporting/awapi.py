@@ -27,7 +27,8 @@ def_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
 conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
                'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
                'HeadlinePart2', 'Description', 'Description1', 'Description2',
-               'ConversionTypeName', 'Conversions']
+               'ConversionTypeName', 'Conversions', 'ViewThroughConversions',
+               'AllConversions']
 
 uac_fields = ['Date', 'AccountDescriptiveName', 'CampaignName',
               'Impressions', 'Clicks', 'Cost', 'VideoViews',
