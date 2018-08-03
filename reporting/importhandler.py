@@ -1,6 +1,7 @@
 import os
 import logging
 import pandas as pd
+import datetime as dt
 import reporting.fbapi as fbapi
 import reporting.awapi as awapi
 import reporting.twapi as twapi
@@ -25,42 +26,37 @@ class ImportHandler(object):
         self.args = args
         self.matrix = matrix
 
-    def output(self, api_merge, api_df, filename, first_row, last_row, vk):
+    def output(self, api_df, filename, api_merge=None, first_row=None,
+               last_row=None, date_col=None, start_date=None, end_date=None):
         utl.dir_check(utl.raw_path)
         if str(api_merge) != 'nan':
-            api_merge_file = utl.raw_path + str(api_merge)
-            if os.path.isfile(api_merge_file):
-                try:
-                    df = pd.read_csv(api_merge_file, parse_dates=True)
-                except IOError:
-                    logging.warning(api_merge + ' could not be opened.  ' +
-                                    'API data was not merged.')
-                    api_df.to_csv(api_merge_file, encoding='utf-8')
-                    return None
-                df = utl.first_last_adj(df, first_row, last_row)
-                df = self.create_all_col(df)
-                api_df = utl.first_last_adj(api_df, first_row, last_row)
-                api_df = self.create_all_col(api_df)
-                api_df = api_df[~api_df['ALL'].isin(df['ALL'])]
-                df = df.append(api_df, ignore_index=True)
-                df.drop('ALL', axis=1, inplace=True)
-                df.to_csv(api_merge_file, index=False, encoding='utf-8')
-                if first_row != 0:
-                    self.matrix.vm_change(vk, vmc.firstrow, 0)
-                if last_row != 0:
-                    self.matrix.vm_change(vk, vmc.lastrow, 0)
-            else:
-                logging.warning(api_merge + ' not found.  Creating file.')
-                df = pd.DataFrame()
-                df = df.append(api_df, ignore_index=True)
-                df.to_csv(api_merge_file, index=False, encoding='utf-8')
-        else:
-            try:
-                api_df.to_csv(utl.raw_path + filename, index=False,
-                              encoding='utf-8')
-            except IOError:
-                logging.warning(utl.raw_path + filename + ' could not be ' +
-                                'opened.  API data was not saved.')
+            api_df = self.merge_df(api_df, filename, date_col, start_date,
+                                   end_date, first_row, last_row)
+        full_file = os.path.join(utl.raw_path, filename)
+        try:
+            api_df.to_csv(full_file, index=False, encoding='utf-8')
+        except IOError:
+            logging.warning('{} could not be opened.'
+                            'API data was not saved.'.format(full_file))
+
+    def merge_df(self, api_df, filename, date_col, start_date, end_date,
+                 first_row, last_row):
+        df = utl.import_read_csv(utl.raw_path, filename)
+        df = self.merge_df_cleaning(df, first_row, last_row, date_col, pd.NaT,
+                                    start_date - dt.timedelta(days=1))
+        api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
+                                        start_date, end_date)
+        df = df.append(api_df, ignore_index=True).reset_index(drop=True)
+        df = utl.add_dummy_header(df, first_row)
+        df = utl.add_dummy_header(df, last_row, location='foot')
+        return df
+
+    def merge_df_cleaning(self, df, first_row, last_row, date_col,
+                          start_date, end_date):
+        df = utl.first_last_adj(df, first_row, last_row)
+        df = utl.data_to_type(df, date_col=date_col)
+        df = utl.date_removal(df, date_col[0], start_date, end_date)
+        return df
 
     @staticmethod
     def create_all_col(df):
@@ -81,6 +77,14 @@ class ImportHandler(object):
             return True
         return False
 
+    @staticmethod
+    def set_start(sd, ed, max_date):
+        if str(max_date) != 'nan':
+            date_diff = (ed - sd).days
+            if date_diff >= max_date:
+                sd = ed - dt.timedelta(days=max_date)
+        return sd
+
     def api_calls(self, key_list, api_class):
         for vk in key_list:
             params = self.matrix.vendor_set(vk)
@@ -93,11 +97,16 @@ class ImportHandler(object):
                 params[vmc.startdate] = None
             if end_check:
                 params[vmc.enddate] = None
+            params[vmc.startdate] = self.set_start(params[vmc.startdate],
+                                                   params[vmc.enddate],
+                                                   params[vmc.apimerge])
             df = api_class.get_data(sd=params[vmc.startdate],
                                     ed=params[vmc.enddate],
                                     fields=params[vmc.apifields])
-            self.output(params[vmc.apimerge], df, params[vmc.filename],
-                        params[vmc.firstrow], params[vmc.lastrow], vk)
+            self.output(df, params[vmc.filename], params[vmc.apimerge],
+                        params[vmc.firstrow], params[vmc.lastrow],
+                        params[vmc.date], params[vmc.startdate],
+                        params[vmc.enddate])
 
     def api_loop(self):
         if self.arg_check('fb'):
@@ -131,8 +140,10 @@ class ImportHandler(object):
             ftp_class.input_config(params[vmc.apifile])
             ftp_class.header = params[vmc.firstrow]
             df = ftp_class.get_data()
-            self.output(params[vmc.apimerge], df, params[vmc.filename],
-                        params[vmc.firstrow], params[vmc.lastrow], vk)
+            self.output(df, params[vmc.filename], params[vmc.apimerge],
+                        params[vmc.firstrow], params[vmc.lastrow],
+                        params[vmc.date], params[vmc.startdate],
+                        params[vmc.enddate])
 
     def ftp_loop(self):
         if self.arg_check('sz'):
@@ -143,8 +154,10 @@ class ImportHandler(object):
             params = self.matrix.vendor_set(vk)
             db_class.input_config(params[vmc.apifile])
             df = db_class.get_data(filename=params[vmc.apifields][0])
-            self.output(params[vmc.apimerge], df, params[vmc.filename],
-                        params[vmc.firstrow], params[vmc.lastrow], vk)
+            self.output(df, params[vmc.filename], params[vmc.apimerge],
+                        params[vmc.firstrow], params[vmc.lastrow],
+                        params[vmc.date], params[vmc.startdate],
+                        params[vmc.enddate])
 
     def db_loop(self):
         if self.arg_check('dna'):
@@ -162,8 +175,10 @@ class ImportHandler(object):
                 params[vmc.enddate] = None
             df = s3_class.get_data(sd=params[vmc.startdate],
                                    ed=params[vmc.enddate])
-            self.output(params[vmc.apimerge], df, params[vmc.filename],
-                        params[vmc.firstrow], params[vmc.lastrow], vk)
+            self.output(df, params[vmc.filename], params[vmc.apimerge],
+                        params[vmc.firstrow], params[vmc.lastrow],
+                        params[vmc.date], params[vmc.startdate],
+                        params[vmc.enddate])
 
     def s3_loop(self):
         if self.arg_check('dna'):

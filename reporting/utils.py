@@ -195,3 +195,13 @@ def add_header(df, header, first_row):
     df[header] = df.columns[0]
     df.set_value(first_row - 1, header, header)
     return df
+
+
+def add_dummy_header(df, header_len, location='head'):
+    cols = df.columns
+    dummy_df = pd.DataFrame(data=[cols] * header_len, columns=cols)
+    if location == 'head':
+        df = dummy_df.append(df).reset_index(drop=True)
+    elif location == 'foot':
+        df = df.append(dummy_df).reset_index(drop=True)
+    return df

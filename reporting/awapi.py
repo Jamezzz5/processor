@@ -102,14 +102,15 @@ class AwApi(object):
 
     def parse_fields(self, fields):
         api_fields = def_fields
-        if 'Conversions' in fields:
-            api_fields = conv_fields
-        if 'UAC' in fields:
-            api_fields = uac_fields
-            self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
-        for field in fields:
-            if field == 'Device':
-                api_fields += ['Device']
+        if fields is not None:
+            if 'Conversions' in fields:
+                api_fields = conv_fields
+            if 'UAC' in fields:
+                api_fields = uac_fields
+                self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
+            for field in fields:
+                if field == 'Device':
+                    api_fields += ['Device']
         return api_fields
 
     def get_data(self, sd=None, ed=None, fields=None):

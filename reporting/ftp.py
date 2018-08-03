@@ -136,12 +136,7 @@ class FTP(object):
         except pd.errors.ParserError:
             r.seek(0)
             self.df = pd.read_csv(r, header=self.header, compression=comp)
-            self.add_dummy_header()
-
-    def add_dummy_header(self):
-        cols = self.df.columns
-        dummy_df = pd.DataFrame(data=[cols] * self.header, columns=cols)
-        self.df = dummy_df.append(self.df).reset_index(drop=True)
+            self.df = utl.add_dummy_header(self.df, self.header)
 
     def ftp_remove_files(self, newest_file):
         for item in self.files:
