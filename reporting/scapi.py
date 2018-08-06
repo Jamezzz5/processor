@@ -179,7 +179,8 @@ class ScApi(object):
             tdf = pd.concat([tdf, tdf['stats'].apply(pd.Series)], axis=1)
             tdf['id'] = ad_data['id']  # type: pd.DataFrame
             df = df.append(tdf)
-        df['spend'] = df['spend'] / 1000000
+        if 'spend' in df.columns:
+            df['spend'] = df['spend'] / 1000000
         df = df.reset_index()
         return df
 
