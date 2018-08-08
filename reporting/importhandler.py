@@ -31,7 +31,7 @@ class ImportHandler(object):
         utl.dir_check(utl.raw_path)
         if str(api_merge) != 'nan':
             api_df = self.merge_df(api_df, filename, date_col, start_date,
-                                   end_date, first_row, last_row)
+                                   end_date, first_row, last_row, api_merge)
         full_file = os.path.join(utl.raw_path, filename)
         try:
             api_df.to_csv(full_file, index=False, encoding='utf-8')
@@ -40,10 +40,12 @@ class ImportHandler(object):
                             'API data was not saved.'.format(full_file))
 
     def merge_df(self, api_df, filename, date_col, start_date, end_date,
-                 first_row, last_row):
+                 first_row, last_row, api_merge):
+        if not os.path.isfile(os.path.join(utl.raw_path, filename)):
+            return api_df
         df = utl.import_read_csv(utl.raw_path, filename)
         df = self.merge_df_cleaning(df, first_row, last_row, date_col, pd.NaT,
-                                    start_date - dt.timedelta(days=1))
+                                    end_date - dt.timedelta(days=api_merge))
         api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
                                         start_date, end_date)
         df = df.append(api_df, ignore_index=True).reset_index(drop=True)
@@ -51,7 +53,8 @@ class ImportHandler(object):
         df = utl.add_dummy_header(df, last_row, location='foot')
         return df
 
-    def merge_df_cleaning(self, df, first_row, last_row, date_col,
+    @staticmethod
+    def merge_df_cleaning(df, first_row, last_row, date_col,
                           start_date, end_date):
         df = utl.first_last_adj(df, first_row, last_row)
         df = utl.data_to_type(df, date_col=date_col)
