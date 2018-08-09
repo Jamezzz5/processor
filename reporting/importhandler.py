@@ -43,7 +43,7 @@ class ImportHandler(object):
                  first_row, last_row, api_merge):
         if not os.path.isfile(os.path.join(utl.raw_path, filename)):
             return api_df
-        df = utl.import_read_csv(utl.raw_path, filename)
+        df = utl.import_read_csv(filename, utl.raw_path)
         df = self.merge_df_cleaning(df, first_row, last_row, date_col, pd.NaT,
                                     end_date - dt.timedelta(days=api_merge))
         api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,

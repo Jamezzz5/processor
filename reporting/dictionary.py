@@ -29,7 +29,7 @@ class Dict(object):
                 data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
             data_dict.to_csv(self.dict_path_filename, index=False,
                              encoding='utf-8')
-        self.data_dict = utl.import_read_csv(self.dict_path, self.filename)
+        self.data_dict = utl.import_read_csv(self.filename, self.dict_path)
         self.clean()
         self.data_dict = self.data_dict.drop_duplicates()
 
@@ -150,7 +150,7 @@ class RelationalConfig(object):
 
     def read(self, configfile):
         try:
-            self.df = utl.import_read_csv(self.csvpath, configfile)
+            self.df = utl.import_read_csv(configfile, self.csvpath)
         except IOError:
             logging.debug('No Relational Dictionary config')
             return None
@@ -191,7 +191,7 @@ class DictRelational(object):
             logging.info('Creating ' + self.filename)
             df = pd.DataFrame(columns=self.columns, index=None)
             df.to_csv(self.full_file_path, index=False, encoding='utf-8')
-        self.df = utl.import_read_csv(self.csvpath, self.filename)
+        self.df = utl.import_read_csv(self.filename, self.csvpath)
 
     def add_key_values(self, data_dict):
         keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
@@ -256,7 +256,7 @@ class DictConstantConfig(object):
 
     def read(self, configfile):
         try:
-            self.df = utl.import_read_csv(self.csvpath, configfile)
+            self.df = utl.import_read_csv(configfile, self.csvpath)
         except IOError:
             logging.debug('No Constant Dictionary config')
             return None
@@ -283,7 +283,7 @@ class DictTranslationConfig(object):
 
     def read(self, configfile):
         try:
-            self.df = utl.import_read_csv(self.csvpath, configfile)
+            self.df = utl.import_read_csv(configfile, self.csvpath)
         except IOError:
             logging.debug('No Translational Dictionary config')
             return None

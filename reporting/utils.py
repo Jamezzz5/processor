@@ -23,14 +23,15 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
-def import_read_csv(path, filename):
-    raw_file = os.path.join(path, filename)
+def import_read_csv(filename, path=None):
+    if path:
+        filename = os.path.join(path, filename)
     try:
-        df = pd.read_csv(raw_file, parse_dates=True, encoding='utf-8')
+        df = pd.read_csv(filename, parse_dates=True, encoding='utf-8')
     except pd.io.common.CParserError:
-        df = pd.read_csv(raw_file, parse_dates=True, sep=None, engine='python')
+        df = pd.read_csv(filename, parse_dates=True, sep=None, engine='python')
     except UnicodeDecodeError:
-        df = pd.read_csv(raw_file, parse_dates=True, encoding='iso-8859-1')
+        df = pd.read_csv(filename, parse_dates=True, encoding='iso-8859-1')
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data empty.  Continuing.')
         df = None

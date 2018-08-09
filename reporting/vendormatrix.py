@@ -53,7 +53,7 @@ class VendorMatrix(object):
             logging.info('Creating Vendor Matrix.  Populate it and run again')
             vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
             vm.to_csv(csv, index=False, encoding='utf-8')
-        self.vm = utl.import_read_csv(csv_path, csv_file)
+        self.vm = utl.import_read_csv(csv_file, csv_path)
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
@@ -139,12 +139,18 @@ class VendorMatrix(object):
             self.tdf = import_data(vk, self.vm_rules_dict, **self.ven_param)
         return self.tdf
 
+    def set_full_filename(self):
+        self.vm[vmc.filename] = {x: self.vm[vmc.filename][x]
+                                 if '/' in self.vm[vmc.filename][x]
+                                 else os.path.join(utl.raw_path,
+                                                   self.vm[vmc.filename][x])
+                                 for x in self.vm[vmc.filename]}
+
     def sort_vendor_list(self):
+        self.set_full_filename()
         self.vl = sorted((x for x in self.vl
-                          if os.path.isfile(
-                            utl.raw_path + self.vm[vmc.filename][x])),
-                         key=lambda x:
-                         os.stat(utl.raw_path + self.vm[vmc.filename][x]))
+                          if os.path.isfile(self.vm[vmc.filename][x])),
+                         key=lambda x: os.stat(self.vm[vmc.filename][x]))
         self.vl.append(plan_key)
 
     def vm_loop(self):
@@ -158,7 +164,7 @@ class VendorMatrix(object):
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csvpath):
             if os.path.isdir(er.csvpath):
-                logging.info('All placements defined.  Deleting Error report' +
+                logging.info('All placements defined.  Deleting Error report'
                              ' directory.')
                 os.rmdir(er.csvpath)
         self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
@@ -218,7 +224,7 @@ def ad_cost_calculation(df):
 
 
 def import_data(key, vm_rules, **kwargs):
-    df = utl.import_read_csv(utl.raw_path, kwargs[vmc.filename])
+    df = utl.import_read_csv(kwargs[vmc.filename])
     if df is None:
         return df
     df = utl.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
@@ -309,7 +315,7 @@ def df_transform(df, transform):
 
 def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
-    ovm = utl.import_read_csv(path=old_path, filename=old_file)
+    ovm = utl.import_read_csv(filename=old_file, path=old_path)
     rules = [col for col in ovm.columns if 'RULE_' in col]
     rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
