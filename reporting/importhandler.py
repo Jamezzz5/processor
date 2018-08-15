@@ -13,6 +13,7 @@ import reporting.ajapi as ajapi
 import reporting.dcapi as dcapi
 import reporting.rsapi as rsapi
 import reporting.dbapi as dbapi
+import reporting.vkapi as vkapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -136,6 +137,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_rs_key, rsapi.RsApi())
         if self.arg_check('db'):
             self.api_calls(self.matrix.api_db_key, dbapi.DbApi())
+        if self.arg_check('vk'):
+            self.api_calls(self.matrix.api_vk_key, vkapi.VkApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
