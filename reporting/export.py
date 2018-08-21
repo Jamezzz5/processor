@@ -1,16 +1,17 @@
-import logging
-import json
-import sys
 import os
+import sys
+import json
 import math
+import time
+import logging
 from io import BytesIO
-import datetime as dt
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine
-import reporting.expcolumns as exc
+import datetime as dt
+import sqlalchemy as sqa
 import reporting.ftp as ftp
 import reporting.utils as utl
+import reporting.expcolumns as exc
 
 log = logging.getLogger()
 config_path = utl.config_path
@@ -269,12 +270,16 @@ class DB(object):
 
     def connect(self):
         logging.debug('Connecting to DB at Host: ' + self.host)
-        self.engine = create_engine(self.conn_string,
-                                    connect_args={'sslmode': 'prefer'})
+        self.engine = sqa.create_engine(self.conn_string,
+                                        connect_args={'sslmode': 'prefer'})
         try:
             self.connection = self.engine.raw_connection()
         except AssertionError:
             self.connection = self.engine.raw_connection()
+        except sqa.exc.OperationalError:
+            logging.warning('Connection timed out. Reconnecting in 30s.')
+            time.sleep(30)
+            self.connect()
         self.cursor = self.connection.cursor()
 
     def df_to_output(self, df):
@@ -563,7 +568,7 @@ class DFTranslation(object):
         real_columns = [x for x in self.real_columns if x in self.df.columns]
         self.df = self.df[self.df[real_columns].sum(axis=1) != 0]
         self.df = self.df.reset_index(drop=True)
-        replace_dict = {'"': '', "\\\\": '/', '\r': '', '\n': ''}
+        replace_dict = {'"': '', "\\\\": '/', '\r': '', '\n': '', '\t': ''}
         self.df.replace(replace_dict, regex=True, inplace=True)
 
     def get_upload_id(self):
