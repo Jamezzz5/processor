@@ -150,6 +150,7 @@ class TwApi(object):
         url = base_url + act_url
         if entity:
             url += '/{}'.format(entity)
+            url += '?count=1000'
         return url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -214,6 +215,7 @@ class TwApi(object):
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
             df = self.replace_with_parent(df, parent, 'id')
+        df = df.dropna(subset=[x for x in colnamedic if x != 'campaign'])
         df = self.add_tweets(df)
         df = self.add_cards(df)
         return df
