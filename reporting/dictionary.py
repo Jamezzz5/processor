@@ -1,5 +1,5 @@
 import sys
-import os.path
+import os
 import logging
 import pandas as pd
 import reporting.utils as utl
@@ -75,7 +75,8 @@ class Dict(object):
             if final_col not in error.columns:
                 error[final_col] = error[col].astype('U')
             else:
-                error[final_col] = (error[final_col] + str(delimit_str) +
+                error[final_col] = (error[final_col].astype('U') +
+                                    str(delimit_str) +
                                     error[col].astype('U'))
             error.drop([col], axis=1, inplace=True)
         return error
