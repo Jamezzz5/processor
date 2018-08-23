@@ -150,7 +150,8 @@ class TwApi(object):
         url = base_url + act_url
         if entity:
             url += '/{}'.format(entity)
-            url += '?count=1000'
+            if entity != 'cards':
+                url += '?count=1000'
         return url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -215,7 +216,7 @@ class TwApi(object):
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
             df = self.replace_with_parent(df, parent, 'id')
-        df = df.dropna(subset=[x for x in colnamedic if x != 'campaign'])
+        df = df.dropna(subset=['impressions'])
         df = self.add_tweets(df)
         df = self.add_cards(df)
         return df
@@ -281,7 +282,7 @@ class TwApi(object):
                                   reqdformat).date()
         ed = dt.datetime.strptime(data[jsonreq][jsonparam][jsonet],
                                   reqdformat).date()
-        dates = self.list_dates(sd, ed - dt.timedelta(days=1))
+        dates = self.list_dates(sd + dt.timedelta(days=1), ed)
         dates = {k: v for k, v in enumerate(dates)}
         return dates
 
