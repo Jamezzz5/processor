@@ -178,7 +178,7 @@ class FbApi(object):
                                                  'ADSET_PAUSED',
                                                  'PENDING_BILLING_INFO']}]
                         },
-                async=True)
+                is_async=True)
             deleted = self.account.get_insights(
                 fields=field_list,
                 params={'level': AdsInsights.Level.ad,
@@ -188,7 +188,7 @@ class FbApi(object):
                         'filtering': [{'field': 'ad.effective_status',
                                        'operator': 'IN',
                                        'value': ['DELETED', 'ARCHIVED']}]},
-                async=True)
+                is_async=True)
         except FacebookRequestError as e:
             self.request_error(e, date_list, field_list)
             return True
