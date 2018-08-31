@@ -253,7 +253,7 @@ class TwApi(object):
     def replace_with_parent(df, parent, id_col):
         df[id_col] = df[id_col].map(parent[0])
         df = df.join(df[id_col].apply(pd.Series))
-        df = df.drop(id_col, axis=1)
+        df = utl.col_removal(df, 'API_Twitter', [0, id_col])
         df = df.rename(columns={'name': parent[1], 'parent': id_col})
         return df
 

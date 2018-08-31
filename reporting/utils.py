@@ -137,8 +137,8 @@ def col_removal(df, key, removal_cols):
         if col not in df:
             if col == 'nan':
                 continue
-            logging.warning(col + ' is not or is no longer in ' +
-                            key + '.  It was not removed.')
+            logging.warning('{} is not or is no longer in {}.'
+                            'It was not removed.'.format(col, key))
             continue
         df = df.drop(col, axis=1)
     return df
