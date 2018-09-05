@@ -1,3 +1,4 @@
+import os
 import sys
 import yaml
 import logging
@@ -48,6 +49,7 @@ class AwApi(object):
         self.client_customer_id = None
         self.config_list = []
         self.adwords_client = None
+        self.v = 'v201806'
         self.report_type = 'AD_PERFORMANCE_REPORT'
 
     def input_config(self, config):
@@ -55,11 +57,10 @@ class AwApi(object):
             logging.warning('Config file name not in vendor matrix. ' +
                             'Aborting.')
             sys.exit(0)
-        logging.info('Loading Adwords config file: ' + str(config))
-        self.configfile = config_path + config
+        logging.info('Loading Adwords config file: {}'.format(config))
+        self.configfile = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.configfile = config_path + config
         self.adwords_client = (adwords.AdWordsClient.
                                LoadFromStorage(self.configfile))
 
@@ -68,7 +69,7 @@ class AwApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = yaml.safe_load(f)
         except IOError:
-            logging.error(self.configfile + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
         self.config = self.config['adwords']
         self.client_id = self.config['client_id']
@@ -83,7 +84,8 @@ class AwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in Sizmek config file.  Aborting.')
+                logging.warning( '{} not in Sizmek config file.  '
+                                 'Aborting.'.format(item))
                 sys.exit(0)
 
     @staticmethod
@@ -120,12 +122,11 @@ class AwApi(object):
         ed = ed.date()
         fields = self.parse_fields(fields)
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start date' +
+            logging.warning('Start date greater than end date.  Start date'
                             'was set to end date.')
             sd = ed
-        logging.info('Getting Adwords data from ' + str(sd) + ' until ' +
-                     str(ed))
-        report_downloader = self.adwords_client.GetReportDownloader('v201802')
+        logging.info('Getting Adwords data from {} until {}'.format(sd, ed))
+        report_downloader = self.adwords_client.GetReportDownloader(self.v)
         report = {
             'reportName': 'Adwords_Report',
             'dateRangeType': 'CUSTOM_DATE',
