@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import time
@@ -29,14 +30,13 @@ class DcApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
         logging.info('Loading DC config file: {}'.format(config))
-        self.config_file = config_path + config
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.config_file = config_path + config
 
     def load_config(self):
         try:
@@ -88,6 +88,8 @@ class DcApi(object):
     def get_raw_data(self):
         full_url = self.create_url()
         self.r = self.client.post('{}/run'.format(full_url))
+        if 'error' in self.r.json():
+            self.request_error()
         file_id = self.r.json()['id']
         files_url = '{}/files/{}'.format(full_url, file_id)
         for x in range(1, 101):
@@ -103,3 +105,7 @@ class DcApi(object):
                              'Response: {}'.format(x, r.json()))
                 time.sleep(30)
         self.df = pd.read_csv(StringIO(self.r.text), skiprows=10)
+
+    def request_error(self):
+        logging.warning('Unknown error: {}'.format(self.r.text))
+        sys.exit(0)
