@@ -1,10 +1,12 @@
+import os
 import sys
 import json
 import time
 import pytz
 import logging
-import datetime as dt
+import requests
 import pandas as pd
+import datetime as dt
 from requests_oauthlib import OAuth2Session
 import reporting.utils as utl
 
@@ -34,21 +36,20 @@ class ScApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
-        logging.info('Loading SC config file: ' + str(config))
-        self.config_file = config_path + config
+        logging.info('Loading SC config file: {}'.format(config))
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.config_file = config_path + config
 
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.config_file + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
@@ -62,7 +63,8 @@ class ScApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in SC config file.  Aborting.')
+                logging.warning('{} not in SC config file.  '
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     def get_client(self):
@@ -79,7 +81,7 @@ class ScApi(object):
 
     def date_check(self, sd, ed):
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start data' +
+            logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed - dt.timedelta(days=1)
         timezone = self.get_account_timezone()
@@ -107,7 +109,11 @@ class ScApi(object):
     def make_request(self, add_url):
         act_url = base_url + add_url
         self.get_client()
-        r = self.client.get(act_url)
+        try:
+            r = self.client.get(act_url)
+        except requests.adapters._SSLError:
+            logging.warning('SSL Error - max retries exceeded.  Retrying.')
+            r = self.make_request(add_url)
         return r
 
     def get_account_timezone(self):
