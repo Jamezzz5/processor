@@ -65,6 +65,11 @@ mplay = 'Match Played'
 gplay = 'Game Played'
 gplay3 = 'Games Played 3'
 gplay6 = 'Games Played 6'
+ga_sessions = 'GA - Sessions'
+ga_goal1 = 'GA - Goal1 Completions'
+ga_goal2 = 'GA - Goal2 Completions'
+ga_pageviews = 'GA - PageViews'
+ga_bounces = 'GA - Bounces'
 landingpagepi = 'Landing Page' + postimp
 homepagepi = 'Homepage' + postimp
 btnclickpi = 'Button Click' + postimp
@@ -130,7 +135,8 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            ret_day30, ret_day60, ret_day90, ret_day120, landingpage, homepage,
            btnclick, purchase, signup, newuser, activeuser, totaluser, payuser,
            download, login, transaction, transaction_revenue, mplay, gplay,
-           gplay3, gplay6, landingpagepi, homepagepi, btnclickpi, purchasepi,
+           gplay3, gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews,
+           ga_bounces, landingpagepi, homepagepi, btnclickpi, purchasepi,
            signuppi, newuserpi, activeuserpi, downloadpi, loginpi, gplaypi,
            gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
            purchasepc, signuppc, newuserpc, activeuserpc, downloadpc, loginpc,
