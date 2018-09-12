@@ -29,7 +29,7 @@ views25 = 'Video Views 25'
 views50 = 'Video Views 50'
 views75 = 'Video Views 75'
 views100 = 'Video Views 100'
-tv_views =  'TrueView Views'
+tv_views = 'TrueView Views'
 fb_3_views = 'Facebook :03s Views'
 fb_10_views = 'Facebook :10s Views'
 dcm_service_fee = 'DCM Service Fee'
@@ -37,6 +37,9 @@ reach = 'Reach'
 frequency = 'Frequency'
 engagements = 'Engagements'
 likes = 'Likes'
+comments = 'Comments'
+shares = 'Shares'
+reactions = 'Reactions'
 revenue = 'Revenue'
 revenue_userstart = 'Revenue - User Start'
 revenue_userstart_30day = 'Revenue - User Start 30 Day'
@@ -52,6 +55,7 @@ landingpage = 'Landing Page'
 homepage = 'Homepage'
 btnclick = 'Button Click'
 purchase = 'Purchase'
+checkout = 'Checkout'
 signup = 'Sign Up'
 newuser = 'New User'
 activeuser = 'Active User'
@@ -74,6 +78,7 @@ landingpagepi = 'Landing Page' + postimp
 homepagepi = 'Homepage' + postimp
 btnclickpi = 'Button Click' + postimp
 purchasepi = 'Purchase' + postimp
+checkoutpi = 'Checkout' + postimp
 signuppi = 'Sign Up' + postimp
 newuserpi = 'New User' + postimp
 activeuserpi = 'Active User' + postimp
@@ -86,6 +91,7 @@ landingpagepc = 'Landing Page' + postclick
 homepagepc = 'Homepage' + postclick
 btnclickpc = 'Button Click' + postclick
 purchasepc = 'Purchase' + postclick
+checkoutpc = 'Checkout' + postclick
 signuppc = 'Sign Up' + postclick
 newuserpc = 'New User' + postclick
 activeuserpc = 'Active User' + postclick
@@ -130,23 +136,24 @@ vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            views100, tv_views, fb_3_views, fb_10_views, dcm_service_fee, reach,
-           frequency, engagements, likes, revenue, revenue_userstart,
-           revenue_userstart_30day, ret_day1, ret_day3, ret_day7, ret_day14,
-           ret_day30, ret_day60, ret_day90, ret_day120, landingpage, homepage,
-           btnclick, purchase, signup, newuser, activeuser, totaluser, payuser,
-           download, login, transaction, transaction_revenue, mplay, gplay,
-           gplay3, gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews,
-           ga_bounces, landingpagepi, homepagepi, btnclickpi, purchasepi,
+           frequency, engagements, likes, comments, shares, reactions, revenue,
+           revenue_userstart, revenue_userstart_30day, ret_day1, ret_day3,
+           ret_day7, ret_day14, ret_day30, ret_day60, ret_day90, ret_day120,
+           landingpage, homepage, btnclick, purchase, checkout, signup,
+           newuser, activeuser, totaluser, payuser, download, login,
+           transaction, transaction_revenue, mplay, gplay, gplay3, gplay6,
+           ga_sessions, ga_goal1, ga_goal2, ga_pageviews, ga_bounces,
+           landingpagepi, homepagepi, btnclickpi, purchasepi, checkoutpi,
            signuppi, newuserpi, activeuserpi, downloadpi, loginpi, gplaypi,
            gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
-           purchasepc, signuppc, newuserpc, activeuserpc, downloadpc, loginpc,
-           gplaypc, gplay3pc, gplay6pc, sm_totalbuzz, sm_totalbuzzpost,
-           sm_totalreplies, sm_totalreposts, sm_originalposts, sm_impressions,
-           sm_positivesentiment, sm_negativesentiment, sm_passion,
-           sm_uniqueauthors, sm_strongemotion, sm_weakemotion, view_imps,
-           view_total_imps, view_fraud, modelcoefa, modelcoefb, modelcoefc,
-           conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
-           conv10]
+           purchasepc, checkoutpc, signuppc, newuserpc, activeuserpc,
+           downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc, sm_totalbuzz,
+           sm_totalbuzzpost, sm_totalreplies, sm_totalreposts,
+           sm_originalposts, sm_impressions, sm_positivesentiment,
+           sm_negativesentiment, sm_passion, sm_uniqueauthors,
+           sm_strongemotion, sm_weakemotion, view_imps, view_total_imps,
+           view_fraud, modelcoefa, modelcoefb, modelcoefc, conv1, conv2, conv3,
+           conv4, conv5, conv6, conv7, conv8, conv9, conv10]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
