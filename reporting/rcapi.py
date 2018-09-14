@@ -5,7 +5,6 @@ import logging
 import requests
 import datetime as dt
 import pandas as pd
-import urllib.parse as parse
 import reporting.utils as utl
 
 config_path = utl.config_path
@@ -115,11 +114,6 @@ class RcApi(object):
             tdf['Date'] = date
 
             self.df = self.df.append(tdf, ignore_index=True)
-
-    def split_utms(self):
-        tdf = pd.DataFrame(list(self.df['utm_codes'].apply(
-             lambda x: parse.parse_qs(parse.urlsplit(x).path))))
-
 
     def request_error(self):
         logging.warning('Unknown error: {}'.format(self.r.text))
