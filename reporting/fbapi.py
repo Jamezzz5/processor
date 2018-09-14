@@ -22,6 +22,8 @@ def_metrics = ['impressions', 'inline_link_clicks', 'spend',
 
 fields_actions = ['actions', 'action_values']
 
+ab_device = ['action_device', 'action_type']
+
 def_fields = def_params + def_metrics
 
 nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
@@ -34,7 +36,14 @@ breakdown_age = ['age']
 breakdown_gender = ['gender']
 breakdown_placement = ['publisher_platform', 'platform_position',
                        'impression_device']
+breakdown_impdevice = ['impression_device']
 breakdown_country = ['country']
+breakdown_device = ['device_platform']
+
+ad_status_enbaled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW','DISAPPROVED',
+                     'PREAPPROVED','CAMPAIGN_PAUSED', 'ADSET_PAUSED',
+                     'PENDING_BILLING_INFO']
+ad_status_disabled = ['DELETED', 'ARCHIVED']
 
 
 col_name_dic = {'date_start': 'Reporting Starts',
@@ -70,7 +79,7 @@ class FbApi(object):
         self.async_requests = []
 
     def input_config(self, config):
-        logging.info('Loading Facebook config file: ' + str(config))
+        logging.info('Loading Facebook config file: {}'.format(config))
         self.configfile = config_path + config
         self.load_config()
         self.check_config()
@@ -82,7 +91,7 @@ class FbApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.configfile + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
         self.app_id = self.config['app_id']
         self.app_secret = self.config['app_secret']
@@ -94,12 +103,14 @@ class FbApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in FB config file.  Aborting.')
+                logging.warning('{} not in FB config file.  '
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     @staticmethod
     def parse_fields(items):
         breakdowns = []
+        action_breakdowns = []
         fields = def_fields
         for item in items:
             if item == 'Actions':
@@ -112,7 +123,13 @@ class FbApi(object):
                 breakdowns.extend(breakdown_placement)
             if item == 'Country':
                 breakdowns.extend(breakdown_country)
-        return fields, breakdowns
+            if item == 'Impression Device':
+                breakdowns.extend(breakdown_impdevice)
+            if item == 'Device':
+                breakdowns.extend(breakdown_device)
+            if item == 'Action Device':
+                action_breakdowns.extend(ab_device)
+        return fields, breakdowns, action_breakdowns
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -129,17 +146,17 @@ class FbApi(object):
         sd = sd.date()
         ed = ed.date()
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start data' +
+            logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed
         return sd, ed
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields, breakdowns = self.parse_fields(fields)
+        fields, breakdowns, action_breakdowns = self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
-        self.make_all_requests(fields, breakdowns)
+        self.make_all_requests(fields, breakdowns, action_breakdowns)
         self.check_and_get_async_jobs(self.async_requests)
         for col in nested_col:
             try:
@@ -152,48 +169,39 @@ class FbApi(object):
         self.df = self.rename_cols()
         return self.df
 
-    def make_all_requests(self, fields, breakdowns):
+    def make_all_requests(self, fields, breakdowns, action_breakdowns):
         for date_list in self.date_lists:
             sd = date_list[0]
             ed = date_list[-1]
             self.field_lists = [fields]
             for field_list in self.field_lists:
-                self.make_request(sd, ed, date_list, field_list, breakdowns)
+                self.make_request(sd, ed, date_list, field_list, breakdowns,
+                                  action_breakdowns, ad_status_enbaled)
+                self.make_request(sd, ed, date_list, field_list, breakdowns,
+                                  action_breakdowns, ad_status_disabled)
 
-    def make_request(self, sd, ed, date_list, field_list, breakdowns):
-        logging.info('Making FB request for ' + str(sd) + ' to ' + str(ed))
+    def make_request(self, sd, ed, date_list, field_list, breakdowns,
+                     action_breakdowns, ad_status):
+        logging.info('Making FB request for {} to {}'.format(sd, ed))
+        params = {'level': AdsInsights.Level.ad,
+                  'breakdowns': breakdowns,
+                  'time_range': {'since': str(sd), 'until': str(ed), },
+                  'time_increment': 1,
+                  'filtering': [{'field': 'ad.effective_status',
+                                 'operator': 'IN',
+                                 'value': ad_status}]
+                  }
+        if action_breakdowns:
+            params['action_breakdowns'] = action_breakdowns
         try:
             insights = self.account.get_insights(
                 fields=field_list,
-                params={'level': AdsInsights.Level.ad,
-                        'breakdowns': breakdowns,
-                        'time_range': {'since': str(sd), 'until': str(ed), },
-                        'time_increment': 1,
-                        'filtering': [{'field': 'ad.effective_status',
-                                       'operator': 'IN',
-                                       'value': ['ACTIVE', 'PAUSED',
-                                                 'PENDING_REVIEW',
-                                                 'DISAPPROVED', 'PREAPPROVED',
-                                                 'CAMPAIGN_PAUSED',
-                                                 'ADSET_PAUSED',
-                                                 'PENDING_BILLING_INFO']}]
-                        },
-                is_async=True)
-            deleted = self.account.get_insights(
-                fields=field_list,
-                params={'level': AdsInsights.Level.ad,
-                        'breakdowns': breakdowns,
-                        'time_range': {'since': str(sd), 'until': str(ed), },
-                        'time_increment': 1,
-                        'filtering': [{'field': 'ad.effective_status',
-                                       'operator': 'IN',
-                                       'value': ['DELETED', 'ARCHIVED']}]},
+                params=params,
                 is_async=True)
         except FacebookRequestError as e:
             self.request_error(e, date_list, field_list)
             return True
         self.async_requests.append(insights)
-        self.async_requests.append(deleted)
 
     def check_and_get_async_jobs(self, async_jobs):
         self.async_requests = []
@@ -201,8 +209,8 @@ class FbApi(object):
             ar = AdReportRun(job['id'])
             report = ar.remote_read()
             percent = report['async_percent_completion']
-            logging.info('FB async_job #' + str(job['id']) +
-                         ' percent done: ' + str(percent) + '%')
+            logging.info('FB async_job #{} percent done '
+                         '{}%'.format(job['id'], percent))
             if percent == 100 and (report['async_status'] == 'Job Completed'):
                 try:
                     complete_job = list(ar.get_result())
@@ -231,8 +239,8 @@ class FbApi(object):
     def get_async_job_percent(async_job):
         job = async_job.remote_read()
         percent = job['async_percent_completion']
-        logging.info('FB async_job #' + str(async_job['id']) +
-                     ' percent done: ' + str(percent) + '%')
+        logging.info('FB async_job #{}'' percent done:'
+                     '{}%'.format(async_job['id'], percent))
         time.sleep(30)
         return percent
 
@@ -241,19 +249,19 @@ class FbApi(object):
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
         elif e._api_error_code == 2:
-            logging.warning('An unexpected error occurred.' +
+            logging.warning('An unexpected error occurred.'
                             'Retrying request later.')
             return True
         elif e._api_error_code == 17:
-            logging.warning('Facebook rate limit reached.  Pausing for ' +
+            logging.warning('Facebook rate limit reached.  Pausing for '
                             '300 seconds.')
             time.sleep(300)
             self.date_lists.append(date_list)
             return True
         elif e._api_error_code == 1 and date_list is not None:
             if date_list[0] == date_list[-1]:
-                logging.warning('Already daily.  Reducing requested fields.' +
-                                'Error as follows: ' + str(e))
+                logging.warning('Already daily.  Reducing requested fields.'
+                                'Error as follows: {}'.format(e))
                 metrics = [x for x in field_list if x not in def_params]
                 fh, bh = self.split_list(metrics)
                 if fh and bh:
@@ -272,7 +280,7 @@ class FbApi(object):
             return True
         else:
             logging.error('Aborting as the Facebook API call resulted '
-                          'in the following error: ' + str(e))
+                          'in the following error: {}'.format(e))
             sys.exit(0)
 
     @staticmethod
@@ -320,8 +328,8 @@ class FbApi(object):
         for col in column_list:
             dirty_df = dict_df[col].apply(pd.Series).fillna(0)
             clean_df = self.clean_nested_df(dirty_df, clean_df)
-        self.df = pd.concat([clean_df, self.df], axis=1)
-        self.df = self.df.drop(nested_dict_col, axis=1)
+        self.df = pd.concat([clean_df, self.df], axis=1)  # type: pd.DataFrame
+        self.df = self.df.drop(nested_dict_col, axis=1)  # type: pd.DataFrame
 
     @staticmethod
     def clean_nested_df(dirty_df, clean_df):
@@ -331,5 +339,5 @@ class FbApi(object):
             dirty_df = dirty_df.drop(col, axis=1)
         dirty_df = dirty_df.apply(pd.to_numeric)
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
-        clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()
+        clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
