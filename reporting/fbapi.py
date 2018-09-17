@@ -40,8 +40,8 @@ breakdown_impdevice = ['impression_device']
 breakdown_country = ['country']
 breakdown_device = ['device_platform']
 
-ad_status_enbaled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW','DISAPPROVED',
-                     'PREAPPROVED','CAMPAIGN_PAUSED', 'ADSET_PAUSED',
+ad_status_enbaled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
+                     'PREAPPROVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED',
                      'PENDING_BILLING_INFO']
 ad_status_disabled = ['DELETED', 'ARCHIVED']
 
@@ -111,6 +111,7 @@ class FbApi(object):
     def parse_fields(items):
         breakdowns = []
         action_breakdowns = []
+        attribution_window = []
         fields = def_fields
         for item in items:
             if item == 'Actions':
@@ -129,7 +130,11 @@ class FbApi(object):
                 breakdowns.extend(breakdown_device)
             if item == 'Action Device':
                 action_breakdowns.extend(ab_device)
-        return fields, breakdowns, action_breakdowns
+            if 'Attribution' in item:
+                item = item.split('::')
+                attribution_window = ['{}d_click'.format(item[1]),
+                                      '{}d_view'.format(item[2])]
+        return fields, breakdowns, action_breakdowns, attribution_window
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -153,10 +158,10 @@ class FbApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields, breakdowns, action_breakdowns = self.parse_fields(fields)
+        fields, breakdowns, action_breakdowns, attr = self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
-        self.make_all_requests(fields, breakdowns, action_breakdowns)
+        self.make_all_requests(fields, breakdowns, action_breakdowns, attr)
         self.check_and_get_async_jobs(self.async_requests)
         for col in nested_col:
             try:
@@ -169,19 +174,19 @@ class FbApi(object):
         self.df = self.rename_cols()
         return self.df
 
-    def make_all_requests(self, fields, breakdowns, action_breakdowns):
+    def make_all_requests(self, fields, breakdowns, action_breakdowns, attr):
         for date_list in self.date_lists:
             sd = date_list[0]
             ed = date_list[-1]
             self.field_lists = [fields]
             for field_list in self.field_lists:
                 self.make_request(sd, ed, date_list, field_list, breakdowns,
-                                  action_breakdowns, ad_status_enbaled)
+                                  action_breakdowns, attr, ad_status_enbaled)
                 self.make_request(sd, ed, date_list, field_list, breakdowns,
-                                  action_breakdowns, ad_status_disabled)
+                                  action_breakdowns, attr, ad_status_disabled)
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
-                     action_breakdowns, ad_status):
+                     action_breakdowns, attribution_window, ad_status):
         logging.info('Making FB request for {} to {}'.format(sd, ed))
         params = {'level': AdsInsights.Level.ad,
                   'breakdowns': breakdowns,
@@ -193,6 +198,8 @@ class FbApi(object):
                   }
         if action_breakdowns:
             params['action_breakdowns'] = action_breakdowns
+        if attribution_window:
+            params['action_attribution_windows'] = attribution_window
         try:
             insights = self.account.get_insights(
                 fields=field_list,
@@ -333,8 +340,15 @@ class FbApi(object):
 
     @staticmethod
     def clean_nested_df(dirty_df, clean_df):
-        dirty_df = (dirty_df.pivot(columns='action_type', values='value')
-                    .fillna(0))
+        values = [x for x in dirty_df.columns if x != 'action_type']
+        for col in values:
+            dirty_df[col] = dirty_df[col].astype(float)
+        dirty_df = pd.pivot_table(dirty_df, columns='action_type',
+                                  values=values, index=dirty_df.index,
+                                  aggfunc='sum', fill_value=0)
+        if type(dirty_df.columns) == pd.MultiIndex:
+            dirty_df.columns = [' - '.join([str(y) for y in x]) if x[0] !=
+                                'value' else x[1] for x in dirty_df.columns]
         for col in [x for x in [0.0, 'action_type'] if x in dirty_df.columns]:
             dirty_df = dirty_df.drop(col, axis=1)
         dirty_df = dirty_df.apply(pd.to_numeric)
