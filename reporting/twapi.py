@@ -223,23 +223,27 @@ class TwApi(object):
 
     def add_tweets(self, df):
         tweet_ids = df['tweetid'].unique()
-        url = ('https://api.twitter.com/1.1/statuses/lookup.json?'
-               'id={}&include_card_uri=true'
-               .format(','.join([str(x) for x in tweet_ids])))
-        h, d = self.request(url)
         id_dict = {}
-        for x in d:
-            if 'card_uri' in x:
-                id_dict[str(x['id'])] = {'name': x['text'],
-                                         'Card name': x['card_uri']}
-            else:
-                id_dict[str(x['id'])] = {'name': x['text'], 'Card name': None}
+        tids = [tweet_ids[x:x + 100] for x in range(0, len(tweet_ids), 100)]
+        for tid in tids:
+            url = ('https://api.twitter.com/1.1/statuses/lookup.json?'
+                   'id={}&include_card_uri=true'
+                   .format(','.join([str(x) for x in tid])))
+            h, d = self.request(url)
+            id_dict = {}
+            for x in d:
+                if 'card_uri' in x:
+                    id_dict[str(x['id'])] = {'name': x['text'],
+                                             'Card name': x['card_uri']}
+                else:
+                    id_dict[str(x['id'])] = {'name': x['text'],
+                                             'Card name': None}
         df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
         return df
 
     def add_cards(self, df):
         card_uris = df['Card name'].unique()
-        card_uris = [x for x in card_uris if x is not None]
+        card_uris = [x for x in card_uris if x is not None and str(x) != 'nan']
         uri_dict = {}
         for uri in card_uris:
             url = self.create_base_url('cards')
