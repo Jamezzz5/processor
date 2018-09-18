@@ -148,8 +148,8 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
     for rule in vm_rules:
         for item in RULE_CONST:
             if item not in vm_rules[rule].keys():
-                logging.warning(item + ' not in vendormatrix for rule ' +
-                                rule + '.  The rule did not run.')
+                logging.warning('{} not in vendormatrix for rule {}.  '
+                                'The rule did not run.'.format(item, rule))
                 return df
         metrics = kwargs[vm_rules[rule][RULE_METRIC]]
         queries = kwargs[vm_rules[rule][RULE_QUERY]]
@@ -170,8 +170,8 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
             query = query.split('::')
             values = query[1].split(',')
             if query[0] not in df:
-                logging.warning(query[0] + ' not in data for rule ' +
-                                rule + '.  The rule did not run.')
+                logging.warning('{} not in data for rule {}.  '
+                                'The rule did not run.'.format(query[0], rule))
                 return df
             if query[0] == vmc.date:
                 sd = string_to_date(values[0])
@@ -182,9 +182,10 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         tdf = list(tdf.index.values)
         for metric in metrics:
             if metric not in df:
-                logging.warning(metric + ' not in data for rule ' +
-                                rule + '.  The rule did not run.')
+                logging.warning('{} not in data for rule {}.  '
+                                'The rule did not run.'.format(metric, rule))
                 continue
+            df = data_to_type(df, float_col=[metric])
             df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
                                   factor.astype(float))
     return df
