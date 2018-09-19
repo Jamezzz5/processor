@@ -113,6 +113,8 @@ class FbApi(object):
         action_breakdowns = []
         attribution_window = []
         fields = def_fields
+        time_breakdown = 1
+        level = AdsInsights.Level.ad
         for item in items:
             if item == 'Actions':
                 fields.extend(fields_actions)
@@ -134,7 +136,12 @@ class FbApi(object):
                 item = item.split('::')
                 attribution_window = ['{}d_click'.format(item[1]),
                                       '{}d_view'.format(item[2])]
-        return fields, breakdowns, action_breakdowns, attribution_window
+            if item == 'Total':
+                time_breakdown = 'all_days'
+            if item == 'Adset':
+                level = AdsInsights.Level.adset
+        return fields, breakdowns, action_breakdowns, attribution_window,\
+            time_breakdown, level
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -157,11 +164,14 @@ class FbApi(object):
         return sd, ed
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.df = pd.DataFrame()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields, breakdowns, action_breakdowns, attr = self.parse_fields(fields)
+        fields, breakdowns, action_breakdowns, attr, time_breakdown, level = \
+            self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
-        self.make_all_requests(fields, breakdowns, action_breakdowns, attr)
+        self.make_all_requests(fields, breakdowns, action_breakdowns, attr,
+                               time_breakdown, level)
         self.check_and_get_async_jobs(self.async_requests)
         for col in nested_col:
             try:
@@ -174,24 +184,42 @@ class FbApi(object):
         self.df = self.rename_cols()
         return self.df
 
-    def make_all_requests(self, fields, breakdowns, action_breakdowns, attr):
-        for date_list in self.date_lists:
-            sd = date_list[0]
-            ed = date_list[-1]
-            self.field_lists = [fields]
-            for field_list in self.field_lists:
-                self.make_request(sd, ed, date_list, field_list, breakdowns,
-                                  action_breakdowns, attr, ad_status_enbaled)
-                self.make_request(sd, ed, date_list, field_list, breakdowns,
-                                  action_breakdowns, attr, ad_status_disabled)
+    def make_all_requests(self, fields, breakdowns, action_breakdowns, attr,
+                          time_breakdown, level):
+        self.field_lists = [fields]
+        if time_breakdown == 'all_days':
+            sd = self.date_lists[0][0]
+            ed = self.date_lists[-1][0]
+            self.request_for_fields(sd, ed, self.date_lists, fields,
+                                    breakdowns, action_breakdowns, attr,
+                                    time_breakdown, level)
+        else:
+            for date_list in self.date_lists:
+                sd = date_list[0]
+                ed = date_list[-1]
+                self.request_for_fields(sd, ed, date_list, fields, breakdowns,
+                                        action_breakdowns, attr,
+                                        time_breakdown, level)
+
+    def request_for_fields(self, sd, ed, date_list, fields, breakdowns,
+                           action_breakdowns, attr, time_breakdown, level):
+        self.field_lists = [fields]
+        for field_list in self.field_lists:
+            self.make_request(sd, ed, date_list, field_list, breakdowns,
+                              action_breakdowns, attr, ad_status_enbaled,
+                              time_breakdown, level)
+            self.make_request(sd, ed, date_list, field_list, breakdowns,
+                              action_breakdowns, attr, ad_status_disabled,
+                              time_breakdown, level)
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
-                     action_breakdowns, attribution_window, ad_status):
+                     action_breakdowns, attribution_window, ad_status,
+                     time_breakdown=1, level=AdsInsights.Level.ad):
         logging.info('Making FB request for {} to {}'.format(sd, ed))
-        params = {'level': AdsInsights.Level.ad,
+        params = {'level': level,
                   'breakdowns': breakdowns,
                   'time_range': {'since': str(sd), 'until': str(ed), },
-                  'time_increment': 1,
+                  'time_increment': time_breakdown,
                   'filtering': [{'field': 'ad.effective_status',
                                  'operator': 'IN',
                                  'value': ad_status}]
