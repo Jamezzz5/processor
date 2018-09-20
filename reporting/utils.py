@@ -33,7 +33,7 @@ def import_read_csv(filename, path=None):
     except UnicodeDecodeError:
         df = pd.read_csv(filename, parse_dates=True, encoding='iso-8859-1')
     except pd.io.common.EmptyDataError:
-        logging.warning('Raw Data empty.  Continuing.')
+        logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         df = None
     return df
 
