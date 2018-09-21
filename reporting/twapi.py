@@ -152,6 +152,8 @@ class TwApi(object):
             url += '/{}'.format(entity)
             if entity != 'cards':
                 url += '?count=1000'
+            if entity == 'promoted_tweets':
+                url += '&with_deleted=true'
         return url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -181,7 +183,7 @@ class TwApi(object):
     def get_df_for_date(self, ids_lists, fields, sd, ed):
         df = pd.DataFrame()
         for ids in ids_lists:
-            ids = filter(None, ids)
+            # ids = filter(None, ids)
             url = self.create_stats_url(fields, ids, sd, ed)
             header, data = self.request(url)
             self.dates = self.get_dates(data)
@@ -286,7 +288,7 @@ class TwApi(object):
                                   reqdformat).date()
         ed = dt.datetime.strptime(data[jsonreq][jsonparam][jsonet],
                                   reqdformat).date()
-        dates = self.list_dates(sd + dt.timedelta(days=1), ed)
+        dates = self.list_dates(sd, ed)
         dates = {k: v for k, v in enumerate(dates)}
         return dates
 
