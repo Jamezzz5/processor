@@ -116,6 +116,17 @@ class TwApi(object):
         headers, data = self.request(url)
         id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
                    for x in data['data']}
+        id_dict = self.page_through_ids(data, id_dict, url, eid, name, parent)
+        return id_dict
+
+    def page_through_ids(self, data, id_dict, first_url, eid, name, parent):
+        if data['next_cursor']:
+            url = "{}&cursor={}".format(first_url, data['next_cursor'])
+            headers, data = self.request(url)
+            for x in data['data']:
+                id_dict[x[eid]] = {'parent': x[parent], 'name': x[name]}
+            id_dict = self.page_through_ids(data, id_dict, first_url,
+                                            eid, name, parent)
         return id_dict
 
     def get_all_id_dicts(self):
@@ -183,7 +194,6 @@ class TwApi(object):
     def get_df_for_date(self, ids_lists, fields, sd, ed):
         df = pd.DataFrame()
         for ids in ids_lists:
-            # ids = filter(None, ids)
             url = self.create_stats_url(fields, ids, sd, ed)
             header, data = self.request(url)
             self.dates = self.get_dates(data)
