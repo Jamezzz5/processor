@@ -92,6 +92,7 @@ class Dict(object):
             for idx, c in enumerate(delimit_list):
                 cur_del = delimit_list[idx]
                 cur_col = new_col_list[idx]
+                error[col] = error[col].astype('U')
                 error[cur_col] = error[col].str.split(cur_del).str[0]
                 error[col] = error[col].str.split(cur_del).str[1:]
                 error[col] = error[col].apply(lambda x:
