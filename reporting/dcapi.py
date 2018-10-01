@@ -96,6 +96,7 @@ class DcApi(object):
             r = self.client.get(files_url)
             if ('status' in r.json() and
                     r.json()['status'] == 'REPORT_AVAILABLE'):
+                self.get_client()
                 self.r = self.client.get('{}?alt=media'.format(files_url))
             else:
                 if x == 100:
