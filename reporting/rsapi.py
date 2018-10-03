@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import logging
@@ -7,14 +8,16 @@ import datetime as dt
 import reporting.utils as utl
 
 config_path = utl.config_path
-games_url = 'https://api.redshell.io/games'
-stats_url = 'https://api.redshell.io/stats'
+games_url = 'https://api.marketing.gamesight.io/games'
+games_version = '1.1.0'
+stats_url = 'https://api.marketing.gamesight.io/stats'
+stats_version = '2.0.0'
 
-def_groups = ['campaign_id', 'date', 'aff_sub2', 'aff_sub3', 'aff_sub4',
-              'aff_sub5']
+def_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad',
+              'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
 def_fields = ['clicks', 'converted_users', 'conversion_rate', 'launches',
               'launches_per_user', 'average_user_retention']
-nested_cols = ['retention', 'custom_events']
+nested_cols = []
 def_fields.extend(nested_cols)
 
 
@@ -32,14 +35,14 @@ class RsApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
         logging.info('Loading RS config file: {}'.format(config))
-        self.config_file = config_path + config
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.set_headers()
+        self.set_headers(games_version)
 
     def load_config(self):
         try:
@@ -55,14 +58,14 @@ class RsApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in RS config file.'
+                logging.warning('{} not in RS config file.  '
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
-    def set_headers(self):
+    def set_headers(self, version):
         self.headers = {'Authorization': self.api_key,
                         'Content-Type': 'application/json',
-                        'X-Api-Version': '1.1'}
+                        'X-Api-Version': version}
 
     def get_id(self):
         r = requests.get(games_url, headers=self.headers)
@@ -73,7 +76,7 @@ class RsApi(object):
     def date_check(self, sd, ed):
         sd, ed = self.get_data_default_check(sd, ed)
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start data' +
+            logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed - dt.timedelta(days=1)
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
@@ -104,6 +107,7 @@ class RsApi(object):
 
     def get_raw_data(self, sd, ed):
         r_data = self.get_request_data(sd, ed)
+        self.set_headers(stats_version)
         self.r = requests.post(stats_url, headers=self.headers, json=r_data)
         self.df = self.data_to_df()
 
