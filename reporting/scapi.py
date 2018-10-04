@@ -111,8 +111,9 @@ class ScApi(object):
         self.get_client()
         try:
             r = self.client.get(act_url)
-        except requests.adapters._SSLError:
-            logging.warning('SSL Error - max retries exceeded.  Retrying.')
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
             r = self.make_request(add_url)
         return r
 
