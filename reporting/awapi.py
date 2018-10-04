@@ -1,7 +1,9 @@
 import os
 import sys
 import yaml
+import time
 import logging
+import requests
 import numpy as np
 import pandas as pd
 import datetime as dt
@@ -54,7 +56,7 @@ class AwApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix. ' +
+            logging.warning('Config file name not in vendor matrix. '
                             'Aborting.')
             sys.exit(0)
         logging.info('Loading Adwords config file: {}'.format(config))
@@ -84,8 +86,8 @@ class AwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning( '{} not in Sizmek config file.  '
-                                 'Aborting.'.format(item))
+                logging.warning('{} not in AW config file.  '
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     @staticmethod
@@ -126,7 +128,7 @@ class AwApi(object):
                             'was set to end date.')
             sd = ed
         logging.info('Getting Adwords data from {} until {}'.format(sd, ed))
-        report_downloader = self.adwords_client.GetReportDownloader(self.v)
+        report_downloader = self.get_downloader()
         report = {
             'reportName': 'Adwords_Report',
             'dateRangeType': 'CUSTOM_DATE',
@@ -151,3 +153,12 @@ class AwApi(object):
         if 'Views' in self.df.columns:
             self.df = self.video_calc(self.df)
         return self.df
+
+    def get_downloader(self):
+        try:
+            report_downloader = self.adwords_client.GetReportDownloader(self.v)
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+            report_downloader = self.get_downloader()
+        return report_downloader
