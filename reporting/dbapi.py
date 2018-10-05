@@ -1,9 +1,8 @@
+import os
 import sys
 import json
-import time
 import logging
 import pandas as pd
-import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
@@ -28,14 +27,13 @@ class DbApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
         logging.info('Loading DB config file: {}'.format(config))
-        self.config_file = config_path + config
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.config_file = config_path + config
 
     def load_config(self):
         try:
@@ -93,4 +91,8 @@ class DbApi(object):
                                 'Response: {}'.format(self.r.json()))
         report_url = (self.r.json()['metadata']
                       ['googleCloudStoragePathForLatestReport'])
-        self.df = pd.read_csv(report_url)
+        if report_url:
+            self.df = pd.read_csv(report_url)
+        else:
+            logging.warning('Report does not exist.  Create it.')
+            sys.exit(0)
