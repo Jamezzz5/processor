@@ -362,15 +362,15 @@ class FbApi(object):
             clean_df = self.clean_nested_df(dict_df, clean_df)
         for col in column_list:
             dirty_df = dict_df[col].apply(pd.Series).fillna(0)
-            clean_df = self.clean_nested_df(dirty_df, clean_df)
+            if 'action_type' in dirty_df.columns:
+                clean_df = self.clean_nested_df(dirty_df, clean_df)
         self.df = pd.concat([clean_df, self.df], axis=1)  # type: pd.DataFrame
         self.df = self.df.drop(nested_dict_col, axis=1)  # type: pd.DataFrame
 
     @staticmethod
     def clean_nested_df(dirty_df, clean_df):
         values = [x for x in dirty_df.columns if x != 'action_type']
-        for col in values:
-            dirty_df[col] = dirty_df[col].astype(float)
+        dirty_df = utl.data_to_type(dirty_df, float_col=values)
         dirty_df = pd.pivot_table(dirty_df, columns='action_type',
                                   values=values, index=dirty_df.index,
                                   aggfunc='sum', fill_value=0)
