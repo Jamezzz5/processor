@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+import numpy as np
 import pandas as pd
 import reporting.utils as utl
 import reporting.dictcolumns as dctc
@@ -114,7 +115,7 @@ class Dict(object):
         self.data_dict = rc.loop(self.data_dict)
 
     def apply_constants(self):
-        dcc = DictConstantConfig()
+        dcc = DictConstantConfig(self.filename)
         dcc.read(dctc.filename_con_config)
         self.data_dict = dcc.apply_constants_to_dict(self.data_dict)
 
@@ -248,7 +249,8 @@ class DictRelational(object):
 
 
 class DictConstantConfig(object):
-    def __init__(self):
+    def __init__(self, parent_dict):
+        self.parent_dict = parent_dict
         self.csvpath = utl.config_path
         utl.dir_check(utl.config_path)
         self.df = pd.DataFrame()
@@ -262,8 +264,30 @@ class DictConstantConfig(object):
         except IOError:
             logging.debug('No Constant Dictionary config')
             return None
+        self.check_for_dict_col(configfile)
+        self.filter_df()
         self.dict_col_names = self.df[dctc.DICT_COL_NAME].tolist()
         self.dict_constants = self.df.set_index(dctc.DICT_COL_NAME).to_dict()
+
+    def check_for_dict_col(self, configfile):
+        if dctc.DICT_COL_DICTNAME not in self.df.columns:
+            self.df[dctc.DICT_COL_DICTNAME] = np.nan
+            self.write(self.df, configfile)
+
+    def write(self, df, configfile):
+        logging.debug('Writing {}'.format(configfile))
+        try:
+            df.to_csv(os.path.join(self.csvpath, configfile), index=False,
+                      encoding='utf-8')
+        except IOError:
+            logging.warning('{} could not be opened.  This dictionary'
+                            'was not saved.'.format(configfile))
+
+    def filter_df(self):
+        self.df[dctc.DICT_COL_DICTNAME] = (self.df[dctc.DICT_COL_DICTNAME]
+                                           .fillna(self.parent_dict))
+        self.df = self.df[self.df[dctc.DICT_COL_DICTNAME] == self.parent_dict]
+        self.df = self.df.drop(dctc.DICT_COL_DICTNAME, axis=1)
 
     def get(self):
         return self.dict_constants
