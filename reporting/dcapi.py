@@ -3,6 +3,7 @@ import sys
 import json
 import time
 import logging
+import requests
 import pandas as pd
 import reporting.utils as utl
 from io import StringIO
@@ -81,31 +82,59 @@ class DcApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.get_client()
-        self.get_raw_data()
+        files_url = self.get_files_url()
+        self.r = self.get_report(files_url)
+        self.df = pd.read_csv(StringIO(self.r.text), skiprows=10)
         return self.df
 
-    def get_raw_data(self):
+    def get_report(self, files_url):
+        for x in range(1, 101):
+            report_status = self.check_file(files_url, attempt=x)
+            if report_status:
+                break
+        logging.info('Report available.  Downloading.')
+        report_url = '{}?alt=media'.format(files_url)
+        self.r = self.make_request(report_url, 'get')
+        return self.r
+
+    def check_file(self, files_url, attempt=1):
+        r = self.make_request(files_url, 'get')
+        if 'status' in r.json() and r.json()['status'] == 'REPORT_AVAILABLE':
+            return True
+        else:
+            if attempt == 100:
+                logging.warning('Report could not download.  Aborting')
+                sys.exit(0)
+            logging.info('Report unavailable.  Attempt {}.  '
+                         'Response: {}'.format(attempt, r.json()))
+            time.sleep(30)
+            return False
+
+    def get_files_url(self):
         full_url = self.create_url()
-        self.r = self.client.post('{}/run'.format(full_url))
+        self.r = self.make_request('{}/run'.format(full_url), 'post')
         if 'error' in self.r.json():
             self.request_error()
         file_id = self.r.json()['id']
         files_url = '{}/files/{}'.format(full_url, file_id)
-        for x in range(1, 101):
-            r = self.client.get(files_url)
-            if ('status' in r.json() and
-                    r.json()['status'] == 'REPORT_AVAILABLE'):
-                self.get_client()
-                self.r = self.client.get('{}?alt=media'.format(files_url))
-            else:
-                if x == 100:
-                    logging.warning('Report could not download.  Aborting')
-                    sys.exit(0)
-                logging.info('Report unavailable.  Attempt {}.  '
-                             'Response: {}'.format(x, r.json()))
-                time.sleep(30)
-        self.df = pd.read_csv(StringIO(self.r.text), skiprows=10)
+        return files_url
+
+    def make_request(self, url, method):
+        self.get_client()
+        try:
+            self.r = self.raw_request(url, method)
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+            self.r = self.make_request(url, method)
+        return self.r
+
+    def raw_request(self, url, method):
+        if method == 'get':
+            self.r = self.client.get(url)
+        elif method == 'post':
+            self.r = self.client.post(url)
+        return self.r
 
     def request_error(self):
         logging.warning('Unknown error: {}'.format(self.r.text))
