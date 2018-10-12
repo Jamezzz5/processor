@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 import datetime as dt
 import reporting.vmcolumns as vmc
+import reporting.dictcolumns as dctc
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -133,6 +134,9 @@ def date_removal(df, date_col_name, start_date, end_date):
 
 def col_removal(df, key, removal_cols):
     logging.debug('Dropping unnecessary columns')
+    if removal_cols == ['ALL']:
+        removal_cols = [x for x in df.columns
+                        if x not in dctc.COLS + vmc.datacol]
     for col in removal_cols:
         if col not in df:
             if col == 'nan':
