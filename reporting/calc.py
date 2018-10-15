@@ -53,10 +53,8 @@ def clicks_by_place_date(df):
     df[PLACE_DATE] = (df[vmc.date].astype('U') + df[dctc.PN].astype('U'))
     df_cpd = df.loc[df[dctc.BM].isin([BM_FLAT, BM_FLAT2, BM_FLATIMP])]
     if not df_cpd.empty:
-        df_cpd = (pd.pivot_table(df_cpd, values=[vmc.clicks, vmc.impressions],
-                                 index=df_cpd.index, dropna=False,
-                                 aggfunc=lambda x: x / float(x.sum()))
-                  .astype(float))  # type: pd.DataFrame
+        df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
+                  .apply(lambda x: x / x.astype(float).sum()))
         df_cpd.columns = [CLI_PD, IMP_PD]
         df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
         for col in [CLI_PD, IMP_PD]:
