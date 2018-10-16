@@ -73,6 +73,7 @@ class FbApi(object):
         self.app_secret = None
         self.access_token = None
         self.act_id = None
+        self.campaign_filter = None
         self.config_list = []
         self.date_lists = None
         self.field_lists = None
@@ -97,6 +98,7 @@ class FbApi(object):
         self.app_secret = self.config['app_secret']
         self.access_token = self.config['access_token']
         self.act_id = self.config['act_id']
+        self.campaign_filter = self.config['campaign_filter']
         self.config_list = [self.app_id, self.app_secret, self.access_token,
                             self.act_id]
 
@@ -228,6 +230,10 @@ class FbApi(object):
             params['action_breakdowns'] = action_breakdowns
         if attribution_window:
             params['action_attribution_windows'] = attribution_window
+        if self.campaign_filter:
+            params['filtering'].append({'field': 'campaign.name',
+                                        'operator': 'CONTAIN',
+                                        'value': self.campaign_filter})
         try:
             insights = self.account.get_insights(
                 fields=field_list,
