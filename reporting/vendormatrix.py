@@ -316,6 +316,22 @@ def df_transform(df, transform):
                              merge_col=[left_merge, right_merge])
         df = err.merge_df
         df = df.drop('_merge', axis=1)
+    if transform_type == 'DateSplit':
+        start_date = transform[1]
+        end_date = transform[2]
+        if len(transform) == 4:
+            exempt_col = transform[3].split('|')
+        else:
+            exempt_col = []
+        df = utl.data_to_type(df, date_col=[end_date, start_date])
+        df['days'] = (df[end_date] - df[start_date]).dt.days + 1
+        n_cols = [x for x in df.columns if df[x].dtype in ['int64', 'float64']
+                  and x not in exempt_col + ['days']]
+        df[n_cols] = df[n_cols].div(df['days'], axis=0)
+        df = df.loc[df.index.repeat(df['days'])]
+        df[start_date] = (df.groupby(level=0)[start_date].transform(
+            lambda x: pd.date_range(start=x.iat[0], periods=len(x))))
+        df = df.drop('days', axis=1).reset_index(drop=True)
     return df
 
 
