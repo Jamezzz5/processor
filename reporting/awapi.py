@@ -49,6 +49,7 @@ class AwApi(object):
         self.developer_token = None
         self.refresh_token = None
         self.client_customer_id = None
+        self.campaign_filter = None
         self.config_list = []
         self.adwords_client = None
         self.v = 'v201806'
@@ -79,6 +80,7 @@ class AwApi(object):
         self.developer_token = self.config['developer_token']
         self.refresh_token = self.config['refresh_token']
         self.client_customer_id = self.config['client_customer_id']
+        self.campaign_filter = self.config['campaign_filter']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.developer_token, self.refresh_token,
                             self.client_customer_id]
@@ -137,6 +139,10 @@ class AwApi(object):
             }
         selector = {'fields': fields,
                     'dateRange': {'min': sd, 'max': ed}}
+        if self.campaign_filter:
+            selector['predicates'] = {'field': 'CampaignName',
+                                      'operator': 'CONTAINS',
+                                      'values': self.campaign_filter}
         if self.report_type == 'UAC':
             selector['predicates'] = {'field': 'advertisingChannelSubType',
                                       'operator': 'EQUALS',
