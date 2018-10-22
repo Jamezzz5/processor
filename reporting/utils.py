@@ -136,7 +136,7 @@ def col_removal(df, key, removal_cols):
     logging.debug('Dropping unnecessary columns')
     if removal_cols == ['ALL']:
         removal_cols = [x for x in df.columns
-                        if x not in dctc.COLS + vmc.datacol]
+                        if x not in dctc.COLS + vmc.datacol + vmc.ad_rep_cols]
     for col in removal_cols:
         if col not in df:
             if col == 'nan':

@@ -167,3 +167,4 @@ AD_COST = 'Adserving Cost'
 AM_CPM = 'CPM'
 
 REP_COST = 'Reporting Cost'
+ad_rep_cols = [AD_COST, REP_COST]
