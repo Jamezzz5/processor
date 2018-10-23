@@ -152,7 +152,7 @@ class ScApi(object):
         cids = self.get_campaigns()
         for cid in cids:
             self.get_raw_data(sd, ed, cid)
-            self.df['Campaign Name'] = cids[cid]
+        self.df['Campaign Name'] = self.df['Campaign Name'].map(cids)
         self.add_names_to_df()
         return self.df
 
@@ -162,6 +162,7 @@ class ScApi(object):
                                  params={'start_time': sd, 'end_time': ed})
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
+            tdf['Campaign Name'] = cid
             self.df = self.df.append(tdf)
         else:
             self.request_error(sd, ed, cid)
