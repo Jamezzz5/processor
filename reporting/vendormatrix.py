@@ -1,13 +1,13 @@
-import logging
+import os
 import sys
-import os.path
-import pandas as pd
+import logging
 import numpy as np
-import reporting.vmcolumns as vmc
+import pandas as pd
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
-import reporting.dictcolumns as dctc
 import reporting.errorreport as er
+import reporting.dictcolumns as dctc
 
 log = logging.getLogger()
 
@@ -201,7 +201,9 @@ def combining_data(df, key, columns, **kwargs):
         if col in df.columns and col not in kwargs[col]:
             df[col] = 0
         for item in kwargs[col]:
-            if str(item) == 'nan' or col == item:
+            if str(item) == 'nan' and col == vmc.date:
+                df[vmc.date] = 0
+            elif str(item) == 'nan' or col == item:
                 continue
             if item not in df:
                 logging.warning('{} is not in {}.  It was not'
