@@ -161,7 +161,7 @@ class VendorMatrix(object):
 
     def vm_loop(self):
         logging.info('Initializing Vendor Matrix Loop')
-        self.df = pd.DataFrame(columns=[vmc.datacol])
+        self.df = pd.DataFrame()
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)

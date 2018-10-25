@@ -55,7 +55,7 @@ def clicks_by_place_date(df):
     if not df_cpd.empty:
         df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
                   .apply(lambda x: x / x.astype(float).sum()))
-        df_cpd.columns = [CLI_PD, IMP_PD]
+        df_cpd.columns = [IMP_PD, CLI_PD]
         df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
         for col in [CLI_PD, IMP_PD]:
             df[col] = df[col].replace(np.nan, 0).astype(float)
@@ -212,8 +212,9 @@ def total_cost_calculation(df):
 
 
 def calculate_cost(df):
-    df = net_cost_calculation(df)
-    df = net_cost_final_calculation(df)
-    df = agency_fees_calculation(df)
-    df = total_cost_calculation(df)
+    if vmc.cost in df.columns:
+        df = net_cost_calculation(df)
+        df = net_cost_final_calculation(df)
+        df = agency_fees_calculation(df)
+        df = total_cost_calculation(df)
     return df
