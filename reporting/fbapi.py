@@ -244,11 +244,19 @@ class FbApi(object):
             return True
         self.async_requests.append(insights)
 
+    def get_report(self, ar):
+        try:
+            report = ar.remote_read()
+        except FacebookRequestError as e:
+            self.request_error(e)
+            report = self.get_report(ar)
+        return report
+
     def check_and_get_async_jobs(self, async_jobs):
         self.async_requests = []
         for job in async_jobs:
             ar = AdReportRun(job['id'])
-            report = ar.remote_read()
+            report = self.get_report(ar)
             percent = report['async_percent_completion']
             logging.info('FB async_job #{} percent done '
                          '{}%'.format(job['id'], percent))
