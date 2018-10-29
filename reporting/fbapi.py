@@ -373,10 +373,11 @@ class FbApi(object):
                        l not in ['action_type', 'value']]
         clean_df = pd.DataFrame()
         if 'action_type' in dict_df.columns:
-            clean_df = self.clean_nested_df(dict_df, clean_df)
+            column_list += ['action_type']
         for col in column_list:
             dirty_df = dict_df[col].apply(pd.Series).fillna(0)
             if 'action_type' in dirty_df.columns:
+                dirty_df = utl.data_to_type(dirty_df, str_col=['action_type'])
                 clean_df = self.clean_nested_df(dirty_df, clean_df)
         self.df = pd.concat([clean_df, self.df], axis=1)  # type: pd.DataFrame
         self.df = self.df.drop(nested_dict_col, axis=1)  # type: pd.DataFrame
