@@ -34,6 +34,8 @@ fb_3_views = 'Facebook :03s Views'
 fb_10_views = 'Facebook :10s Views'
 dcm_service_fee = 'DCM Service Fee'
 reach = 'Reach'
+reach_c = 'Reach - Campaign'
+reach_d = 'Reach - Date'
 frequency = 'Frequency'
 engagements = 'Engagements'
 likes = 'Likes'
@@ -136,13 +138,13 @@ vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            views100, tv_views, fb_3_views, fb_10_views, dcm_service_fee, reach,
-           frequency, engagements, likes, comments, shares, reactions, revenue,
-           revenue_userstart, revenue_userstart_30day, ret_day1, ret_day3,
-           ret_day7, ret_day14, ret_day30, ret_day60, ret_day90, ret_day120,
-           landingpage, homepage, btnclick, purchase, checkout, signup,
-           newuser, activeuser, totaluser, payuser, download, login,
-           transaction, transaction_revenue, mplay, gplay, gplay3, gplay6,
-           ga_sessions, ga_goal1, ga_goal2, ga_pageviews, ga_bounces,
+           reach_c, reach_d, frequency, engagements, likes, comments, shares,
+           reactions, revenue, revenue_userstart, revenue_userstart_30day,
+           ret_day1, ret_day3, ret_day7, ret_day14, ret_day30, ret_day60,
+           ret_day90, ret_day120, landingpage, homepage, btnclick, purchase,
+           checkout, signup, newuser, activeuser, totaluser, payuser, download,
+           login, transaction, transaction_revenue, mplay, gplay, gplay3,
+           gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews, ga_bounces,
            landingpagepi, homepagepi, btnclickpi, purchasepi, checkoutpi,
            signuppi, newuserpi, activeuserpi, downloadpi, loginpi, gplaypi,
            gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
