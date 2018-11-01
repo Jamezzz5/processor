@@ -311,8 +311,11 @@ def df_transform(df, transform):
         left_merge = transform[2]
         right_merge = transform[3]
         merge_df = pd.read_csv(merge_file)
-        df[left_merge] = df[left_merge].astype('U')
-        merge_df[right_merge] = merge_df[right_merge].astype('U')
+        dfs = {left_merge: df, right_merge: merge_df}
+        for col in dfs:
+            if dfs[col][col].dtype == 'float64':
+                dfs[col][col] = dfs[col][col].fillna(0).astype('int')
+            dfs[col][col] = dfs[col][col].astype('U')
         filename = 'Merge-{}-{}.csv'.format(left_merge, right_merge)
         err = er.ErrorReport(df, merge_df, None, filename,
                              merge_col=[left_merge, right_merge])
