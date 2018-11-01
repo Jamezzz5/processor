@@ -80,10 +80,11 @@ class AwApi(object):
         self.developer_token = self.config['developer_token']
         self.refresh_token = self.config['refresh_token']
         self.client_customer_id = self.config['client_customer_id']
-        self.campaign_filter = self.config['campaign_filter']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.developer_token, self.refresh_token,
                             self.client_customer_id]
+        if 'campaign_filter' in self.config:
+            self.campaign_filter = self.config['campaign_filter']
 
     def check_config(self):
         for item in self.config_list:
