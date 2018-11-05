@@ -34,11 +34,14 @@ class ImportHandler(object):
         if str(api_merge) != 'nan':
             api_df = self.merge_df(api_df, filename, date_col, start_date,
                                    end_date, first_row, last_row, api_merge)
-        full_file = os.path.join(utl.raw_path, filename)
+        if '/' in filename:
+            full_file = filename
+        else:
+            full_file = os.path.join(utl.raw_path, filename)
         try:
             api_df.to_csv(full_file, index=False, encoding='utf-8')
         except IOError:
-            logging.warning('{} could not be opened.'
+            logging.warning('{} could not be opened.  '
                             'API data was not saved.'.format(full_file))
 
     def merge_df(self, api_df, filename, date_col, start_date, end_date,
