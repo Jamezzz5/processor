@@ -76,6 +76,7 @@ ga_goal1 = 'GA - Goal1 Completions'
 ga_goal2 = 'GA - Goal2 Completions'
 ga_pageviews = 'GA - PageViews'
 ga_bounces = 'GA - Bounces'
+ga_timeonpage = 'GA - Time On Page'
 landingpagepi = 'Landing Page' + postimp
 homepagepi = 'Homepage' + postimp
 btnclickpi = 'Button Click' + postimp
@@ -145,9 +146,9 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            checkout, signup, newuser, activeuser, totaluser, payuser, download,
            login, transaction, transaction_revenue, mplay, gplay, gplay3,
            gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews, ga_bounces,
-           landingpagepi, homepagepi, btnclickpi, purchasepi, checkoutpi,
-           signuppi, newuserpi, activeuserpi, downloadpi, loginpi, gplaypi,
-           gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
+           ga_timeonpage, landingpagepi, homepagepi, btnclickpi, purchasepi,
+           checkoutpi, signuppi, newuserpi, activeuserpi, downloadpi, loginpi,
+           gplaypi, gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
            purchasepc, checkoutpc, signuppc, newuserpc, activeuserpc,
            downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc, sm_totalbuzz,
            sm_totalbuzzpost, sm_totalreplies, sm_totalreposts,

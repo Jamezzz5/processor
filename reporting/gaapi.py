@@ -1,8 +1,9 @@
+import os
 import sys
 import json
 import logging
-import datetime as dt
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
@@ -10,7 +11,7 @@ config_path = utl.config_path
 base_url = 'https://www.googleapis.com/analytics/v3/data/ga'
 def_metrics = ['sessions', 'goal1Completions', 'goal2Completions', 'users',
                'newUsers', 'bounces', 'pageviews', 'totalEvents',
-               'uniqueEvents']
+               'uniqueEvents', 'timeOnPage']
 def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
             'adContent', 'country']
 
@@ -32,21 +33,20 @@ class GaApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
-        logging.info('Loading GA config file: ' + str(config))
-        self.config_file = config_path + config
+        logging.info('Loading GA config file:{}'.format(config))
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.config_file = config_path + config
 
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.config_file + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
@@ -60,7 +60,8 @@ class GaApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in GA config file.  Aborting.')
+                logging.warning('{} not in GA config file.  '
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     def get_client(self):
@@ -85,14 +86,14 @@ class GaApi(object):
             fields = def_dims
         return sd, ed, fields
 
-    def create_url(self, sd, ed, start_index):
+    def create_url(self, sd, ed, start_index, metric):
         ids_url = '?ids=ga:{}'.format(self.ga_id)
         sd_url = '&start-date={}'.format(sd)
         ed_url = '&end-date={}'.format(ed)
         dim_url = '&dimensions={}'.format(','.join('ga:' + x
                                                    for x in def_dims))
         metrics_url = '&metrics={}'.format(','.join('ga:' + x
-                                                    for x in def_metrics))
+                                                    for x in metric))
         start_index_url = '&start-index={}'.format(start_index)
         max_results_url = '&max-results=10000'
         full_url = (base_url + ids_url + sd_url + ed_url + dim_url +
@@ -102,24 +103,28 @@ class GaApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start date' +
+            logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         self.get_client()
         start_index = 1
-        self.get_raw_data(sd, ed, start_index)
+        metrics = [def_metrics[x:x + 10]
+                   for x in range(0, len(def_metrics), 10)]
+        for metric in metrics:
+            self.get_raw_data(sd, ed, start_index, metric)
         total_results = self.r.json()['totalResults']
         total_pages = range(total_results // 10000 +
                             ((total_results % 10000) > 0))[1:]
         start_indices = [(10000 * x) + 1 for x in total_pages]
         for start_index in start_indices:
-            self.get_raw_data(sd, ed, start_index)
+            for metric in metrics:
+                self.get_raw_data(sd, ed, start_index, metric)
         return self.df
 
-    def get_raw_data(self, sd, ed, start_index):
-        full_url = self.create_url(sd, ed, start_index)
+    def get_raw_data(self, sd, ed, start_index, metric):
+        full_url = self.create_url(sd, ed, start_index, metric)
         self.r = self.client.get(full_url)
         tdf = self.data_to_df(self.r)
         self.df = self.df.append(tdf)
