@@ -42,13 +42,14 @@ class VendorMatrix(object):
         self.s3_dna_key = []
         self.vm_rules_dict = {}
         self.ven_param = None
+        self.plan_omit_list = None
+        self.process_omit_list = None
         self.tdf = None
         self.df = None
         self.vm_parse()
         self.vm_import_keys()
         self.vm_rules()
-        self.plan_omit_list = [k for k, v in self.vm[vmc.omit_plan].items()
-                               if str(v) != str('nan')]
+        self.make_omit_lists()
 
     def read(self):
         if not os.path.isfile(os.path.join(csv_path, csv_file)):
@@ -128,6 +129,12 @@ class VendorMatrix(object):
                 else:
                     self.vm_rules_dict[key_split[1]] = {key_split[2]: key}
 
+    def make_omit_lists(self):
+        self.plan_omit_list = [k for k, v in self.vm[vmc.omit_plan].items()
+                               if str(v) == 'PLAN']
+        self.process_omit_list = [k for k, v in self.vm[vmc.omit_plan].items()
+                                  if str(v) == 'ALL']
+
     def vendor_set(self, vk):
         ven_param = {x: self.vm[x][vk] for x in self.vm}
         return ven_param
@@ -154,8 +161,8 @@ class VendorMatrix(object):
 
     def sort_vendor_list(self):
         self.set_full_filename()
-        self.vl = sorted((x for x in self.vl
-                          if os.path.isfile(self.vm[vmc.filename][x])),
+        self.vl = sorted((x for x in self.vl if x not in self.process_omit_list
+                          and os.path.isfile(self.vm[vmc.filename][x])),
                          key=lambda x: os.stat(self.vm[vmc.filename][x]))
         self.vl.append(plan_key)
 
@@ -316,6 +323,7 @@ def df_transform(df, transform):
             if dfs[col][col].dtype == 'float64':
                 dfs[col][col] = dfs[col][col].fillna(0).astype('int')
             dfs[col][col] = dfs[col][col].astype('U')
+            dfs[col][col] = dfs[col][col].str.strip('.0')
         filename = 'Merge-{}-{}.csv'.format(left_merge, right_merge)
         err = er.ErrorReport(df, merge_df, None, filename,
                              merge_col=[left_merge, right_merge])
