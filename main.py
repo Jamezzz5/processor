@@ -1,13 +1,14 @@
+import sys
 import logging
 import argparse
-import sys
-import reporting.vendormatrix as vm
-import reporting.dictionary as dct
-import reporting.importhandler as ih
 import reporting.calc as cal
 import reporting.export as exp
+import reporting.analyze as az
+import reporting.dictionary as dct
+import reporting.vendormatrix as vm
+import reporting.importhandler as ih
 
-formatter = logging.Formatter('%(asctime)s [%(module)14s]' +
+formatter = logging.Formatter('%(asctime)s [%(module)14s]'
                               '[%(levelname)8s] %(message)s')
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -39,6 +40,7 @@ parser.add_argument('--ftp', choices=['all', 'sz'])
 parser.add_argument('--dbi', choices=['all', 'dna'])
 parser.add_argument('--s3', choices=['all', 'dna'])
 parser.add_argument('--noprocess', action='store_true')
+parser.add_argument('--analyze', action='store_true')
 parser.add_argument('--update', choices=['all', 'vm', 'dct'])
 parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
 args = parser.parse_args()
@@ -51,6 +53,7 @@ def main():
         vm.vm_update()
     if args.update == 'all' or args.update == 'dct':
         dct.dict_update()
+    df = None
     matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)
@@ -74,6 +77,9 @@ def main():
         except IOError:
             logging.warning('{} could not be opened.  '
                             'Final Output not updated.'.format(OUTPUT_FILE))
+    if args.analyze:
+        aly = az.Analyze(df=df, file=OUTPUT_FILE, matrix=matrix)
+        aly.do_all_analysis()
     if args.exp:
         exp_class = exp.ExportHandler()
         exp_class.export_loop(args.exp)
