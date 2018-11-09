@@ -1,4 +1,5 @@
 import io
+import os
 import sys
 import json
 import time
@@ -29,21 +30,20 @@ class AfApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
-        logging.info('Loading AF config file: ' + str(config))
-        self.config_file = config_path + config
+        logging.info('Loading AF config file: {}'.format(config))
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.config_file = config_path + config
 
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.config_file + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
         self.api_token = self.config['api_token']
         self.app_id = self.config['app_id']
@@ -52,7 +52,8 @@ class AfApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in AF config file.  Aborting.')
+                logging.warning('{} not in AF config file.  '
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     @staticmethod
@@ -95,39 +96,37 @@ class AfApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.df = pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start date' +
+            logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         field, sources, category = self.parse_fields(fields)
-        self.get_raw_data(sd, ed, field, sources, category)
+        self.df = self.get_raw_data(sd, ed, field, sources, category)
         return self.df
 
     def get_raw_data(self, sd, ed, field, sources, category):
         full_url = self.create_url(sd, ed, field, sources, category)
         self.r = requests.get(full_url)
         if self.r.status_code == 200:
-            tdf = self.data_to_df(self.r)
-            self.df = self.df.append(tdf)
+            df = self.data_to_df(self.r)
         else:
-            self.request_error(sd, ed, field, sources, category)
+            self.request_error()
+            df = self.get_raw_data(sd, ed, field, sources, category)
+        return df
 
-    def request_error(self, sd, ed, field, sources, category):
+    def request_error(self):
         limit_error = 'Limit reached for'
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:
             logging.warning('Limit reached pausing for 120 seconds.')
             time.sleep(120)
-            self.get_raw_data(sd, ed, field, sources, category)
         elif self.r.status_code == 504:
             logging.warning('Gateway timeout.  Pausing for 120 seconds.')
             time.sleep(120)
-            self.get_raw_data(sd, ed, field, sources, category)
         else:
-            logging.warning('Unknown error: '.format(self.r.text))
+            logging.warning('Unknown error: {}'.format(self.r.text))
             sys.exit(0)
 
     @staticmethod
