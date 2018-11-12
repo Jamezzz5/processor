@@ -1,9 +1,9 @@
 import logging
 import numpy as np
 import pandas as pd
-import reporting.dictcolumns as dctc
-import reporting.vmcolumns as vmc
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
+import reporting.dictcolumns as dctc
 
 BM_CPM = 'CPM'
 BM_CPC = 'CPC'
@@ -23,9 +23,11 @@ BUY_MODELS = [BM_CPM, BM_CPC, BM_AV, BM_FLAT, BM_FLATIMP, BM_FLAT2, BM_PA,
               BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4, BM_CPA5, BM_FLATDATE,
               BM_CPACPM]
 
-NCF = 'Net Cost Final'
-
 AGENCY_FEES = 'Agency Fees'
+AGENCY_THRESH = 'Agency Fee Threshold'
+agency_fee_file = 'agencyfee_threshold.csv'
+
+NCF = 'Net Cost Final'
 TOTAL_COST = 'Total Cost'
 
 CLI_PD = 'Clicks by Placement Date'
@@ -191,7 +193,12 @@ def agency_fees_calculation(df):
         logging.warning('Agency Fee Rates not in dict.  '
                         'Update dict and run again to calculate agency fees.')
         return df
+    threshold = utl.import_read_csv(agency_fee_file, utl.config_path)
     df = utl.data_to_type(df, float_col=[NCF, dctc.AGF])
+    if not df.empty:
+        threshold = threshold[AGENCY_THRESH].fillna(0).astype(float).values[0]
+        threshold = (df[NCF].sum() - threshold) / df[NCF].sum()
+        df[dctc.AGF] = df[dctc.AGF] * threshold
     df[AGENCY_FEES] = df[dctc.AGF] * df[NCF]
     return df
 
