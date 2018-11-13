@@ -108,3 +108,4 @@ DICT_COL_DICTNAME = 'Dictionary'
 
 filename_tran_config = 'translational_dictionary_config.csv'
 DICT_COL_NVALUE = 'New Value'
+DICT_COL_FUNC = 'Function'

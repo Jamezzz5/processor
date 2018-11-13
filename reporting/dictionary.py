@@ -321,10 +321,19 @@ class DictTranslationConfig(object):
             if col not in data_dict.columns:
                 continue
             tdf = self.df[self.df[dctc.DICT_COL_NAME] == col]
+            data_dict = self.strip_dict(tdf, col, data_dict)
+            tdf = tdf[tdf[dctc.DICT_COL_FUNC].isnull()]
             tdf = tdf[[dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]]
             replace_dict = dict(zip(tdf[dctc.DICT_COL_VALUE],
                                     tdf[dctc.DICT_COL_NVALUE]))
             data_dict[col] = data_dict[col].astype('U').replace(replace_dict)
+        return data_dict
+
+    @staticmethod
+    def strip_dict(tdf, col, data_dict):
+        tdf = tdf[tdf[dctc.DICT_COL_FUNC] == 'Strip']
+        for val in tdf[dctc.DICT_COL_VALUE].unique():
+            data_dict[col] = data_dict[col].str.strip(val)
         return data_dict
 
 
