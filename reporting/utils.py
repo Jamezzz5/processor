@@ -36,6 +36,9 @@ def import_read_csv(filename, path=None):
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         df = None
+    except FileNotFoundError:
+        logging.warning('{} not found.  Continuing'.format(filename))
+        df = pd.DataFrame()
     return df
 
 
