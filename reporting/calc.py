@@ -219,9 +219,10 @@ def total_cost_calculation(df):
 
 
 def calculate_cost(df):
-    if vmc.cost in df.columns:
-        df = net_cost_calculation(df)
-        df = net_cost_final_calculation(df)
-        df = agency_fees_calculation(df)
-        df = total_cost_calculation(df)
+    if vmc.cost not in df.columns:
+        df[vmc.cost] = 0
+    df = net_cost_calculation(df)
+    df = net_cost_final_calculation(df)
+    df = agency_fees_calculation(df)
+    df = total_cost_calculation(df)
     return df
