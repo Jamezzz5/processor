@@ -10,16 +10,18 @@ csvpath = utl.dict_path
 
 
 class Dict(object):
-    def __init__(self, filename):
+    def __init__(self, filename=None):
         utl.dir_check(csvpath)
         if str(filename) == 'nan':
             logging.error('No dictionary file provided.  Aborting.')
             sys.exit(0)
         self.filename = filename
         self.dict_path = csvpath
-        self.dict_path_filename = os.path.join(self.dict_path, self.filename)
         self.data_dict = pd.DataFrame()
-        self.read()
+        if filename:
+            self.dict_path_filename = os.path.join(self.dict_path,
+                                                   self.filename)
+            self.read()
 
     def read(self):
         if not os.path.isfile(self.dict_path_filename):
@@ -55,7 +57,7 @@ class Dict(object):
                     'or mpPlacement Name.  Dictionary was not automatically'
                     ' populated'.format(placement))
                 return True
-            logging.info('Populating ' + self.filename)
+            logging.info('Populating {}'.format(self.filename))
             for i, value in enumerate(autodicord):
                 error[value] = error[placement].str.split('_').str[i]
             error = self.auto_combine(error)
@@ -125,7 +127,7 @@ class Dict(object):
         self.data_dict = tc.apply_translation_to_dict(self.data_dict)
 
     def write(self, df=None):
-        logging.debug('Writing ' + self.filename)
+        logging.debug('Writing {}'.format(self.filename))
         if df is None:
             df = self.data_dict
         try:
@@ -191,7 +193,7 @@ class DictRelational(object):
 
     def read(self):
         if not os.path.isfile(self.full_file_path):
-            logging.info('Creating ' + self.filename)
+            logging.info('Creating {}'.format(self.filename))
             df = pd.DataFrame(columns=self.columns, index=None)
             df.to_csv(self.full_file_path, index=False, encoding='utf-8')
         self.df = utl.import_read_csv(self.filename, self.csvpath)
@@ -199,18 +201,35 @@ class DictRelational(object):
     def add_key_values(self, data_dict):
         keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
         keys_list.dropna(subset=[self.key], inplace=True)
+        keys_list = self.get_new_values(keys_list)
+        keys_list = self.auto_split(keys_list)
         self.df = self.df.merge(keys_list, how='outer').reset_index(drop=True)
         self.df.dropna(subset=[self.key], inplace=True)
         self.write(self.df)
 
+    def get_new_values(self, keys_list):
+        keys_list = keys_list.merge(pd.DataFrame(self.df[self.key]),
+                                    on=self.key, how='left', indicator=True)
+        keys_list = keys_list[keys_list['_merge'] == 'left_only']
+        keys_list = pd.DataFrame(keys_list[self.key])
+        return keys_list
+
+    def auto_split(self, keys_list):
+        tdf = keys_list
+        if str(self.params['Auto']) != 'nan':
+            tdf = tdf.rename(columns={self.key: self.params['Auto']})
+            tdf = Dict().auto_split(tdf)
+            tdf[self.key] = keys_list
+        return tdf
+
     def write(self, df):
-        logging.debug('Writing ' + self.filename)
+        logging.debug('Writing {}'.format(self.filename))
         if df is None:
             df = self.df
         try:
             df.to_csv(self.full_file_path, index=False, encoding='utf-8')
         except IOError:
-            logging.warning('{} could not be opened.  This dictionary'
+            logging.warning('{} could not be opened.  This dictionary '
                             'was not saved.'.format(self.filename))
 
     def apply_to_dict(self, data_dict):
@@ -333,6 +352,7 @@ class DictTranslationConfig(object):
     @staticmethod
     def strip_dict(tdf, col, data_dict):
         tdf = tdf[tdf[dctc.DICT_COL_FUNC] == 'Strip']
+        data_dict = utl.data_to_type(data_dict, str_col=[col])
         for val in tdf[dctc.DICT_COL_VALUE].unique():
             data_dict[col] = data_dict[col].str.strip(val)
         return data_dict

@@ -100,6 +100,7 @@ RK = 'Relational_Key'
 FN = 'Filename'
 KEY = 'Key'
 DEP = 'Dependent'
+AUTO = 'Auto'
 
 filename_con_config = 'constant_dictionary_config.csv'
 DICT_COL_NAME = 'Column Name'
