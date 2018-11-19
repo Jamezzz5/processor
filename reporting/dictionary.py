@@ -216,7 +216,7 @@ class DictRelational(object):
 
     def auto_split(self, keys_list):
         tdf = keys_list
-        if str(self.params['Auto']) != 'nan':
+        if 'Auto' in self.params and str(self.params['Auto']) != 'nan':
             tdf = tdf.rename(columns={self.key: self.params['Auto']})
             tdf = Dict().auto_split(tdf)
             tdf[self.key] = keys_list
