@@ -27,6 +27,9 @@ def dir_check(directory):
 def import_read_csv(filename, path=None):
     if path:
         filename = os.path.join(path, filename)
+    if not os.path.isfile(filename):
+        logging.warning('{} not found.  Continuing.'.format(filename))
+        return pd.DataFrame()
     try:
         df = pd.read_csv(filename, parse_dates=True, encoding='utf-8')
     except pd.io.common.CParserError:
@@ -36,9 +39,6 @@ def import_read_csv(filename, path=None):
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         df = None
-    except FileNotFoundError:
-        logging.warning('{} not found.  Continuing'.format(filename))
-        df = pd.DataFrame()
     return df
 
 
