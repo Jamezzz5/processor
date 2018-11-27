@@ -1,5 +1,6 @@
 postclick = '_PostClick'
 postimp = '_PostImpression'
+siteserve = '_SiteServed'
 
 vendorkey = 'Vendor Key'
 filename = 'FILENAME'
@@ -103,6 +104,8 @@ loginpc = 'Login' + postclick
 gplaypc = 'Game Played' + postclick
 gplay3pc = 'Games Played 3' + postclick
 gplay6pc = 'Games Played 6' + postclick
+landingpagess = 'Landing Page' + siteserve
+signupss = 'Sign Up' + siteserve
 sm_totalbuzz = 'Social Metrics - TotalBuzz'
 sm_totalbuzzpost = 'Social Metrics - TotalBuzzPost'
 sm_totalreplies = 'Social Metrics - TotalReplies'
@@ -150,13 +153,14 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            checkoutpi, signuppi, newuserpi, activeuserpi, downloadpi, loginpi,
            gplaypi, gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
            purchasepc, checkoutpc, signuppc, newuserpc, activeuserpc,
-           downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc, sm_totalbuzz,
-           sm_totalbuzzpost, sm_totalreplies, sm_totalreposts,
-           sm_originalposts, sm_impressions, sm_positivesentiment,
-           sm_negativesentiment, sm_passion, sm_uniqueauthors,
-           sm_strongemotion, sm_weakemotion, view_imps, view_total_imps,
-           view_fraud, modelcoefa, modelcoefb, modelcoefc, conv1, conv2, conv3,
-           conv4, conv5, conv6, conv7, conv8, conv9, conv10]
+           downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc, landingpagess,
+           signupss, sm_totalbuzz, sm_totalbuzzpost, sm_totalreplies,
+           sm_totalreposts, sm_originalposts, sm_impressions,
+           sm_positivesentiment, sm_negativesentiment, sm_passion,
+           sm_uniqueauthors, sm_strongemotion, sm_weakemotion, view_imps,
+           view_total_imps, view_fraud, modelcoefa, modelcoefb, modelcoefc,
+           conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
+           conv10]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
