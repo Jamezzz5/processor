@@ -344,7 +344,23 @@ def df_transform(df, transform):
         df = df.loc[df.index.repeat(df['days'])]
         df[start_date] = (df.groupby(level=0)[start_date].transform(
             lambda x: pd.date_range(start=x.iat[0], periods=len(x))))
-        df = df.drop('days', axis=1).reset_index(drop=True)
+        df = df.drop('days', axis=1)
+        df = df.reset_index(drop=True)  # type: pd.DataFrame
+    if transform_type == 'Stack':
+        header_col_name = transform[1]
+        hold_col_name = transform[2]
+        df.columns = [df.columns[idx - 1] if 'Unnamed' in x else x for idx, x
+                      in enumerate(df.columns)]
+        date = pd.DataFrame(df[hold_col_name])
+        ndf = pd.DataFrame()
+        for x in set(y for y in df.columns if y != hold_col_name):
+            tdf = df[x]
+            tdf.columns = tdf.loc[0]
+            tdf = tdf.iloc[1:]
+            tdf[header_col_name] = x
+            ndf = ndf.append(tdf)
+        df = pd.concat([ndf, date], axis=1, join='inner')
+        df = df.reset_index(drop=True)  # type: pd.DataFrame
     return df
 
 
