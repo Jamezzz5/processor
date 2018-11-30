@@ -186,17 +186,17 @@ class TwApi(object):
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
             logging.info('Getting Twitter data from '
                          '{} until {}'.format(sd, ed))
-            df = self.get_df_for_date(ids_lists, fields, sd, ed)
+            df = self.get_df_for_date(ids_lists, fields, sd, ed, date)
             df = self.clean_df(df)
             self.df = self.df.append(df).reset_index(drop=True)
         return self.df
 
-    def get_df_for_date(self, ids_lists, fields, sd, ed):
+    def get_df_for_date(self, ids_lists, fields, sd, ed, date):
         df = pd.DataFrame()
         for ids in ids_lists:
             url = self.create_stats_url(fields, ids, sd, ed)
             header, data = self.request(url)
-            self.dates = self.get_dates(data)
+            self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
             id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
             df = df.append(id_df)
@@ -293,12 +293,8 @@ class TwApi(object):
         x = str(x).strip('[]')
         return ast.literal_eval(x)
 
-    def get_dates(self, data):
-        sd = dt.datetime.strptime(data[jsonreq][jsonparam][jsonst],
-                                  reqdformat).date()
-        ed = dt.datetime.strptime(data[jsonreq][jsonparam][jsonet],
-                                  reqdformat).date()
-        dates = self.list_dates(sd, ed)
+    def get_dates(self, date):
+        dates = self.list_dates(date, date + dt.timedelta(days=1))
         dates = {k: v for k, v in enumerate(dates)}
         return dates
 
