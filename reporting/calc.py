@@ -198,7 +198,7 @@ def agency_fees_calculation(df):
         return df
     threshold = utl.import_read_csv(agency_fee_file, utl.config_path)
     df = utl.data_to_type(df, float_col=[NCF, dctc.AGF])
-    if not df.empty:
+    if not df.empty and not threshold.empty:
         threshold = threshold[AGENCY_THRESH].fillna(0).astype(float).values[0]
         threshold = (df[NCF].sum() - threshold) / df[NCF].sum()
         df[dctc.AGF] = df[dctc.AGF] * threshold
