@@ -1,6 +1,7 @@
 import sys
 import logging
 import argparse
+import pandas as pd
 import reporting.calc as cal
 import reporting.export as exp
 import reporting.analyze as az
@@ -53,7 +54,7 @@ def main():
         vm.vm_update()
     if args.update == 'all' or args.update == 'dct':
         dct.dict_update()
-    df = None
+    df = pd.DataFrame()
     matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)

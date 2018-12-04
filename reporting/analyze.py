@@ -7,11 +7,11 @@ import reporting.dictcolumns as dctc
 
 
 class Analyze(object):
-    def __init__(self, df=None, file=None, matrix=None):
+    def __init__(self, df=pd.DataFrame(), file=None, matrix=None):
         self.df = df
         self.file = file
         self.matrix = matrix
-        if not self.df and self.file:
+        if self.df.empty and self.file:
             self.load_df_from_file()
 
     def load_df_from_file(self):
