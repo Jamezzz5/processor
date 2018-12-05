@@ -10,7 +10,7 @@ from io import StringIO
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
-base_url = 'https://www.googleapis.com/dfareporting/v3.0'
+base_url = 'https://www.googleapis.com/dfareporting'
 
 
 class DcApi(object):
@@ -26,6 +26,7 @@ class DcApi(object):
         self.report_id = None
         self.config_list = None
         self.client = None
+        self.version = '3.2'
         self.df = pd.DataFrame()
         self.r = None
 
@@ -76,9 +77,10 @@ class DcApi(object):
         self.client = OAuth2Session(self.client_id, token=token)
 
     def create_url(self):
+        vers_url = '/v{}'.format(self.version)
         usr_url = '/userprofiles/{}/'.format(self.usr_id)
         report_url = 'reports/{}'.format(self.report_id)
-        full_url = (base_url + usr_url + report_url)
+        full_url = (base_url + vers_url + usr_url + report_url)
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
