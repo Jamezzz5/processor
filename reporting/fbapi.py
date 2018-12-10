@@ -1,15 +1,16 @@
-import json
-import logging
-import time
-import sys
+import os
 import ast
-import datetime as dt
+import sys
+import json
+import time
+import logging
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.exceptions import FacebookRequestError
+from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
 
 
@@ -81,7 +82,7 @@ class FbApi(object):
 
     def input_config(self, config):
         logging.info('Loading Facebook config file: {}'.format(config))
-        self.configfile = config_path + config
+        self.configfile = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
         FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
@@ -98,9 +99,10 @@ class FbApi(object):
         self.app_secret = self.config['app_secret']
         self.access_token = self.config['access_token']
         self.act_id = self.config['act_id']
-        self.campaign_filter = self.config['campaign_filter']
         self.config_list = [self.app_id, self.app_secret, self.access_token,
                             self.act_id]
+        if 'campaign_filter' in self.config:
+            self.campaign_filter = self.config['campaign_filter']
 
     def check_config(self):
         for item in self.config_list:
