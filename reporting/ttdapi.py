@@ -1,7 +1,7 @@
-import requests
-import logging
-import json
 import sys
+import json
+import logging
+import requests
 import pandas as pd
 from io import StringIO
 import reporting.utils as utl
@@ -25,7 +25,7 @@ class TtdApi(object):
         self.headers = None
 
     def input_config(self, config):
-        logging.info('Loading TTD config file: ' + str(config))
+        logging.info('Loading TTD config file: {}'.format(config))
         self.configfile = configpath + config
         self.load_config()
         self.check_config()
@@ -35,7 +35,7 @@ class TtdApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.configfile + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
         self.login = self.config['LOGIN']
         self.password = self.config['PASS']
@@ -46,7 +46,8 @@ class TtdApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + ' not in TTD config file.  Aborting.')
+                logging.warning('{} not in TTD config file.  '
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     def authenticate(self):
@@ -55,8 +56,8 @@ class TtdApi(object):
         self.headers = {'Content-Type': 'application/json'}
         r = requests.post(auth_url, headers=self.headers, json=userpass)
         if r.status_code != 200:
-            logging.error('Failed to authenticate with error code: '
-                          + str(r.status_code) + ' Error: ' + str(r.content))
+            logging.error('Failed to authenticate with error code: {} '
+                          'Error: {}'.format(r.status_code, r.content))
             sys.exit(0)
         auth_token = json.loads(r.text)['Token']
         return auth_token
@@ -81,13 +82,14 @@ class TtdApi(object):
             if 'Result' in raw_data:
                 result_data = raw_data['Result']
                 match_data = [x for x in result_data if
-                              x['ReportScheduleName'] == self.report_name and
+                              x['ReportScheduleName'].replace(' ', '') ==
+                              self.report_name.replace(' ', '') and
                               x['ReportExecutionState'] == 'Complete']
                 data.extend(match_data)
                 i += 1
             else:
-                logging.warning('Retrying.  Unknown response :' +
-                                str(raw_data))
+                logging.warning('Retrying.  Unknown response :'
+                                '{}'.format(raw_data))
                 error_response_count += 1
                 if error_response_count >= 100:
                     logging.error('Error count exceeded 100.  Aborting.')
@@ -97,7 +99,7 @@ class TtdApi(object):
         return dl_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        logging.info('Getting TTD data for report: ' + str(self.report_name))
+        logging.info('Getting TTD data for: {}'.format(self.report_name))
         dl_url = self.get_download_url()
         r = requests.get(dl_url, headers=self.headers)
         self.df = pd.read_csv(StringIO(r.content.decode('utf-8')))
