@@ -370,7 +370,7 @@ class DictTranslationConfig(object):
         tdf = tdf[tdf[dctc.DICT_COL_FNC] == 'Strip']
         data_dict = utl.data_to_type(data_dict, str_col=[col])
         for val in tdf[dctc.DICT_COL_VALUE].unique():
-            data_dict[col] = data_dict[col].str.strip(val)
+            data_dict[col] = data_dict[col].str.replace(val, '')
         return data_dict
 
     @staticmethod
