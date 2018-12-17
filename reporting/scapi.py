@@ -7,8 +7,8 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-from requests_oauthlib import OAuth2Session
 import reporting.utils as utl
+from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
 
@@ -153,7 +153,7 @@ class ScApi(object):
         for cid in cids:
             self.get_raw_data(sd, ed, cid)
         self.df['Campaign Name'] = self.df['Campaign Name'].map(cids)
-        self.add_names_to_df()
+        self.df = self.add_names_to_df()
         return self.df
 
     def get_raw_data(self, sd, ed, cid):
@@ -193,6 +193,9 @@ class ScApi(object):
         return df
 
     def add_names_to_df(self):
+        if self.df.empty:
+            logging.warning('No data for date range, returning empty df.')
+            return self.df
         adids = self.get_ads()
         self.df = self.dict_to_cols(self.df, 'id', adids)  # type: pd.DataFrame
         asids = self.get_adsquads()
@@ -201,6 +204,7 @@ class ScApi(object):
                                           'name': 'Ad Name'})
         self.df = utl.col_removal(self.df, 'API_Snapchat',
                                   [0, 'id', 'stats', 'index'])
+        return self.df
 
     @staticmethod
     def dict_to_cols(df, col, map_dict):
