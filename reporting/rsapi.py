@@ -112,7 +112,13 @@ class RsApi(object):
         self.df = self.data_to_df()
 
     def data_to_df(self):
-        df = pd.DataFrame(self.r.json()['results'])
+        try:
+            json_data = self.r.json()['results']
+        except ValueError:
+            logging.warning('Could not load as json.'
+                            'Response: {}'.format(self.r.text))
+            sys.exit(0)
+        df = pd.DataFrame(json_data)
         for col in nested_cols:
             n_df = self.flatten_nested_cols(df, col)
             for n_col in n_df.columns:
