@@ -197,7 +197,7 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 continue
             df = data_to_type(df, float_col=[metric])
             df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
-                                  factor.astype(float))
+                                  float(factor))
     return df
 
 
