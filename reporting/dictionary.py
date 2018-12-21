@@ -154,9 +154,8 @@ class RelationalConfig(object):
         self.key_list = []
 
     def read(self, configfile):
-        try:
-            self.df = utl.import_read_csv(configfile, self.csvpath)
-        except IOError:
+        self.df = utl.import_read_csv(configfile, self.csvpath)
+        if self.df.empty:
             logging.debug('No Relational Dictionary config')
             return None
         self.key_list = self.df[dctc.RK].tolist()
