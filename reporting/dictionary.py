@@ -219,7 +219,10 @@ class DictRelational(object):
         if 'Auto' in self.params and str(self.params['Auto']) != 'nan':
             tdf = tdf.rename(columns={self.key: self.params['Auto']})
             tdf = Dict().auto_split(tdf)
-            tdf[self.key] = keys_list
+            if keys_list.empty:
+                tdf[self.key] = None
+            else:
+                tdf[self.key] = keys_list
         return tdf
 
     def write(self, df):
