@@ -58,6 +58,7 @@ class Dict(object):
                     ' populated'.format(placement))
                 return True
             logging.info('Populating {}'.format(self.filename))
+            error.columns = [dctc.FPN, dctc.PN]
             for i, value in enumerate(autodicord):
                 error[value] = error[placement].str.split('_').str[i]
             error = self.auto_combine(error)
