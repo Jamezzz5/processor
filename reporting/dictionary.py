@@ -208,6 +208,7 @@ class DictRelational(object):
         self.write(self.df)
 
     def get_new_values(self, keys_list):
+        keys_list = utl.data_to_type(keys_list, str_col=keys_list.columns)
         keys_list = keys_list.merge(pd.DataFrame(self.df[self.key]),
                                     on=self.key, how='left', indicator=True)
         keys_list = keys_list[keys_list['_merge'] == 'left_only']
