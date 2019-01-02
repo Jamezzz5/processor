@@ -1,11 +1,12 @@
+import os
+import sys
+import json
+import time
 import ftplib
 import logging
-import json
-import sys
-import time
+import pandas as pd
 import datetime as dt
 from io import BytesIO
-import pandas as pd
 import reporting.utils as utl
 
 config_path = utl.config_path
@@ -27,8 +28,8 @@ class FTP(object):
         self.config_list = []
 
     def input_config(self, config):
-        logging.info('Loading FTP config file: ' + config)
-        self.config_file = config_path + config
+        logging.info('Loading FTP config file: {}'.format(config))
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
 
@@ -37,7 +38,7 @@ class FTP(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.config_file + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
         self.ftp_host = self.config['FTP']
         self.ftp_path = self.config['FTP_PATH']
@@ -50,7 +51,8 @@ class FTP(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in FTP config file.  Aborting.')
+                logging.warning('{} not in FTP config file.  '
+                                 'Aborting.'.format(item))
                 sys.exit(0)
 
     def ftp_init(self):
@@ -65,7 +67,7 @@ class FTP(object):
         self.ftp.cwd(self.ftp_path)
 
     def get_data(self):
-        logging.info('Getting FTP data from ' + str(self.ftp_host))
+        logging.info('Getting FTP data from {}'.format(self.ftp_host))
         self.ftp_init()
         newest_file = self.ftp_newest_file()
         self.ftp_remove_files(newest_file)
@@ -101,27 +103,26 @@ class FTP(object):
         return newest_file
 
     def ftp_write_file(self, df, write_file):
-        logging.info('Writing ' + str(write_file) + ' to ' +
-                     str(self.ftp_host))
+        logging.info('Writing {} to {}.'.format(write_file, self.ftp_host))
         self.ftp_init()
         r = BytesIO()
         df.to_csv(r, index=False, encoding='utf-8')
         r.seek(0)
-        self.ftp.storbinary('STOR ' + write_file, r)
+        self.ftp.storbinary('STOR {}'.format(write_file), r)
         self.ftp.quit()
 
     def ftp_read_file(self, read_file):
         r = BytesIO()
         try:
-            self.ftp.retrbinary('RETR ' + read_file, r.write)
+            self.ftp.retrbinary('RETR {}'.format(read_file), r.write)
         except ftplib.all_errors as e:
             self.ftp_force_close_error(e)
             r = self.ftp_read_file(read_file)
         return r
 
     def ftp_force_close_error(self, e):
-        logging.warning('Connection to the FTP was closed due to below ' +
-                        'error, retrying in 30 seconds. ' + str(e))
+        logging.warning('Connection to the FTP was closed due to below '
+                        'error, retrying in 30 seconds. {}'.format(e))
         time.sleep(30)
         self.ftp_init()
 
@@ -143,6 +144,6 @@ class FTP(object):
             file_info = item.split()[8]
             if file_info != newest_file:
                 try:
-                    self.ftp.delete(self.ftp_path + '/' + file_info)
+                    self.ftp.delete('{}/{}'.format(self.ftp_path, file_info))
                 except ftplib.error_perm:
                     continue
