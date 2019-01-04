@@ -1,10 +1,10 @@
 import os
+import io
 import sys
 import json
 import math
 import time
 import logging
-from io import BytesIO
 import numpy as np
 import pandas as pd
 import datetime as dt
@@ -283,7 +283,10 @@ class DB(object):
         self.cursor = self.connection.cursor()
 
     def df_to_output(self, df):
-        self.output = BytesIO()
+        if sys.version_info[0] == 3:
+            self.output = io.StringIO()
+        else:
+            self.output = io.BytesIO()
         df.to_csv(self.output, sep='\t', header=False, index=False,
                   encoding='utf-8')
         self.output.seek(0)
@@ -319,8 +322,7 @@ class DB(object):
         self.connect()
         command = """
                   DELETE FROM {0}.{1}
-                   WHERE {0}.{1}.{2} IN ({3})
-                   AND {0}.{1}.{4} IN ({5})
+                   WHERE {0}.{1}.{2} IN ({3}) AND {0}.{1}.{4} IN ({5})
                   """.format(self.schema, table, where_col, where_val,
                              where_col2,
                              ', '.join(['%s'] * len(where_vals2)))
@@ -332,19 +334,15 @@ class DB(object):
         self.connect()
         if select_col == where_col:
             command = """
-                      SELECT {0}.{1}.{2}
-                       FROM {0}.{1}
-                       WHERE {0}.{1}.{3} IN ({4})
-                       AND {0}.{1}.{5} IN ({6})
+                      SELECT {0}.{1}.{2} FROM {0}.{1}
+                       WHERE {0}.{1}.{3} IN ({4}) AND {0}.{1}.{5} IN ({6})
                       """.format(self.schema, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)),
                                  where_col2, where_val2)
         else:
             command = """
-                      SELECT {0}.{1}.{2}, {0}.{1}.{3}
-                       FROM {0}.{1}
-                       WHERE {0}.{1}.{3} IN ({4})
-                       AND {0}.{1}.{5} IN ({6})
+                      SELECT {0}.{1}.{2}, {0}.{1}.{3} FROM {0}.{1}
+                       WHERE {0}.{1}.{3} IN ({4}) AND {0}.{1}.{5} IN ({6})
                       """.format(self.schema, table, select_col, where_col,
                                  ', '.join(['%s'] * len(where_val)),
                                  where_col2, where_val2)
@@ -394,8 +392,7 @@ class DB(object):
         command = """
                   SELECT *
                   FROM information_schema.columns
-                  WHERE table_schema = '{0}'
-                  AND table_name = '{1}'
+                  WHERE table_schema = '{0}' AND table_name = '{1}'
                   """.format(self.schema, table)
         self.cursor.execute(command)
         columns = self.cursor.fetchall()
