@@ -59,7 +59,10 @@ col_name_dic = {'date_start': 'Reporting Starts',
                 'video_p75_watched_actions': 'Video Watches at 75%',
                 'video_p100_watched_actions': 'Video Watches at 100%',
                 'reach': 'Reach',
-                'frequency': 'Frequency'}
+                'frequency': 'Frequency',
+                'ad_id': 'ad_id',
+                'adset_id': 'adset_id',
+                'campaign_id': 'campaign_id'}
 
 config_path = utl.config_path
 
