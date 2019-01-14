@@ -52,7 +52,7 @@ class FTP(object):
         for item in self.config_list:
             if item == '':
                 logging.warning('{} not in FTP config file.  '
-                                 'Aborting.'.format(item))
+                                'Aborting.'.format(item))
                 sys.exit(0)
 
     def ftp_init(self):
@@ -92,6 +92,9 @@ class FTP(object):
             file_date = ' '.join(item.split()[5:8])
             file_date = '{0} {1}'.format(file_date,
                                          str(dt.datetime.today().year))
+            if file_date[9] != ':':
+                file_date = '{} 00:00 {}'.format(file_date[:6],
+                                                 str(dt.datetime.today().year))
             file_date = dt.datetime.strptime(file_date, '%b %d %H:%M %Y')
             if file_date.date() > dt.date.today():
                 file_date = file_date.replace(year=file_date.year - 1)
