@@ -274,6 +274,7 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
     df_fpn = pd.DataFrame(df[dctc.FPN])
     er.ErrorReport(df_fpn, dic, None, kwargs[vmc.filenameerror])
     merge_col = list(set(dic.data_dict.columns).intersection(df.columns))
+    dic.data_dict = utl.data_to_type(dic.data_dict, str_col=merge_col)
     dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
     dic.apply_functions()
     dic.data_dict = utl.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
