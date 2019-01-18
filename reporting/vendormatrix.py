@@ -235,6 +235,9 @@ def ad_cost_calculation(df):
     df[vmc.REP_COST] = np.where(df[dctc.RFM] == vmc.AM_CPM,
                                 df[dctc.RFR] * df[vmc.impressions] / 1000,
                                 df[dctc.RFR] * df[vmc.clicks])
+    df[vmc.VER_COST] = np.where(df[dctc.VFM] == vmc.AM_CPM,
+                                df[dctc.VFR] * df[vmc.impressions] / 1000,
+                                df[dctc.VFR] * df[vmc.clicks])
     return df
 
 

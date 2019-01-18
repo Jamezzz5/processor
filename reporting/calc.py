@@ -217,9 +217,10 @@ def total_cost_calculation(df):
                         'Update dict and run again to calculate total cost.')
         return df
     df = utl.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST,
-                                         vmc.dcm_service_fee, vmc.REP_COST])
+                                         vmc.dcm_service_fee, vmc.REP_COST,
+                                         vmc.VER_COST])
     df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES]
-    for col in [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST]:
+    for col in [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST, vmc.VER_COST]:
         if col in df.columns:
             df[TOTAL_COST] += df[col]
     return df
