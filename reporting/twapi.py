@@ -5,11 +5,11 @@ import sys
 import pytz
 import ast
 import time
-import datetime as dt
 import pandas as pd
-import pandas.io.json as pdjson
+import datetime as dt
 import oauth2 as oauth
 import reporting.utils as utl
+import pandas.io.json as pdjson
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 configpath = utl.config_path
@@ -276,10 +276,12 @@ class TwApi(object):
     def clean_df(self, df):
         df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
+        ndf = utl.data_to_type(ndf, str_col=[colcid], int_col=[coldate])
         for col in df.columns:
             tdf = df[col].apply(lambda x: self.clean_data(x)).apply(pd.Series)
             tdf = tdf.unstack().reset_index()
             tdf = tdf.rename(columns={0: col, 'level_0': coldate})
+            tdf = utl.data_to_type(tdf, str_col=[colcid], int_col=[coldate])
             ndf = pd.merge(ndf, tdf, on=[coldate, colcid], how='outer')
         df = ndf
         df[colspend] /= 1000000

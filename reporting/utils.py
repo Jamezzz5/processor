@@ -81,13 +81,15 @@ def string_to_date(my_string):
         return my_string
 
 
-def data_to_type(df, float_col=None, date_col=None, str_col=None):
+def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
     if float_col is None:
         float_col = []
     if date_col is None:
         date_col = []
     if str_col is None:
         str_col = []
+    if int_col is None:
+        int_col = []
     for col in float_col:
         if col not in df:
             continue
@@ -108,6 +110,10 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None):
         if col not in df:
             continue
         df[col] = df[col].astype('U')
+    for col in int_col:
+        if col not in df:
+            continue
+        df[col] = df[col].astype(int)
     return df
 
 
