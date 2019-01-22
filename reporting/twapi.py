@@ -1,10 +1,10 @@
 import os
-import json
-import logging
 import sys
-import pytz
 import ast
+import pytz
+import json
 import time
+import logging
 import pandas as pd
 import datetime as dt
 import oauth2 as oauth
@@ -189,6 +189,7 @@ class TwApi(object):
             df = self.get_df_for_date(ids_lists, fields, sd, ed, date)
             df = self.clean_df(df)
             self.df = self.df.append(df).reset_index(drop=True)
+        self.df.to_csv('test.csv')
         return self.df
 
     def get_df_for_date(self, ids_lists, fields, sd, ed, date):
@@ -206,8 +207,8 @@ class TwApi(object):
     def get_date_info(sd, ed):
         ed = ed + dt.timedelta(days=1)
         if sd > ed:
-            logging.warning('Start date greater than end date.  Start date'
-                            'was set to end date.')
+            logging.warning('Start date greater than end date.  '
+                            'Start date was set to end date.')
             sd = ed - dt.timedelta(days=1)
         return sd, ed
 
@@ -228,7 +229,8 @@ class TwApi(object):
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
             df = self.replace_with_parent(df, parent, 'id')
-        df = df.dropna(subset=['impressions'])
+        df = df.dropna(how='all', subset=['impressions', 'clicks',
+                                          'billed_charge_local_micro'])
         df = self.add_tweets(df)
         df = self.add_cards(df)
         return df
