@@ -204,6 +204,7 @@ class DictRelational(object):
         keys_list.dropna(subset=[self.key], inplace=True)
         keys_list = self.get_new_values(keys_list)
         keys_list = self.auto_split(keys_list)
+        self.df = utl.data_to_type(self.df, str_col=keys_list.columns)
         self.df = self.df.merge(keys_list, how='outer').reset_index(drop=True)
         self.df.dropna(subset=[self.key], inplace=True)
         self.write(self.df)
