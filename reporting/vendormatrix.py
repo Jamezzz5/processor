@@ -172,7 +172,7 @@ class VendorMatrix(object):
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
-            self.df = self.df.append(self.tdf, ignore_index=True)
+            self.df = self.df.append(self.tdf, ignore_index=True, sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csvpath):
@@ -353,9 +353,9 @@ def df_transform(df, transform):
     if transform_type == 'Stack':
         header_col_name = transform[1]
         hold_col_name = transform[2]
-        df.columns = [df.columns[idx - 1] if 'Unnamed' in x else x for idx, x
-                      in enumerate(df.columns)]
-        date = pd.DataFrame(df[hold_col_name])
+        df.columns = [df.columns[idx - 1] if 'Unnamed' in x else x
+                      for idx, x in enumerate(df.columns)]
+        hdf = pd.DataFrame(df[hold_col_name])
         ndf = pd.DataFrame()
         for x in set(y for y in df.columns if y != hold_col_name):
             tdf = df[x]
@@ -363,7 +363,7 @@ def df_transform(df, transform):
             tdf = tdf.iloc[1:]
             tdf[header_col_name] = x
             ndf = ndf.append(tdf)
-        df = pd.concat([ndf, date], axis=1, join='inner')
+        df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
     return df
 
