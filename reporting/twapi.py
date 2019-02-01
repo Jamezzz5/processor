@@ -111,31 +111,52 @@ class TwApi(object):
             response, data = self.request(url)
         return response, data
 
-    def get_ids(self, entity, eid, name, parent):
+    def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
         url = self.create_base_url(entity)
+        if parent_filter:
+            url += '&{}s={}'.format(parent, ','.join(parent_filter))
         headers, data = self.request(url)
-        id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
-                   for x in data['data']}
-        id_dict = self.page_through_ids(data, id_dict, url, eid, name, parent)
+        if sd:
+            data['data'] = [x for x in data['data'] if x['end_time'] and
+                            dt.datetime.strptime(x['end_time'],
+                                                 '%Y-%m-%dT%H:%M:%SZ') > sd]
+        if 'data' in data:
+            id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
+                       for x in data['data']}
+        else:
+            id_dict = {}
+        id_dict = self.page_through_ids(data, id_dict, url, eid, name, parent,
+                                        sd)
         return id_dict
 
-    def page_through_ids(self, data, id_dict, first_url, eid, name, parent):
-        if data['next_cursor']:
+    def page_through_ids(self, data, id_dict, first_url, eid, name, parent,
+                         sd):
+        if 'next_cursor' in data and data['next_cursor']:
             url = "{}&cursor={}".format(first_url, data['next_cursor'])
             headers, data = self.request(url)
             for x in data['data']:
-                id_dict[x[eid]] = {'parent': x[parent], 'name': x[name]}
+                if sd:
+                    if (x['end_time'] and dt.datetime.strptime(
+                            x['end_time'], '%Y-%m-%dT%H:%M:%SZ') > sd):
+                        id_dict[x[eid]] = {'parent': x[parent],
+                                           'name': x[name]}
+                else:
+                    id_dict[x[eid]] = {'parent': x[parent], 'name': x[name]}
             id_dict = self.page_through_ids(data, id_dict, first_url,
-                                            eid, name, parent)
+                                            eid, name, parent, sd)
         return id_dict
 
-    def get_all_id_dicts(self):
-        self.cid_dict = self.get_ids('campaigns', 'id', 'name', 'account_id')
-        self.asid_dict = self.get_ids('line_items', 'id',
-                                      'name', 'campaign_id')
+    def get_all_id_dicts(self, sd):
+        self.cid_dict = self.get_ids('campaigns', 'id', 'name',
+                                     'account_id', sd)
+        self.asid_dict = self.get_ids('line_items', 'id', 'name',
+                                      'campaign_id',
+                                      parent_filter=self.cid_dict.keys())
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
-                                      'tweet_id', 'line_item_id')
-        self.tweet_dict = self.get_ids('scoped_timeline', 'id', 'text', 'id')
+                                      'tweet_id', 'line_item_id',
+                                      parent_filter=self.asid_dict.keys())
+        self.tweet_dict = self.get_ids('scoped_timeline', 'id',
+                                       'text', 'id',)
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -178,7 +199,7 @@ class TwApi(object):
     def get_df_for_all_dates(self, sd, ed, fields):
         full_date_list = self.list_dates(sd, ed)
         timezone = self.get_account_timezone()
-        self.get_all_id_dicts()
+        self.get_all_id_dicts(sd)
         ids_lists = [list(self.adid_dict.keys())[i:i + 20] for i
                      in range(0, len(self.adid_dict.keys()), 20)]
         for date in full_date_list:
