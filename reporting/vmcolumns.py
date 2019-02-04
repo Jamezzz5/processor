@@ -33,6 +33,7 @@ views100 = 'Video Views 100'
 tv_views = 'TrueView Views'
 fb_3_views = 'Facebook :03s Views'
 fb_10_views = 'Facebook :10s Views'
+video_plays = 'Video Plays'
 dcm_service_fee = 'DCM Service Fee'
 reach = 'Reach'
 reach_c = 'Reach - Campaign'
@@ -142,21 +143,21 @@ vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
           apifile, apifields, apimerge, transform, header, omit_plan]
 
 datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
-           views100, tv_views, fb_3_views, fb_10_views, dcm_service_fee, reach,
-           reach_c, reach_d, frequency, engagements, likes, comments, shares,
-           reactions, revenue, revenue_userstart, revenue_userstart_30day,
-           ret_day1, ret_day3, ret_day7, ret_day14, ret_day30, ret_day60,
-           ret_day90, ret_day120, landingpage, homepage, btnclick, purchase,
-           checkout, signup, newuser, activeuser, totaluser, payuser, download,
-           login, transaction, transaction_revenue, mplay, gplay, gplay3,
-           gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews, ga_bounces,
-           ga_timeonpage, landingpagepi, homepagepi, btnclickpi, purchasepi,
-           checkoutpi, signuppi, newuserpi, activeuserpi, downloadpi, loginpi,
-           gplaypi, gplay3pi, gplay6pi, landingpagepc, homepagepc, btnclickpc,
-           purchasepc, checkoutpc, signuppc, newuserpc, activeuserpc,
-           downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc, landingpagess,
-           signupss, sm_totalbuzz, sm_totalbuzzpost, sm_totalreplies,
-           sm_totalreposts, sm_originalposts, sm_impressions,
+           views100, tv_views, fb_3_views, fb_10_views, video_plays,
+           dcm_service_fee, reach, reach_c, reach_d, frequency, engagements,
+           likes, comments, shares, reactions, revenue, revenue_userstart,
+           revenue_userstart_30day, ret_day1, ret_day3, ret_day7, ret_day14,
+           ret_day30, ret_day60, ret_day90, ret_day120, landingpage, homepage,
+           btnclick, purchase, checkout, signup, newuser, activeuser, totaluser,
+           payuser, download, login, transaction, transaction_revenue, mplay,
+           gplay, gplay3, gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews,
+           ga_bounces, ga_timeonpage, landingpagepi, homepagepi, btnclickpi,
+           purchasepi, checkoutpi, signuppi, newuserpi, activeuserpi,
+           downloadpi, loginpi, gplaypi, gplay3pi, gplay6pi, landingpagepc,
+           homepagepc, btnclickpc, purchasepc, checkoutpc, signuppc, newuserpc,
+           activeuserpc, downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc,
+           landingpagess, signupss, sm_totalbuzz, sm_totalbuzzpost,
+           sm_totalreplies, sm_totalreposts, sm_originalposts, sm_impressions,
            sm_positivesentiment, sm_negativesentiment, sm_passion,
            sm_uniqueauthors, sm_strongemotion, sm_weakemotion, view_imps,
            view_total_imps, view_monitored_imps, view_fraud, modelcoefa,

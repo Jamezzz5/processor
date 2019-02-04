@@ -19,7 +19,8 @@ def_params = ['campaign_name', 'adset_name', 'ad_name']
 def_metrics = ['impressions', 'inline_link_clicks', 'spend',
                'video_10_sec_watched_actions', 'video_p25_watched_actions',
                'video_p50_watched_actions', 'video_p75_watched_actions',
-               'video_p100_watched_actions', 'reach', 'frequency']
+               'video_p100_watched_actions', 'reach', 'frequency',
+               'video_play_actions']
 
 fields_actions = ['actions', 'action_values']
 
@@ -29,7 +30,7 @@ def_fields = def_params + def_metrics
 
 nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
               'video_p50_watched_actions', 'video_p25_watched_actions',
-              'video_p75_watched_actions']
+              'video_p75_watched_actions', 'video_play_actions']
 
 nested_dict_col = ['actions']
 
