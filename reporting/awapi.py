@@ -53,7 +53,7 @@ class AwApi(object):
         self.config_list = []
         self.adwords_client = None
         self.v = 'v201806'
-        self.report_type = 'AD_PERFORMANCE_REPORT'
+        self.report_type = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -110,6 +110,7 @@ class AwApi(object):
 
     def parse_fields(self, fields):
         api_fields = def_fields
+        self.report_type = 'AD_PERFORMANCE_REPORT'
         if fields is not None:
             if 'Conversions' in fields:
                 api_fields = conv_fields
