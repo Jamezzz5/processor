@@ -17,7 +17,7 @@ base_url = 'https://adsapi.snapchat.com/v1/'
 
 def_fields = ['impressions', 'swipes', 'view_time_millis', 'quartile_1',
               'quartile_2', 'quartile_3', 'view_completion', 'spend',
-              'video_views']
+              'video_views', 'shares', 'saves']
 
 
 class ScApi(object):
