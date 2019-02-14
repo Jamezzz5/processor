@@ -18,6 +18,9 @@ RULE_CONST = [RULE_METRIC, RULE_QUERY, RULE_FACTOR]
 PRE = 'PRE'
 POST = 'POST'
 
+na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN',
+             'null', '-nan', '1.#IND', '1.#QNAN', 'N/A', 'NULL', 'NaN', 'n/a',
+             'nan']
 
 def dir_check(directory):
     if not os.path.isdir(directory):
@@ -31,11 +34,14 @@ def import_read_csv(filename, path=None):
         logging.warning('{} not found.  Continuing.'.format(filename))
         return pd.DataFrame()
     try:
-        df = pd.read_csv(filename, parse_dates=True, encoding='utf-8')
+        df = pd.read_csv(filename, parse_dates=True, encoding='utf-8',
+                         keep_default_na=False, na_values=na_values)
     except pd.io.common.CParserError:
-        df = pd.read_csv(filename, parse_dates=True, sep=None, engine='python')
+        df = pd.read_csv(filename, parse_dates=True, sep=None, engine='python',
+                         keep_default_na=False, na_values=na_values)
     except UnicodeDecodeError:
-        df = pd.read_csv(filename, parse_dates=True, encoding='iso-8859-1')
+        df = pd.read_csv(filename, parse_dates=True, encoding='iso-8859-1',
+                         keep_default_na=False, na_values=na_values)
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         df = None
