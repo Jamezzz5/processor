@@ -195,15 +195,15 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 tdf = tdf.loc[(df[query[0]] >= sd) & (df[query[0]] <= ed)]
             else:
                 tdf = tdf.loc[tdf[query[0]].isin(values)]
-        tdf = list(tdf.index.values)
+        q_idx = list(tdf.index.values)
         for metric in metrics:
             if metric not in df:
                 logging.warning('{} not in data for rule {}.  '
                                 'The rule did not run.'.format(metric, rule))
                 continue
             df = data_to_type(df, float_col=[metric])
-            df.ix[tdf, metric] = (df.ix[tdf, metric].astype(float) *
-                                  float(factor))
+            df.loc[q_idx, metric] = (df.loc[q_idx, metric].astype(float) *
+                                     float(factor))
     return df
 
 
