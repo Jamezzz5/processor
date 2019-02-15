@@ -52,7 +52,7 @@ class ErrorReport(object):
             data_err = self.drop_error_df_duplicates(data_err,
                                                      [self.merge_col])
         else:
-            data_err[dctc.PN] = data_err[self.pn]
+            data_err[dctc.PN] = data_err.loc[:, self.pn]
             data_err = self.drop_error_df_duplicates(data_err,
                                                      [self.merge_col, dctc.PN])
         return data_err
