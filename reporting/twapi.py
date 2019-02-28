@@ -61,6 +61,7 @@ class TwApi(object):
         self.asid_dict = None
         self.adid_dict = None
         self.tweet_dict = None
+        self.v = 4
 
     def input_config(self, config):
         logging.info('Loading Twitter config file: {}.'.format(config))
@@ -168,17 +169,18 @@ class TwApi(object):
             fields = def_fields
         return sd, ed, fields
 
-    def create_stats_url(self, fields=None, ids=None, sd=None, ed=None):
-        act_url = '/3/stats/accounts/{}?'.format(self.account_id)
-        ent_url = 'entity_ids={}&entity=PROMOTED_TWEET'.format(','.join(ids))
+    def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
+                         entity='PROMOTED_TWEET', placement='ALL_ON_TWITTER'):
+        act_url = '/{}/stats/accounts/{}?'.format(self.v, self.account_id)
+        ent_url = 'entity_ids={}&entity={}'.format(','.join(ids), entity)
         sded_url = '&granularity=DAY&start_time={}&end_time={}'.format(sd, ed)
         metric_url = '&metric_groups={}'.format(','.join(fields))
-        place_url = '&placement=ALL_ON_TWITTER'
+        place_url = '&placement={}'.format(placement)
         url = base_url + act_url + ent_url + sded_url + metric_url + place_url
         return url
 
     def create_base_url(self, entity=None):
-        act_url = '/3/accounts/{}'.format(self.account_id)
+        act_url = '/{}/accounts/{}'.format(self.v, self.account_id)
         url = base_url + act_url
         if entity:
             url += '/{}'.format(entity)
@@ -207,16 +209,17 @@ class TwApi(object):
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
             logging.info('Getting Twitter data from '
                          '{} until {}'.format(sd, ed))
-            df = self.get_df_for_date(ids_lists, fields, sd, ed, date)
-            df = self.clean_df(df)
-            self.df = self.df.append(df).reset_index(drop=True)
-        self.df.to_csv('test.csv')
+            for place in ['ALL_ON_TWITTER', 'PUBLISHER_NETWORK']:
+                df = self.get_df_for_date(ids_lists, fields, sd, ed,
+                                          date, place)
+                df = self.clean_df(df)
+                self.df = self.df.append(df).reset_index(drop=True)
         return self.df
 
-    def get_df_for_date(self, ids_lists, fields, sd, ed, date):
+    def get_df_for_date(self, ids_lists, fields, sd, ed, date, place):
         df = pd.DataFrame()
         for ids in ids_lists:
-            url = self.create_stats_url(fields, ids, sd, ed)
+            url = self.create_stats_url(fields, ids, sd, ed, placement=place)
             header, data = self.request(url)
             self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
