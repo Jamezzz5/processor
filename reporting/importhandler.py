@@ -5,7 +5,6 @@ import datetime as dt
 import reporting.fbapi as fbapi
 import reporting.awapi as awapi
 import reporting.twapi as twapi
-import reporting.ttdapi as ttdapi
 import reporting.gaapi as gaapi
 import reporting.nbapi as nbapi
 import reporting.scapi as scapi
@@ -15,6 +14,8 @@ import reporting.rsapi as rsapi
 import reporting.dbapi as dbapi
 import reporting.vkapi as vkapi
 import reporting.rcapi as rcapi
+import reporting.ttdapi as ttdapi
+import reporting.szkapi as szkapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -145,6 +146,8 @@ class ImportHandler(object):
             self.api_calls(self.matrix.api_vk_key, vkapi.VkApi())
         if self.arg_check('rc'):
             self.api_calls(self.matrix.api_rc_key, rcapi.RcApi())
+        if self.arg_check('szk'):
+            self.api_calls(self.matrix.api_szk_key, szkapi.SzkApi())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
