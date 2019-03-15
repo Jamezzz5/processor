@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import time
-import pytz
 import logging
 import requests
 import pandas as pd
@@ -79,13 +78,12 @@ class SzkApi(object):
 
     @staticmethod
     def date_check(sd, ed):
-        if sd > ed:
-            logging.warning('Start date greater than end date.  Start date '
-                            'was set to end date.')
+        if sd > ed or sd == ed:
+            logging.warning('Start date greater than or equal to end date.  '
+                            'Start date was set to end date.')
             sd = ed - dt.timedelta(days=1)
-        timezone = 'US/Pacific'
-        sd = pytz.timezone(timezone).localize(sd).isoformat()
-        ed = pytz.timezone(timezone).localize(ed).isoformat()
+        sd = '{}{}'.format(sd.isoformat(), '.000Z')
+        ed = '{}{}'.format(ed.isoformat(), '.000Z')
         return sd, ed
 
     def get_data_default_check(self, sd, ed):
@@ -104,6 +102,7 @@ class SzkApi(object):
         return self.df
 
     def request_report(self, sd, ed):
+        logging.info('Requesting report for {} to {}.'.format(sd, ed))
         self.set_headers()
         report = self.create_report_body(sd, ed)
         r = requests.post(report_url, headers=self.headers, json=report)
@@ -115,7 +114,7 @@ class SzkApi(object):
         report_dl_url = None
         for attempt in range(100):
             time.sleep(60)
-            logging.info('Checking report.  Attempt: {}'.format(attempt))
+            logging.info('Checking report.  Attempt: {}'.format(attempt + 1))
             r = requests.get(url, headers=self.headers)
             if r.json()['result']['executionStatus'] == 'FINISHED':
                 logging.info('Report has been generated.')
@@ -133,7 +132,7 @@ class SzkApi(object):
         return self.df
 
     def create_report_body(self, sd, ed):
-        report = {'entities': [{
+        report = {"entities": [{
                   "type": "AnalyticsReport",
                   "reportName": "test",
                   "reportScope": {
@@ -184,9 +183,8 @@ class SzkApi(object):
                       "exportFileNamePrefix": "test"
                     }
                   ],
-                "reportAuthorization": {
+                  "reportAuthorization": {
                     "type": "mm3",
                     "userID": 1073752812
-                },
-                }]}
+                  }, }]}
         return report
