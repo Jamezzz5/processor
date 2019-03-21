@@ -87,6 +87,7 @@ class DcApi(object):
         files_url = self.get_files_url()
         self.r = self.get_report(files_url)
         self.df = pd.read_csv(StringIO(self.r.text), skiprows=10)
+        self.df = self.df.reset_index()
         return self.df
 
     def get_report(self, files_url):
