@@ -1,5 +1,6 @@
 import sys
 import json
+import time
 import logging
 import requests
 import pandas as pd
@@ -87,16 +88,27 @@ class TtdApi(object):
                               x['ReportExecutionState'] == 'Complete']
                 data.extend(match_data)
                 i += 1
+            elif ('Message'in raw_data and
+                    raw_data['Message'] == 'Too Many Requests'):
+                logging.warning('Rate limit exceeded, '
+                                'pausing for 300s: {}'.format(raw_data))
+                time.sleep(300)
+                error_response_count = self.response_error(error_response_count)
             else:
                 logging.warning('Retrying.  Unknown response :'
                                 '{}'.format(raw_data))
-                error_response_count += 1
-                if error_response_count >= 100:
-                    logging.error('Error count exceeded 100.  Aborting.')
-                    sys.exit(0)
+                error_response_count = self.response_error(error_response_count)
         last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
         dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
         return dl_url
+
+    @staticmethod
+    def response_error(error_response_count):
+        error_response_count += 1
+        if error_response_count >= 100:
+            logging.error('Error count exceeded 100.  Aborting.')
+            sys.exit(0)
+        return error_response_count
 
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
