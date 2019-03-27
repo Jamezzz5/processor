@@ -99,8 +99,7 @@ class Dict(object):
                 error[col] = error[col].astype('U')
                 error[cur_col] = error[col].str.split(cur_del).str[0]
                 error[col] = error[col].str.split(cur_del).str[1:]
-                error[col] = error[col].apply(lambda x:
-                                              cur_del.join(map(str, x)))
+                error[col] = error[col].apply(lambda x: cur_del.join(x))
             error[new_col_list[-1]] = error[col]
             error.drop([col], axis=1, inplace=True)
         return error
