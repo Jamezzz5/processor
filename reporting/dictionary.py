@@ -73,7 +73,7 @@ class Dict(object):
     def auto_combine(error=pd.DataFrame()):
         comb_key = ':::'
         comb_cols = [x for x in error.columns if comb_key in x]
-        for col in sorted(comb_cols):
+        for col in sorted(comb_cols, key=lambda x: int(x.split(comb_key)[1])):
             final_col = col.split(comb_key)[0]
             delimit_str = col.split(comb_key)[2]
             if final_col not in error.columns:
