@@ -239,6 +239,8 @@ class TwApi(object):
     def get_account_timezone(self):
         url = self.create_base_url()
         header, data = self.request(url)
+        if jsondata not in data:
+            logging.warning('Data not in response : {}'.format(data))
         return data[jsondata][jsontz]
 
     @staticmethod
