@@ -213,7 +213,7 @@ class TwApi(object):
                 df = self.get_df_for_date(ids_lists, fields, sd, ed,
                                           date, place)
                 df = self.clean_df(df)
-                self.df = self.df.append(df).reset_index(drop=True)
+                self.df = self.df.append(df, sort=True).reset_index(drop=True)
         return self.df
 
     def get_df_for_date(self, ids_lists, fields, sd, ed, date, place):
@@ -224,7 +224,7 @@ class TwApi(object):
             self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
             id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
-            df = df.append(id_df)
+            df = df.append(id_df, sort=True)
         return df
 
     @staticmethod
