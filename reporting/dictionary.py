@@ -64,7 +64,7 @@ class Dict(object):
             error = self.auto_combine(error)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
-            self.data_dict = self.data_dict.append(error)
+            self.data_dict = self.data_dict.append(error, sort=True)
             self.data_dict = self.data_dict[dctc.COLS]
             err.dic = self
             err.reset()
@@ -337,6 +337,12 @@ class DictTranslationConfig(object):
         except IOError:
             logging.debug('No Translational Dictionary config')
             return None
+        self.clean_df()
+
+    def clean_df(self):
+        col = dctc.DICT_COL_VALUE
+        self.df[col] = np.where(self.df[col].isna(), self.df[col].astype('U'),
+                                self.df[col])
 
     def apply_translation_to_dict(self, data_dict):
         if self.df.empty:
@@ -400,7 +406,7 @@ def dict_update():
         if dctc.FPN not in dic.data_dict.columns:
             continue
         odic = dic.get()
-        df = ndic.append(odic)
+        df = ndic.append(odic, sort=True)
         if 'pncFull Placement Name' in df.columns:
             df[dctc.FPN] = df['pncFull Placement Name']
             df = df[cols]
