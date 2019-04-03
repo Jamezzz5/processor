@@ -9,6 +9,7 @@ BM_CPM = 'CPM'
 BM_CPC = 'CPC'
 BM_CPV = 'CPV'
 BM_CPLP = 'CPLP'
+BM_CPVM = 'CPVM'
 BM_AV = 'AV'
 BM_FLAT = 'FLAT'
 BM_FLAT2 = 'Flat'
@@ -21,9 +22,9 @@ BM_CPA3 = 'CPA3'
 BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
-BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPLP, BM_AV, BM_FLAT, BM_FLATIMP,
-              BM_FLAT2, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4, BM_CPA5,
-              BM_FLATDATE, BM_CPACPM]
+BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
+              BM_FLATIMP, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4,
+              BM_CPA5, BM_FLATDATE, BM_CPACPM]
 
 AGENCY_FEES = 'Agency Fees'
 AGENCY_THRESH = 'Agency Fee Threshold'
@@ -75,6 +76,8 @@ def net_cost(df):
         return df[dctc.BR] * df[vmc.views]
     elif df[dctc.BM] == BM_CPLP:
         return df[dctc.BR] * df[vmc.landingpage]
+    elif df[dctc.BM] == BM_CPVM:
+        return df[dctc.BR] * (df[vmc.view_imps] / 1000)
     elif df[dctc.BM] == BM_PA:
         return df[vmc.cost] / .85
     elif df[dctc.BM] == BM_FLAT or df[dctc.BM] == BM_FLAT2:
