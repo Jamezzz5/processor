@@ -14,7 +14,7 @@ login_url = 'https://adapi.sizmek.com/sas/login/login/'
 report_url = 'https://adapi.sizmek.com/analytics/reports/saveAndExecute'
 base_report_get_url = 'https://adapi.sizmek.com/analytics/reports/executions/'
 
-def_dimensions = ["Site Name", "Placement Name", "Ad Name",
+def_dimensions = ["Site Name", "Placement Name", "Ad Name", "Placement ID",
                   "Placement Dimension", "Campaign Name", "Ad ID"]
 
 def_metrics = ["Served Impressions", "Total Clicks", "Video Played 25%",
@@ -77,6 +77,20 @@ class SzkApi(object):
         self.headers['Authorization'] = session_id
 
     @staticmethod
+    def parse_fields(fields):
+        field_dict = {'timeBreakdown': 'Day',
+                      'attributeIDs': def_dimensions,
+                      'metricIDs': def_metrics}
+        if fields:
+            for field in fields:
+                if field == 'Total':
+                    field_dict['timeBreakdown'] = 'Total'
+                if field == 'Placement':
+                    field_dict['attributeIDs'] = ['Placement Name',
+                                                  'Placement ID']
+        return field_dict
+
+    @staticmethod
     def date_check(sd, ed):
         if sd > ed or sd == ed:
             logging.warning('Start date greater than or equal to end date.  '
@@ -86,25 +100,26 @@ class SzkApi(object):
         ed = '{}{}'.format(ed.isoformat(), '.000Z')
         return sd, ed
 
-    def get_data_default_check(self, sd, ed):
+    def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=2)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
         sd, ed = self.date_check(sd, ed)
-        return sd, ed
+        fields = self.parse_fields(fields)
+        return sd, ed, fields
 
     def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed = self.get_data_default_check(sd, ed)
-        report_get_url = self.request_report(sd, ed)
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        report_get_url = self.request_report(sd, ed, fields)
         report_dl_url = self.get_report_dl_url(report_get_url)
         self.df = self.download_report_to_df(report_dl_url)
         return self.df
 
-    def request_report(self, sd, ed):
+    def request_report(self, sd, ed, fields):
         logging.info('Requesting report for {} to {}.'.format(sd, ed))
         self.set_headers()
-        report = self.create_report_body(sd, ed)
+        report = self.create_report_body(sd, ed, fields)
         r = requests.post(report_url, headers=self.headers, json=report)
         execution_id = r.json()['result']['executionID']
         report_get_url = '{}{}'.format(base_report_get_url, execution_id)
@@ -131,7 +146,8 @@ class SzkApi(object):
             self.df = pd.DataFrame()
         return self.df
 
-    def create_report_body(self, sd, ed):
+    def create_report_body(self, sd, ed, fields):
+        print(fields)
         report = {"entities": [{
                   "type": "AnalyticsReport",
                   "reportName": "test",
@@ -164,12 +180,12 @@ class SzkApi(object):
                     },
                   },
                   "reportStructure": {
-                    "attributeIDs": def_dimensions,
-                    "metricIDs": def_metrics,
+                    "attributeIDs": fields['attributeIDs'],
+                    "metricIDs": fields['metricIDs'],
                     "attributeIDsOnColumns": [
                       "Conversion Tag Name"
                     ],
-                    "timeBreakdown": "Day"
+                    "timeBreakdown": fields['timeBreakdown']
                   },
                   "reportExecution": {
                     "type": "Ad_Hoc"
