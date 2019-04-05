@@ -13,7 +13,7 @@ def_metrics = ['sessions', 'goal1Completions', 'goal2Completions', 'users',
                'newUsers', 'bounces', 'pageviews', 'totalEvents',
                'uniqueEvents', 'timeOnPage']
 def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
-            'adContent', 'country']
+            'country', 'pagePath']
 
 
 class GaApi(object):
@@ -76,17 +76,35 @@ class GaApi(object):
         token = self.client.refresh_token(self.refresh_url, **extra)
         self.client = OAuth2Session(self.client_id, token=token)
 
-    @staticmethod
-    def get_data_default_check(sd, ed, fields):
+    def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        if fields is None:
-            fields = def_dims
+        fields = self.parse_fields(fields)
+        sd, ed = self.date_check(sd, ed)
         return sd, ed, fields
 
-    def create_url(self, sd, ed, start_index, metric):
+    @staticmethod
+    def parse_fields(fields):
+        parsed_fields = []
+        for field in fields:
+            field = field.split('::')
+            parsed_fields.append(','.join('ga:{}=={}'.format(field[0], x)
+                                          for x in field[1].split(',')))
+        return parsed_fields
+
+    @staticmethod
+    def date_check(sd, ed):
+        if sd > ed:
+            logging.warning('Start date greater than end date.  Start date '
+                            'was set to end date.')
+            sd = ed
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        return sd, ed
+
+    def create_url(self, sd, ed, fields, start_index, metric):
         ids_url = '?ids=ga:{}'.format(self.ga_id)
         sd_url = '&start-date={}'.format(sd)
         ed_url = '&end-date={}'.format(ed)
@@ -98,33 +116,36 @@ class GaApi(object):
         max_results_url = '&max-results=10000'
         full_url = (base_url + ids_url + sd_url + ed_url + dim_url +
                     metrics_url + start_index_url + max_results_url)
+        if fields:
+            filter_url = '&filters={}'.format(';'.join(fields))
+            full_url += filter_url
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        if sd > ed:
-            logging.warning('Start date greater than end date.  Start date '
-                            'was set to end date.')
-            sd = ed
-        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
-        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         self.get_client()
         start_index = 1
         metrics = [def_metrics[x:x + 10]
                    for x in range(0, len(def_metrics), 10)]
-        for metric in metrics:
-            self.get_raw_data(sd, ed, start_index, metric)
+        self.get_df_for_all_metrics(sd, ed, fields, start_index, metrics)
+        start_indices = self.get_start_indices()
+        for start_index in start_indices:
+            self.get_df_for_all_metrics(sd, ed, fields, start_index, metrics)
+        return self.df
+
+    def get_start_indices(self):
         total_results = self.r.json()['totalResults']
         total_pages = range(total_results // 10000 +
                             ((total_results % 10000) > 0))[1:]
         start_indices = [(10000 * x) + 1 for x in total_pages]
-        for start_index in start_indices:
-            for metric in metrics:
-                self.get_raw_data(sd, ed, start_index, metric)
-        return self.df
+        return start_indices
 
-    def get_raw_data(self, sd, ed, start_index, metric):
-        full_url = self.create_url(sd, ed, start_index, metric)
+    def get_df_for_all_metrics(self, sd, ed, fields, start_index, metrics):
+        for metric in metrics:
+            self.get_raw_data(sd, ed, fields, start_index, metric)
+
+    def get_raw_data(self, sd, ed, fields, start_index, metric):
+        full_url = self.create_url(sd, ed, fields, start_index, metric)
         self.r = self.client.get(full_url)
         tdf = self.data_to_df(self.r)
         self.df = self.df.append(tdf)
