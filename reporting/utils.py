@@ -22,6 +22,7 @@ na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN',
              'null', '-nan', '1.#IND', '1.#QNAN', 'N/A', 'NULL', 'NaN', 'n/a',
              'nan']
 
+
 def dir_check(directory):
     if not os.path.isdir(directory):
         os.makedirs(directory)
@@ -150,7 +151,7 @@ def date_removal(df, date_col_name, start_date, end_date):
     return df
 
 
-def col_removal(df, key, removal_cols):
+def col_removal(df, key, removal_cols, warn=True):
     logging.debug('Dropping unnecessary columns')
     if removal_cols == ['ALL']:
         removal_cols = [x for x in df.columns
@@ -159,8 +160,9 @@ def col_removal(df, key, removal_cols):
         if col not in df:
             if col == 'nan':
                 continue
-            logging.warning('{} is not or is no longer in {}.'
-                            'It was not removed.'.format(col, key))
+            if warn:
+                logging.warning('{} is not or is no longer in {}.  '
+                                'It was not removed.'.format(col, key))
             continue
         df = df.drop(col, axis=1)
     return df
