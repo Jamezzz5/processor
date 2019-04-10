@@ -52,7 +52,7 @@ class AwApi(object):
         self.campaign_filter = None
         self.config_list = []
         self.adwords_client = None
-        self.v = 'v201806'
+        self.v = 'v201809'
         self.report_type = None
 
     def input_config(self, config):
