@@ -24,6 +24,8 @@ PD = 'mpPlacement Date'
 SRV = 'mpServing'
 MIS = 'mpMisc'
 RET = 'mpRetailer'
+PLD = 'mpPlacement Description'
+PKD = 'mpPackage Description'
 AM = 'mpAd Model'
 AR = 'mpAd Rate'
 RFT = 'mpReporting Fee Type'
@@ -81,11 +83,11 @@ MIS4 = 'mpMisc 4'
 MIS5 = 'mpMisc 5'
 MIS6 = 'mpMisc 6'
 COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
-        VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, AM, AR, RFT,
-        RFM, RFR, VFM, VFR, AGF, AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR, ENV,
-        DT1, DT2, TB, GT, GTF, KPI, FAC, PLA, TP, TPB, TPF, AT, AF, CD, CH, CM,
-        LI, LEN, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, BR2, BR3, BR4, BR5, PD2,
-        PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, PLD, PKD, AM, AR,
+        RFT, RFM, RFR, VFM, VFR, AGF, AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR,
+        ENV, DT1, DT2, TB, GT, GTF, KPI, FAC, PLA, TP, TPB, TPF, AT, AF, CD, CH,
+        CM, LI, LEN, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, BR2, BR3, BR4, BR5,
+        PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, RFR, VFR, BR2, BR3, BR4, BR5, AGF]
 datecol = [PD, PD2, PD3, PD4, PD5]
