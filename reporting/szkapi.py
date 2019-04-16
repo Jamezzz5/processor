@@ -104,7 +104,9 @@ class SzkApi(object):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=2)
         if ed is None:
-            ed = dt.datetime.today() - dt.timedelta(days=1)
+            ed = dt.datetime.today() + dt.timedelta(days=1)
+        if dt.datetime.today().date() == ed.date():
+            ed += dt.timedelta(days=1)
         sd, ed = self.date_check(sd, ed)
         fields = self.parse_fields(fields)
         return sd, ed, fields
@@ -147,7 +149,6 @@ class SzkApi(object):
         return self.df
 
     def create_report_body(self, sd, ed, fields):
-        print(fields)
         report = {"entities": [{
                   "type": "AnalyticsReport",
                   "reportName": "test",
