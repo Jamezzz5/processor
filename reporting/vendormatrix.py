@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import logging
 import numpy as np
 import pandas as pd
@@ -13,7 +14,7 @@ log = logging.getLogger()
 
 csv_path = utl.config_path
 csv_file = 'Vendormatrix.csv'
-csv = os.path.join(csv_path, csv_file)
+csv_full_file = os.path.join(csv_path, csv_file)
 plan_key = 'Plan Net'
 
 
@@ -56,7 +57,7 @@ class VendorMatrix(object):
         if not os.path.isfile(os.path.join(csv_path, csv_file)):
             logging.info('Creating Vendor Matrix.  Populate it and run again')
             vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
-            vm.to_csv(csv, index=False, encoding='utf-8')
+            vm.to_csv(csv_full_file, index=False, encoding='utf-8')
         self.vm = utl.import_read_csv(csv_file, csv_path)
 
     def plan_net_check(self):
@@ -376,21 +377,23 @@ def df_transform(df, transform):
 
 def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
     logging.info('Updating Vendor Matrix')
+    shutil.copyfile(csv_full_file, os.path.join(old_path, old_file))
     ovm = utl.import_read_csv(filename=old_file, path=old_path)
     rules = [col for col in ovm.columns if 'RULE_' in col]
     rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
-    vm = nvm.append(ovm)
+    vm = nvm.append(ovm, sort=True)
     if 'FIRSTROWADJ' in vm.columns:
-        vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'] == True,
+        vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'],
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])
     if vmc.autodicplace not in ovm.columns:
         vm[vmc.autodicplace] = vmc.fullplacename
     vm = utl.col_removal(vm, 'vm',
-                         ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'])
-    vm = vm.reindex_axis([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)
+                         ['FIRSTROWADJ', 'LASTROWADJ', 'AUTO DICTIONARY'],
+                         warn=False)
+    vm = vm.reindex([vmc.vendorkey] + vmc.vmkeys + rules, axis=1)
     for col in rule_metrics:
         vm = vm_update_rule_check(vm, col)
     vm = vm.fillna('')
     vm = vm.replace('nan', '')
-    vm.to_csv(csv, index=False, encoding='utf-8')
+    vm.to_csv(csv_full_file, index=False, encoding='utf-8')
