@@ -20,23 +20,26 @@ VIEWS75 = 'Video played to 75%'
 VIEWS100 = 'Video played to 100%'
 VIEW_METRICS = [VIEWS25, VIEWS50, VIEWS75, VIEWS100]
 
-def_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
-              'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
-              'HeadlinePart2', 'Description', 'Description1', 'Description2',
-              'Impressions', 'Clicks', 'Cost', 'VideoViews',
-              'VideoQuartile25Rate', 'VideoQuartile50Rate',
-              'VideoQuartile75Rate', 'VideoQuartile100Rate']
+date_params = ['Date']
+camp_params = ['AccountDescriptiveName', 'CampaignName']
+ag_params = ['AdGroupName']
+ad_params = ['ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
+             'HeadlinePart2', 'Description', 'Description1', 'Description2']
+no_date_params = camp_params + ag_params + ad_params
+def_params = date_params + no_date_params
 
-conv_fields = ['Date', 'AccountDescriptiveName', 'CampaignName', 'AdGroupName',
-               'ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
-               'HeadlinePart2', 'Description', 'Description1', 'Description2',
-               'ConversionTypeName', 'Conversions', 'ViewThroughConversions',
-               'AllConversions']
+def_metrics = ['Impressions', 'Clicks', 'Cost', 'VideoViews',
+               'VideoQuartile25Rate', 'VideoQuartile50Rate',
+               'VideoQuartile75Rate', 'VideoQuartile100Rate']
+base_conv_metrics = ['Conversions']
+ext_conv_metrics = ['ConversionTypeName', 'ViewThroughConversions',
+                    'AllConversions']
+conv_metrics = base_conv_metrics + ext_conv_metrics
 
-uac_fields = ['Date', 'AccountDescriptiveName', 'CampaignName',
-              'Impressions', 'Clicks', 'Cost', 'VideoViews',
-              'VideoQuartile25Rate', 'VideoQuartile50Rate',
-              'VideoQuartile75Rate', 'VideoQuartile100Rate', 'Conversions']
+def_fields = def_params + def_metrics
+conv_fields = def_params + conv_metrics
+uac_fields = camp_params + def_metrics + base_conv_metrics
+no_date_fields = no_date_params + def_metrics
 
 
 class AwApi(object):
@@ -117,6 +120,10 @@ class AwApi(object):
             if 'UAC' in fields:
                 api_fields = uac_fields
                 self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
+            if 'no_date' in fields:
+                api_fields = no_date_fields
+            if 'no_date' in fields and 'Conversions' in fields:
+                api_fields = no_date_params + conv_metrics
             for field in fields:
                 if field == 'Device':
                     api_fields += ['Device']
