@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import json
@@ -33,6 +34,7 @@ class SzkApi(object):
         self.api_key = None
         self.campaign_ids = None
         self.config_list = None
+        self.email = None
         self.headers = None
         self.df = pd.DataFrame()
         self.r = None
@@ -58,8 +60,9 @@ class SzkApi(object):
         self.password = self.config['password']
         self.api_key = self.config['api_key']
         self.campaign_ids = self.config['campaign_ids']
+        self.email = self.config['email']
         self.config_list = [self.config, self.username, self.password,
-                            self.api_key, self.campaign_ids]
+                            self.api_key, self.campaign_ids, self.email]
 
     def check_config(self):
         for item in self.config_list:
@@ -123,26 +126,38 @@ class SzkApi(object):
         self.set_headers()
         report = self.create_report_body(sd, ed, fields)
         r = requests.post(report_url, headers=self.headers, json=report)
-        execution_id = r.json()['result']['executionID']
-        report_get_url = '{}{}'.format(base_report_get_url, execution_id)
+        if 'result' in r.json() and r.json()['result']:
+            execution_id = r.json()['result']['executionID']
+            report_get_url = '{}{}'.format(base_report_get_url, execution_id)
+        else:
+            logging.warning('Error in response as follows: {}'.format(r.json()))
+            sys.exit(0)
         return report_get_url
 
     def get_report_dl_url(self, url):
         report_dl_url = None
-        for attempt in range(100):
-            time.sleep(60)
-            logging.info('Checking report.  Attempt: {}'.format(attempt + 1))
+        for attempt in range(200):
+            time.sleep(120)
             r = requests.get(url, headers=self.headers)
+            logging.info('Checking report.  Attempt: {} \n'
+                         'Response: {}'.format(attempt + 1, r.json()))
             if r.json()['result']['executionStatus'] == 'FINISHED':
                 logging.info('Report has been generated.')
                 report_dl_url = r.json()['result']['files'][0]['url']
                 break
+            elif 'fault' in r.json():
+                logging.warning('Fault in response: {}'.format(r.json()))
+                self.set_headers()
         return report_dl_url
 
     def download_report_to_df(self, url):
         if url:
             r = requests.get(url)
-            self.df = pd.DataFrame(r.json()['reportData'])
+            if sys.version_info[0] == 3:
+                raw_file = io.StringIO(r.text)
+            else:
+                raw_file = io.BytesIO(r.text)
+            self.df = pd.DataFrame(raw_file)
         else:
             logging.warning('No report download url, returning empty df.')
             self.df = pd.DataFrame()
@@ -194,9 +209,9 @@ class SzkApi(object):
                   "reportDeliveryMethods": [
                     {
                       "type": "URL",
-                      "exportFileType": "JSON",
+                      "exportFileType": "CSV",
                       "compressionType": "NONE",
-                      "emailRecipients": [""],
+                      "emailRecipients": ['{}'.format(self.email)],
                       "exportFileNamePrefix": "test"
                     }
                   ],
