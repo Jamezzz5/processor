@@ -153,11 +153,8 @@ class SzkApi(object):
     def download_report_to_df(self, url):
         if url:
             r = requests.get(url)
-            if sys.version_info[0] == 3:
-                raw_file = io.StringIO(r.text)
-            else:
-                raw_file = io.BytesIO(r.text)
-            self.df = pd.DataFrame(raw_file)
+            raw_file = io.StringIO(r.text)
+            self.df = pd.read_csv(raw_file)
         else:
             logging.warning('No report download url, returning empty df.')
             self.df = pd.DataFrame()
