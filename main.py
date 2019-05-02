@@ -5,6 +5,7 @@ import pandas as pd
 import reporting.calc as cal
 import reporting.export as exp
 import reporting.analyze as az
+import reporting.tbapi as tbapi
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.importhandler as ih
@@ -44,6 +45,7 @@ parser.add_argument('--noprocess', action='store_true')
 parser.add_argument('--analyze', action='store_true')
 parser.add_argument('--update', choices=['all', 'vm', 'dct'])
 parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
+parser.add_argument('--tab', action='store_true')
 args = parser.parse_args()
 
 OUTPUT_FILE = 'Raw Data Output.csv'
@@ -84,6 +86,9 @@ def main():
     if args.exp:
         exp_class = exp.ExportHandler()
         exp_class.export_loop(args.exp)
+    if args.tab:
+        tb = tbapi.TabApi()
+        tb.refresh_extract()
 
 
 if __name__ == '__main__':
