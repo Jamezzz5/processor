@@ -24,6 +24,12 @@ def_metrics = ["Served Impressions", "Total Clicks", "Video Played 25%",
                "Post Click Conversions", "Post Impression Conversions",
                "Total Media Cost"]
 
+p2c_fields = ['Conversion Date', 'Conversion ID', 'Event Date',
+              'Event Type Name', 'Conversion Time Lag', 'Placement Name',
+              'Campaign Name', 'Site Name', 'Winner Placement Name',
+              'Query String', 'Conversion Activity Name',
+              'Winner Event Type Name']
+
 
 class SzkApi(object):
     def __init__(self):
@@ -81,7 +87,8 @@ class SzkApi(object):
 
     @staticmethod
     def parse_fields(fields):
-        field_dict = {'timeBreakdown': 'Day',
+        field_dict = {'type': 'AnalyticsReport',
+                      'timeBreakdown': 'Day',
                       'attributeIDs': def_dimensions,
                       'metricIDs': def_metrics}
         if fields:
@@ -91,6 +98,12 @@ class SzkApi(object):
                 if field == 'Placement':
                     field_dict['attributeIDs'] = ['Placement Name',
                                                   'Placement ID']
+                if field == 'P2C':
+                    field_dict['type'] = 'ReportP2C'
+                if field[:6] == 'Filter':
+                    field = field.split('::')
+                    field_dict['filters'] = {str(field[1]): [int(x) for x in
+                                             field[2].split(',')]}
         return field_dict
 
     @staticmethod
@@ -162,7 +175,7 @@ class SzkApi(object):
 
     def create_report_body(self, sd, ed, fields):
         report = {"entities": [{
-                  "type": "AnalyticsReport",
+                  "type": fields['type'],
                   "reportName": "test",
                   "reportScope": {
                     "entitiesHierarchy": {
@@ -216,4 +229,13 @@ class SzkApi(object):
                     "type": "mm3",
                     "userID": 1073752812
                   }, }]}
+        if fields['type'] == 'ReportP2C':
+            report['entities'][0]["p2cDelimiter"] = ","
+            report['entities'][0]["maxConversionPathLength"] = 5
+            report['entities'][0]["withHeader"] = True
+            report['entities'][0]['reportStructure'] = {
+                "p2cFields": p2c_fields
+            }
+        if 'filters' in fields:
+            report['entities'][0]['reportScope']['filters'] = fields['filters']
         return report
