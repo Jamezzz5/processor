@@ -38,7 +38,7 @@ conv_metrics = base_conv_metrics + ext_conv_metrics
 
 def_fields = def_params + def_metrics
 conv_fields = def_params + conv_metrics
-uac_fields = camp_params + def_metrics + base_conv_metrics
+uac_fields = date_params + camp_params + def_metrics + base_conv_metrics
 no_date_fields = no_date_params + def_metrics
 
 
