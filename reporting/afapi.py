@@ -80,7 +80,7 @@ class AfApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         return sd, ed
 
-    def create_url(self, sd, ed, field, sources,  category):
+    def create_url(self, sd, ed, field, sources, category, retarget=False):
         report_url = '/{}/v5?'.format(field)
         token_url = 'api_token={}'.format(self.api_token)
         sded_url = '&from={}&to={}'.format(sd, ed)
@@ -93,6 +93,8 @@ class AfApi(object):
         if category:
             cat_url = '&category={}'.format(category)
             full_url += cat_url
+        if retarget:
+            full_url += '&reattr=true'
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -104,27 +106,36 @@ class AfApi(object):
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         field, sources, category = self.parse_fields(fields)
-        self.df = self.get_raw_data(sd, ed, field, sources, category)
+        self.df = pd.DataFrame()
+        for rt in [True, False]:
+            tdf = self.get_raw_data(sd, ed, field, sources, category, rt)
+            self.df = self.df.append(tdf, ignore_index=True, sort=True)
+            time.sleep(60)
         return self.df
 
-    def get_raw_data(self, sd, ed, field, sources, category):
-        full_url = self.create_url(sd, ed, field, sources, category)
+    def get_raw_data(self, sd, ed, field, sources, category, retarget=False):
+        logging.info('Getting {} report from {} to {} with source: {}, '
+                     'category: {}, retarget: {}'
+                     ''.format(field, sd, ed, sources, category, retarget))
+        full_url = self.create_url(sd, ed, field, sources, category, retarget)
         self.r = requests.get(full_url)
         if self.r.status_code == 200:
             df = self.data_to_df(self.r)
         else:
             self.request_error()
-            df = self.get_raw_data(sd, ed, field, sources, category)
+            df = self.get_raw_data(sd, ed, field, sources, category, retarget)
         return df
 
     def request_error(self):
         limit_error = 'Limit reached for'
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:
-            logging.warning('Limit reached pausing for 120 seconds.')
-            time.sleep(120)
+            logging.warning('Limit reached pausing for 60 seconds.  '
+                            'Response: {}'.format(self.r.text))
+            time.sleep(60)
         elif self.r.status_code == 504:
-            logging.warning('Gateway timeout.  Pausing for 120 seconds.')
-            time.sleep(120)
+            logging.warning('Gateway timeout.  Pausing for 60 seconds.  '
+                            'Response: {}'.format(self.r.text))
+            time.sleep(60)
         else:
             logging.warning('Unknown error: {}'.format(self.r.text))
             sys.exit(0)
