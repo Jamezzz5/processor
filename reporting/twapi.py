@@ -289,7 +289,11 @@ class TwApi(object):
             url = self.create_base_url('cards')
             url += '?card_uri={}'.format(uri)
             h, d = self.request(url)
-            uri_dict[uri] = d['data']['name']
+            if 'data' not in d:
+                logging.warning('Card not found got response: {}'.format(d))
+                uri_dict[uri] = 'No Card Name'
+            else:
+                uri_dict[uri] = d['data']['name']
         df['Card name'] = df['Card name'].map(uri_dict)
         return df
 
