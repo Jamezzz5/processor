@@ -148,6 +148,8 @@ class FbApi(object):
                 time_breakdown = 'all_days'
             if item == 'Adset':
                 level = AdsInsights.Level.adset
+            if item == 'Campaign':
+                level = AdsInsights.Level.campaign
         return fields, breakdowns, action_breakdowns, attribution_window,\
             time_breakdown, level
 
