@@ -10,3 +10,4 @@ boto==2.42.0
 requests==2.18.4
 requests_oauthlib==0.8.0
 pytz==2017.2
+selenium==3.12.0
