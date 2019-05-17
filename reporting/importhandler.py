@@ -119,38 +119,25 @@ class ImportHandler(object):
                         params[vmc.enddate])
 
     def api_loop(self):
-        if self.arg_check('fb'):
-            self.api_calls(self.matrix.api_fb_key, fbapi.FbApi())
-        if self.arg_check('aw'):
-            self.api_calls(self.matrix.api_aw_key, awapi.AwApi())
-        if self.arg_check('tw'):
-            self.api_calls(self.matrix.api_tw_key, twapi.TwApi())
-        if self.arg_check('ttd'):
-            self.api_calls(self.matrix.api_ttd_key, ttdapi.TtdApi())
-        if self.arg_check('ga'):
-            self.api_calls(self.matrix.api_ga_key, gaapi.GaApi())
-        if self.arg_check('nb'):
-            self.api_calls(self.matrix.api_nb_key, nbapi.NbApi())
-        if self.arg_check('af'):
-            self.api_calls(self.matrix.api_af_key, afapi.AfApi())
-        if self.arg_check('sc'):
-            self.api_calls(self.matrix.api_sc_key, scapi.ScApi())
-        if self.arg_check('aj'):
-            self.api_calls(self.matrix.api_aj_key, ajapi.AjApi())
-        if self.arg_check('dc'):
-            self.api_calls(self.matrix.api_dc_key, dcapi.DcApi())
-        if self.arg_check('rs'):
-            self.api_calls(self.matrix.api_rs_key, rsapi.RsApi())
-        if self.arg_check('db'):
-            self.api_calls(self.matrix.api_db_key, dbapi.DbApi())
-        if self.arg_check('vk'):
-            self.api_calls(self.matrix.api_vk_key, vkapi.VkApi())
-        if self.arg_check('rc'):
-            self.api_calls(self.matrix.api_rc_key, rcapi.RcApi())
-        if self.arg_check('szk'):
-            self.api_calls(self.matrix.api_szk_key, szkapi.SzkApi())
-        if self.arg_check('red'):
-            self.api_calls(self.matrix.api_red_key, redapi.RedApi())
+        apis = [('fb', self.matrix.api_fb_key, fbapi.FbApi),
+                ('aw', self.matrix.api_aw_key, awapi.AwApi),
+                ('tw', self.matrix.api_tw_key, twapi.TwApi),
+                ('ttd', self.matrix.api_ttd_key, ttdapi.TtdApi),
+                ('ga', self.matrix.api_ga_key, gaapi.GaApi),
+                ('nb', self.matrix.api_nb_key, nbapi.NbApi),
+                ('af', self.matrix.api_af_key, afapi.AfApi),
+                ('sc', self.matrix.api_sc_key, scapi.ScApi),
+                ('aj', self.matrix.api_aj_key, ajapi.AjApi),
+                ('dc', self.matrix.api_dc_key, dcapi.DcApi),
+                ('db', self.matrix.api_db_key, dbapi.DbApi),
+                ('vk', self.matrix.api_vk_key, vkapi.VkApi),
+                ('rs', self.matrix.api_rs_key, rsapi.RsApi),
+                ('rc', self.matrix.api_rc_key, rcapi.RcApi),
+                ('szk', self.matrix.api_szk_key, szkapi.SzkApi),
+                ('red', self.matrix.api_red_key, redapi.RedApi)]
+        for api in apis:
+            if self.arg_check(api[0]) and api[1]:
+                self.api_calls(api[1], api[2]())
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
