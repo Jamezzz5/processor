@@ -126,6 +126,9 @@ view_fraud = 'Fraud Incidents'
 modelcoefa = 'modelcoefa'
 modelcoefb = 'modelcoefb'
 modelcoefc = 'modelcoefc'
+AD_COST = 'Adserving Cost'
+REP_COST = 'Reporting Cost'
+VER_COST = 'Verification Cost'
 conv1 = 'Conv1_CPA'
 conv2 = 'Conv2'
 conv3 = 'Conv3'
@@ -161,8 +164,9 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            sm_positivesentiment, sm_negativesentiment, sm_passion,
            sm_uniqueauthors, sm_strongemotion, sm_weakemotion, view_imps,
            view_total_imps, view_monitored_imps, view_fraud, modelcoefa,
-           modelcoefb, modelcoefc, conv1, conv2, conv3, conv4, conv5, conv6,
-           conv7, conv8, conv9, conv10]
+           modelcoefb, modelcoefc, AD_COST, REP_COST, VER_COST,
+           conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
+           conv10]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
@@ -172,7 +176,6 @@ datadatecol = [date]
 datafloatcol = datacol[:]
 datafloatcol.remove(date)
 
-AD_COST = 'Adserving Cost'
 AM_CPM = 'CPM'
 
 REP_COST = 'Reporting Cost'

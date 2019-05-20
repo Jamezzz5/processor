@@ -5,6 +5,7 @@ import logging
 import numpy as np
 import pandas as pd
 import reporting.utils as utl
+import reporting.calc as cal
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.errorreport as er
@@ -237,17 +238,15 @@ def combining_data(df, key, columns, **kwargs):
 
 
 def ad_cost_calculation(df):
-    if (vmc.impressions not in df) or (vmc.clicks not in df):
-        return df
-    df[vmc.AD_COST] = np.where(df[dctc.AM] == vmc.AM_CPM,
-                               df[dctc.AR] * df[vmc.impressions] / 1000,
-                               df[dctc.AR] * df[vmc.clicks])
-    df[vmc.REP_COST] = np.where(df[dctc.RFM] == vmc.AM_CPM,
-                                df[dctc.RFR] * df[vmc.impressions] / 1000,
-                                df[dctc.RFR] * df[vmc.clicks])
-    df[vmc.VER_COST] = np.where(df[dctc.VFM] == vmc.AM_CPM,
-                                df[dctc.VFR] * df[vmc.impressions] / 1000,
-                                df[dctc.VFR] * df[vmc.clicks])
+    for cost_cols in [(vmc.AD_COST, dctc.AM, dctc.AR),
+                      (vmc.REP_COST, dctc.RFM, dctc.RFR),
+                      (vmc.VER_COST, dctc.VFM, dctc.VFR)]:
+        for col in [cost_cols[0], vmc.impressions, vmc.clicks]:
+            if col not in df:
+                df[col] = 0
+        df[cost_cols[0]] = df.apply(
+            cal.net_cost, cost_col=cost_cols[0],
+            bm_col=cost_cols[1], br_col=cost_cols[2], axis=1)
     return df
 
 

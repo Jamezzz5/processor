@@ -67,45 +67,45 @@ def clicks_by_place_date(df):
     return df
 
 
-def net_cost(df):
-    if df[dctc.BM] == BM_CPM or df[dctc.BM] == BM_AV:
-        return df[dctc.BR] * (df[vmc.impressions] / 1000)
-    elif df[dctc.BM] == BM_CPC:
-        return df[dctc.BR] * df[vmc.clicks]
-    elif df[dctc.BM] == BM_CPV:
-        return df[dctc.BR] * df[vmc.views]
-    elif df[dctc.BM] == BM_CPLP:
-        return df[dctc.BR] * df[vmc.landingpage]
-    elif df[dctc.BM] == BM_CPVM:
-        return df[dctc.BR] * (df[vmc.view_imps] / 1000)
-    elif df[dctc.BM] == BM_PA:
+def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
+    if df[bm_col] == BM_CPM or df[bm_col] == BM_AV:
+        return df[br_col] * (df[vmc.impressions] / 1000)
+    elif df[bm_col] == BM_CPC:
+        return df[br_col] * df[vmc.clicks]
+    elif df[bm_col] == BM_CPV:
+        return df[br_col] * df[vmc.views]
+    elif df[bm_col] == BM_CPLP:
+        return df[br_col] * df[vmc.landingpage]
+    elif df[bm_col] == BM_CPVM:
+        return df[br_col] * (df[vmc.view_imps] / 1000)
+    elif df[bm_col] == BM_PA:
         return df[vmc.cost] / .85
-    elif df[dctc.BM] == BM_FLAT or df[dctc.BM] == BM_FLAT2:
+    elif df[bm_col] == BM_FLAT or df[bm_col] == BM_FLAT2:
         if df[vmc.date] == df[dctc.PD]:
-            return df[dctc.BR] * df[CLI_PD]
-    elif df[dctc.BM] == BM_FLATIMP:
+            return df[br_col] * df[CLI_PD]
+    elif df[bm_col] == BM_FLATIMP:
         if df[vmc.date] == df[dctc.PD]:
-            return df[dctc.BR] * df[IMP_PD]
-    elif df[dctc.BM] == BM_CPACPM:
+            return df[br_col] * df[IMP_PD]
+    elif df[bm_col] == BM_CPACPM:
         if df[vmc.date] < df[dctc.PD]:
-            return df[dctc.BR] * df[vmc.conv1]
+            return df[br_col] * df[vmc.conv1]
         else:
             return df[dctc.BR2] * (df[vmc.impressions] / 1000)
-    elif df[dctc.BM] == BM_CPA:
+    elif df[bm_col] == BM_CPA:
         return df[dctc.BR] * df[vmc.conv1]
-    elif df[dctc.BM] == BM_CPA2:
+    elif df[bm_col] == BM_CPA2:
         if df[vmc.date] < df[dctc.PD]:
             return df[dctc.BR] * df[vmc.conv1]
         else:
             return df[dctc.BR2] * df[vmc.conv1]
-    elif df[dctc.BM] == BM_CPA3:
+    elif df[bm_col] == BM_CPA3:
         if df[vmc.date] >= df[dctc.PD2]:
             return df[dctc.BR3] * df[vmc.conv1]
         elif df[vmc.date] < df[dctc.PD]:
             return df[dctc.BR] * df[vmc.conv1]
         elif df[dctc.PD2] > df[vmc.date] >= df[dctc.PD]:
             return df[dctc.BR2] * df[vmc.conv1]
-    elif df[dctc.BM] == BM_CPA4:
+    elif df[bm_col] == BM_CPA4:
         if df[vmc.date] >= df[dctc.PD3]:
             return df[dctc.BR4] * df[vmc.conv1]
         elif df[vmc.date] < df[dctc.PD]:
@@ -114,7 +114,7 @@ def net_cost(df):
             return df[dctc.BR3] * df[vmc.conv1]
         elif df[dctc.PD2] > df[vmc.date] >= df[dctc.PD]:
             return df[dctc.BR2] * df[vmc.conv1]
-    elif df[dctc.BM] == BM_CPA5:
+    elif df[bm_col] == BM_CPA5:
         if df[vmc.date] >= df[dctc.PD4]:
             return df[dctc.BR5] * df[vmc.conv1]
         elif df[vmc.date] < df[dctc.PD]:
@@ -126,7 +126,7 @@ def net_cost(df):
         elif df[dctc.PD2] > df[vmc.date] >= df[dctc.PD]:
             return df[dctc.BR2] * df[vmc.conv1]
     else:
-        return df[vmc.cost]
+        return df[cost_col]
 
 
 def net_cost_calculation(df):
