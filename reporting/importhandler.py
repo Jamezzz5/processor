@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import pandas as pd
 import datetime as dt
@@ -40,11 +41,23 @@ class ImportHandler(object):
             full_file = filename
         else:
             full_file = os.path.join(utl.raw_path, filename)
-        try:
-            api_df.to_csv(full_file, index=False, encoding='utf-8')
-        except IOError:
-            logging.warning('{} could not be opened.  '
-                            'API data was not saved.'.format(full_file))
+        self.write_df(api_df, full_file)
+
+    def write_df(self, api_df, full_file, attempt=0):
+        if not api_df.empty:
+            try:
+                api_df.to_csv(full_file, index=False, encoding='utf-8')
+            except IOError:
+                logging.warning('{} could not be opened.  API data was '
+                                'not saved will attempt {} '
+                                'more times.'.format(full_file, 4 - attempt))
+                attempt += 1
+                if attempt < 5:
+                    time.sleep(15)
+                    self.write_df(api_df, full_file, attempt)
+        else:
+            logging.warning('Imported df empty - '
+                            'not overwriting {}.'.format(full_file))
 
     def merge_df(self, api_df, filename, date_col, start_date, end_date,
                  first_row, last_row, api_merge):
