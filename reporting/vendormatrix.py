@@ -199,7 +199,7 @@ def full_placement_creation(df, key, full_col, full_place_cols):
     for idx, col in enumerate(full_place_cols):
         if col[:2] == '::':
             col = col[2:]
-            df[col] = df[col].replace({'_': ''}, regex=True)
+            df[col] = df[col].str.replace('_', '', regex=True)
         if col not in df:
             logging.warning('{} was not in {}.  It was not included in '
                             'Full Placement Name.  For reference column names'
