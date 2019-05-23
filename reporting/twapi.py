@@ -118,9 +118,11 @@ class TwApi(object):
             url += '&{}s={}'.format(parent, ','.join(parent_filter))
         headers, data = self.request(url)
         if sd:
-            data['data'] = [x for x in data['data'] if x['end_time'] and
-                            dt.datetime.strptime(x['end_time'],
-                                                 '%Y-%m-%dT%H:%M:%SZ') > sd]
+            data['data'] = [x for x in data['data'] if
+                            (x['end_time'] and
+                             dt.datetime.strptime(
+                                 x['end_time'], '%Y-%m-%dT%H:%M:%SZ') > sd)
+                            or not x['end_time']]
         if 'data' in data:
             id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
                        for x in data['data']}
