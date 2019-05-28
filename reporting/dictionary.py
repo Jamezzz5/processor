@@ -362,7 +362,8 @@ class DictTranslationConfig(object):
     def select_translation(tdf, col, data_dict):
         if dctc.DICT_COL_SEL not in tdf.columns:
             return data_dict
-        tdf = tdf[tdf[dctc.DICT_COL_FNC].str.contains('Select', na=False)]
+        select_rows = tdf[dctc.DICT_COL_FNC].str.contains('Select', na=False)
+        tdf = tdf[select_rows].copy()
         tdf[dctc.DICT_COL_FNC] = tdf[dctc.DICT_COL_FNC].str.split('::').str[1]
         sel = tdf[[dctc.DICT_COL_FNC, dctc.DICT_COL_SEL, dctc.DICT_COL_VALUE,
                    dctc.DICT_COL_NVALUE]].to_dict(orient='index')
