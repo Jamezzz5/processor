@@ -4,6 +4,7 @@ import json
 import time
 import logging
 import operator
+import calendar
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -108,6 +109,9 @@ class RedApi(object):
         cal_month_xpath = cal_xpath + month_xpath
         month = self.browser.find_element_by_xpath(cal_month_xpath).text
         month = dt.datetime.strptime(month, '%B %Y')
+        if lr == 2:
+            last_day = calendar.monthrange(month.year, month.month)[1]
+            month = month.replace(day=last_day)
         return month
 
     @staticmethod
@@ -118,28 +122,33 @@ class RedApi(object):
             comp = operator.lt
         return comp
 
-    def go_to_month(self, date, lr, cal_xpath, month, comp):
+    def change_month(self, date, lr, cal_xpath, month):
         cal_sel_xpath = cal_xpath + '[1]/span[{}]'.format(lr)
-        if comp(month, date):
-            month_diff = abs((((month.year - date.year) * 12) +
-                              month.month - date.month))
-            for x in range(month_diff):
-                self.click_on_xpath(cal_sel_xpath, sleep=1)
+        month_diff = abs((((month.year - date.year) * 12) +
+                          month.month - date.month))
+        for x in range(month_diff):
+            self.click_on_xpath(cal_sel_xpath, sleep=1)
+
+    def go_to_month(self, date, left_month, right_month, cal_xpath):
+        if date < left_month:
+            self.change_month(date, 1, cal_xpath, left_month)
+        if date > right_month:
+            self.change_month(date, 2, cal_xpath, right_month)
 
     def click_on_date(self, date):
         date = dt.datetime.strftime(date, '%a %b %d %Y')
         cal_date_xpath = "//div[@aria-label='{}']".format(date)
         self.click_on_xpath(cal_date_xpath)
 
-    def find_and_click_date(self, date, lr, cal_xpath, month, comp):
-        self.go_to_month(date, lr, cal_xpath, month, comp)
+    def find_and_click_date(self, date, left_month, right_month, cal_xpath):
+        self.go_to_month(date, left_month, right_month, cal_xpath)
         self.click_on_date(date)
 
-    def set_date(self, date, lr=1, cal_xpath=None):
+    def set_date(self, date, cal_xpath=None):
         cal_xpath = cal_xpath + '[1]/td[1]/div/div/div/div'
-        month = self.get_cal_month(lr=lr, cal_xpath=cal_xpath)
-        comp = self.get_comparison(lr=lr)
-        self.find_and_click_date(date, lr, cal_xpath, month, comp)
+        left_month = self.get_cal_month(lr=1, cal_xpath=cal_xpath)
+        right_month = self.get_cal_month(lr=2, cal_xpath=cal_xpath)
+        self.find_and_click_date(date, left_month, right_month, cal_xpath)
 
     def open_calendar(self, base_xpath):
         cal_button_xpath = 'div[1]/div[2]/div/div'
@@ -152,8 +161,8 @@ class RedApi(object):
     def set_dates(self, sd, ed, base_xpath=None):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
         cal_xpath = self.open_calendar(base_xpath)
-        self.set_date(sd, lr=1, cal_xpath=cal_xpath)
-        self.set_date(ed, lr=2, cal_xpath=cal_xpath)
+        self.set_date(sd, cal_xpath=cal_xpath)
+        self.set_date(ed, cal_xpath=cal_xpath)
         self.click_on_xpath(cal_xpath + '[2]/td/div/div/button[2]/span')
 
     def export_to_csv(self, base_xpath=None):
