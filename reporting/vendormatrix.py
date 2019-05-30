@@ -238,15 +238,20 @@ def combining_data(df, key, columns, **kwargs):
 
 
 def ad_cost_calculation(df):
+    if df.empty:
+        return df
     for cost_cols in [(vmc.AD_COST, dctc.AM, dctc.AR),
                       (vmc.REP_COST, dctc.RFM, dctc.RFR),
                       (vmc.VER_COST, dctc.VFM, dctc.VFR)]:
         for col in [cost_cols[0], vmc.impressions, vmc.clicks]:
             if col not in df:
                 df[col] = 0
-        df[cost_cols[0]] = df.apply(
-            cal.net_cost, cost_col=cost_cols[0],
-            bm_col=cost_cols[1], br_col=cost_cols[2], axis=1)
+        calc_ser = (df[df[cost_cols[1]].isin(cal.BUY_MODELS) &
+                       df[cost_cols[2]] != 0].
+                    apply(cal.net_cost, cost_col=cost_cols[0],
+                          bm_col=cost_cols[1], br_col=cost_cols[2], axis=1))
+        if not calc_ser.empty:
+            df[cost_cols[0]].update(calc_ser)
     return df
 
 
