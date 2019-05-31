@@ -15,9 +15,6 @@ login_url = 'https://adapi.sizmek.com/sas/login/login/'
 report_url = 'https://adapi.sizmek.com/analytics/reports/saveAndExecute'
 base_report_get_url = 'https://adapi.sizmek.com/analytics/reports/executions/'
 
-def_dimensions = ["Site Name", "Placement Name", "Ad Name", "Placement ID",
-                  "Placement Dimension", "Campaign Name", "Ad ID"]
-
 def_metrics = ["Served Impressions", "Total Clicks", "Video Played 25%",
                "Video Played 50%", "Video Played 75%", "Video Started",
                "Video Fully Played", "Total Conversions",
@@ -29,6 +26,16 @@ p2c_fields = ['Conversion Date', 'Conversion ID', 'Event Date',
               'Campaign Name', 'Site Name', 'Winner Placement Name',
               'Query String', 'Conversion Activity Name',
               'Winner Event Type Name']
+
+unique_metrics = ["Unique Impressions", "Unique Clicks", "Average Frequency",
+                  "Unique Video Users", "Unique Interacting Users",
+                  "Total Conversions"]
+
+campaign_dimensions = ['Campaign Name']
+site_dimensions = campaign_dimensions + ['Site Name', 'Site ID']
+placement_dimensions = site_dimensions + ['Placement Name', 'Placement ID',
+                                          'Placement Dimension']
+def_dimensions = placement_dimensions + ['Ad Name', 'Ad ID']
 
 
 class SzkApi(object):
@@ -86,18 +93,38 @@ class SzkApi(object):
         self.headers['Authorization'] = session_id
 
     @staticmethod
-    def parse_fields(fields):
+    def parse_fields(fields, sd, ed):
         field_dict = {'type': 'AnalyticsReport',
                       'timeBreakdown': 'Day',
                       'attributeIDs': def_dimensions,
-                      'metricIDs': def_metrics}
+                      'metricIDs': def_metrics,
+                      'attributeIDsOnColumns': ["Conversion Tag Name"],
+                      'timeRange': {
+                          "timeZone": "US/Pacific",
+                          "type": "Custom",
+                          "dataStartTimestamp": "{}".format(sd),
+                          "dataEndTimestamp": "{}".format(ed)
+                      }}
         if fields:
             for field in fields:
                 if field == 'Total':
                     field_dict['timeBreakdown'] = 'Total'
+                if field == 'Week':
+                    field_dict['timeBreakdown'] = 'Week'
                 if field == 'Placement':
                     field_dict['attributeIDs'] = ['Placement Name',
                                                   'Placement ID']
+                if field == 'Lifetime':
+                    field_dict['timeRange'] = {
+                        "timeZone": "Greenwich",
+                        "type": "Campaign Lifetime",
+                        "dataStartTimestamp": None,
+                        "dataEndTimestamp": None}
+                if field == 'Site':
+                    field_dict['attributeIDs'] = site_dimensions
+                if field == 'Unique':
+                    field_dict['metricIDs'] = unique_metrics
+                    field_dict['attributeIDsOnColumns'] = []
                 if field == 'P2C':
                     field_dict['type'] = 'ReportP2C'
                 if field[:6] == 'Filter':
@@ -124,11 +151,11 @@ class SzkApi(object):
         if dt.datetime.today().date() == ed.date():
             ed += dt.timedelta(days=1)
         sd, ed = self.date_check(sd, ed)
-        fields = self.parse_fields(fields)
-        return sd, ed, fields
+        fields = self.parse_fields(fields, sd, ed)
+        return fields
 
     def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        fields = self.get_data_default_check(sd, ed, fields)
         report_get_url = self.request_report(sd, ed, fields)
         report_dl_url = self.get_report_dl_url(report_get_url)
         self.df = self.download_report_to_df(report_dl_url)
@@ -137,7 +164,7 @@ class SzkApi(object):
     def request_report(self, sd, ed, fields):
         logging.info('Requesting report for {} to {}.'.format(sd, ed))
         self.set_headers()
-        report = self.create_report_body(sd, ed, fields)
+        report = self.create_report_body(fields)
         r = requests.post(report_url, headers=self.headers, json=report)
         if 'result' in r.json() and r.json()['result']:
             execution_id = r.json()['result']['executionID']
@@ -173,7 +200,7 @@ class SzkApi(object):
             self.df = pd.DataFrame()
         return self.df
 
-    def create_report_body(self, sd, ed, fields):
+    def create_report_body(self, fields):
         report = {"entities": [{
                   "type": fields['type'],
                   "reportName": "test",
@@ -198,19 +225,12 @@ class SzkApi(object):
                       "targetCurrency": 1,
                       "currencyExchangeDate": "2019-03-14"
                     },
-                    "timeRange": {
-                      "timeZone": "US/Pacific",
-                      "type": "Custom",
-                      "dataStartTimestamp": "{}".format(sd),
-                      "dataEndTimestamp": "{}".format(ed)
-                    },
+                    "timeRange": fields['timeRange'],
                   },
                   "reportStructure": {
                     "attributeIDs": fields['attributeIDs'],
                     "metricIDs": fields['metricIDs'],
-                    "attributeIDsOnColumns": [
-                      "Conversion Tag Name"
-                    ],
+                    "attributeIDsOnColumns": fields['attributeIDsOnColumns'],
                     "timeBreakdown": fields['timeBreakdown']
                   },
                   "reportExecution": {
