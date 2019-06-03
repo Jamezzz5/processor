@@ -36,6 +36,7 @@ nested_dict_col = ['actions']
 
 breakdown_age = ['age']
 breakdown_gender = ['gender']
+breakdown_publisher = ['publisher_platform']
 breakdown_placement = ['publisher_platform', 'platform_position',
                        'impression_device']
 breakdown_impdevice = ['impression_device']
@@ -132,6 +133,8 @@ class FbApi(object):
                 breakdowns.extend(breakdown_gender)
             if item == 'Placement':
                 breakdowns.extend(breakdown_placement)
+            if item == 'Publisher':
+                breakdowns.extend(breakdown_publisher)
             if item == 'Country':
                 breakdowns.extend(breakdown_country)
             if item == 'Impression Device':
