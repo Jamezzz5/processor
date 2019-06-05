@@ -87,10 +87,14 @@ class RedApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-        login_xpaths = ['/html/body/div/div/div[2]/div/form/fieldset[5]/button',
-                        '//*[@id="app"]/div/div[1]/div/a/img']
+        login_xpaths = ['/html/body/div/div/div[2]/div/form/fieldset[5]/button']
         for xpath in login_xpaths:
             self.click_on_xpath(xpath, sleep=5)
+        if self.browser.current_url != self.base_url:
+            self.go_to_url(self.base_url)
+        else:
+            logo_xpath = '//*[@id="app"]/div/div[1]/div/a/img'
+            self.click_on_xpath(logo_xpath, sleep=5)
 
     def click_on_xpath(self, xpath, sleep=2):
         self.browser.find_element_by_xpath(xpath).click()
