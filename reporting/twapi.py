@@ -196,8 +196,9 @@ class TwApi(object):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
         self.df = self.get_df_for_all_dates(sd, ed, fields)
-        self.df = self.add_parents(self.df)
-        self.df = self.rename_cols()
+        if not self.df.empty:
+            self.df = self.add_parents(self.df)
+            self.df = self.rename_cols()
         return self.df
 
     def get_df_for_all_dates(self, sd, ed, fields):
@@ -308,6 +309,8 @@ class TwApi(object):
         return df
 
     def clean_df(self, df):
+        if df.empty:
+            return df
         df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
         ndf = utl.data_to_type(ndf, str_col=[colcid], int_col=[coldate])
