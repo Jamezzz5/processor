@@ -176,7 +176,7 @@ class VendorMatrix(object):
 
     def vm_loop(self):
         logging.info('Initializing Vendor Matrix Loop')
-        self.df = pd.DataFrame()
+        self.df = pd.DataFrame(columns=[vmc.date, dctc.FPN, dctc.PN, dctc.BM])
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
@@ -284,6 +284,8 @@ def import_data(key, vm_rules, **kwargs):
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
+    if df is None or df.empty:
+        df = pd.DataFrame(columns=kwargs[vmc.fullplacename] + [vmc.vendorkey])
     df = df.loc[~df[vmc.vendorkey].isin(plan_omit_list)]
     df = df.loc[:, kwargs[vmc.fullplacename]]
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
