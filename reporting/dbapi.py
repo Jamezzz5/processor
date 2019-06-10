@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import logging
 import pandas as pd
 import reporting.utils as utl
@@ -89,6 +90,7 @@ class DbApi(object):
             else:
                 logging.warning('Rate limit exceeded. Pausing. '
                                 'Response: {}'.format(self.r.json()))
+                time.sleep(60)
         report_url = (self.r.json()['metadata']
                       ['googleCloudStoragePathForLatestReport'])
         if report_url:
