@@ -154,6 +154,12 @@ class ScApi(object):
             self.get_raw_data(sd, ed, cid)
         self.df['Campaign Name'] = self.df['Campaign Name'].map(cids)
         self.df = self.add_names_to_df()
+        self.df = self.remove_timezone_from_date()
+        return self.df
+
+    def remove_timezone_from_date(self):
+        for col in ['end_time', 'start_time']:
+            self.df[col] = self.df[col].astype('U').str[:-6]
         return self.df
 
     def get_raw_data(self, sd, ed, cid):
