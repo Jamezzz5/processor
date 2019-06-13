@@ -16,6 +16,12 @@ class RedApi(object):
     config_path = utl.config_path
     base_url = 'https://ads.reddit.com'
     temp_path = 'tmp'
+    base_metric = '//*[@id="metrics.'
+    video_metrics = ['videoViewableImpressions', 'videoFullyViewableImpressions',
+                     'videoPlaysWithSound', 'videoPlaysExpanded',
+                     'videoWatches25', 'videoWatches50', 'videoWatches75',
+                     'videoWatches95', 'videoWatches100', 'videoWatches3Secs',
+                     'videoWatches10Secs']
 
     def __init__(self):
         self.browser = self.init_browser()
@@ -90,7 +96,7 @@ class RedApi(object):
         login_xpaths = ['/html/body/div/div/div[2]/div/form/fieldset[5]/button']
         for xpath in login_xpaths:
             self.click_on_xpath(xpath, sleep=5)
-        if self.browser.current_url != self.base_url:
+        if self.browser.current_url[:len(self.base_url)] != self.base_url:
             self.go_to_url(self.base_url)
         else:
             logo_xpath = '//*[@id="app"]/div/div[1]/div/a/img'
@@ -169,17 +175,39 @@ class RedApi(object):
         self.set_date(ed, cal_xpath=cal_xpath)
         self.click_on_xpath(cal_xpath + '[2]/td/div/div/button[2]/span')
 
+    def set_metrics(self, base_xpath):
+        logging.info('Setting metrics.')
+        metric_button_xpath = 'div[1]/div[1]/div/div[2]/div/button'
+        metric_xpath = base_xpath + metric_button_xpath
+        self.click_on_xpath(metric_xpath)
+        for metric in self.video_metrics:
+            xpath = '{}{}"]'.format(self.base_metric, metric)
+            self.click_on_xpath(xpath, sleep=.5)
+        apply_button_xpath = ('/html/body/div[9]/div/div/div/'
+                              'div/div/div[2]/div/button[2]')
+        self.click_on_xpath(apply_button_xpath)
+
     def export_to_csv(self, base_xpath=None):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
         export_xpath = base_xpath + 'div[1]/div[1]/div/div[3]/button'
         self.click_on_xpath(export_xpath)
 
+    def get_base_xpath(self):
+        base_app_xpath = '//*[@id="app"]/div/div[2]/div[2]'
+        try:
+            self.browser.find_element_by_xpath(base_app_xpath)
+        except ex.NoSuchElementException:
+            base_app_xpath = base_app_xpath[:-3]
+        base_app_xpath += '/'
+        return base_app_xpath
+
     def create_report(self, sd, ed):
         logging.info('Creating report.')
-        base_app_xpath = '//*[@id="app"]/div/div[2]/div[2]/'
+        base_app_xpath = self.get_base_xpath()
         self.set_breakdowns(base_xpath=base_app_xpath)
         self.set_dates(sd, ed, base_xpath=base_app_xpath)
+        self.set_metrics(base_xpath=base_app_xpath)
         self.export_to_csv(base_xpath=base_app_xpath)
 
     @staticmethod
