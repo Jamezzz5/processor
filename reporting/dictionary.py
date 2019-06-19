@@ -354,15 +354,16 @@ class DictTranslationConfig(object):
             if dctc.DICT_COL_FNC in tdf.columns:
                 data_dict = self.strip_dict(tdf, col, data_dict)
                 data_dict = self.select_translation(tdf, col, data_dict)
+                data_dict = self.select_translation(tdf, col, data_dict, 'Set')
                 tdf = tdf[tdf[dctc.DICT_COL_FNC].isnull()]
             data_dict = self.apply_translation(tdf, col, data_dict)
         return data_dict
 
     @staticmethod
-    def select_translation(tdf, col, data_dict):
+    def select_translation(tdf, col, data_dict, fnc_type='Select'):
         if dctc.DICT_COL_SEL not in tdf.columns:
             return data_dict
-        select_rows = tdf[dctc.DICT_COL_FNC].str.contains('Select', na=False)
+        select_rows = tdf[dctc.DICT_COL_FNC].str.contains(fnc_type, na=False)
         tdf = tdf[select_rows].copy()
         tdf[dctc.DICT_COL_FNC] = tdf[dctc.DICT_COL_FNC].str.split('::').str[1]
         sel = tdf[[dctc.DICT_COL_FNC, dctc.DICT_COL_SEL, dctc.DICT_COL_VALUE,
@@ -372,8 +373,11 @@ class DictTranslationConfig(object):
             col2_q = sel[s][dctc.DICT_COL_SEL]
             val = sel[s][dctc.DICT_COL_VALUE]
             nval = sel[s][dctc.DICT_COL_NVALUE]
-            data_dict.loc[(data_dict[col2] == col2_q) &
-                          (data_dict[col] == val), col] = nval
+            if fnc_type == 'Select':
+                data_dict.loc[(data_dict[col2] == col2_q) &
+                              (data_dict[col] == val), col] = nval
+            if fnc_type == 'Set':
+                data_dict.loc[data_dict[col2] == col2_q, col] = nval
         return data_dict
 
     @staticmethod
