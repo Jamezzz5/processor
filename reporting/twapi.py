@@ -99,7 +99,7 @@ class TwApi(object):
                             secret=self.access_token_secret)
         self.client = oauth.Client(consumer, token)
 
-    def request(self, url):
+    def request(self, url, resp_key=None):
         self.get_client()
         response, content = self.client.request(url, method='GET')
         try:
@@ -109,7 +109,12 @@ class TwApi(object):
         except ValueError:
             logging.warning('Rate limit exceeded.  Restarting after 300s.')
             time.sleep(300)
-            response, data = self.request(url)
+            response, data = self.request(url, resp_key)
+        if resp_key and resp_key not in data:
+            logging.warning('{} not in data, retrying. '
+                            ' {}'.format(resp_key, data))
+            time.sleep(60)
+            response, data = self.request(url, resp_key)
         return response, data
 
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
@@ -223,7 +228,7 @@ class TwApi(object):
         df = pd.DataFrame()
         for ids in ids_lists:
             url = self.create_stats_url(fields, ids, sd, ed, placement=place)
-            header, data = self.request(url)
+            header, data = self.request(url, resp_key=jsondata)
             self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
             id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
