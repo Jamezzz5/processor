@@ -216,16 +216,15 @@ def full_placement_creation(df, key, full_col, full_place_cols):
 
 def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
-    for col in columns:
+    combine_cols = [x for x in columns if kwargs[x] != ['nan']]
+    for col in combine_cols:
         if col in df.columns and col not in kwargs[col]:
             df[col] = 0
         for item in kwargs[col]:
-            if str(item) == 'nan' and col == vmc.date:
-                df[vmc.date] = 0
-            elif str(item) == 'nan' or col == item:
+            if col == item:
                 continue
             if item not in df:
-                logging.warning('{} is not in {}.  It was not'
+                logging.warning('{} is not in {}.  It was not '
                                 'put in {}'.format(item, key, col))
                 continue
             if col not in df.columns:
@@ -235,6 +234,9 @@ def combining_data(df, key, columns, **kwargs):
                 df[col] += df[item]
             else:
                 df[col] = df[item]
+    for col in [x for x in columns if x not in combine_cols]:
+        if col in df.columns or col == vmc.date:
+            df[col] = 0
     return df
 
 
