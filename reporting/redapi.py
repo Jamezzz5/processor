@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import shutil
 import logging
 import operator
 import calendar
@@ -219,11 +220,12 @@ class RedApi(object):
             if files:
                 logging.info('File downloaded.')
                 temp_file = os.path.join(temp_path, files[0])
+                time.sleep(5)
                 df = pd.read_csv(temp_file)
                 os.remove(temp_file)
                 break
             time.sleep(5)
-        os.rmdir(temp_path)
+        shutil.rmtree(temp_path)
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
