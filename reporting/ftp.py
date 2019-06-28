@@ -141,6 +141,9 @@ class FTP(object):
             r.seek(0)
             self.df = pd.read_csv(r, header=self.header, compression=comp)
             self.df = utl.add_dummy_header(self.df, self.header)
+        except pd.errors.EmptyDataError:
+            logging.warning('Found blank file - returning empty dataframe.')
+            self.df = pd.DataFrame()
 
     def ftp_remove_files(self, newest_file):
         for item in self.files:
