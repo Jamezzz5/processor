@@ -217,11 +217,12 @@ class RedApi(object):
         for x in range(100):
             logging.info('Checking for file.  Attempt {}.'.format(x + 1))
             files = os.listdir(temp_path)
+            files = [x for x in files if x[-4:] == '.csv'][-1]
             if files:
                 logging.info('File downloaded.')
-                temp_file = os.path.join(temp_path, files[0])
+                temp_file = os.path.join(temp_path, files)
                 time.sleep(5)
-                df = pd.read_csv(temp_file)
+                df = utl.import_read_csv(temp_file)
                 os.remove(temp_file)
                 break
             time.sleep(5)
