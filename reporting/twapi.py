@@ -278,7 +278,6 @@ class TwApi(object):
                    'id={}&include_card_uri=true'
                    .format(','.join([str(x) for x in tid])))
             h, d = self.request(url)
-            id_dict = {}
             for x in d:
                 if 'card_uri' in x:
                     id_dict[str(x['id'])] = {'name': x['text'],
