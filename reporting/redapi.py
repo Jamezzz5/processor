@@ -217,8 +217,9 @@ class RedApi(object):
         for x in range(100):
             logging.info('Checking for file.  Attempt {}.'.format(x + 1))
             files = os.listdir(temp_path)
-            files = [x for x in files if x[-4:] == '.csv'][-1]
+            files = [x for x in files if x[-4:] == '.csv']
             if files:
+                files = files[-1]
                 logging.info('File downloaded.')
                 temp_file = os.path.join(temp_path, files)
                 time.sleep(5)
