@@ -23,16 +23,22 @@ class Dict(object):
                                                    self.filename)
             self.read()
 
+    def create_new_dictionary(self):
+        logging.info('Creating {}'.format(self.filename))
+        if self.filename == dctc.PFN:
+            data_dict = pd.DataFrame(columns=dctc.PCOLS, index=None)
+        else:
+            data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
+        data_dict.to_csv(self.dict_path_filename, index=False,
+                         encoding='utf-8')
+        return data_dict
+
     def read(self):
         if not os.path.isfile(self.dict_path_filename):
-            logging.info('Creating {}'.format(self.filename))
-            if self.filename == dctc.PFN:
-                data_dict = pd.DataFrame(columns=dctc.PCOLS, index=None)
-            else:
-                data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
-            data_dict.to_csv(self.dict_path_filename, index=False,
-                             encoding='utf-8')
+            self.create_new_dictionary()
         self.data_dict = utl.import_read_csv(self.filename, self.dict_path)
+        if not isinstance(self.data_dict, pd.DataFrame) and not self.data_dict:
+            self.data_dict = self.create_new_dictionary()
         self.clean()
         self.data_dict = self.data_dict.drop_duplicates()
 
