@@ -8,6 +8,7 @@ import reporting.dictcolumns as dctc
 BM_CPM = 'CPM'
 BM_CPC = 'CPC'
 BM_CPV = 'CPV'
+BM_CPCV = 'CPCV'
 BM_CPLP = 'CPLP'
 BM_CPVM = 'CPVM'
 BM_AV = 'AV'
@@ -22,7 +23,7 @@ BM_CPA3 = 'CPA3'
 BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
-BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
+BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPCV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
               BM_FLATIMP, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4,
               BM_CPA5, BM_FLATDATE, BM_CPACPM]
 
@@ -74,6 +75,8 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
         return df[br_col] * df[vmc.clicks]
     elif df[bm_col] == BM_CPV:
         return df[br_col] * df[vmc.views]
+    elif df[bm_col] == BM_CPCV:
+        return df[br_col] * df[vmc.views100]
     elif df[bm_col] == BM_CPLP:
         return df[br_col] * df[vmc.landingpage]
     elif df[bm_col] == BM_CPVM:
