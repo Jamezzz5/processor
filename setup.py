@@ -9,6 +9,5 @@ setup(
     author='J',
     author_email='j',
     description='Processor.',
-    long_description=open('README.md').read(),
     install_requires=requirements,
 )
