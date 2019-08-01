@@ -86,8 +86,24 @@ class DcApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         files_url = self.get_files_url()
         self.r = self.get_report(files_url)
-        self.df = pd.read_csv(StringIO(self.r.text), skiprows=10)
-        self.df = self.df.reset_index()
+        self.df = self.get_df_from_response()
+        return self.df
+
+    def find_first_line(self):
+        for idx, x in enumerate(self.r.text.splitlines()):
+            if idx == 100:
+                logging.warning('Could not find first line, returning empty df')
+                return None
+            if x == 'Report Fields':
+                return idx
+
+    def get_df_from_response(self):
+        first_line = self.find_first_line()
+        if first_line:
+            self.df = pd.read_csv(StringIO(self.r.text), skiprows=first_line)
+            self.df = self.df.reset_index()
+        else:
+            self.df = pd.DataFrame()
         return self.df
 
     def get_report(self, files_url):
