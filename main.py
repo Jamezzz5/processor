@@ -34,24 +34,32 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga',
-                                      'nb', 'af', 'sc', 'aj', 'dc', 'rs',
-                                      'db', 'vk', 'rc', 'szk', 'red'])
-parser.add_argument('--ftp', choices=['all', 'sz'])
-parser.add_argument('--dbi', choices=['all', 'dna'])
-parser.add_argument('--s3', choices=['all', 'dna'])
-parser.add_argument('--noprocess', action='store_true')
-parser.add_argument('--analyze', action='store_true')
-parser.add_argument('--update', choices=['all', 'vm', 'dct'])
-parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
-parser.add_argument('--tab', action='store_true')
-args = parser.parse_args()
+
+def get_args(arguments=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga',
+                                          'nb', 'af', 'sc', 'aj', 'dc', 'rs',
+                                          'db', 'vk', 'rc', 'szk', 'red'])
+    parser.add_argument('--ftp', choices=['all', 'sz'])
+    parser.add_argument('--dbi', choices=['all', 'dna'])
+    parser.add_argument('--s3', choices=['all', 'dna'])
+    parser.add_argument('--noprocess', action='store_true')
+    parser.add_argument('--analyze', action='store_true')
+    parser.add_argument('--update', choices=['all', 'vm', 'dct'])
+    parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
+    parser.add_argument('--tab', action='store_true')
+    if arguments:
+        args = parser.parse_args(arguments.split())
+    else:
+        args = parser.parse_args()
+    return args
+
 
 OUTPUT_FILE = 'Raw Data Output.csv'
 
 
-def main():
+def main(arguments=None):
+    args = get_args(arguments)
     if args.update == 'all' or args.update == 'vm':
         vm.vm_update()
     if args.update == 'all' or args.update == 'dct':
