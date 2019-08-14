@@ -19,9 +19,12 @@ console = logging.StreamHandler(sys.stdout)
 console.setFormatter(formatter)
 log.addHandler(console)
 
-log_file = logging.FileHandler('logfile.log', mode='w')
-log_file.setFormatter(formatter)
-log.addHandler(log_file)
+try:
+    log_file = logging.FileHandler('logfile.log', mode='w')
+    log_file.setFormatter(formatter)
+    log.addHandler(log_file)
+except PermissionError as e:
+    logging.warning('Could not open logfile with error: \n {}'.format(e))
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
