@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import yaml
 import shutil
 import logging
 import numpy as np
@@ -55,12 +57,14 @@ class VendorMatrix(object):
         self.vm_rules()
         self.make_omit_lists()
 
-    def read(self):
+    @staticmethod
+    def read():
         if not os.path.isfile(os.path.join(csv_path, csv_file)):
             logging.info('Creating Vendor Matrix.  Populate it and run again')
             vm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys, index=None)
             vm.to_csv(csv_full_file, index=False, encoding='utf-8')
-        self.vm = utl.import_read_csv(csv_file, csv_path)
+        vm = utl.import_read_csv(csv_file, csv_path)
+        return vm
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
@@ -69,7 +73,7 @@ class VendorMatrix(object):
 
     def vm_parse(self):
         self.vm = pd.DataFrame(columns=vmc.datacol)
-        self.read()
+        self.vm = self.read()
         self.plan_net_check()
         drop = [item for item in self.vm.columns.values.tolist()
                 if (item[0] == '|')]
@@ -190,6 +194,202 @@ class VendorMatrix(object):
                 os.rmdir(er.csvpath)
         self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
+
+
+class ImportConfig(object):
+    key = 'Key'
+    config_file = vmc.apifile
+    account_id = 'ID'
+    filter = 'Filter'
+    account_id_parent = 'ID Parent'
+    account_id_pre = 'ID Pre'
+    file_name = 'import_config.csv'
+    file_path = utl.config_path
+
+    def __init__(self, matrix=VendorMatrix()):
+        self.matrix = matrix
+        self.matrix_df = matrix.read()
+        self.df = self.read()
+
+    def read(self):
+        df = utl.import_read_csv(self.file_name, self.file_path)
+        return df
+
+    def get_default_params(self, import_key):
+        params = self.df[self.df[self.key] == import_key].copy()
+        params = params.reset_index(drop=True)
+        params = params.to_dict(orient='index')[0]
+        return params
+
+    @staticmethod
+    def append_str_before_filetype(name, append_val):
+        name_list = name.split('.')
+        new_name = '{}_{}'.format(name_list[0], append_val)
+        if len(name_list) > 1:
+            new_name = '{}.{}'.format(new_name, name_list[1])
+        return new_name
+
+    def get_new_name(self, search_col, search_val):
+        file_list = sorted([x for x in self.matrix_df[search_col].unique()
+                            if search_val in str(x)])
+        if len(file_list) > 0:
+            append_val = len(file_list)
+            file_name = self.append_str_before_filetype(search_val, append_val)
+        else:
+            file_name = search_val
+        return file_name
+
+    @staticmethod
+    def get_config_file_value(config_file, name, nest=None):
+        if not pd.isna(nest):
+            value = config_file[nest][name]
+        else:
+            value = config_file[name]
+        return value
+
+    @staticmethod
+    def set_config_file_value(config_file, name, new_val, nest=None):
+        if not pd.isna(nest):
+            config_file[nest][name] = new_val
+        else:
+            config_file[name] = new_val
+        return config_file
+
+    def load_file(self, file_name, file_library):
+        file_name = os.path.join(self.file_path, file_name)
+        with open(file_name, 'r') as f:
+            config_file = file_library.load(f)
+        return config_file
+
+    def make_new_json(self, params, new_file, account_id, import_filter=None,
+                      file_library=json):
+        config_file = self.load_file(params[self.config_file], file_library)
+        if not pd.isna(params[self.account_id_pre]):
+            account_id = '{}{}'.format(params[self.account_id_pre], account_id)
+        config_file = self.set_config_file_value(
+            config_file=config_file, name=params[self.account_id],
+            new_val=account_id, nest=params[self.account_id_parent])
+        if not pd.isna(import_filter):
+            config_file = self.set_config_file_value(
+                config_file=config_file, name=params[self.filter],
+                new_val=import_filter, nest=params[self.account_id_parent])
+        new_file = os.path.join(self.file_path, new_file)
+        with open(new_file, 'w') as f:
+            file_library.dump(config_file, f)
+
+    @staticmethod
+    def set_config_file_lib(file_name):
+        file_type = file_name.split('.')[1]
+        if file_type == 'json':
+            f_lib = json
+        elif file_type == 'yaml':
+            f_lib = yaml
+        else:
+            f_lib = json
+        return f_lib
+
+    def make_new_config(self, params, new_file, account_id, import_filter=None):
+        f_lib = self.set_config_file_lib(params[self.config_file])
+        self.make_new_json(params, new_file, account_id, import_filter, f_lib)
+
+    def set_new_value(self, df, col_name, key_name):
+        new_name = self.append_str_before_filetype(df[col_name][0], key_name)
+        new_name = self.get_new_name(col_name, new_name)
+        df[col_name] = new_name
+        return df
+
+    def add_to_vm(self, import_key, new_file, start_date, api_fields,
+                  key_name='', import_type='API'):
+        original_keys = [import_key, '{}_{}'.format(import_type, import_key)]
+        df = self.matrix_df[
+            self.matrix_df[vmc.vendorkey].isin(original_keys)].copy()
+        df = df.reset_index(drop=True)
+        df = df.iloc[0:]
+        for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
+            df = self.set_new_value(df, col, key_name)
+        df[vmc.vendorkey] = '{}_{}'.format(import_type, df[vmc.vendorkey][0])
+        df[vmc.apifile] = new_file
+        df[vmc.startdate] = start_date
+        if api_fields:
+            df[vmc.apifields] = api_fields
+        self.matrix_df = self.matrix_df.append(df, ignore_index=True,
+                                               sort=False)
+
+    def add_import_to_vm(self, import_key, account_id, import_filter=None,
+                         start_date=None, api_fields=None, key_name=''):
+        params = self.get_default_params(import_key)
+        search_name = self.append_str_before_filetype(
+            params[self.config_file], key_name)
+        file_name = self.get_new_name(search_col=vmc.apifile,
+                                      search_val=search_name)
+        self.make_new_config(params, file_name, account_id, import_filter)
+        self.add_to_vm(import_key, file_name, start_date, api_fields,
+                       key_name)
+
+    def add_imports_to_vm(self, import_dicts):
+        for import_dict in import_dicts:
+            current_imports = self.get_current_imports()
+            if import_dict in current_imports:
+                continue
+            import_key = import_dict[self.key]
+            account_id = import_dict[self.account_id]
+            import_filter = import_dict[self.filter]
+            start_date = import_dict[vmc.startdate]
+            api_fields = import_dict[vmc.apifields]
+            key_name = import_dict['name']
+            self.add_import_to_vm(import_key, account_id, import_filter,
+                                  start_date, api_fields, key_name)
+        self.matrix_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+
+    def get_datasource(self, api_key):
+        df = self.matrix_df[self.matrix_df[vmc.vendorkey] == api_key].copy()
+        df = df.reset_index(drop=True)
+        df = df.iloc[0]
+        return df
+
+    def get_import_params(self, api_key, import_type):
+        api_key_split = api_key.split('_')
+        api_key_type = api_key_split[1]
+        if len(api_key_split) > 2:
+            api_key_name = api_key.split('{}{}_'.format(
+                import_type, api_key_type))[1]
+        else:
+            api_key_name = ''
+        def_params = self.get_default_params(api_key_type)
+        params = self.get_datasource(api_key)
+        f_lib = self.set_config_file_lib(params[self.config_file])
+        config_file = self.load_file(params[self.config_file], f_lib)
+        account_id = self.get_config_file_value(
+            config_file, def_params[self.account_id],
+            def_params[self.account_id_parent])
+        if not pd.isna(def_params[self.account_id_pre]):
+            account_id = account_id.replace(def_params[self.account_id_pre], '')
+        if not pd.isna(def_params[self.filter]):
+            filter_val = self.get_config_file_value(
+                config_file, def_params[self.filter],
+                def_params[self.account_id_parent])
+        else:
+            filter_val = None
+        start_date = params[vmc.startdate]
+        api_fields = params[vmc.apifields]
+        import_dict = {
+            self.key: api_key_type,
+            self.account_id: account_id,
+            self.filter: filter_val,
+            vmc.startdate: start_date,
+            vmc.apifields: api_fields,
+            'name': api_key_name
+        }
+        return import_dict
+
+    def get_current_imports(self, import_type='API_'):
+        import_dicts = []
+        api_keys = [x for x in self.matrix_df[vmc.vendorkey]
+                    if x[:4] == import_type]
+        for api_key in api_keys:
+            import_dict = self.get_import_params(api_key, import_type)
+            import_dicts.append(import_dict)
+        return import_dicts
 
 
 def full_placement_creation(df, key, full_col, full_place_cols):
