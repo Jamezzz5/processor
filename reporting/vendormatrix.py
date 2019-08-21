@@ -206,9 +206,16 @@ class ImportConfig(object):
     file_name = 'import_config.csv'
     file_path = utl.config_path
 
-    def __init__(self, matrix=VendorMatrix()):
-        self.matrix = matrix
-        self.matrix_df = matrix.read()
+    def __init__(self, matrix=None):
+        self.matrix = None
+        self.df = None
+        self.matrix_df = None
+        if matrix:
+            self.import_vm()
+
+    def import_vm(self):
+        self.matrix = VendorMatrix()
+        self.matrix_df = self.matrix.read()
         self.df = self.read()
 
     def read(self):
@@ -326,6 +333,19 @@ class ImportConfig(object):
         self.add_to_vm(import_key, file_name, start_date, api_fields,
                        key_name)
 
+    def add_and_remove_from_vm(self, import_dicts):
+        current_imports = self.get_current_imports()
+        for cur_import in current_imports:
+            if cur_import not in import_dicts:
+                key_name = 'API_{}_{}'.format(cur_import[self.key],
+                                              cur_import['name'])
+                drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
+                                          key_name].copy()
+                drop_idx = drop_idx.index.values[0]
+                self.matrix_df = self.matrix_df.drop(drop_idx)
+                self.matrix_df.reset_index()
+        self.add_imports_to_vm(import_dicts)
+
     def add_imports_to_vm(self, import_dicts):
         for import_dict in import_dicts:
             current_imports = self.get_current_imports()
@@ -382,7 +402,9 @@ class ImportConfig(object):
         }
         return import_dict
 
-    def get_current_imports(self, import_type='API_'):
+    def get_current_imports(self, import_type='API_', matrix=None):
+        if matrix:
+            self.import_vm()
         import_dicts = []
         api_keys = [x for x in self.matrix_df[vmc.vendorkey]
                     if x[:4] == import_type]
