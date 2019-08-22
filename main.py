@@ -39,6 +39,7 @@ sys.excepthook = handle_exception
 
 
 def get_args(arguments=None):
+    print(arguments)
     parser = argparse.ArgumentParser()
     parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga',
                                           'nb', 'af', 'sc', 'aj', 'dc', 'rs',
@@ -51,10 +52,12 @@ def get_args(arguments=None):
     parser.add_argument('--update', choices=['all', 'vm', 'dct'])
     parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
     parser.add_argument('--tab', action='store_true')
+    parser.add_argument('--basic', action='store_true')
     if arguments:
         args = parser.parse_args(arguments.split())
     else:
         args = parser.parse_args()
+    print(args)
     return args
 
 
