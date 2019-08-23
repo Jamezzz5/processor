@@ -28,15 +28,17 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
-def import_read_csv(filename, path=None):
+def import_read_csv(filename, path=None, file_check=True, error_bad=True):
     if path:
         filename = os.path.join(path, filename)
-    if not os.path.isfile(filename):
-        logging.warning('{} not found.  Continuing.'.format(filename))
-        return pd.DataFrame()
+    if file_check:
+        if not os.path.isfile(filename):
+            logging.warning('{} not found.  Continuing.'.format(filename))
+            return pd.DataFrame()
     try:
         df = pd.read_csv(filename, parse_dates=True, encoding='utf-8',
-                         keep_default_na=False, na_values=na_values)
+                         keep_default_na=False, na_values=na_values,
+                         error_bad_lines=error_bad)
     except pd.io.common.CParserError:
         df = pd.read_csv(filename, parse_dates=True, sep=None, engine='python',
                          keep_default_na=False, na_values=na_values)

@@ -94,7 +94,8 @@ class DbApi(object):
         report_url = (self.r.json()['metadata']
                       ['googleCloudStoragePathForLatestReport'])
         if report_url:
-            self.df = pd.read_csv(report_url)
+            self.df = utl.import_read_csv(report_url, file_check=False,
+                                          error_bad=False)
         else:
             logging.warning('Report does not exist.  Create it.')
             sys.exit(0)
