@@ -26,6 +26,7 @@ class VendorMatrix(object):
         log.info('Initializing Vendor Matrix')
         utl.dir_check(csv_path)
         self.vm = None
+        self.vm_df = pd.DataFrame()
         self.vl = []
         self.api_fb_key = []
         self.api_aw_key = []
@@ -56,6 +57,7 @@ class VendorMatrix(object):
         self.vm_import_keys()
         self.vm_rules()
         self.make_omit_lists()
+        self.sort_vendor_list()
 
     @staticmethod
     def read():
@@ -66,14 +68,18 @@ class VendorMatrix(object):
         vm = utl.import_read_csv(csv_file, csv_path)
         return vm
 
+    def write(self):
+        self.vm_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
             logging.error('No Plan Net key in Vendor Matrix.  Add it.')
             sys.exit(0)
 
     def vm_parse(self):
-        self.vm = pd.DataFrame(columns=vmc.datacol)
-        self.vm = self.read()
+        self.vm_df = pd.DataFrame(columns=vmc.datacol)
+        self.vm_df = self.read()
+        self.vm = self.vm_df.copy()
         self.plan_net_check()
         drop = [item for item in self.vm.columns.values.tolist()
                 if (item[0] == '|')]
@@ -154,6 +160,11 @@ class VendorMatrix(object):
     def vm_change(self, vk, col, newvalue):
         self.vm[col][vk] = newvalue
 
+    def get_data_source(self, vk):
+        self.ven_param = self.vendor_set(vk)
+        ds = DataSource(vk, self.vm_rules_dict, **self.ven_param)
+        return ds
+
     def vendor_get(self, vk):
         self.ven_param = self.vendor_set(vk)
         logging.info('Initializing {}'.format(vk))
@@ -161,7 +172,8 @@ class VendorMatrix(object):
             self.tdf = import_plan_data(vk, self.df, self.plan_omit_list,
                                         **self.ven_param)
         else:
-            self.tdf = import_data(vk, self.vm_rules_dict, **self.ven_param)
+            ds = DataSource(vk, self.vm_rules_dict, **self.ven_param)
+            self.tdf = ds.import_data()
         return self.tdf
 
     def set_full_filename(self):
@@ -480,31 +492,96 @@ def ad_cost_calculation(df):
     return df
 
 
-def import_data(key, vm_rules, **kwargs):
-    df = utl.import_read_csv(kwargs[vmc.filename])
-    if df is None or df.empty:
+class DataSource(object):
+    def __init__(self, key, vm_rules, **ven_param):
+        self.key = key
+        self.vm_rules = vm_rules
+        self.params = ven_param
+        self.p = self.params
+        self.df = pd.DataFrame()
+        for k in ven_param:
+            setattr(self, k, ven_param[k])
+
+    def get_active_metrics(self):
+        active_metrics = {x: self.params[x] for x in self.params
+                          if x in vmc.datacol and self.params[x] != ['nan']}
+        return active_metrics
+
+    def set_in_vendormatrix(self, col, new_value, matrix=None):
+        if not matrix:
+            matrix = VendorMatrix()
+        index = matrix.vm_df[matrix.vm_df[vmc.vendorkey] == self.key].index[0]
+        matrix.vm_df.loc[index, col] = new_value
+        return matrix
+
+    def add_new_rule(self, new_rule, matrix=None):
+        last_val = max(self.vm_rules.keys())
+        vm_rule = self.vm_rules[last_val]
+        vm_rule = {x: vm_rule[x].replace(last_val, str(int(last_val) + 1))
+                   for x in vm_rule}
+        for col in vm_rule:
+            self.set_in_vendormatrix(vm_rule[col], new_rule[col], matrix)
+        return matrix
+
+    def get_raw_df(self):
+        df = utl.import_read_csv(self.p[vmc.filename])
+        if df is None or df.empty:
+            return df
+        df = utl.add_header(df, self.p[vmc.header], self.p[vmc.firstrow])
+        df = utl.first_last_adj(df, self.p[vmc.firstrow], self.p[vmc.lastrow])
+        df = df_transform(df, self.p[vmc.transform])
+        df = full_placement_creation(df, self.key, dctc.FPN,
+                                     self.p[vmc.fullplacename])
         return df
-    df = utl.add_header(df, kwargs[vmc.header], kwargs[vmc.firstrow])
-    df = utl.first_last_adj(df, kwargs[vmc.firstrow], kwargs[vmc.lastrow])
-    df = df_transform(df, kwargs[vmc.transform])
-    df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
-    dic = dct.Dict(kwargs[vmc.filenamedict])
-    err = er.ErrorReport(df, dic, kwargs[vmc.placement],
-                         kwargs[vmc.filenameerror])
-    dic.auto_functions(err, kwargs[vmc.autodicord], kwargs[vmc.autodicplace])
-    df = dic.merge(df, dctc.FPN)
-    df = combining_data(df, key, vmc.datadatecol, **kwargs)
-    df = utl.data_to_type(df, date_col=vmc.datadatecol)
-    df = utl.apply_rules(df, vm_rules, utl.PRE, **kwargs)
-    df = combining_data(df, key, vmc.datafloatcol, **kwargs)
-    df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
-    df = utl.date_removal(df, vmc.date, kwargs[vmc.startdate],
-                          kwargs[vmc.enddate])
-    df = ad_cost_calculation(df)
-    df = utl.col_removal(df, key, kwargs[vmc.dropcol])
-    df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
-    df[vmc.vendorkey] = key
-    return df
+
+    def get_raw_columns(self):
+        if self.df.columns.empty:
+            self.df = self.get_raw_df()
+        return self.df.columns
+
+    def get_dict_order_df(self):
+        self.df = self.get_raw_df()
+        dic = dct.Dict()
+        err = er.ErrorReport(self.df, dic, self.p[vmc.placement],
+                             self.p[vmc.filenameerror])
+        error = dic.split_error_df(err, self.p[vmc.autodicord],
+                                   self.p[vmc.autodicplace])
+        return error
+
+    def get_and_merge_dictionary(self, df):
+        dic = dct.Dict(self.p[vmc.filenamedict])
+        err = er.ErrorReport(df, dic, self.p[vmc.placement],
+                             self.p[vmc.filenameerror])
+        dic.auto_functions(err, self.p[vmc.autodicord],
+                           self.p[vmc.autodicplace])
+        df = dic.merge(df, dctc.FPN)
+        return df
+
+    def combine_data(self, df):
+        df = combining_data(df, self.key, vmc.datadatecol, **self.p)
+        df = utl.data_to_type(df, date_col=vmc.datadatecol)
+        df = utl.apply_rules(df, self.vm_rules, utl.PRE, **self.p)
+        df = combining_data(df, self.key, vmc.datafloatcol, **self.p)
+        df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
+        return df
+
+    def remove_cols_and_make_calculations(self, df):
+        df = utl.date_removal(df, vmc.date, self.p[vmc.startdate],
+                              self.p[vmc.enddate])
+        df = ad_cost_calculation(df)
+        df = utl.col_removal(df, self.key, self.p[vmc.dropcol])
+        df = utl.apply_rules(df, self.vm_rules, utl.POST, **self.p)
+        return df
+
+    def import_data(self):
+        self.df = self.get_raw_df()
+        if self.df is None or self.df.empty:
+            return self.df
+        self.df = self.get_and_merge_dictionary(self.df)
+        self.df = self.combine_data(self.df)
+        self.df = self.remove_cols_and_make_calculations(self.df)
+        self.df[vmc.vendorkey] = self.key
+        return self.df
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):

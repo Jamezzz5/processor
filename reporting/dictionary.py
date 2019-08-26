@@ -17,7 +17,7 @@ class Dict(object):
             sys.exit(0)
         self.filename = filename
         self.dict_path = csvpath
-        self.data_dict = pd.DataFrame()
+        self.data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
         if filename:
             self.dict_path_filename = os.path.join(self.dict_path,
                                                    self.filename)
@@ -54,6 +54,14 @@ class Dict(object):
         self.auto(err, autodicord, placement)
         self.apply_functions()
 
+    @staticmethod
+    def split_error_df(err, autodicord, placement):
+        error = err.get()
+        error.columns = [dctc.FPN, dctc.PN]
+        for i, value in enumerate(autodicord):
+            error[value] = error[placement].str.split('_').str[i]
+        return error
+
     def auto(self, err, autodicord, placement):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
@@ -64,9 +72,7 @@ class Dict(object):
                     ' populated'.format(placement))
                 return True
             logging.info('Populating {}'.format(self.filename))
-            error.columns = [dctc.FPN, dctc.PN]
-            for i, value in enumerate(autodicord):
-                error[value] = error[placement].str.split('_').str[i]
+            error = self.split_error_df(err, autodicord, placement)
             error = self.auto_combine(error)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
