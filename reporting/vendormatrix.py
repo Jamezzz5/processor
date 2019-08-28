@@ -160,6 +160,10 @@ class VendorMatrix(object):
     def vm_change(self, vk, col, newvalue):
         self.vm[col][vk] = newvalue
 
+    def get_data_sources(self):
+        self.sort_vendor_list()
+        return [self.get_data_source(vk) for vk in self.vl]
+
     def get_data_source(self, vk):
         self.ven_param = self.vendor_set(vk)
         ds = DataSource(vk, self.vm_rules_dict, **self.ven_param)
@@ -345,8 +349,8 @@ class ImportConfig(object):
         self.add_to_vm(import_key, file_name, start_date, api_fields,
                        key_name)
 
-    def add_and_remove_from_vm(self, import_dicts):
-        current_imports = self.get_current_imports()
+    def add_and_remove_from_vm(self, import_dicts, matrix=None):
+        current_imports = self.get_current_imports(matrix=matrix)
         for cur_import in current_imports:
             if cur_import not in import_dicts:
                 key_name = 'API_{}_{}'.format(cur_import[self.key],
