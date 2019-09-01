@@ -10,21 +10,23 @@ import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.importhandler as ih
 
-formatter = logging.Formatter('%(asctime)s [%(module)14s]'
-                              '[%(levelname)8s] %(message)s')
-log = logging.getLogger()
-log.setLevel(logging.INFO)
 
-console = logging.StreamHandler(sys.stdout)
-console.setFormatter(formatter)
-log.addHandler(console)
+def set_log():
+    formatter = logging.Formatter('%(asctime)s [%(module)14s]'
+                                  '[%(levelname)8s] %(message)s')
+    log = logging.getLogger()
+    log.setLevel(logging.INFO)
 
-try:
-    log_file = logging.FileHandler('logfile.log', mode='w')
-    log_file.setFormatter(formatter)
-    log.addHandler(log_file)
-except PermissionError as e:
-    logging.warning('Could not open logfile with error: \n {}'.format(e))
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(formatter)
+    log.addHandler(console)
+
+    try:
+        log_file = logging.FileHandler('logfile.log', mode='w')
+        log_file.setFormatter(formatter)
+        log.addHandler(log_file)
+    except PermissionError as e:
+        logging.warning('Could not open logfile with error: \n {}'.format(e))
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
@@ -63,6 +65,7 @@ OUTPUT_FILE = 'Raw Data Output.csv'
 
 
 def main(arguments=None):
+    set_log()
     args = get_args(arguments)
     if args.update == 'all' or args.update == 'vm':
         vm.vm_update()
