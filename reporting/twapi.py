@@ -61,7 +61,7 @@ class TwApi(object):
         self.asid_dict = None
         self.adid_dict = None
         self.tweet_dict = None
-        self.v = 4
+        self.v = 5
 
     def input_config(self, config):
         logging.info('Loading Twitter config file: {}.'.format(config))
@@ -156,7 +156,7 @@ class TwApi(object):
 
     def get_all_id_dicts(self, sd):
         self.cid_dict = self.get_ids('campaigns', 'id', 'name',
-                                     'account_id', sd)
+                                     'funding_instrument_id', sd)
         self.asid_dict = self.get_ids('line_items', 'id', 'name',
                                       'campaign_id',
                                       parent_filter=self.cid_dict.keys())
