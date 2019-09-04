@@ -88,7 +88,7 @@ class SzkApi(object):
         self.headers = {'api-key': self.api_key}
         data = {'username': self.username, 'password': self.password}
         r = requests.post(login_url, data=json.dumps(data),
-                          headers=self.headers)
+                          headers=self.headers, verify=False)
         session_id = r.json()['result']['sessionId']
         self.headers['Authorization'] = session_id
 
@@ -165,7 +165,8 @@ class SzkApi(object):
         logging.info('Requesting report for {} to {}.'.format(sd, ed))
         self.set_headers()
         report = self.create_report_body(fields)
-        r = requests.post(report_url, headers=self.headers, json=report)
+        r = requests.post(report_url, headers=self.headers, json=report,
+                          verify=False)
         if 'result' in r.json() and r.json()['result']:
             execution_id = r.json()['result']['executionID']
             report_get_url = '{}{}'.format(base_report_get_url, execution_id)
@@ -178,7 +179,7 @@ class SzkApi(object):
         report_dl_url = None
         for attempt in range(200):
             time.sleep(120)
-            r = requests.get(url, headers=self.headers)
+            r = requests.get(url, headers=self.headers, verify=False)
             logging.info('Checking report.  Attempt: {} \n'
                          'Response: {}'.format(attempt + 1, r.json()))
             if r.json()['result']['executionStatus'] == 'FINISHED':
