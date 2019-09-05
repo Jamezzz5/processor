@@ -291,16 +291,18 @@ class TwApi(object):
     def add_cards(self, df):
         card_uris = df['Card name'].unique()
         card_uris = [x for x in card_uris if x is not None and str(x) != 'nan']
+        card_uris = [card_uris[x:x + 100] for x in range(0, len(card_uris), 100)]
         uri_dict = {}
         for uri in card_uris:
             url = self.create_base_url('cards')
-            url += '?card_uri={}'.format(uri)
+            url += '/all?card_uris={}'.format(','.join(uri))
             h, d = self.request(url)
             if 'data' not in d:
                 logging.warning('Card not found got response: {}'.format(d))
                 uri_dict[uri] = 'No Card Name'
             else:
-                uri_dict[uri] = d['data']['name']
+                for x in d['data']:
+                    uri_dict[x['card_uri']] = x['name']
         df['Card name'] = df['Card name'].map(uri_dict)
         return df
 
