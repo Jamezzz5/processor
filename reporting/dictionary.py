@@ -385,6 +385,8 @@ class DictTranslationConfig(object):
             col2_q = sel[s][dctc.DICT_COL_SEL]
             val = sel[s][dctc.DICT_COL_VALUE]
             nval = sel[s][dctc.DICT_COL_NVALUE]
+            if col2 not in data_dict.columns:
+                continue
             if fnc_type == 'Select':
                 data_dict.loc[(data_dict[col2] == col2_q) &
                               (data_dict[col] == val), col] = nval
