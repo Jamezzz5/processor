@@ -160,6 +160,17 @@ class VendorMatrix(object):
     def vm_change(self, vk, col, newvalue):
         self.vm[col][vk] = newvalue
 
+    def get_import_data_sources(self):
+        import_type = 'API_'
+        ic = ImportConfig(matrix=self)
+        current_imports = ic.get_current_imports(import_type, matrix=self)
+        vendor_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name'])
+                       for x in current_imports]
+        data_sources = [self.get_data_source(vk) for vk in vendor_keys]
+        for ds in data_sources:
+            ds.add_import_config_params(import_type, self, ic)
+        return data_sources
+
     def get_data_sources(self):
         self.sort_vendor_list()
         return [self.get_data_source(vk) for vk in self.vl]
@@ -501,6 +512,7 @@ class DataSource(object):
         self.key = key
         self.vm_rules = vm_rules
         self.params = ven_param
+        self.ic_params = None
         self.p = self.params
         self.df = pd.DataFrame()
         for k in ven_param:
@@ -586,6 +598,17 @@ class DataSource(object):
         self.df = self.remove_cols_and_make_calculations(self.df)
         self.df[vmc.vendorkey] = self.key
         return self.df
+
+    def add_import_config_params(self, import_type='API_', matrix=None, ic=None):
+        if not matrix:
+            matrix = VendorMatrix()
+        if not ic:
+            ic = ImportConfig(matrix=matrix)
+        current_imports = ic.get_current_imports(matrix=True)
+        for x in current_imports:
+            if '{}{}_{}'.format(import_type, x['Key'], x['name']) == self.key:
+                self.ic_params = x
+                return self.ic_params
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
