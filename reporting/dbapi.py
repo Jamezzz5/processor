@@ -106,13 +106,14 @@ class DbApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.create_report()
-        self.get_client()
+        # self.get_client()
         self.get_raw_data()
         return self.df
 
     def create_report(self):
         if self.report_id:
             return
+        logging.info('No report specified, creating.')
         query_url = self.create_query_url()
         params = self.create_report_params()
         metadata = self.create_report_metadata()
@@ -127,8 +128,11 @@ class DbApi(object):
                 'nextRunTimezoneCode': 'America/Los_Angeles'}}
         self.r = self.make_request(query_url, method='post', body=body)
         self.report_id = self.r.json()['queryId']
+        self.config['report_id'] = self.report_id
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
+        logging.info('Report created.  Pausing for 30s.')
+        time.sleep(30)
 
     def make_request(self, url, method, body=None):
         self.get_client()
@@ -155,8 +159,9 @@ class DbApi(object):
 
     def get_raw_data(self):
         full_url = self.create_url()
+        self.r = self.make_request(full_url, method='post')
         for x in range(1, 101):
-            self.r = self.client.get(full_url)
+            self.r = self.make_request(full_url, method='get')
             if 'metadata' in self.r.json().keys():
                 break
             else:
@@ -166,6 +171,7 @@ class DbApi(object):
         report_url = (self.r.json()['metadata']
                       ['googleCloudStoragePathForLatestReport'])
         if report_url:
+            logging.info('Found report url, downloading.')
             self.df = utl.import_read_csv(report_url, file_check=False,
                                           error_bad=False)
         else:
