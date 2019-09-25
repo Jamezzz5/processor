@@ -69,6 +69,7 @@ class VendorMatrix(object):
         return vm
 
     def write(self):
+        logging.info('Writing vendormatrix to {}.'.format(csv_full_file))
         self.vm_df.to_csv(csv_full_file, index=False, encoding='utf-8')
 
     def plan_net_check(self):
@@ -157,11 +158,34 @@ class VendorMatrix(object):
         ven_param = {x: self.vm[x][vk] for x in self.vm}
         return ven_param
 
-    def vm_change(self, vk, col, newvalue):
-        self.vm[col][vk] = newvalue
+    def vm_change(self, index, col, new_value):
+        self.vm_df.loc[index, col] = new_value
 
-    def get_import_data_sources(self):
-        import_type = 'API_'
+    def get_all_data_sources(self):
+        data_sources = self.get_import_data_sources()
+        non_import = self.get_data_sources()
+        non_import = [x for x in non_import if x.key not in
+                      [y.key for y in data_sources]]
+        data_sources.extend(non_import)
+        return data_sources
+
+    def set_data_sources(self, data_sources):
+        for source in data_sources:
+            vendor_key = source[vmc.vendorkey]
+            logging.info('Setting datasource for {}.'.format(vendor_key))
+            index = self.vm_df[self.vm_df[vmc.vendorkey] == vendor_key].index[0]
+            for col in [vmc.autodicplace, vmc.placement]:
+                self.vm_change(index, col, source[col])
+            for col in [vmc.autodicord, vmc.fullplacename]:
+                new_value = '|'.join(str(x) for x in source[col])
+                self.vm_change(index, col, new_value)
+            for col in list(source['active_metrics'].keys()):
+                new_value = '|'.join(str(x)
+                                     for x in source['active_metrics'][col])
+                self.vm_change(index, col, new_value)
+        self.write()
+
+    def get_import_data_sources(self, import_type='API_'):
         ic = ImportConfig(matrix=self)
         current_imports = ic.get_current_imports(import_type, matrix=self)
         vendor_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name'])
