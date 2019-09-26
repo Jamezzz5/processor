@@ -45,7 +45,7 @@ breakdown_device = ['device_platform']
 
 ad_status_enbaled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
                      'PREAPPROVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED',
-                     'PENDING_BILLING_INFO']
+                     'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']
 ad_status_disabled = ['DELETED', 'ARCHIVED']
 
 
