@@ -55,6 +55,7 @@ class TwApi(object):
         self.access_token_secret = None
         self.account_id = None
         self.config_list = []
+        self.campaign_filter = None
         self.dates = None
         self.client = None
         self.cid_dict = None
@@ -84,6 +85,8 @@ class TwApi(object):
         self.config_list = [self.consumer_key, self.consumer_secret,
                             self.access_token, self.access_token_secret,
                             self.account_id]
+        if 'CAMPAIGN_FILTER' in self.config:
+            self.campaign_filter = self.config['CAMPAIGN_FILTER']
 
     def check_config(self):
         for item in self.config_list:
@@ -157,6 +160,9 @@ class TwApi(object):
     def get_all_id_dicts(self, sd):
         self.cid_dict = self.get_ids('campaigns', 'id', 'name',
                                      'funding_instrument_id', sd)
+        if self.campaign_filter:
+            self.cid_dict = {k: v for k, v in self.cid_dict.items()
+                             if self.campaign_filter in v['name']}
         self.asid_dict = self.get_ids('line_items', 'id', 'name',
                                       'campaign_id',
                                       parent_filter=self.cid_dict.keys())
