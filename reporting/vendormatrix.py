@@ -516,6 +516,7 @@ def combining_data(df, key, columns, **kwargs):
 def ad_cost_calculation(df):
     if df.empty:
         return df
+    df = df.copy()
     for cost_cols in [(vmc.AD_COST, dctc.AM, dctc.AR),
                       (vmc.REP_COST, dctc.RFM, dctc.RFR),
                       (vmc.VER_COST, dctc.VFM, dctc.VFR)]:

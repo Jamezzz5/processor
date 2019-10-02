@@ -375,6 +375,8 @@ class DictTranslationConfig(object):
     def select_translation(tdf, col, data_dict, fnc_type='Select'):
         if dctc.DICT_COL_SEL not in tdf.columns:
             return data_dict
+        tdf = tdf.copy()
+        tdf = utl.data_to_type(tdf, str_col=[dctc.DICT_COL_FNC])
         select_rows = tdf[dctc.DICT_COL_FNC].str.contains(fnc_type, na=False)
         tdf = tdf[select_rows].copy()
         tdf[dctc.DICT_COL_FNC] = tdf[dctc.DICT_COL_FNC].str.split('::').str[1]
@@ -396,6 +398,8 @@ class DictTranslationConfig(object):
 
     @staticmethod
     def strip_dict(tdf, col, data_dict):
+        tdf = tdf.copy()
+        tdf = utl.data_to_type(tdf, str_col=[dctc.DICT_COL_FNC])
         tdf = tdf[tdf[dctc.DICT_COL_FNC] == 'Strip']
         data_dict = utl.data_to_type(data_dict, str_col=[col])
         for val in tdf[dctc.DICT_COL_VALUE].unique():
