@@ -88,7 +88,11 @@ class RedApi(object):
 
     def sign_in(self):
         logging.info('Signing in.')
-        self.click_on_xpath('//*[@id="Content"]/h2/a')
+        try:
+            self.click_on_xpath('//*[@id="Content"]/h2/a')
+        except ex.NoSuchElementException as e:
+            logging.warning('No logo, attempting footer.')
+            self.click_on_xpath('//*[@id="Footer"]/p[2]/a')
         user_pass = [(self.username, '//*[@id="loginUsername"]'),
                      (self.password, '//*[@id="loginPassword"]')]
         for item in user_pass:
