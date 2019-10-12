@@ -171,13 +171,13 @@ class VendorMatrix(object):
 
     def set_data_sources(self, data_sources):
         for source in data_sources:
-            vendor_key = source[vmc.vendorkey]
+            vendor_key = source['original_vendor_key']
             logging.info('Setting datasource for {}.'.format(vendor_key))
             index = self.vm_df[self.vm_df[vmc.vendorkey] == vendor_key].index[0]
-            for col in [vmc.autodicplace, vmc.placement]:
+            for col in [vmc.autodicplace, vmc.placement, vmc.vendorkey]:
                 self.vm_change(index, col, source[col])
             for col in [vmc.autodicord, vmc.fullplacename]:
-                new_value = '|'.join(str(x) for x in source[col])
+                new_value = '|'.join(str(x) for x in source[col].split('\r\n'))
                 self.vm_change(index, col, new_value)
             for col in list(source['active_metrics'].keys()):
                 new_value = '|'.join(str(x)
@@ -441,8 +441,11 @@ class ImportConfig(object):
                 def_params[self.account_id_parent])
         else:
             filter_val = None
+        if pd.isna(params[vmc.apifields]):
+            api_fields = ''
+        else:
+            api_fields = params[vmc.apifields]
         start_date = params[vmc.startdate]
-        api_fields = params[vmc.apifields]
         import_dict = {
             self.key: api_key_type,
             self.account_id: account_id,
