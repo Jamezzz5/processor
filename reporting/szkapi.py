@@ -116,7 +116,7 @@ class SzkApi(object):
                                                   'Placement ID']
                 if field == 'Lifetime':
                     field_dict['timeRange'] = {
-                        "timeZone": "Greenwich",
+                        "timeZone": "US/Eastern",
                         "type": "Campaign Lifetime",
                         "dataStartTimestamp": None,
                         "dataEndTimestamp": None}
