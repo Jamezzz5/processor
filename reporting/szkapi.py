@@ -114,6 +114,9 @@ class SzkApi(object):
                 if field == 'Placement':
                     field_dict['attributeIDs'] = ['Placement Name',
                                                   'Placement ID']
+                if field == 'Campaign':
+                    field_dict['attributeIDs'] = ['Campaign Name',
+                                                  'Campaign ID']
                 if field == 'Lifetime':
                     field_dict['timeRange'] = {
                         "timeZone": "US/Eastern",
