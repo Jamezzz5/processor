@@ -14,10 +14,12 @@ metric_url = 'https://api.netbase.com:443/cb/insight-api/2/metricValues?'
 
 def_metrics = ['TotalBuzz', 'TotalBuzzPost', 'TotalReplies', 'TotalReposts',
                'OriginalPosts', 'Impressions', 'PositiveSentiment',
-               'NegativeSentiment', 'Passion', 'UniqueAuthor', 'StrongEmotion',
-               'WeakEmotion', 'EngagementLikes', 'EngagementComments',
-               'EngagementShares', 'EngagementViews', 'EngagementDislikes',
-               'EngagementTotal']
+               'NegativeSentiment', 'NeutralSentiment', 'NetSentiment',
+               'Passion', 'UniqueAuthor', 'StrongEmotion', 'WeakEmotion',
+               'EngagementLikes', 'EngagementComments', 'EngagementShares',
+               'EngagementViews', 'EngagementDislikes','EngagementTotal',
+               'EngagementRatio']
+
 metric_col_name_dic = {x: 'Social Metrics - ' + x for x in def_metrics}
 
 
@@ -140,4 +142,6 @@ class NbApi(object):
         df['Date'] = r.json()['metrics'][0]['columns']
         for x in r.json()['metrics'][0]['dataset']:
             df[x['seriesName']] = x['set']
+        df = utl.data_to_type(df, date_col=['Date'])
+        df['Date'] = df['Date'].dt.date
         return df
