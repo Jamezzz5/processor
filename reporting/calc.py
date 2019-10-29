@@ -19,6 +19,7 @@ BM_PA = 'Programmaddict'
 BM_CPA = 'CPA'
 BM_CPACPM = 'CPA/CPM'
 BM_CPNUCPSU = 'CPNU/CPSU'
+BM_CPE = 'CPE'
 BM_CPA2 = 'CPA2'
 BM_CPA3 = 'CPA3'
 BM_CPA4 = 'CPA4'
@@ -26,7 +27,7 @@ BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
 BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPCV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
               BM_FLATIMP, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4,
-              BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU]
+              BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU, BM_CPE]
 
 AGENCY_FEES = 'Agency Fees'
 AGENCY_THRESH = 'Agency Fee Threshold'
@@ -84,6 +85,8 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
         return df[br_col] * (df[vmc.view_imps] / 1000)
     elif df[bm_col] == BM_PA:
         return df[vmc.cost] / .85
+    elif df[bm_col] == BM_CPE:
+        return df[br_col] * df[vmc.engagements]
     elif df[bm_col] == BM_FLAT or df[bm_col] == BM_FLAT2:
         if df[vmc.date] == df[dctc.PD]:
             return df[br_col] * df[CLI_PD]
