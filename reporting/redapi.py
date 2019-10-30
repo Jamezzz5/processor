@@ -180,14 +180,23 @@ class RedApi(object):
         self.set_date(ed, cal_xpath=cal_xpath)
         self.click_on_xpath(cal_xpath + '[2]/td/div/div/button[2]/span')
 
+    def click_individual_metrics(self):
+        for metric in self.video_metrics:
+            xpath = '{}{}"]'.format(self.base_metric, metric)
+            self.click_on_xpath(xpath, sleep=.5)
+
+    def click_grouped_merics(self):
+        for metric in range(2, 6):
+            metric_xpath = ('/html/body/div[9]/div/div/div/div/div/'
+                            'div[1]/div[{}]/h5/span/label/span').format(metric)
+            self.click_on_xpath(metric_xpath, sleep=.5)
+
     def set_metrics(self, base_xpath):
         logging.info('Setting metrics.')
         metric_button_xpath = 'div[1]/div[1]/div/div[2]/div/button'
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
-        for metric in self.video_metrics:
-            xpath = '{}{}"]'.format(self.base_metric, metric)
-            self.click_on_xpath(xpath, sleep=.5)
+        self.click_grouped_merics()
         apply_button_xpath = ('/html/body/div[9]/div/div/div/'
                               'div/div/div[2]/div/button[2]')
         self.click_on_xpath(apply_button_xpath)
