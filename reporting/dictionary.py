@@ -165,6 +165,15 @@ class RelationalConfig(object):
         self.relational_params = None
         self.key_list = []
 
+    def write(self, df, configfile):
+        logging.debug('Writing {}'.format(configfile))
+        try:
+            df.to_csv(os.path.join(self.csvpath, configfile), index=False,
+                      encoding='utf-8')
+        except IOError:
+            logging.warning('{} could not be opened.  This dictionary'
+                            'was not saved.'.format(configfile))
+
     def read(self, configfile):
         self.df = utl.import_read_csv(configfile, self.csvpath)
         if self.df.empty:
@@ -294,13 +303,16 @@ class DictConstantConfig(object):
         self.dict_col_values = None
         self.dict_constants = None
 
-    def read(self, configfile):
+    def read_raw_df(self, configfile):
         try:
             self.df = utl.import_read_csv(configfile, self.csvpath)
         except IOError:
             logging.debug('No Constant Dictionary config')
             return None
         self.check_for_dict_col(configfile)
+
+    def read(self, configfile):
+        self.read_raw_df(configfile)
         self.filter_df()
         self.dict_col_names = self.df[dctc.DICT_COL_NAME].tolist()
         self.dict_constants = self.df.set_index(dctc.DICT_COL_NAME).to_dict()
@@ -355,6 +367,15 @@ class DictTranslationConfig(object):
         col = dctc.DICT_COL_VALUE
         self.df[col] = np.where(self.df[col].isna(), self.df[col].astype('U'),
                                 self.df[col])
+
+    def write(self, df, configfile):
+        logging.debug('Writing {}'.format(configfile))
+        try:
+            df.to_csv(os.path.join(self.csvpath, configfile), index=False,
+                      encoding='utf-8')
+        except IOError:
+            logging.warning('{} could not be opened.  This dictionary'
+                            'was not saved.'.format(configfile))
 
     def apply_translation_to_dict(self, data_dict):
         if self.df.empty:
