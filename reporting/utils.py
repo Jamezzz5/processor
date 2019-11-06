@@ -195,6 +195,11 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         queries = queries.split('|')
         for query in queries:
             query = query.split('::')
+            if len(query) == 1:
+                logging.warning('Malformed query: {} \n In rule: {} \n'
+                                'It may only have one :.  It was not used to'
+                                'filter data'.format(query, rule))
+                continue
             values = query[1].split(',')
             if query[0] not in df:
                 logging.warning('{} not in data for rule {}.  '
