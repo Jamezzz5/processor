@@ -55,11 +55,15 @@ class Dict(object):
         self.apply_functions()
 
     @staticmethod
-    def split_error_df(err, autodicord, placement):
+    def split_error_df(err, autodicord, placement, include_index=False):
         error = err.get()
         error.columns = [dctc.FPN, dctc.PN]
         for i, value in enumerate(autodicord):
-            error[value] = error[placement].str.split('_').str[i]
+            if include_index:
+                col_name = '{}-{}'.format(i, value)
+            else:
+                col_name = value
+            error[col_name] = error[placement].str.split('_').str[i]
         return error
 
     def auto(self, err, autodicord, placement):
