@@ -11,6 +11,7 @@ import datetime as dt
 import sqlalchemy as sqa
 import reporting.ftp as ftp
 import reporting.utils as utl
+import reporting.models as mdl
 import reporting.expcolumns as exc
 
 log = logging.getLogger()
@@ -666,3 +667,75 @@ class DFTranslation(object):
         df = df[df['realcolsum'] != 0]
         df = df.drop(['realcolsum'], axis=1)
         return df
+
+
+class ScriptBuilder(object):
+    def __init__(self, metadata=mdl.Base.metadata, omit_tables=None):
+        self.omit_tables = omit_tables
+        if not self.omit_tables:
+            self.omit_tables = []
+        self.metadata = metadata
+        self.tables = [x for x in self.metadata.sorted_tables
+                       if x.name not in self.omit_tables]
+        self.completed_tables = self.omit_tables
+
+    def get_from_script(self, table, original_from_script=''):
+        fcs = [x for x in table.columns if x.foreign_keys]
+        full_join_script = []
+        table_name = '"{}"."{}"'.format(table.schema, table.name)
+        for fc in fcs:
+            fk = [x for x in fc.foreign_keys][0]
+            if fk.column.table.name in self.completed_tables:
+                continue
+            join_table = '"{}"."{}"'.format(
+                fk.column.table.schema, fk.column.table.name)
+            table_relation = '{}."{}"'.format(table_name, fc.name)
+            foreign_relation = '{}."{}"'.format(join_table, fk.column.name)
+            join_script = """\nLEFT JOIN {} ON ({} = {})""".format(
+                join_table, table_relation, foreign_relation)
+            full_join_script.append(join_script)
+            self.completed_tables.append(fk.column.table.name)
+        if not original_from_script:
+            from_script = """FROM {}""".format(table_name)
+        else:
+            from_script = ''
+        if full_join_script:
+            from_script = """{} {}""".format(
+                from_script, ' '.join(full_join_script))
+        if from_script:
+            from_script = original_from_script + from_script
+        else:
+            from_script = original_from_script
+        for fc in fcs:
+            fk = [x for x in fc.foreign_keys][0]
+            table = fk.column.table
+            from_script = self.get_from_script(table, from_script)
+        return from_script
+
+    def get_column_names(self, base_table):
+        import decimal
+        column_names = []
+        tables = [base_table] + [x for x in self.tables
+                                 if x.name in self.completed_tables]
+        for table in tables:
+            columns = table.columns
+            names = ['"{}"."{}"."{}"'.format(table.schema, table.name, x.name)
+                     for x in columns
+                     if not x.foreign_keys and not x.primary_key and
+                     x.type.python_type != decimal.Decimal]
+            column_names.extend(names)
+        return column_names
+
+    def get_full_script(self, filter_col, filter_val):
+        base_table = self.tables[-1]
+        from_script = self.get_from_script(table=base_table)
+        column_names = self.get_column_names(base_table)
+        column_names = ['{}'.format(x) for x in set(column_names)]
+        where_clause = "({} = '{}'::text)".format(filter_col, filter_val)
+        sel_script = \
+            """SELECT {} {}
+               WHERE {} 
+               GROUP BY {}""".format(
+                ','.join(column_names), from_script, where_clause,
+                ','.join(column_names))
+        return sel_script
