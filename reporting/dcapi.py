@@ -202,6 +202,8 @@ class DcApi(object):
         report = self.create_report_params()
         full_url = self.create_url()
         self.r = self.make_request(full_url, method='post', body=report)
+        if 'id' not in self.r.json():
+            logging.warning('id not in response as follows: {}'.format(self.r.json()))
         self.report_id = self.r.json()['id']
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
@@ -223,7 +225,8 @@ class DcApi(object):
 
     def create_report_params(self):
         report_name = ('{}_{}_standard_report'
-                       ''.format(self.advertiser_id, self.campaign_id))
+                       ''.format(self.advertiser_id,
+                                 self.campaign_id.replace(',', '-')))
         report = {
             'name': report_name,
             'type': 'STANDARD',
