@@ -88,10 +88,11 @@ class GaApi(object):
     @staticmethod
     def parse_fields(fields):
         parsed_fields = []
-        for field in fields:
-            field = field.split('::')
-            parsed_fields.append(','.join('ga:{}=={}'.format(field[0], x)
-                                          for x in field[1].split(',')))
+        if fields:
+            for field in fields:
+                field = field.split('::')
+                parsed_fields.append(','.join('ga:{}=={}'.format(field[0], x)
+                                              for x in field[1].split(',')))
         return parsed_fields
 
     @staticmethod
