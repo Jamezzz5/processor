@@ -135,6 +135,10 @@ class GaApi(object):
         return self.df
 
     def get_start_indices(self):
+        if 'totalResults' not in self.r.json():
+            logging.warning('Results not in response: \n{}'
+                            ''.format(self.r.json()))
+            return []
         total_results = self.r.json()['totalResults']
         total_pages = range(total_results // 10000 +
                             ((total_results % 10000) > 0))[1:]
@@ -151,8 +155,11 @@ class GaApi(object):
         tdf = self.data_to_df(self.r)
         self.df = self.df.append(tdf)
 
-    @staticmethod
-    def data_to_df(r):
+    def data_to_df(self, r):
+        if 'columnHeaders' not in self.r.json():
+            logging.warning('Column headers not in response: \n{}'
+                            ''.format(self.r.json()))
+            return pd.DataFrame()
         cols = [x['name'][3:] for x in r.json()['columnHeaders']]
         raw_data = r.json()['rows']
         df = pd.DataFrame(raw_data, columns=cols)
