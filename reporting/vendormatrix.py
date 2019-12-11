@@ -189,7 +189,8 @@ class VendorMatrix(object):
         ic = ImportConfig(matrix=self)
         current_imports = ic.get_current_imports(import_type, matrix=self)
         vendor_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name'])
-                       for x in current_imports]
+                       if x['name'] else '{}{}'.format(import_type, x['Key'])
+            for x in current_imports]
         data_sources = [self.get_data_source(vk) for vk in vendor_keys]
         for ds in data_sources:
             ds.add_import_config_params(import_type, self, ic)
@@ -740,6 +741,10 @@ def df_transform(df, transform):
             ndf = ndf.append(tdf)
         df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
+    if transform_type == 'AddColumn':
+        col_name = transform[1]
+        col_val = transform[2]
+        df[col_name] = col_val
     return df
 
 
