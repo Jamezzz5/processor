@@ -65,17 +65,28 @@ class RedApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         return sd, ed
 
-    @staticmethod
-    def init_browser():
+    def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
+        co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
+        co.add_argument('--window-size=1920,1080')
+        co.add_argument('--start-maximized')
         prefs = {'download.default_directory': download_path}
         co.add_experimental_option('prefs', prefs)
         browser = wd.Chrome(options=co)
         browser.maximize_window()
         browser.set_script_timeout(10)
+        self.enable_download_in_headless_chrome(browser, download_path)
         return browser
+
+    def enable_download_in_headless_chrome(self, driver, download_dir):
+        # add missing support for chrome "send_command"  to selenium webdriver
+        driver.command_executor._commands["send_command"] = \
+            ("POST", '/session/$sessionId/chromium/send_command')
+        params = {'cmd': 'Page.setDownloadBehavior',
+                  'params': {'behavior': 'allow', 'downloadPath': download_dir}}
+        command_result = driver.execute("send_command", params)
 
     def go_to_url(self, url):
         logging.info('Going to url {}.'.format(url))
