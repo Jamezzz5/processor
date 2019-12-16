@@ -7,9 +7,9 @@ import time
 import logging
 import pandas as pd
 import datetime as dt
-import oauth2 as oauth
 import reporting.utils as utl
 import pandas.io.json as pdjson
+from requests_oauthlib import OAuth1Session
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 configpath = utl.config_path
@@ -96,35 +96,35 @@ class TwApi(object):
                 sys.exit(0)
 
     def get_client(self):
-        consumer = oauth.Consumer(key=self.consumer_key,
-                                  secret=self.consumer_secret)
-        token = oauth.Token(key=self.access_token,
-                            secret=self.access_token_secret)
-        self.client = oauth.Client(consumer, token)
+        self.client = OAuth1Session(self.consumer_key, self.consumer_secret,
+                                    self.access_token, self.access_token_secret)
 
-    def request(self, url, resp_key=None):
+    def request(self, url, resp_key=None, params=None):
         self.get_client()
-        response, content = self.client.request(url, method='GET')
+        if params:
+            r = self.client.request(method='GET', url=url, params=params)
+        else:
+            r = self.client.request(method='GET', url=url)
         try:
-            data = json.loads(content)
+            data = r.json()
         except IOError:
             data = None
         except ValueError:
             logging.warning('Rate limit exceeded.  Restarting after 300s.')
             time.sleep(300)
-            response, data = self.request(url, resp_key)
+            data = self.request(url, resp_key)
         if resp_key and resp_key not in data:
             logging.warning('{} not in data, retrying. '
                             ' {}'.format(resp_key, data))
             time.sleep(60)
-            response, data = self.request(url, resp_key)
-        return response, data
+            data = self.request(url, resp_key)
+        return data
 
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
-        url = self.create_base_url(entity)
+        url, params = self.create_base_url(entity)
         if parent_filter:
-            url += '&{}s={}'.format(parent, ','.join(parent_filter))
-        headers, data = self.request(url)
+            params['{}s'.format(parent)] = ','.join(parent_filter)
+        data = self.request(url, params=params)
         if sd:
             data['data'] = [x for x in data['data'] if
                             (x['end_time'] and
@@ -137,14 +137,14 @@ class TwApi(object):
         else:
             id_dict = {}
         id_dict = self.page_through_ids(data, id_dict, url, eid, name, parent,
-                                        sd)
+                                        sd, params)
         return id_dict
 
     def page_through_ids(self, data, id_dict, first_url, eid, name, parent,
-                         sd):
+                         sd, params):
         if 'next_cursor' in data and data['next_cursor']:
-            url = "{}&cursor={}".format(first_url, data['next_cursor'])
-            headers, data = self.request(url)
+            params['cursor'] = data['next_cursor']
+            data = self.request(first_url, params=params)
             for x in data['data']:
                 if sd:
                     if (x['end_time'] and dt.datetime.strptime(
@@ -154,7 +154,7 @@ class TwApi(object):
                 else:
                     id_dict[x[eid]] = {'parent': x[parent], 'name': x[name]}
             id_dict = self.page_through_ids(data, id_dict, first_url,
-                                            eid, name, parent, sd)
+                                            eid, name, parent, sd, params)
         return id_dict
 
     def get_all_id_dicts(self, sd):
@@ -184,24 +184,28 @@ class TwApi(object):
 
     def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
                          entity='PROMOTED_TWEET', placement='ALL_ON_TWITTER'):
-        act_url = '/{}/stats/accounts/{}?'.format(self.v, self.account_id)
-        ent_url = 'entity_ids={}&entity={}'.format(','.join(ids), entity)
-        sded_url = '&granularity=DAY&start_time={}&end_time={}'.format(sd, ed)
-        metric_url = '&metric_groups={}'.format(','.join(fields))
-        place_url = '&placement={}'.format(placement)
-        url = base_url + act_url + ent_url + sded_url + metric_url + place_url
-        return url
+        params = {'entity_ids': ','.join(ids),
+                  'entity': entity,
+                  'granularity': 'DAY',
+                  'start_time': sd,
+                  'end_time': ed,
+                  'metric_groups': ','.join(fields),
+                  'placement': placement}
+        act_url = '/{}/stats/accounts/{}'.format(self.v, self.account_id)
+        url = base_url + act_url
+        return url, params
 
     def create_base_url(self, entity=None):
         act_url = '/{}/accounts/{}'.format(self.v, self.account_id)
         url = base_url + act_url
+        params = {}
         if entity:
             url += '/{}'.format(entity)
             if entity != 'cards':
-                url += '?count=1000'
+                params['count'] = '1000'
             if entity == 'promoted_tweets':
-                url += '&with_deleted=true'
-        return url
+                params['with_deleted'] = 'true'
+        return url, params
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
@@ -233,8 +237,9 @@ class TwApi(object):
     def get_df_for_date(self, ids_lists, fields, sd, ed, date, place):
         df = pd.DataFrame()
         for ids in ids_lists:
-            url = self.create_stats_url(fields, ids, sd, ed, placement=place)
-            header, data = self.request(url, resp_key=jsondata)
+            url, params = self.create_stats_url(fields, ids, sd, ed,
+                                                placement=place)
+            data = self.request(url, resp_key=jsondata, params=params)
             self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
             id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
@@ -251,8 +256,8 @@ class TwApi(object):
         return sd, ed
 
     def get_account_timezone(self):
-        url = self.create_base_url()
-        header, data = self.request(url)
+        url, params = self.create_base_url()
+        data = self.request(url, params=params)
         if jsondata not in data:
             logging.warning('Data not in response : {}'.format(data))
         return data[jsondata][jsontz]
@@ -283,7 +288,7 @@ class TwApi(object):
             url = ('https://api.twitter.com/1.1/statuses/lookup.json?'
                    'id={}&include_card_uri=true'
                    .format(','.join([str(x) for x in tid])))
-            h, d = self.request(url)
+            d = self.request(url)
             for x in d:
                 if 'card_uri' in x:
                     id_dict[str(x['id'])] = {'name': x['text'],
@@ -297,12 +302,14 @@ class TwApi(object):
     def add_cards(self, df):
         card_uris = df['Card name'].unique()
         card_uris = [x for x in card_uris if x is not None and str(x) != 'nan']
-        card_uris = [card_uris[x:x + 100] for x in range(0, len(card_uris), 100)]
+        card_uris = [card_uris[x:x + 100]
+                     for x in range(0, len(card_uris), 100)]
         uri_dict = {}
         for uri in card_uris:
-            url = self.create_base_url('cards')
-            url += '/all?card_uris={}'.format(','.join(uri))
-            h, d = self.request(url)
+            url, params = self.create_base_url('cards')
+            url += '/all'
+            params['card_uris'] = ','.join(uri)
+            d = self.request(url, params=params)
             if 'data' not in d:
                 logging.warning('Card not found got response: {}'.format(d))
                 uri_dict[uri] = 'No Card Name'
