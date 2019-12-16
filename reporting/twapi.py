@@ -112,12 +112,12 @@ class TwApi(object):
         except ValueError:
             logging.warning('Rate limit exceeded.  Restarting after 300s.')
             time.sleep(300)
-            data = self.request(url, resp_key)
+            data = self.request(url, resp_key, params)
         if resp_key and resp_key not in data:
             logging.warning('{} not in data, retrying. '
                             ' {}'.format(resp_key, data))
             time.sleep(60)
-            data = self.request(url, resp_key)
+            data = self.request(url, resp_key, params)
         return data
 
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
