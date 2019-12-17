@@ -72,6 +72,8 @@ class RedApi(object):
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
+        co.add_argument('--no-sandbox')
+        co.add_argument('--disable-gpu')
         prefs = {'download.default_directory': download_path}
         co.add_experimental_option('prefs', prefs)
         browser = wd.Chrome(options=co)
