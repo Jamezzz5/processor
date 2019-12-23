@@ -300,8 +300,10 @@ class ImportConfig(object):
 
     @staticmethod
     def get_config_file_value(config_file, name, nest=None):
-        if not pd.isna(nest):
+        if not pd.isna(nest) and name in config_file[nest]:
             value = config_file[nest][name]
+        elif name not in config_file:
+            value = ''
         else:
             value = config_file[name]
         return value
