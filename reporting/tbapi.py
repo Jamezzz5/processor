@@ -56,7 +56,6 @@ class TabApi(object):
             if item == '':
                 logging.warning('{} not in Tableau config file.  '
                                 'Aborting.'.format(item))
-                sys.exit(0)
 
     def set_headers(self):
         self.headers = {'Content-Type': 'application/json',
@@ -147,8 +146,11 @@ class TabApi(object):
                 time.sleep(120)
 
     def refresh_extract(self):
-        self.set_headers()
-        ds_id = self.find_datasource()
-        er_id = self.find_extract_refreshes(ds_id)
-        job_id = self.send_refresh_request(er_id)
-        self.check_job_until_complete(job_id)
+        if self.datasource:
+            self.set_headers()
+            ds_id = self.find_datasource()
+            er_id = self.find_extract_refreshes(ds_id)
+            job_id = self.send_refresh_request(er_id)
+            self.check_job_until_complete(job_id)
+        else:
+            logging.warning('Tableau api not configured, it was not refreshed.')
