@@ -138,7 +138,7 @@ class DcApi(object):
         return self.df
 
     def get_report(self, files_url):
-        for x in range(1, 101):
+        for x in range(1, 201):
             report_status = self.check_file(files_url, attempt=x)
             if report_status:
                 break
@@ -152,7 +152,7 @@ class DcApi(object):
         if 'status' in r.json() and r.json()['status'] == 'REPORT_AVAILABLE':
             return True
         else:
-            if attempt == 100:
+            if attempt == 200:
                 logging.warning('Report could not download.  Aborting')
                 sys.exit(0)
             logging.info('Report unavailable.  Attempt {}.  '
