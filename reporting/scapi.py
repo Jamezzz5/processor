@@ -154,7 +154,8 @@ class ScApi(object):
             self.get_raw_data(sd, ed, cid)
         self.df['Campaign Name'] = self.df['Campaign Name'].map(cids)
         self.df = self.add_names_to_df()
-        self.df = self.remove_timezone_from_date()
+        if not self.df.empty:
+            self.df = self.remove_timezone_from_date()
         return self.df
 
     def remove_timezone_from_date(self):
@@ -180,7 +181,7 @@ class ScApi(object):
             time.sleep(120)
             self.get_raw_data(sd, ed, cid)
         else:
-            logging.warning('Unknown error: ' + str(self.r.text))
+            logging.warning('Unknown error: {}'.format(self.r.text))
             sys.exit(0)
 
     @staticmethod
