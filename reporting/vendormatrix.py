@@ -190,7 +190,7 @@ class VendorMatrix(object):
         current_imports = ic.get_current_imports(import_type, matrix=self)
         vendor_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name'])
                        if x['name'] else '{}{}'.format(import_type, x['Key'])
-            for x in current_imports]
+                       for x in current_imports]
         data_sources = [self.get_data_source(vk) for vk in vendor_keys]
         for ds in data_sources:
             ds.add_import_config_params(import_type, self, ic)
@@ -630,14 +630,17 @@ class DataSource(object):
         self.df[vmc.vendorkey] = self.key
         return self.df
 
-    def add_import_config_params(self, import_type='API_', matrix=None, ic=None):
+    def add_import_config_params(self, import_type='API_', matrix=None,
+                                 ic=None):
         if not matrix:
             matrix = VendorMatrix()
         if not ic:
             ic = ImportConfig(matrix=matrix)
         current_imports = ic.get_current_imports(matrix=True)
         for x in current_imports:
-            if '{}{}_{}'.format(import_type, x['Key'], x['name']) == self.key:
+            possible_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name']),
+                             '{}{}{}'.format(import_type, x['Key'], x['name'])]
+            if self.key in possible_keys:
                 self.ic_params = x
                 return self.ic_params
 
