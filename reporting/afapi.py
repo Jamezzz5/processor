@@ -5,8 +5,8 @@ import json
 import time
 import logging
 import requests
-import datetime as dt
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 
 config_path = utl.config_path
@@ -118,8 +118,13 @@ class AfApi(object):
                      'category: {}, retarget: {}'
                      ''.format(field, sd, ed, sources, category, retarget))
         full_url = self.create_url(sd, ed, field, sources, category, retarget)
-        self.r = requests.get(full_url)
-        if self.r.status_code == 200:
+        try:
+            self.r = requests.get(full_url, timeout=1200)
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError) as err:
+            logging.warning('Request exceeded 1200 seconds, remaking request: '
+                            '\n {}'.format(err))
+        if self.r and self.r.status_code == 200:
             df = self.data_to_df(self.r)
         else:
             self.request_error()
@@ -128,11 +133,15 @@ class AfApi(object):
 
     def request_error(self):
         limit_error = 'Limit reached for'
+        wrong_error = 'Something went wrong.'
+        if not self.r:
+            time.sleep(60)
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:
             logging.warning('Limit reached pausing for 60 seconds.  '
                             'Response: {}'.format(self.r.text))
             time.sleep(60)
-        elif self.r.status_code == 504:
+        elif (self.r.status_code == 504 or self.r.status_code == 502 or
+                self.r.text[:21] == wrong_error):
             logging.warning('Gateway timeout.  Pausing for 60 seconds.  '
                             'Response: {}'.format(self.r.text))
             time.sleep(60)
