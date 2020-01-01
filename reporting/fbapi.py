@@ -9,7 +9,8 @@ import datetime as dt
 import reporting.utils as utl
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.exceptions import FacebookRequestError
+from facebook_business.exceptions import FacebookRequestError,\
+    FacebookBadObjectError
 from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
 
@@ -274,7 +275,7 @@ class FbApi(object):
             if percent == 100 and (report['async_status'] == 'Job Completed'):
                 try:
                     complete_job = list(ar.get_result())
-                except FacebookRequestError as e:
+                except (FacebookRequestError, FacebookBadObjectError) as e:
                     self.request_error(e)
                     self.async_requests.append(job)
                     complete_job = None
@@ -309,7 +310,7 @@ class FbApi(object):
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
         elif e._api_error_code == 2:
-            logging.warning('An unexpected error occurred.'
+            logging.warning('An unexpected error occurred.  '
                             'Retrying request later.')
             return True
         elif e._api_error_code == 17:
@@ -341,6 +342,8 @@ class FbApi(object):
         else:
             logging.error('Aborting as the Facebook API call resulted '
                           'in the following error: {}'.format(e))
+            if e._api_error_code:
+                logging.error('Api error subcode: {}'.format(e._api_error_code))
             sys.exit(0)
 
     @staticmethod
