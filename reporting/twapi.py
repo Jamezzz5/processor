@@ -10,6 +10,7 @@ import datetime as dt
 import reporting.utils as utl
 import pandas.io.json as pdjson
 from requests_oauthlib import OAuth1Session
+from requests.exceptions import ConnectionError
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 configpath = utl.config_path
@@ -99,12 +100,21 @@ class TwApi(object):
         self.client = OAuth1Session(self.consumer_key, self.consumer_secret,
                                     self.access_token, self.access_token_secret)
 
-    def request(self, url, resp_key=None, params=None):
+    def make_request(self, url, params=None):
         self.get_client()
-        if params:
-            r = self.client.request(method='GET', url=url, params=params)
-        else:
-            r = self.client.request(method='GET', url=url)
+        try:
+            if params:
+                r = self.client.request(method='GET', url=url, params=params)
+            else:
+                r = self.client.request(method='GET', url=url)
+        except ConnectionError as e:
+            logging.warning('Connection error retrying. \n: {}'.format(e))
+            time.sleep(60)
+            r = self.make_request(url=url, params=params)
+        return r
+
+    def request(self, url, resp_key=None, params=None):
+        r = self.make_request(url=url, params=params)
         try:
             data = r.json()
         except IOError:
@@ -159,7 +169,7 @@ class TwApi(object):
 
     def get_all_id_dicts(self, sd):
         self.cid_dict = self.get_ids('campaigns', 'id', 'name',
-                                     'funding_instrument_id', sd)
+                                     'funding_instrument_id')
         if self.campaign_filter:
             self.cid_dict = {k: v for k, v in self.cid_dict.items()
                              if self.campaign_filter in v['name']}
