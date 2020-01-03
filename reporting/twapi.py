@@ -166,9 +166,12 @@ class TwApi(object):
             new_id_dict = self.get_id_dict(url=url, params=param, eid=eid,
                                            name=name, parent=parent, sd=sd)
             id_dict.update(new_id_dict)
+        if self.campaign_filter and entity == 'campaigns':
+            id_dict = {k: v for k, v in id_dict.items()
+                       if self.campaign_filter in v['name']}
         if sd and not id_dict:
-            logging.warning('{} with sd {} returned nothing, attempting without'
-                            'sd.'.format(entity, sd))
+            logging.warning('No {} with start date {}, '
+                            'attempting without start date.'.format(entity, sd))
             id_dict = self.get_ids(entity=entity, eid=eid, name=name,
                                    parent=parent, sd=None,
                                    parent_filter=parent_filter)
@@ -194,9 +197,6 @@ class TwApi(object):
     def get_all_id_dicts(self, sd):
         self.cid_dict = self.get_ids('campaigns', 'id', 'name',
                                      'funding_instrument_id', sd=sd)
-        if self.campaign_filter:
-            self.cid_dict = {k: v for k, v in self.cid_dict.items()
-                             if self.campaign_filter in v['name']}
         self.asid_dict = self.get_ids('line_items', 'id', 'name',
                                       'campaign_id',
                                       parent_filter=self.cid_dict.keys())
