@@ -10,6 +10,7 @@ import datetime as dt
 import reporting.utils as utl
 from io import BytesIO
 from googleads import adwords
+from requests.exceptions import ConnectionError
 
 config_path = utl.config_path
 
@@ -157,17 +158,25 @@ class AwApi(object):
                                       'operator': 'EQUALS',
                                       'values': 'UNIVERSAL_APP_CAMPAIGN'}
         report['selector'] = selector
-        r = BytesIO()
-        report_downloader.DownloadReport(report, r,
-                                         skip_report_header=True,
-                                         skip_report_summary=True)
-        r.seek(0)
+        r = self.download_report(report_downloader, report)
         self.df = pd.read_csv(r, parse_dates=True)
         if 'Cost' in self.df.columns:
             self.df['Cost'] /= 1000000
         if 'Views' in self.df.columns:
             self.df = self.video_calc(self.df)
         return self.df
+
+    def download_report(self, report_downloader, report):
+        try:
+            r = BytesIO()
+            report_downloader.DownloadReport(report, r,
+                                             skip_report_header=True,
+                                             skip_report_summary=True)
+            r.seek(0)
+        except ConnectionError as e:
+            logging.warning('Connection error, retrying: \n{}'.format(e))
+            r = self.download_report(report_downloader, report)
+        return r
 
     def get_downloader(self):
         try:
