@@ -173,6 +173,12 @@ class SzkApi(object):
         if 'result' in r.json() and r.json()['result']:
             execution_id = r.json()['result']['executionID']
             report_get_url = '{}{}'.format(base_report_get_url, execution_id)
+        elif ('error' in r.json() and
+                (r.json()['error']['errors'][0]['code'] == 6308)):
+            logging.warning('Timezone error in response, attempting '
+                            'eastern time.\n {}'.format(r.json()))
+            fields['timeRange']['timeZone'] = 'US/Eastern'
+            report_get_url = self.request_report(sd, ed, fields)
         else:
             logging.warning('Error in response as follows: {}'.format(r.json()))
             sys.exit(0)
