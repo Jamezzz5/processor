@@ -130,10 +130,7 @@ class TwApi(object):
             data = self.request(url, resp_key, params)
         return data
 
-    def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
-        url, params = self.create_base_url(entity)
-        if parent_filter:
-            params['{}s'.format(parent)] = ','.join(parent_filter)
+    def get_id_dict(self, url, params, eid, name, parent, sd=None):
         data = self.request(url, params=params)
         if sd:
             data['data'] = [x for x in data['data'] if
@@ -145,9 +142,36 @@ class TwApi(object):
             id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
                        for x in data['data']}
         else:
+            logging.warning('Data not in response: {}'.format(data))
             id_dict = {}
         id_dict = self.page_through_ids(data, id_dict, url, eid, name, parent,
                                         sd, params)
+        return id_dict
+
+    def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
+        url, params = self.create_base_url(entity)
+        if parent_filter:
+            original_params = params.copy()
+            params = []
+            parent_filter = [list(parent_filter)[x:x + 200]
+                             for x in range(0, len(parent_filter), 200)]
+            for pf in parent_filter:
+                param = original_params.copy()
+                param['{}s'.format(parent)] = ','.join(pf)
+                params.append(param)
+        else:
+            params = [params]
+        id_dict = {}
+        for param in params:
+            new_id_dict = self.get_id_dict(url=url, params=param, eid=eid,
+                                           name=name, parent=parent, sd=sd)
+            id_dict.update(new_id_dict)
+        if sd and not id_dict:
+            logging.warning('{} with sd {} returned nothing, attempting without'
+                            'sd.'.format(entity, sd))
+            id_dict = self.get_ids(entity=entity, eid=eid, name=name,
+                                   parent=parent, sd=None,
+                                   parent_filter=parent_filter)
         return id_dict
 
     def page_through_ids(self, data, id_dict, first_url, eid, name, parent,
@@ -169,7 +193,7 @@ class TwApi(object):
 
     def get_all_id_dicts(self, sd):
         self.cid_dict = self.get_ids('campaigns', 'id', 'name',
-                                     'funding_instrument_id')
+                                     'funding_instrument_id', sd=sd)
         if self.campaign_filter:
             self.cid_dict = {k: v for k, v in self.cid_dict.items()
                              if self.campaign_filter in v['name']}
