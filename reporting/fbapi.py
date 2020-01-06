@@ -275,8 +275,12 @@ class FbApi(object):
             if percent == 100 and (report['async_status'] == 'Job Completed'):
                 try:
                     complete_job = list(ar.get_result())
-                except (FacebookRequestError, FacebookBadObjectError) as e:
+                except FacebookRequestError as e:
                     self.request_error(e)
+                    self.async_requests.append(job)
+                    complete_job = None
+                except FacebookBadObjectError as e:
+                    logging.warning('Facebook Bad Object Error: {}'.format(e))
                     self.async_requests.append(job)
                     complete_job = None
                 if complete_job:
