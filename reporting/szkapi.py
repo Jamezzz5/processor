@@ -87,10 +87,37 @@ class SzkApi(object):
     def set_headers(self):
         self.headers = {'api-key': self.api_key}
         data = {'username': self.username, 'password': self.password}
-        r = requests.post(login_url, data=json.dumps(data),
-                          headers=self.headers, verify=False)
+        r = self.make_request(login_url, method='POST', data=json.dumps(data),
+                              headers=self.headers)
         session_id = r.json()['result']['sessionId']
         self.headers['Authorization'] = session_id
+
+    def make_request(self, url, method, headers=None, json_body=None, data=None,
+                     attempt=1):
+        if not json_body:
+            json_body = {}
+        if not headers:
+            headers = {}
+        if not data:
+            data = {}
+        if method == 'POST':
+            request_method = requests.post
+        else:
+            request_method = requests.get
+        try:
+            r = request_method(url, headers=headers, json=json_body, data=data,
+                               verify=False)
+        except requests.exceptions.ConnectionError as e:
+            attempt += 1
+            if attempt > 100:
+                logging.warning('Could not connection with error: {}'.format(e))
+                r = None
+            else:
+                logging.warning('Connection error, pausing for 60s '
+                                'and retrying: {}'.format(e))
+                time.sleep(60)
+                r = self.make_request(url, method, headers, json_body, attempt)
+        return r
 
     @staticmethod
     def parse_fields(fields, sd, ed):
@@ -168,8 +195,8 @@ class SzkApi(object):
         logging.info('Requesting report for {} to {}.'.format(sd, ed))
         self.set_headers()
         report = self.create_report_body(fields)
-        r = requests.post(report_url, headers=self.headers, json=report,
-                          verify=False)
+        r = self.make_request(report_url, method='POST', headers=self.headers,
+                              json_body=report)
         if 'result' in r.json() and r.json()['result']:
             execution_id = r.json()['result']['executionID']
             report_get_url = '{}{}'.format(base_report_get_url, execution_id)
@@ -188,7 +215,7 @@ class SzkApi(object):
         report_dl_url = None
         for attempt in range(200):
             time.sleep(120)
-            r = requests.get(url, headers=self.headers, verify=False)
+            r = self.make_request(url, method='GET', headers=self.headers)
             logging.info('Checking report.  Attempt: {} \n'
                          'Response: {}'.format(attempt + 1, r.json()))
             if r.json()['result']['executionStatus'] == 'FINISHED':
@@ -202,7 +229,7 @@ class SzkApi(object):
 
     def download_report_to_df(self, url):
         if url:
-            r = requests.get(url)
+            r = self.make_request(url, method='GET')
             raw_file = io.StringIO(r.text)
             self.df = pd.read_csv(raw_file)
         else:
