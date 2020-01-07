@@ -89,6 +89,19 @@ class DcApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
+    def refresh_token(self, extra, attempt=1):
+        try:
+            token = self.client.refresh_token(self.refresh_url, **extra)
+        except requests.exceptions.ConnectionError as e:
+            attempt +=1
+            if attempt > 100:
+                logging.warning('Max retries exceeded: {}'.format(e))
+                token = None
+            else:
+                logging.warning('Connection error retrying 60s: {}'.format(e))
+                token = self.refresh_token(extra, attempt)
+        return token
+
     def get_client(self):
         token = {'access_token': self.access_token,
                  'refresh_token': self.refresh_token,
@@ -98,7 +111,7 @@ class DcApi(object):
         extra = {'client_id': self.client_id,
                  'client_secret': self.client_secret}
         self.client = OAuth2Session(self.client_id, token=token)
-        token = self.client.refresh_token(self.refresh_url, **extra)
+        token = self.refresh_token(extra)
         self.client = OAuth2Session(self.client_id, token=token)
 
     def create_user_url(self):
