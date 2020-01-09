@@ -135,7 +135,7 @@ class DcApi(object):
 
     def find_first_line(self):
         for idx, x in enumerate(self.r.text.splitlines()):
-            if idx == 100:
+            if idx > 1000:
                 logging.warning('Could not find first line, returning empty df')
                 return None
             if x == 'Report Fields':
