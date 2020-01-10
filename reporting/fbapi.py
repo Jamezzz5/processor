@@ -313,9 +313,9 @@ class FbApi(object):
         if e._api_error_code == 190:
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
-        elif e._api_error_code == 2:
+        elif e._api_error_code == 2 or e._api_error_code == 100:
             logging.warning('An unexpected error occurred.  '
-                            'Retrying request later.')
+                            'Retrying request later. {}'.format(e))
             return True
         elif e._api_error_code == 17:
             logging.warning('Facebook rate limit reached.  Pausing for '
