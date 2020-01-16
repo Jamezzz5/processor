@@ -9,11 +9,11 @@ from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
 base_url = 'https://www.googleapis.com/analytics/v3/data/ga'
-def_metrics = ['sessions', 'goal1Completions', 'goal2Completions', 'users',
+def_metrics = ['goal1Completions', 'goal2Completions', 'users',
                'newUsers', 'bounces', 'pageviews', 'totalEvents',
                'uniqueEvents', 'timeOnPage']
 def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
-            'country', 'pagePath']
+            'country']
 
 
 class GaApi(object):
@@ -161,6 +161,10 @@ class GaApi(object):
                             ''.format(self.r.json()))
             return pd.DataFrame()
         cols = [x['name'][3:] for x in r.json()['columnHeaders']]
+        if 'rows' not in r.json():
+            logging.warning('Rows not in response: \n{}'
+                            ''.format(self.r.json()))
+            return pd.DataFrame()
         raw_data = r.json()['rows']
         df = pd.DataFrame(raw_data, columns=cols)
         return df
