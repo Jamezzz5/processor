@@ -181,3 +181,25 @@ AM_CPM = 'CPM'
 REP_COST = 'Reporting Cost'
 VER_COST = 'Verification Cost'
 ad_rep_cols = [AD_COST, REP_COST, VER_COST]
+
+
+api_aw_key = 'Adwords'
+api_fb_key = 'Facebook'
+api_tw_key = 'Twitter'
+api_ttd_key = 'TTD'
+api_ga_key = 'GA'
+api_nb_key = 'Netbase'
+api_af_key = 'AppsFlyer'
+api_sc_key = 'Snapchat'
+api_aj_key = 'Adjust'
+api_dc_key = 'DCM'
+api_rs_key = 'Redshell'
+api_db_key = 'DBM'
+api_vk_key = 'VK'
+api_rc_key = 'Revcontent'
+api_szk_key = 'Sizmek'
+api_red_key = 'Reddit'
+api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
+            api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
+            api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
+            api_red_key]

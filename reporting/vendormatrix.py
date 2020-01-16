@@ -96,37 +96,37 @@ class VendorMatrix(object):
         for vk in self.vl:
             vk_split = {vk: vk.split('_')}
             if vk_split[vk][0] == 'API':
-                if vk_split[vk][1] == 'Adwords':
+                if vk_split[vk][1] == vmc.api_aw_key:
                     self.api_aw_key.append(vk)
-                if vk_split[vk][1] == 'Facebook':
+                if vk_split[vk][1] == vmc.api_fb_key:
                     self.api_fb_key.append(vk)
-                if vk_split[vk][1] == 'Twitter':
+                if vk_split[vk][1] == vmc.api_tw_key:
                     self.api_tw_key.append(vk)
-                if vk_split[vk][1] == 'TTD':
+                if vk_split[vk][1] == vmc.api_ttd_key:
                     self.api_ttd_key.append(vk)
-                if vk_split[vk][1] == 'GA':
+                if vk_split[vk][1] == vmc.api_ga_key:
                     self.api_ga_key.append(vk)
-                if vk_split[vk][1] == 'Netbase':
+                if vk_split[vk][1] == vmc.api_nb_key:
                     self.api_nb_key.append(vk)
-                if vk_split[vk][1] == 'AppsFlyer':
+                if vk_split[vk][1] == vmc.api_af_key:
                     self.api_af_key.append(vk)
-                if vk_split[vk][1] == 'Snapchat':
+                if vk_split[vk][1] == vmc.api_sc_key:
                     self.api_sc_key.append(vk)
-                if vk_split[vk][1] == 'Adjust':
+                if vk_split[vk][1] == vmc.api_aj_key:
                     self.api_aj_key.append(vk)
-                if vk_split[vk][1] == 'DCM':
+                if vk_split[vk][1] == vmc.api_dc_key:
                     self.api_dc_key.append(vk)
-                if vk_split[vk][1] == 'Redshell':
+                if vk_split[vk][1] == vmc.api_rs_key:
                     self.api_rs_key.append(vk)
-                if vk_split[vk][1] == 'DBM':
+                if vk_split[vk][1] == vmc.api_db_key:
                     self.api_db_key.append(vk)
-                if vk_split[vk][1] == 'VK':
+                if vk_split[vk][1] == vmc.api_vk_key:
                     self.api_vk_key.append(vk)
-                if vk_split[vk][1] == 'Revcontent':
+                if vk_split[vk][1] == vmc.api_rc_key:
                     self.api_rc_key.append(vk)
-                if vk_split[vk][1] == 'Sizmek':
+                if vk_split[vk][1] == vmc.api_szk_key:
                     self.api_szk_key.append(vk)
-                if vk_split[vk][1] == 'Reddit':
+                if vk_split[vk][1] == vmc.api_red_key:
                     self.api_red_key.append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
