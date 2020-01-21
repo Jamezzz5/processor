@@ -268,10 +268,14 @@ class DcApi(object):
                 'kind': 'dfareporting#dimensionValue'}]
         }
         fl_ids = self.get_floodlight_tag_ids()
-        criteria['activities']['filters'] = [
-            {'dimensionName': 'dfa:activity',
-             'id': x,
-             'kind': 'dfareporting#dimensionValue'} for x in fl_ids]
+        if fl_ids:
+            criteria['activities']['filters'] = [
+                {'dimensionName': 'dfa:activity',
+                 'id': x,
+                 'kind': 'dfareporting#dimensionValue'} for x in fl_ids]
+        else:
+            logging.warning('No floodlight conversions found.')
+            criteria.pop('activities')
         if self.campaign_id:
             campaign_filters = [
                 {'dimensionName': 'dfa:campaign',
