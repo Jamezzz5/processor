@@ -392,6 +392,8 @@ class DictTranslationConfig(object):
                 data_dict = self.strip_dict(tdf, col, data_dict)
                 data_dict = self.select_translation(tdf, col, data_dict)
                 data_dict = self.select_translation(tdf, col, data_dict, 'Set')
+                data_dict = self.select_translation(tdf, col, data_dict,
+                                                    'Append')
                 tdf = tdf[tdf[dctc.DICT_COL_FNC].isnull()]
             data_dict = self.apply_translation(tdf, col, data_dict)
         return data_dict
@@ -419,6 +421,10 @@ class DictTranslationConfig(object):
                               (data_dict[col] == val), col] = nval
             if fnc_type == 'Set':
                 data_dict.loc[data_dict[col2] == col2_q, col] = nval
+            if fnc_type == 'Append':
+                mask = ((data_dict[col2] == col2_q) &
+                        (data_dict[col].str[-len(nval):] != nval))
+                data_dict.loc[mask, col] = (data_dict.loc[mask, col] + nval)
         return data_dict
 
     @staticmethod
