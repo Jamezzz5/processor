@@ -225,6 +225,7 @@ class VendorMatrix(object):
 
     def sort_vendor_list(self):
         self.set_full_filename()
+        self.vl = self.vm_df[vmc.vendorkey].to_list()
         self.vl = sorted((x for x in self.vl if x not in self.process_omit_list
                           and os.path.isfile(self.vm[vmc.filename][x])),
                          key=lambda x: os.stat(self.vm[vmc.filename][x]))
