@@ -5,11 +5,12 @@ import time
 import logging
 import requests
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
-base_url = 'https://www.googleapis.com/doubleclickbidmanager/v1'
+base_url = 'https://www.googleapis.com/doubleclickbidmanager/v1.1'
 
 
 class DbApi(object):
@@ -117,16 +118,20 @@ class DbApi(object):
         query_url = self.create_query_url()
         params = self.create_report_params()
         metadata = self.create_report_metadata()
+        end_time = round((dt.datetime.today() + dt.timedelta(
+            days=365) - dt.datetime.utcfromtimestamp(0)).total_seconds() * 1000)
         body = {
             'kind': 'doubleclickbidmanager#query',
             'metadata': metadata,
             'params': params,
             'schedule': {
-                'endTimeMs': '1577692800000',
+                'endTimeMs': end_time,
                 'frequency': 'DAILY',
                 'nextRunMinuteOfDay': 0,
                 'nextRunTimezoneCode': 'America/Los_Angeles'}}
         self.r = self.make_request(query_url, method='post', body=body)
+        if 'queryId' not in self.r.json():
+            logging.warning('queryId not in response:{}'.format(self.r.json()))
         self.report_id = self.r.json()['queryId']
         self.config['report_id'] = self.report_id
         with open(self.config_file, 'w') as f:
