@@ -15,9 +15,14 @@ base_url = 'https://www.googleapis.com/doubleclickbidmanager/v1.1'
 
 class DbApi(object):
     default_groups = [
-        'FILTER_ADVERTISER', 'FILTER_ADVERTISER_CURRENCY',
-        'FILTER_INSERTION_ORDER', 'FILTER_LINE_ITEM', 'FILTER_DATE',
-        'FILTER_LINE_ITEM_TYPE', 'FILTER_MEDIA_PLAN', 'FILTER_CREATIVE_ID']
+        'FILTER_ADVERTISER', 'FILTER_ADVERTISER_NAME',
+        'FILTER_ADVERTISER_CURRENCY',
+        'FILTER_INSERTION_ORDER', 'FILTER_INSERTION_ORDER_NAME',
+        'FILTER_LINE_ITEM', 'FILTER_LINE_ITEM_NAME',
+        'FILTER_DATE',
+        'FILTER_LINE_ITEM_TYPE',
+        'FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME',
+        'FILTER_CREATIVE_ID', 'FILTER_CREATIVE']
     default_metrics = [
         'METRIC_IMPRESSIONS', 'METRIC_BILLABLE_IMPRESSIONS', 'METRIC_CLICKS',
         'METRIC_CTR', 'METRIC_TOTAL_CONVERSIONS', 'METRIC_LAST_CLICKS',
@@ -107,9 +112,18 @@ class DbApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.create_report()
-        # self.get_client()
         self.get_raw_data()
+        self.check_empty_df()
+        self.remove_footer()
         return self.df
+
+    def check_empty_df(self):
+        if self.df.iloc[0, 0] == 'No data returned by the reporting service.':
+            logging.warning('No data in response, returning empty df.')
+            self.df = pd.DataFrame()
+
+    def remove_footer(self):
+        self.df = self.df[~self.df.isnull().any(axis=1)]
 
     def create_report(self):
         if self.report_id:
