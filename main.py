@@ -44,7 +44,7 @@ def get_args(arguments=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--api', choices=['all', 'fb', 'aw', 'tw', 'ttd', 'ga',
                                           'nb', 'af', 'sc', 'aj', 'dc', 'rs',
-                                          'db', 'vk', 'rc', 'szk', 'red'])
+                                          'db', 'vk', 'rc', 'szk', 'red', 'dv'])
     parser.add_argument('--ftp', choices=['all', 'sz'])
     parser.add_argument('--dbi', choices=['all', 'dna'])
     parser.add_argument('--s3', choices=['all', 'dna'])

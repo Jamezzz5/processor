@@ -41,6 +41,7 @@ Thumbs.db
 *.xlsx
 *.xlsm
 *.idea
+*.docx
 
 Config/
 Raw Data/
