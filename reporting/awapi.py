@@ -10,7 +10,7 @@ import datetime as dt
 import reporting.utils as utl
 from io import BytesIO
 from googleads import adwords
-from requests.exceptions import ConnectionError
+from urllib3.exceptions import ConnectionError, NewConnectionError
 
 config_path = utl.config_path
 
@@ -173,7 +173,7 @@ class AwApi(object):
                                              skip_report_header=True,
                                              skip_report_summary=True)
             r.seek(0)
-        except ConnectionError as e:
+        except (ConnectionError, NewConnectionError) as e:
             logging.warning('Connection error, retrying: \n{}'.format(e))
             r = self.download_report(report_downloader, report)
         return r
