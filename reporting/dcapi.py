@@ -182,27 +182,27 @@ class DcApi(object):
         files_url = '{}/files/{}'.format(full_url, file_id)
         return files_url
 
-    def make_request(self, url, method, body=None):
+    def make_request(self, url, method, body=None, params=None):
         self.get_client()
         try:
-            self.r = self.raw_request(url, method, body=body)
+            self.r = self.raw_request(url, method, body=body, params=params)
         except requests.exceptions.SSLError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
             self.r = self.make_request(url, method, body=body)
         return self.r
 
-    def raw_request(self, url, method, body=None):
+    def raw_request(self, url, method, body=None, params=None):
         if method == 'get':
             if body:
-                self.r = self.client.get(url, json=body)
+                self.r = self.client.get(url, json=body, params=params)
             else:
-                self.r = self.client.get(url)
+                self.r = self.client.get(url, params=params)
         elif method == 'post':
             if body:
-                self.r = self.client.post(url, json=body)
+                self.r = self.client.post(url, json=body, params=params)
             else:
-                self.r = self.client.post(url)
+                self.r = self.client.post(url, params=params)
         return self.r
 
     def request_error(self):
@@ -225,15 +225,18 @@ class DcApi(object):
         if not fl_ids:
             fl_ids = []
         fl_url = self.create_user_url()
-        fl_url = '{}floodlightActivities?advertiserId={}'.format(
-            fl_url, self.advertiser_id)
+        params = {'advertiserId': self.advertiser_id}
+        fl_url = '{}floodlightActivities'.format(fl_url)
         if next_page:
-            fl_url = '{}&pageToken={}'.format(fl_url, next_page)
-        self.r = self.make_request(fl_url, method='get')
+            params['pageToken'] = next_page
+        self.r = self.make_request(fl_url, method='get', params=params)
+        if 'floodlightActivities' not in self.r.json():
+            logging.warning('floodlightActivities not in response as follows: '
+                            '\n{}'.format(self.r.json()))
         fl_ids.extend([x['id'] for x in self.r.json()['floodlightActivities']])
         if 'nextPageToken' in self.r.json() and self.r.json()['nextPageToken']:
             fl_ids = self.get_floodlight_tag_ids(
-                fl_ids, self.r.json()['nextPageToken'])
+                fl_ids, next_page=self.r.json()['nextPageToken'])
         return fl_ids
 
     def create_report_params(self):
