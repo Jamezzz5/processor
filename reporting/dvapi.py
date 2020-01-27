@@ -44,6 +44,7 @@ class DvApi(object):
         self.config_file = None
         self.username = None
         self.password = None
+        self.advertiser = None
         self.campaign = None
         self.config_list = None
         self.config = None
@@ -51,6 +52,13 @@ class DvApi(object):
         self.report_type = None
         self.dimensions = self.def_dimensions
         self.metrics = self.def_metrics
+        self.dim_end = 40
+        self.metric_start = 41
+        self.metric_end = 300
+        self.metric_tab = 5
+        self.path_to_report = ((1, 1), (2, 3), (3, 1))
+        self.campaign_name = 'Campaign'
+        self.advertiser_name = 'Advertiser Name'
 
     def input_config(self, config):
         logging.info('Loading DV config file: {}.'.format(config))
@@ -67,6 +75,7 @@ class DvApi(object):
             sys.exit(0)
         self.username = self.config['username']
         self.password = self.config['password']
+        self.advertiser = self.config['advertiser']
         self.campaign = self.config['campaign']
         self.config_list = [self.username, self.password]
 
@@ -88,6 +97,13 @@ class DvApi(object):
                     self.dimensions = self.fb_dimensions
                     self.metrics = self.fb_metrics
                     self.report_type = field
+                    self.dim_end = 22
+                    self.metric_start = 23
+                    self.metric_end = 109
+                    self.metric_tab = 3
+                    self.path_to_report = ((1, 3), (10, 1), (11, 1))
+                    self.advertiser_name = 'FB Account ID'
+                    self.campaign_name = 'FB Campaign Name'
         return sd, ed, fields
 
     def init_browser(self):
@@ -166,13 +182,12 @@ class DvApi(object):
 
     def set_dates(self, sd, ed):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
-        xpath = ('//*[@id="reportBuilderForm"]/mat-card/rc-date-range/'
-                 'mat-card/div[1]/dv-date-range-picker/div/div/span')
-        self.click_on_xpath(xpath)
-        xpath = '//*[@id="cdk-overlay-1"]/div/div[9]/span'
-        self.click_on_xpath(xpath)
-        xpath = '//*[@id="mat-input-2"]'
-        self.click_on_xpath(xpath)
+        xpaths = ['//*[@id="reportBuilderForm"]/mat-card/rc-date-range/'
+                  'mat-card/div[1]/dv-date-range-picker/div/div/span',
+                  '//*[@id="cdk-overlay-1"]/div/div[9]/span',
+                  '//*[@id="mat-input-2"]']
+        for xpath in xpaths:
+            self.click_on_xpath(xpath)
         self.set_date(sd)
 
     def find_report_in_table(self):
@@ -211,63 +226,61 @@ class DvApi(object):
         xpath = '//*[@id="myReportsWrapper"]/div[1]/dv-deep-menu/button/span'
         self.click_on_xpath(xpath)
         # click standard
-        if self.report_type:
-            xpath = '//*[@id="cdk-overlay-0"]/div/ul[1]/li[3]/div/div'
-        else:
-            xpath = '//*[@id="cdk-overlay-0"]/div/ul[1]/li[1]/div/div'
-        self.click_on_xpath(xpath)
+        for path in self.path_to_report:
+            xpath = ('//*[@id="cdk-overlay-0"]/div/ul[{}]/li[{}]/'
+                     'div/div'.format(path[0], path[1]))
+            self.click_on_xpath(xpath)
+        time.sleep(5)
 
-        xpath = '//*[@id="cdk-overlay-0"]/div/ul[2]/li[3]/div'
-        self.click_on_xpath(xpath)
-        xpath = '//*[@id="cdk-overlay-0"]/div/ul[3]/li[1]/div'
-        self.click_on_xpath(xpath, sleep=10)
-
-    def click_on_filters(self):
-        logging.info('Setting filters for {}'.format(self.campaign))
-        campaigns = self.campaign.split(',')
+    def click_on_filters(self, value):
+        logging.info('Setting filters for {}'.format(value))
+        campaigns = value.split(',')
         xpath = '//*[@id="mat-input-4"]'
         elem = self.browser.find_element_by_xpath(xpath)
         for c in campaigns:
             elem.send_keys(c)
-            xpath = '//*[@id="mat-checkbox-301"]/label/span'
+            xpath = '//*[@id="mat-checkbox-{}"]/label/span'.format(
+                self.metric_end + 1)
             self.click_on_xpath(xpath, sleep=5)
             elem.clear()
         xpath = ('//*[@id="mat-dialog-0"]/dv-popup-template/'
                  'div[3]/div/div/span/button')
         self.click_on_xpath(xpath, sleep=5)
 
-    def click_on_dimensions(self):
+    def click_on_dimensions(self, start_check=1, end_check=40):
         logging.info('Setting dimensions for report.')
-        for x in range(1, 40):
+        for x in range(start_check, end_check):
             xpath = '//*[@id="mat-checkbox-{}"]/label/span'.format(x)
             try:
                 value = self.browser.find_element_by_xpath(xpath).text
             except:
                 break
-            if str(value) in self.def_dimensions:
+            if str(value) in self.dimensions:
                 self.click_on_xpath(xpath, sleep=5)
-            if str(value) == 'Campaign':
-                xpath = ('//*[@id="dimensionsComponent"]/div/div[2]/div[13]/'
-                         'rc-filters/div'.format(x))
-                self.click_on_xpath(xpath, sleep=5)
-                self.click_on_filters()
+            for filter_check in [(self.campaign, self.campaign_name),
+                                 (self.advertiser, self.advertiser_name)]:
+                if filter_check[0] and str(value) == filter_check[1]:
+                    xpath = ('//*[@id="dimensionsComponent"]/div/div[2]/'
+                             'div[{}]/rc-filters/div'.format(x))
+                    self.click_on_xpath(xpath, sleep=5)
+                    self.click_on_filters(filter_check[0])
 
-    def click_on_metrics(self):
+    def click_on_metrics(self, start_check=41, end_check=300, last_tab=5):
         logging.info('Setting metrics for report.')
         tab = 0
-        for x in range(41, 300):
+        for x in range(start_check, end_check):
             xpath = '//*[@id="mat-checkbox-{}"]/label/span'.format(x)
             try:
                 value = self.browser.find_element_by_xpath(xpath).text
             except:
-                if tab > 5:
+                if tab > last_tab:
                     break
                 else:
                     tab += 1
                     xpath = '//*[@id="mat-tab-label-0-{}"]/div'.format(tab)
                     self.click_on_xpath(xpath, sleep=5)
                     value = self.browser.find_element_by_xpath(xpath).text
-            if str(value) in self.def_metrics:
+            if str(value) in self.metrics:
                 self.click_on_xpath(xpath, sleep=5)
 
     def give_report_name(self, sd):
@@ -276,7 +289,8 @@ class DvApi(object):
         report = self.browser.find_element_by_xpath(xpath)
         today = dt.datetime.today().strftime('%Y%m%d')
         sd = sd.strftime('%Y%m%d')
-        self.report_name = '{}_{}_{}'.format(today, sd, self.campaign)
+        self.report_name = '{}_{}_{}_{}'.format(today, sd, self.campaign,
+                                                self.report_type)
         report.send_keys(self.report_name)
         time.sleep(5)
 
@@ -290,8 +304,11 @@ class DvApi(object):
         logging.info('Creating report.')
         self.go_to_report_creation()
         self.set_dates(sd, ed)
-        self.click_on_dimensions()
-        self.click_on_metrics()
+        self.click_on_dimensions(start_check=1,
+                                 end_check=self.dim_end)
+        self.click_on_metrics(start_check=self.metric_start,
+                              end_check=self.metric_end,
+                              last_tab=self.metric_tab)
         self.give_report_name(sd)
         self.click_and_run()
         self.export_to_csv()
@@ -316,6 +333,9 @@ class DvApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.quit()
+        self.browser = self.init_browser()
+        self.base_window = self.browser.window_handles[0]
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         self.go_to_url(self.base_url)
         self.sign_in()
