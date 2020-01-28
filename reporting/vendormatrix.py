@@ -6,6 +6,7 @@ import shutil
 import logging
 import numpy as np
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 import reporting.calc as cal
 import reporting.vmcolumns as vmc
@@ -204,7 +205,10 @@ class VendorMatrix(object):
         return [self.get_data_source(vk) for vk in self.vl]
 
     def get_data_source(self, vk):
-        self.ven_param = self.vendor_set(vk)
+        try:
+            self.ven_param = self.vendor_set(vk)
+        except KeyError:
+            self.ven_param = self.vendor_set('{}_'.format(vk))
         ds = DataSource(vk, self.vm_rules_dict, **self.ven_param)
         return ds
 
@@ -472,6 +476,9 @@ class ImportConfig(object):
         for api_key in api_keys:
             import_dict = self.get_import_params(api_key, import_type)
             import_dicts.append(import_dict)
+        for cur_import in import_dicts:
+            cur_import[vmc.startdate] = dt.datetime.strptime(
+                cur_import[vmc.startdate], '%m/%d/%Y').date()
         return import_dicts
 
 
@@ -647,6 +654,14 @@ class DataSource(object):
             if self.key in possible_keys:
                 self.ic_params = x
                 return self.ic_params
+
+    def write(self, df=None):
+        logging.debug('Writing {}'.format(self.p[vmc.filename]))
+        try:
+            df.to_csv(self.p[vmc.filename], index=False, encoding='utf-8')
+        except IOError:
+            logging.warning('{} could not be opened.  This file was not saved.'
+                            ''.format(self.p[vmc.filename]))
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
