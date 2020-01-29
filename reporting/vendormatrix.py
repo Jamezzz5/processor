@@ -477,8 +477,9 @@ class ImportConfig(object):
             import_dict = self.get_import_params(api_key, import_type)
             import_dicts.append(import_dict)
         for cur_import in import_dicts:
-            cur_import[vmc.startdate] = dt.datetime.strptime(
-                cur_import[vmc.startdate], '%m/%d/%Y').date()
+            if not isinstance(cur_import[vmc.startdate], dt.date):
+                start_date = utl.string_to_date(cur_import[vmc.startdate])
+                cur_import[vmc.startdate] = start_date.date()
         return import_dicts
 
 

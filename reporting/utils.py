@@ -86,6 +86,9 @@ def string_to_date(my_string):
           (':' in my_string)):
         my_string = my_string.replace('PST ', '')
         return dt.datetime.strptime(my_string, '%a %b %d %M:%S:%H %Y')
+    elif (('-' in my_string) and (my_string[:2] == '20') and
+          len(my_string) == 10):
+        return dt.datetime.strptime(my_string, '%Y-%m-%d')
     else:
         return my_string
 
