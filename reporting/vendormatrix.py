@@ -399,13 +399,20 @@ class ImportConfig(object):
         current_imports = self.get_current_imports(matrix=matrix)
         for cur_import in current_imports:
             if cur_import not in import_dicts:
-                key_name = 'API_{}_{}'.format(cur_import[self.key],
-                                              cur_import['name'])
-                drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
-                                          key_name].copy()
-                drop_idx = drop_idx.index.values[0]
-                self.matrix_df = self.matrix_df.drop(drop_idx)
-                self.matrix_df.reset_index()
+                if (vmc.vendorkey in cur_import and (
+                        cur_import[vmc.vendorkey] in
+                        [x[vmc.vendorkey] for x in import_dicts])):
+                    import_dict = [x for x in import_dicts if x[vmc.vendorkey]
+                                   == cur_import[vmc.vendorkey]][0]
+                    self.update_import(import_dict, cur_import)
+                else:
+                    key_name = 'API_{}_{}'.format(cur_import[self.key],
+                                                  cur_import['name'])
+                    drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
+                                              key_name].copy()
+                    drop_idx = drop_idx.index.values[0]
+                    self.matrix_df = self.matrix_df.drop(drop_idx)
+                    self.matrix_df.reset_index()
         self.add_imports_to_vm(import_dicts)
 
     def add_imports_to_vm(self, import_dicts):
@@ -422,6 +429,26 @@ class ImportConfig(object):
             self.add_import_to_vm(import_key, account_id, import_filter,
                                   start_date, api_fields, key_name)
         self.matrix_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+
+    def update_import(self, import_dict, old_import_dict):
+        up_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
+                                import_dict[vmc.vendorkey]].copy()
+        up_idx = up_idx.index.values[0]
+        for col in [vmc.startdate, vmc.apifields]:
+            self.matrix_df.loc[up_idx, col] = import_dict[col]
+        if import_dict['name'] != old_import_dict['name']:
+            for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
+                self.matrix_df.loc[up_idx, col] = \
+                    self.matrix_df.loc[up_idx, col].replace(
+                        old_import_dict['name'], import_dict['name'])
+        file_name = self.matrix_df.loc[up_idx, vmc.apifile]
+        if not ((import_dict[self.account_id] ==
+                 old_import_dict[self.account_id]) and
+                (import_dict[self.filter] == old_import_dict[self.filter])):
+            params = self.get_default_params(import_dict[self.key])
+            self.make_new_config(params, file_name,
+                                 import_dict[self.account_id],
+                                 import_dict[self.filter])
 
     def get_datasource(self, api_key):
         df = self.matrix_df[self.matrix_df[vmc.vendorkey] == api_key].copy()
@@ -451,7 +478,7 @@ class ImportConfig(object):
                 config_file, def_params[self.filter],
                 def_params[self.account_id_parent])
         else:
-            filter_val = None
+            filter_val = ''
         if pd.isna(params[vmc.apifields]):
             api_fields = ''
         else:
@@ -475,6 +502,7 @@ class ImportConfig(object):
                     if x[:4] == import_type]
         for api_key in api_keys:
             import_dict = self.get_import_params(api_key, import_type)
+            import_dict[vmc.vendorkey] = api_key
             import_dicts.append(import_dict)
         for cur_import in import_dicts:
             if not isinstance(cur_import[vmc.startdate], dt.date):
