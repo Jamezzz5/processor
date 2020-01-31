@@ -109,7 +109,7 @@ class DvApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -239,8 +239,9 @@ class DvApi(object):
         elem = self.browser.find_element_by_xpath(xpath)
         for c in campaigns:
             elem.send_keys(c)
-            xpath = '//*[@id="mat-checkbox-{}"]/label/span'.format(
-                self.metric_end + 1)
+            xpath = ('/html/body/div[7]/div[3]/div/mat-dialog-container/'
+                     'dv-popup-template/div[2]/div/div/div/div[2]/'
+                     'mat-checkbox/label/span')
             self.click_on_xpath(xpath, sleep=5)
             elem.clear()
         xpath = ('//*[@id="mat-dialog-0"]/dv-popup-template/'
