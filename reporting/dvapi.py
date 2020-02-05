@@ -52,9 +52,9 @@ class DvApi(object):
         self.report_type = None
         self.dimensions = self.def_dimensions
         self.metrics = self.def_metrics
-        self.dim_end = 40
-        self.metric_start = 41
-        self.metric_end = 300
+        self.dim_end = 50
+        self.metric_start = 51
+        self.metric_end = 310
         self.metric_tab = 5
         self.path_to_report = ((1, 1), (2, 3), (3, 1))
         self.campaign_name = 'Campaign'
