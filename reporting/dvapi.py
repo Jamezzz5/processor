@@ -235,17 +235,14 @@ class DvApi(object):
     def click_on_filters(self, value):
         logging.info('Setting filters for {}'.format(value))
         campaigns = value.split(',')
-        xpath = ('/html/body/div[7]/div[3]/div/mat-dialog-container/'
-                'dv-popup-template/div[2]/div/div/div/div[1]/mat-form-field/'
-                 'div/div[1]/div/input')
+        xpath = '//input[@placeholder="Search"]'
         elem = self.browser.find_element_by_xpath(xpath)
         for c in campaigns:
             elem.send_keys(c)
-            xpath = ('//span[text()="Select/Deselect all"]')
+            xpath = '//span[text()="Select/Deselect all"]'
             self.click_on_xpath(xpath, sleep=5)
             elem.clear()
-        xpath = ('/html/body/div[7]/div[3]/div/mat-dialog-container/'
-                 'dv-popup-template/div[3]/div/div/span/button')
+        xpath = '//span[text()="SAVE"]'
         self.click_on_xpath(xpath, sleep=5)
 
     def click_on_dimensions(self, start_check=1, end_check=40):
