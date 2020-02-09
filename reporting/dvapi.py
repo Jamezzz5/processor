@@ -212,20 +212,25 @@ class DvApi(object):
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a/i').format(row)
         self.click_on_xpath(xpath, sleep=5)
 
-    def export_to_csv(self):
-        logging.info('Downloading created report.')
-        utl.dir_check(self.temp_path)
+    def get_report_element(self):
         row = self.find_report_in_table()
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
                  'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a').format(row)
         elem = self.browser.find_element_by_xpath(xpath)
+        return elem
+
+    def export_to_csv(self):
+        logging.info('Downloading created report.')
+        utl.dir_check(self.temp_path)
+        elem = self.get_report_element()
         for x in range(100):
             try:
                 link = elem.get_attribute('href')
             except:
                 logging.warning('Element being refreshed.')
-                elem = self.browser.find_element_by_xpath(xpath)
+                self.go_to_url(self.report_url)
+                elem = self.get_report_element()
                 link = elem.get_attribute('href')
             if link[:4] == 'http':
                 self.go_to_url(elem.get_attribute('href'))
