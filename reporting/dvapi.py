@@ -39,8 +39,8 @@ class DvApi(object):
         'Video Viewable Impressions']
 
     def __init__(self):
-        self.browser = self.init_browser()
-        self.base_window = self.browser.window_handles[0]
+        self.browser = None
+        self.base_window = None
         self.config_file = None
         self.username = None
         self.password = None
@@ -115,7 +115,11 @@ class DvApi(object):
         co.add_argument('--start-maximized')
         co.add_argument('--no-sandbox')
         co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path}
+        prefs = {'download.default_directory': download_path,
+                 'download.prompt_for_download': False,
+                 'download.directory_upgrade': True,
+                 'safebrowsing.enabled': False,
+                 'safebrowsing.disable_download_protection': True}
         co.add_experimental_option('prefs', prefs)
         browser = wd.Chrome(options=co)
         browser.maximize_window()
@@ -191,6 +195,7 @@ class DvApi(object):
         self.set_date(sd)
 
     def find_report_in_table(self):
+        time.sleep(2)
         for x in range(1, 10):
             xpath = ('//*[@id="myReportsWrapper"]/div[2]/dv-table/'
                      'dv-data-table/div/div[2]/mat-table/mat-row[{}]/'
@@ -213,13 +218,21 @@ class DvApi(object):
         row = self.find_report_in_table()
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
                  'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
-                 'mat-row[{}]/mat-cell[8]/div/span[6]/a/i').format(row)
+                 'mat-row[{}]/mat-cell[8]/div/span[6]/a').format(row)
+        elem = self.browser.find_element_by_xpath(xpath)
         for x in range(100):
             try:
-                self.click_on_xpath(xpath, sleep=5)
-                break
+                link = elem.get_attribute('href')
             except:
-                logging.warning('Report not ready, attempt {}'.format(x + 1))
+                logging.warning('Element being refreshed.')
+                elem = self.browser.find_element_by_xpath(xpath)
+                link = elem.get_attribute('href')
+            if link[:4] == 'http':
+                self.go_to_url(elem.get_attribute('href'))
+                break
+            else:
+                logging.warning('Report not ready, current link {}'
+                                ' attempt: {}'.format(link, x + 1))
                 time.sleep(5)
 
     def go_to_report_creation(self):
@@ -331,7 +344,6 @@ class DvApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.quit()
         self.browser = self.init_browser()
         self.base_window = self.browser.window_handles[0]
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
