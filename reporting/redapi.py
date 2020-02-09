@@ -68,7 +68,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -114,11 +114,17 @@ class RedApi(object):
         login_xpaths = ['/html/body/div/div/div[2]/div/form/fieldset[5]/button']
         for xpath in login_xpaths:
             self.click_on_xpath(xpath, sleep=5)
+        error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
+        e = self.browser.find_element_by_xpath(error_xpath)
+        if e.text == 'Incorrect password':
+            logging.warning('Incorrect password, returning empty df.')
+            return False
         if self.browser.current_url[:len(self.base_url)] != self.base_url:
             self.go_to_url(self.base_url)
         else:
             logo_xpath = '//*[@id="app"]/div/div[1]/div/a/img'
             self.click_on_xpath(logo_xpath, sleep=5)
+        return True
 
     def click_on_xpath(self, xpath, sleep=2):
         self.browser.find_element_by_xpath(xpath).click()
@@ -259,7 +265,10 @@ class RedApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
         self.go_to_url(self.base_url)
-        self.sign_in()
+        sign_in_result = self.sign_in()
+        if not sign_in_result:
+            self.quit()
+            return pd.DataFrame()
         self.create_report(sd, ed)
         df = self.get_file_as_df(self.temp_path)
         self.quit()
