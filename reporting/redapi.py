@@ -68,7 +68,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        # co.headless = True
+        co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -115,10 +115,12 @@ class RedApi(object):
         for xpath in login_xpaths:
             self.click_on_xpath(xpath, sleep=5)
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
-        e = self.browser.find_element_by_xpath(error_xpath)
-        if e.text == 'Incorrect password':
+        try:
+            self.browser.find_element_by_xpath(error_xpath)
             logging.warning('Incorrect password, returning empty df.')
             return False
+        except:
+            pass
         if self.browser.current_url[:len(self.base_url)] != self.base_url:
             self.go_to_url(self.base_url)
         else:
