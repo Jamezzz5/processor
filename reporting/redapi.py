@@ -114,11 +114,19 @@ class RedApi(object):
         login_xpaths = ['/html/body/div/div/div[2]/div/form/fieldset[5]/button']
         for xpath in login_xpaths:
             self.click_on_xpath(xpath, sleep=5)
+        error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
+        try:
+            self.browser.find_element_by_xpath(error_xpath)
+            logging.warning('Incorrect password, returning empty df.')
+            return False
+        except:
+            pass
         if self.browser.current_url[:len(self.base_url)] != self.base_url:
             self.go_to_url(self.base_url)
         else:
             logo_xpath = '//*[@id="app"]/div/div[1]/div/a/img'
             self.click_on_xpath(logo_xpath, sleep=5)
+        return True
 
     def click_on_xpath(self, xpath, sleep=2):
         self.browser.find_element_by_xpath(xpath).click()
@@ -198,10 +206,10 @@ class RedApi(object):
             xpath = '{}{}"]'.format(self.base_metric, metric)
             self.click_on_xpath(xpath, sleep=.5)
 
-    def click_grouped_merics(self):
-        for metric in range(2, 6):
-            metric_xpath = ('/html/body/div[9]/div/div/div/div/div/'
-                            'div[1]/div[{}]/h5/span/label/span').format(metric)
+    def click_grouped_metrics(self):
+        for metric in range(2, 5):
+            metric_xpath = ('/html/body/div[9]/div/div/div/div/div/div[2]/'
+                            'div[2]/div/ul/li[{}]/div/input').format(metric)
             self.click_on_xpath(metric_xpath, sleep=.5)
 
     def set_metrics(self, base_xpath):
@@ -209,9 +217,9 @@ class RedApi(object):
         metric_button_xpath = 'div[1]/div[1]/div/div[2]/div/button'
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
-        self.click_grouped_merics()
+        self.click_grouped_metrics()
         apply_button_xpath = ('/html/body/div[9]/div/div/div/'
-                              'div/div/div[2]/div/button[2]')
+                              'div/div/div[3]/button[2]')
         self.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self, base_xpath=None):
@@ -259,7 +267,10 @@ class RedApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
         self.go_to_url(self.base_url)
-        self.sign_in()
+        sign_in_result = self.sign_in()
+        if not sign_in_result:
+            self.quit()
+            return pd.DataFrame()
         self.create_report(sd, ed)
         df = self.get_file_as_df(self.temp_path)
         self.quit()
