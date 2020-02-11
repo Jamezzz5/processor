@@ -165,8 +165,8 @@ class VendorMatrix(object):
     def vm_change(self, index, col, new_value):
         self.vm_df.loc[index, col] = new_value
 
-    def get_all_data_sources(self):
-        data_sources = self.get_import_data_sources()
+    def get_all_data_sources(self, default_param=None):
+        data_sources = self.get_import_data_sources(default_param=default_param)
         non_import = self.get_data_sources()
         non_import = [x for x in non_import if x.key not in
                       [y.key for y in data_sources]]
@@ -189,8 +189,8 @@ class VendorMatrix(object):
                 self.vm_change(index, col, new_value)
         self.write()
 
-    def get_import_data_sources(self, import_type='API_'):
-        ic = ImportConfig(matrix=self)
+    def get_import_data_sources(self, import_type='API_', default_param=None):
+        ic = ImportConfig(matrix=self, default_param_ic=default_param)
         current_imports = ic.get_current_imports(import_type, matrix=self)
         vendor_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name'])
                        if x['name'] else '{}{}'.format(import_type, x['Key'])
@@ -266,12 +266,15 @@ class ImportConfig(object):
     file_name = 'import_config.csv'
     file_path = utl.config_path
 
-    def __init__(self, matrix=None):
+    def __init__(self, matrix=None, default_param_ic=None):
         self.matrix = None
         self.df = None
         self.matrix_df = None
+        self.default_param_ic = default_param_ic
         if matrix:
             self.import_vm()
+        if not self.default_param_ic:
+            self.default_param_ic = self
 
     def import_vm(self):
         self.matrix = VendorMatrix()
@@ -282,14 +285,25 @@ class ImportConfig(object):
         df = utl.import_read_csv(self.file_name, self.file_path)
         return df
 
-    def get_default_params(self, import_key):
-        params = self.df[self.df[self.key] == import_key].copy()
+    def get_default_params(self, import_key, default_param=False):
+        if default_param:
+            df = self.default_param_ic.df.copy()
+        else:
+            df = self.df.copy()
+        params = df[df[self.key] == import_key].copy()
         params = params.reset_index(drop=True)
-        params = params.to_dict(orient='index')[0]
+        params = params.to_dict(orient='index')
+        if len(params) > 0:
+            params = params[0]
+        elif not default_param:
+            logging.warning('Param not in vm, using default values.')
+            params = self.get_default_params(import_key, default_param=True)
         return params
 
     @staticmethod
     def append_str_before_filetype(name, append_val):
+        if str(name) == 'nan':
+            return append_val
         name_list = name.split('.')
         new_name = '{}_{}'.format(name_list[0], append_val)
         if len(name_list) > 1:
@@ -326,6 +340,8 @@ class ImportConfig(object):
 
     def load_file(self, file_name, file_library):
         file_name = os.path.join(self.file_path, file_name)
+        if not os.path.exists(file_name):
+            return None
         with open(file_name, 'r') as f:
             config_file = file_library.load(f)
         return config_file
@@ -367,13 +383,23 @@ class ImportConfig(object):
         df[col_name] = new_name
         return df
 
-    def add_to_vm(self, import_key, new_file, start_date, api_fields,
-                  key_name='', import_type='API'):
+    def get_default_vm_value(self, import_key, import_type,
+                             default_param=False):
+        if default_param:
+            df = self.default_param_ic.matrix_df.copy()
+        else:
+            df = self.matrix_df.copy()
         original_keys = [import_key, '{}_{}'.format(import_type, import_key)]
-        df = self.matrix_df[
-            self.matrix_df[vmc.vendorkey].isin(original_keys)].copy()
+        df = df[df[vmc.vendorkey].isin(original_keys)].copy()
         df = df.reset_index(drop=True)
         df = df.iloc[0:]
+        if df.empty and not default_param:
+            df = self.get_default_vm_value(import_key, import_type, True)
+        return df
+
+    def add_to_vm(self, import_key, new_file, start_date, api_fields,
+                  key_name='', import_type='API'):
+        df = self.get_default_vm_value(import_key, import_type)
         for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
             df = self.set_new_value(df, col, key_name)
         df[vmc.vendorkey] = '{}_{}'.format(import_type, df[vmc.vendorkey][0])
@@ -391,7 +417,8 @@ class ImportConfig(object):
             params[self.config_file], key_name)
         file_name = self.get_new_name(search_col=vmc.apifile,
                                       search_val=search_name)
-        self.make_new_config(params, file_name, account_id, import_filter)
+        if account_id:
+            self.make_new_config(params, file_name, account_id, import_filter)
         self.add_to_vm(import_key, file_name, start_date, api_fields,
                        key_name)
 
@@ -446,9 +473,10 @@ class ImportConfig(object):
                  old_import_dict[self.account_id]) and
                 (import_dict[self.filter] == old_import_dict[self.filter])):
             params = self.get_default_params(import_dict[self.key])
-            self.make_new_config(params, file_name,
-                                 import_dict[self.account_id],
-                                 import_dict[self.filter])
+            if import_dict[self.account_id]:
+                self.make_new_config(params, file_name,
+                                     import_dict[self.account_id],
+                                     import_dict[self.filter])
 
     def get_datasource(self, api_key):
         df = self.matrix_df[self.matrix_df[vmc.vendorkey] == api_key].copy()
@@ -466,19 +494,8 @@ class ImportConfig(object):
             api_key_name = ''
         def_params = self.get_default_params(api_key_type)
         params = self.get_datasource(api_key)
-        f_lib = self.set_config_file_lib(params[self.config_file])
-        config_file = self.load_file(params[self.config_file], f_lib)
-        account_id = self.get_config_file_value(
-            config_file, def_params[self.account_id],
-            def_params[self.account_id_parent])
-        if not pd.isna(def_params[self.account_id_pre]):
-            account_id = account_id.replace(def_params[self.account_id_pre], '')
-        if not pd.isna(def_params[self.filter]):
-            filter_val = self.get_config_file_value(
-                config_file, def_params[self.filter],
-                def_params[self.account_id_parent])
-        else:
-            filter_val = ''
+        account_id, filter_val = self.get_import_params_from_config_file(
+            params=params, def_params=def_params)
         if pd.isna(params[vmc.apifields]):
             api_fields = ''
         else:
@@ -494,6 +511,24 @@ class ImportConfig(object):
         }
         return import_dict
 
+    def get_import_params_from_config_file(self, params, def_params):
+        f_lib = self.set_config_file_lib(params[self.config_file])
+        config_file = self.load_file(params[self.config_file], f_lib)
+        if not config_file:
+            return '', ''
+        account_id = self.get_config_file_value(
+            config_file, def_params[self.account_id],
+            def_params[self.account_id_parent])
+        if not pd.isna(def_params[self.account_id_pre]):
+            account_id = account_id.replace(def_params[self.account_id_pre], '')
+        if not pd.isna(def_params[self.filter]):
+            filter_val = self.get_config_file_value(
+                config_file, def_params[self.filter],
+                def_params[self.account_id_parent])
+        else:
+            filter_val = ''
+        return account_id, filter_val
+
     def get_current_imports(self, import_type='API_', matrix=None):
         if matrix:
             self.import_vm()
@@ -506,8 +541,12 @@ class ImportConfig(object):
             import_dicts.append(import_dict)
         for cur_import in import_dicts:
             if not isinstance(cur_import[vmc.startdate], dt.date):
-                start_date = utl.string_to_date(cur_import[vmc.startdate])
-                cur_import[vmc.startdate] = start_date.date()
+                if (str(cur_import[vmc.startdate]) == 'nan'
+                        or not cur_import[vmc.startdate]):
+                    cur_import[vmc.startdate] = None
+                else:
+                    start_date = utl.string_to_date(cur_import[vmc.startdate])
+                    cur_import[vmc.startdate] = start_date.date()
         return import_dicts
 
 
