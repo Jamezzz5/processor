@@ -206,10 +206,10 @@ class RedApi(object):
             xpath = '{}{}"]'.format(self.base_metric, metric)
             self.click_on_xpath(xpath, sleep=.5)
 
-    def click_grouped_merics(self):
-        for metric in range(2, 6):
-            metric_xpath = ('/html/body/div[9]/div/div/div/div/div/'
-                            'div[1]/div[{}]/h5/span/label/span').format(metric)
+    def click_grouped_metrics(self):
+        for metric in range(2, 5):
+            metric_xpath = ('/html/body/div[9]/div/div/div/div/div/div[2]/'
+                            'div[2]/div/ul/li[{}]/div/input').format(metric)
             self.click_on_xpath(metric_xpath, sleep=.5)
 
     def set_metrics(self, base_xpath):
@@ -217,9 +217,9 @@ class RedApi(object):
         metric_button_xpath = 'div[1]/div[1]/div/div[2]/div/button'
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
-        self.click_grouped_merics()
+        self.click_grouped_metrics()
         apply_button_xpath = ('/html/body/div[9]/div/div/div/'
-                              'div/div/div[2]/div/button[2]')
+                              'div/div/div[3]/button[2]')
         self.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self, base_xpath=None):
