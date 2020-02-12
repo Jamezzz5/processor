@@ -109,7 +109,7 @@ class DvApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -135,14 +135,14 @@ class DvApi(object):
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
         command_result = driver.execute("send_command", params)
 
-    def go_to_url(self, url):
+    def go_to_url(self, url, sleep=5):
         logging.info('Going to url {}.'.format(url))
         try:
             self.browser.get(url)
         except ex.TimeoutException:
             logging.warning('Timeout exception, retrying.')
             self.go_to_url(url)
-        time.sleep(5)
+        time.sleep(sleep)
 
     def sign_in(self):
         logging.info('Signing in.')
@@ -212,26 +212,41 @@ class DvApi(object):
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a/i').format(row)
         self.click_on_xpath(xpath, sleep=5)
 
-    def get_report_element(self):
+    def get_report_element(self, attempt=1):
         row = self.find_report_in_table()
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
                  'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a').format(row)
-        elem = self.browser.find_element_by_xpath(xpath)
+        try:
+            elem = self.browser.find_element_by_xpath(xpath)
+        except:
+            attempt += 1
+            if attempt > 15:
+                logging.warning('Could not download returning empty df.')
+                return None
+            logging.warning('Could not find element, retrying.  '
+                            'Attempt: {}'.format(attempt))
+            self.go_to_url(self.report_url)
+            elem = self.get_report_element(attempt=attempt)
         return elem
 
     def export_to_csv(self):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
         elem = self.get_report_element()
+        if not elem:
+            return None
         for x in range(100):
             try:
                 link = elem.get_attribute('href')
             except:
                 logging.warning('Element being refreshed.')
                 self.go_to_url(self.report_url)
-                elem = self.get_report_element()
-                link = elem.get_attribute('href')
+                continue
+            if link == 'https://pinnacle.doubleverify.com/null':
+                logging.warning('Got null url, refreshing page.')
+                self.go_to_url(self.report_url)
+                continue
             if link[:4] == 'http':
                 self.go_to_url(elem.get_attribute('href'))
                 break
@@ -239,16 +254,35 @@ class DvApi(object):
                 logging.warning('Report not ready, current link {}'
                                 ' attempt: {}'.format(link, x + 1))
                 time.sleep(5)
+        return True
+
+    def click_report_creation(self, attempt=1):
+        xpath = '//*[@id="myReportsWrapper"]/div[1]/dv-deep-menu/button/span'
+        try:
+            self.click_on_xpath(xpath)
+        except:
+            attempt += 1
+            if attempt > 10:
+                logging.warning('Could not get to report creation, '
+                                ' returning blank df.')
+                return None
+            logging.warning('Could not click on xpath, retrying.  '
+                            'Attempt {}'.format(attempt))
+            self.go_to_url(self.report_url, sleep=attempt + 5)
+            self.click_report_creation(attempt)
+        return True
 
     def go_to_report_creation(self):
-        xpath = '//*[@id="myReportsWrapper"]/div[1]/dv-deep-menu/button/span'
-        self.click_on_xpath(xpath)
+        clicked_on_report_creation = self.click_report_creation()
+        if not clicked_on_report_creation:
+            return None
         # click standard
         for path in self.path_to_report:
             xpath = ('//*[@id="cdk-overlay-0"]/div/ul[{}]/li[{}]/'
                      'div/div'.format(path[0], path[1]))
             self.click_on_xpath(xpath)
         time.sleep(5)
+        return True
 
     def click_on_filters(self, value):
         logging.info('Setting filters for {}'.format(value))
@@ -260,7 +294,7 @@ class DvApi(object):
             xpath = '//span[text()="Select/Deselect all"]'
             self.click_on_xpath(xpath, sleep=5)
             elem.clear()
-        xpath = '//span[text()="SAVE"]'
+        xpath = '//span[text()="Save"]'
         self.click_on_xpath(xpath, sleep=5)
 
     def click_on_dimensions(self, start_check=1, end_check=40):
@@ -318,7 +352,9 @@ class DvApi(object):
 
     def create_report(self, sd, ed):
         logging.info('Creating report.')
-        self.go_to_report_creation()
+        report_creation = self.go_to_report_creation()
+        if not report_creation:
+            return None
         self.set_dates(sd, ed)
         self.click_on_dimensions(start_check=1,
                                  end_check=self.dim_end)
@@ -327,7 +363,10 @@ class DvApi(object):
                               last_tab=self.metric_tab)
         self.give_report_name(sd)
         self.click_and_run()
-        self.export_to_csv()
+        exported_to_csv = self.export_to_csv()
+        if not exported_to_csv:
+            return None
+        return True
 
     @staticmethod
     def get_file_as_df(temp_path=None):
@@ -355,7 +394,9 @@ class DvApi(object):
         self.go_to_url(self.base_url)
         self.sign_in()
         self.go_to_url(self.report_url)
-        self.create_report(sd, ed)
+        report_created = self.create_report(sd, ed)
+        if not report_created:
+            return pd.DataFrame()
         df = self.get_file_as_df(self.temp_path)
         self.quit()
         return df
