@@ -207,10 +207,9 @@ class RedApi(object):
             self.click_on_xpath(xpath, sleep=.5)
 
     def click_grouped_metrics(self):
-        for metric in range(2, 5):
-            metric_xpath = ('/html/body/div[9]/div/div/div/div/div/div[2]/'
-                            'div[2]/div/ul/li[{}]/div/input').format(metric)
-            self.click_on_xpath(metric_xpath, sleep=.5)
+        for metric in ['Ad Group Metrics', 'Conversion', 'Video']:
+            metric_xpath = '//label[text()="{}"]'.format(metric)
+            self.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
         logging.info('Setting metrics.')
@@ -218,8 +217,7 @@ class RedApi(object):
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
-        apply_button_xpath = ('/html/body/div[9]/div/div/div/'
-                              'div/div/div[3]/button[2]')
+        apply_button_xpath = '//span[text()="Apply"]'
         self.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self, base_xpath=None):
