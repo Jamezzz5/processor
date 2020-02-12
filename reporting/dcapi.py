@@ -93,7 +93,7 @@ class DcApi(object):
         try:
             token = self.client.refresh_token(self.refresh_url, **extra)
         except requests.exceptions.ConnectionError as e:
-            attempt +=1
+            attempt += 1
             if attempt > 100:
                 logging.warning('Max retries exceeded: {}'.format(e))
                 token = None
@@ -130,6 +130,8 @@ class DcApi(object):
         self.create_report()
         files_url = self.get_files_url()
         self.r = self.get_report(files_url)
+        if not self.r:
+            return pd.DataFrame()
         self.df = self.get_df_from_response()
         return self.df
 
@@ -151,10 +153,13 @@ class DcApi(object):
         return self.df
 
     def get_report(self, files_url):
-        for x in range(1, 201):
+        for x in range(1, 401):
             report_status = self.check_file(files_url, attempt=x)
             if report_status:
                 break
+        if not report_status:
+            logging.warning('Report could not download returning blank df.')
+            return None
         logging.info('Report available.  Downloading.')
         report_url = '{}?alt=media'.format(files_url)
         self.r = self.make_request(report_url, 'get')
@@ -165,9 +170,6 @@ class DcApi(object):
         if 'status' in r.json() and r.json()['status'] == 'REPORT_AVAILABLE':
             return True
         else:
-            if attempt == 200:
-                logging.warning('Report could not download.  Aborting')
-                sys.exit(0)
             logging.info('Report unavailable.  Attempt {}.  '
                          'Response: {}'.format(attempt, r.json()))
             time.sleep(30)
@@ -216,7 +218,8 @@ class DcApi(object):
         full_url = self.create_url()
         self.r = self.make_request(full_url, method='post', body=report)
         if 'id' not in self.r.json():
-            logging.warning('id not in response as follows: {}'.format(self.r.json()))
+            logging.warning('id not in response as follows: {}'.format(
+                self.r.json()))
         self.report_id = self.r.json()['id']
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
