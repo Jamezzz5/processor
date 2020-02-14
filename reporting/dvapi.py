@@ -233,27 +233,25 @@ class DvApi(object):
     def export_to_csv(self):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
-        elem = self.get_report_element()
-        if not elem:
-            return None
         for x in range(100):
+            self.go_to_url(self.report_url, sleep=(x + 5))
+            elem = self.get_report_element()
+            if not elem:
+                return None
             try:
                 link = elem.get_attribute('href')
             except:
                 logging.warning('Element being refreshed.')
-                self.go_to_url(self.report_url)
-                continue
-            if link == 'https://pinnacle.doubleverify.com/null':
+                link = None
+            if link and link == 'https://pinnacle.doubleverify.com/null':
                 logging.warning('Got null url, refreshing page.')
-                self.go_to_url(self.report_url)
                 continue
-            if link[:4] == 'http':
+            if link and link[:4] == 'http':
                 self.go_to_url(elem.get_attribute('href'))
                 break
             else:
                 logging.warning('Report not ready, current link {}'
                                 ' attempt: {}'.format(link, x + 1))
-                time.sleep(5)
         return True
 
     def click_report_creation(self, attempt=1):
@@ -306,7 +304,12 @@ class DvApi(object):
             except:
                 break
             if str(value) in self.dimensions:
-                self.click_on_xpath(xpath, sleep=5)
+                try:
+                    self.click_on_xpath(xpath, sleep=5)
+                except ex.ElementClickInterceptedException as e:
+                    logging.warning('Click intercepted retrying. {}'.format(e))
+                    time.sleep(5)
+                    self.click_on_xpath(xpath, sleep=5)
             for filter_check in [(self.campaign, self.campaign_name),
                                  (self.advertiser, self.advertiser_name)]:
                 if filter_check[0] and str(value) == filter_check[1]:
