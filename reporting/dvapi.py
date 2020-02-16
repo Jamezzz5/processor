@@ -44,6 +44,7 @@ class DvApi(object):
         self.config_file = None
         self.username = None
         self.password = None
+        self.client = None
         self.advertiser = None
         self.campaign = None
         self.config_list = None
@@ -56,7 +57,7 @@ class DvApi(object):
         self.metric_start = 51
         self.metric_end = 310
         self.metric_tab = 5
-        self.path_to_report = ((1, 1), (2, 3), (3, 1))
+        self.path_to_report = ('Standard', 'Viewability', 'All (template)')
         self.campaign_name = 'Campaign'
         self.advertiser_name = 'Advertiser Name'
 
@@ -78,6 +79,8 @@ class DvApi(object):
         self.advertiser = self.config['advertiser']
         self.campaign = self.config['campaign']
         self.config_list = [self.username, self.password]
+        if 'client' in self.config:
+            self.client = self.config['client']
 
     def check_config(self):
         for item in self.config_list:
@@ -101,7 +104,8 @@ class DvApi(object):
                     self.metric_start = 23
                     self.metric_end = 109
                     self.metric_tab = 3
-                    self.path_to_report = ((1, 3), (10, 1), (11, 1))
+                    self.path_to_report = ('Social Platforms', 'Facebook',
+                                           'Custom Report')
                     self.advertiser_name = 'FB Account ID'
                     self.campaign_name = 'FB Campaign Name'
         return sd, ed, fields
@@ -109,7 +113,7 @@ class DvApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -188,7 +192,7 @@ class DvApi(object):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
         xpaths = ['//*[@id="reportBuilderForm"]/mat-card/rc-date-range/'
                   'mat-card/div[1]/dv-date-range-picker/div/div/span',
-                  '//*[@id="cdk-overlay-1"]/div/div[9]/span',
+                  '//span[normalize-space(text())="Custom Range"]',
                   '//*[@id="mat-input-2"]']
         for xpath in xpaths:
             self.click_on_xpath(xpath)
@@ -233,8 +237,10 @@ class DvApi(object):
     def export_to_csv(self):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
-        for x in range(100):
+        for x in range(20):
             self.go_to_url(self.report_url, sleep=(x + 5))
+            if self.client:
+                self.change_client()
             elem = self.get_report_element()
             if not elem:
                 return None
@@ -254,7 +260,11 @@ class DvApi(object):
                                 ' attempt: {}'.format(link, x + 1))
         return True
 
-    def click_report_creation(self, attempt=1):
+    def click_report_creation(self, attempt=0):
+        if self.client:
+            client_changed = self.change_client()
+            if not client_changed:
+                return None
         xpath = '//*[@id="myReportsWrapper"]/div[1]/dv-deep-menu/button/span'
         try:
             self.click_on_xpath(xpath)
@@ -270,14 +280,35 @@ class DvApi(object):
             self.click_report_creation(attempt)
         return True
 
+    def change_client(self, attempt=0):
+        xpaths = ['//*[@id="myReportsWrapper"]/div[1]/mat-form-field',
+                  '//span[normalize-space(text())="{}"]'.format(self.client)]
+        for xpath in xpaths:
+            time.sleep(2)
+            try:
+                self.click_on_xpath(xpath)
+            except:
+                attempt += 1
+                if attempt > 10:
+                    logging.warning('Could not get to report creation, '
+                                    ' returning blank df.')
+                    return None
+                logging.warning('Could not click on xpath, retrying.  '
+                                'Attempt {}'.format(attempt))
+                self.go_to_url(self.report_url, sleep=attempt + 5)
+                self.change_client(attempt)
+        return True
+
     def go_to_report_creation(self):
         clicked_on_report_creation = self.click_report_creation()
         if not clicked_on_report_creation:
             return None
         # click standard
-        for path in self.path_to_report:
-            xpath = ('//*[@id="cdk-overlay-0"]/div/ul[{}]/li[{}]/'
-                     'div/div'.format(path[0], path[1]))
+        for idx, path in enumerate(self.path_to_report):
+            if idx == 2:
+                xpath = ('//div[normalize-space(text())="{}"]'.format(path))
+            else:
+                xpath = ('//div[text()="{}"]'.format(path))
             self.click_on_xpath(xpath)
         time.sleep(5)
         return True
@@ -310,6 +341,9 @@ class DvApi(object):
                     logging.warning('Click intercepted retrying. {}'.format(e))
                     time.sleep(5)
                     self.click_on_xpath(xpath, sleep=5)
+                except ex.WebDriverException as e:
+                    logging.warning('Could not click returning: {}.'.format(e))
+                    return False
             for filter_check in [(self.campaign, self.campaign_name),
                                  (self.advertiser, self.advertiser_name)]:
                 if filter_check[0] and str(value) == filter_check[1]:
@@ -317,6 +351,7 @@ class DvApi(object):
                              'div[{}]/rc-filters/div'.format(x))
                     self.click_on_xpath(xpath, sleep=5)
                     self.click_on_filters(filter_check[0])
+        return True
 
     def click_on_metrics(self, start_check=41, end_check=300, last_tab=5):
         logging.info('Setting metrics for report.')
@@ -359,8 +394,10 @@ class DvApi(object):
         if not report_creation:
             return None
         self.set_dates(sd, ed)
-        self.click_on_dimensions(start_check=1,
-                                 end_check=self.dim_end)
+        clicked_on_dimensions = self.click_on_dimensions(
+            start_check=1, end_check=self.dim_end)
+        if not clicked_on_dimensions:
+            return None
         self.click_on_metrics(start_check=self.metric_start,
                               end_check=self.metric_end,
                               last_tab=self.metric_tab)
@@ -374,7 +411,7 @@ class DvApi(object):
     @staticmethod
     def get_file_as_df(temp_path=None):
         df = pd.DataFrame()
-        for x in range(100):
+        for x in range(20):
             logging.info('Checking for file.  Attempt {}.'.format(x + 1))
             files = os.listdir(temp_path)
             files = [x for x in files if x[-4:] == '.csv']
