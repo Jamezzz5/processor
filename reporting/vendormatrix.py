@@ -833,6 +833,14 @@ def df_transform(df, transform):
             ndf = ndf.append(tdf)
         df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
+    if transform_type == 'Melt':
+        header_col_name = transform[1]
+        variable_cols = transform[2].split('|')
+        df = df.melt(id_vars=[x for x in df.columns if x not in variable_cols],
+                     value_vars=variable_cols,
+                     var_name='{}-variable'.format(header_col_name),
+                     value_name='{}-value'.format(header_col_name))
+        df = df.reset_index(drop=True)
     if transform_type == 'AddColumn':
         col_name = transform[1]
         col_val = transform[2]
