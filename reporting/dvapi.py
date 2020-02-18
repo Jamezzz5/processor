@@ -309,7 +309,18 @@ class DvApi(object):
                 xpath = ('//div[normalize-space(text())="{}"]'.format(path))
             else:
                 xpath = ('//div[text()="{}"]'.format(path))
-            self.click_on_xpath(xpath)
+            try:
+                self.click_on_xpath(xpath)
+            except:
+                logging.warning('Could not click on xpath trying all.')
+                all_elem = self.browser.find_elements_by_xpath(xpath)
+                for elem_idx, elem in enumerate(all_elem):
+                    try:
+                        elem.click()
+                        break
+                    except:
+                        logging.warning('{} elem not clickable '
+                                        'trying next.'.format(elem_idx))
         time.sleep(5)
         return True
 
