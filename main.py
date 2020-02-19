@@ -95,15 +95,15 @@ def main(arguments=None):
         except IOError:
             logging.warning('{} could not be opened.  '
                             'Final Output not updated.'.format(OUTPUT_FILE))
-    if args.analyze:
-        aly = az.Analyze(df=df, file=OUTPUT_FILE, matrix=matrix)
-        aly.do_all_analysis()
     if args.exp:
         exp_class = exp.ExportHandler()
         exp_class.export_loop(args.exp)
     if args.tab:
         tb = tbapi.TabApi()
         tb.refresh_extract()
+    if args.analyze:
+        aly = az.Analyze(df=df, file=OUTPUT_FILE, matrix=matrix)
+        aly.do_all_analysis()
 
 
 if __name__ == '__main__':

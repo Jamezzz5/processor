@@ -10,6 +10,7 @@ config_path = 'config/'
 raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
+backup_path = 'backup/'
 
 RULE_METRIC = 'METRIC'
 RULE_QUERY = 'QUERY'

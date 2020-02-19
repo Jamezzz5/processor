@@ -19,6 +19,7 @@
 *.rar
 *.tar
 *.zip
+*.gzip
 
 # Logs and databases #
 ######################
@@ -42,6 +43,7 @@ Thumbs.db
 *.xlsm
 *.idea
 *.docx
+*.pslock
 
 Config/
 Raw Data/
@@ -50,4 +52,5 @@ ERROR REPORTS/
 temp/
 Raw Data Output.csv
 venv/
+backup/
 logfile.log
