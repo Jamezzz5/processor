@@ -838,7 +838,7 @@ def df_transform(df, transform):
         header_col_name = transform[1]
         variable_cols = transform[2].split('|')
         df = df.melt(id_vars=[x for x in df.columns if x not in variable_cols],
-                     value_vars=variable_cols,
+                     value_vars=[x for x in variable_cols if x in df.columns],
                      var_name='{}-variable'.format(header_col_name),
                      value_name='{}-value'.format(header_col_name))
         df = df.reset_index(drop=True)
