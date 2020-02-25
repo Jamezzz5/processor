@@ -47,12 +47,8 @@ class Analyze(object):
         if edf.empty:
             logging.info('No Planned error.')
             return True
-        edf[plan_names] = pd.DataFrame(
-            edf[vmc.fullplacename].str.split('_').values.tolist(),
-            columns=plan_names)
-        for col in plan_names:
-            df = df[df[col].isin(edf[col].values)]
-        df = df[plan_names + [vmc.vendorkey]].drop_duplicates()
+        df = df[df[dctc.PFPN].isin(edf[vmc.fullplacename].values)][
+            plan_names + [vmc.vendorkey]].drop_duplicates()
         df = vm.full_placement_creation(df, None, dctc.FPN, plan_names)
         df = df[df[dctc.FPN].isin(edf[dctc.FPN].values)]
         df = utl.col_removal(df, None, [dctc.FPN])
