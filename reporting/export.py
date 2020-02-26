@@ -673,11 +673,26 @@ class ScriptBuilder(object):
     def __init__(self, metadata=mdl.Base.metadata, omit_tables=None):
         self.omit_tables = omit_tables
         if not self.omit_tables:
-            self.omit_tables = []
+            self.omit_tables = ['model']
         self.metadata = metadata
         self.tables = [x for x in self.metadata.sorted_tables
                        if x.name not in self.omit_tables]
         self.completed_tables = self.omit_tables
+
+    def append_plan_join(self, original_from_script):
+        table = self.tables[-1]
+        fcs = [x for x in table.columns if x.foreign_keys]
+        table_name = '"{}"."{}"'.format(table.schema, table.name)
+        fc = fcs[0]
+        fk = [x for x in fc.foreign_keys][0]
+        join_table = '"{}"."{}"'.format(
+            fk.column.table.schema, fk.column.table.name)
+        table_relation = '{}."{}"'.format(table_name, fc.name)
+        foreign_relation = '{}."{}"'.format(join_table, fk.column.name)
+        join_script = """\nFULL JOIN {} ON ({} = {})""".format(
+            table_name, foreign_relation, table_relation)
+        from_script = original_from_script + join_script
+        return from_script
 
     def get_from_script(self, table, original_from_script=''):
         fcs = [x for x in table.columns if x.foreign_keys]
@@ -724,18 +739,39 @@ class ScriptBuilder(object):
                      if not x.foreign_keys and not x.primary_key and
                      x.type.python_type != decimal.Decimal]
             column_names.extend(names)
-        return column_names
+        sum_columns = ['SUM("{}"."{}"."{}") AS "{}"'.format(
+            base_table.schema, base_table.name, x.name, x.name)
+                 for x in base_table.columns
+                 if x.type.python_type == decimal.Decimal]
+        sum_columns.append('SUM("{}"."{}"."{}") AS "{}"'.format(
+            'lqadb', 'plan',
+            'plannednetcost', 'plannednetcost'))
+        return column_names, sum_columns
 
-    def get_full_script(self, filter_col, filter_val):
-        base_table = self.tables[-1]
+    @staticmethod
+    def optimize_from_script(filter_table, from_script):
+        split_from_script = from_script.split('\n')
+        join = [x for x in split_from_script if '"{}"'.format(filter_table)
+                in x.split('ON')[0]]
+        split_from_script = [x for x in split_from_script if x not in join]
+        parent_table = join[0].split('ON')[1].split('=')[0].split('.')[1]
+        parent_idx = [idx for idx, x in enumerate(split_from_script)
+                      if '{}'.format(parent_table) in x.split('ON')[0]][0]
+        split_from_script = (split_from_script[:parent_idx + 1] + join +
+                             split_from_script[parent_idx + 1:])
+        from_script = '\n'.join(split_from_script)
+        return from_script
+
+    def get_full_script(self, filter_col, filter_val, filter_table):
+        base_table = self.tables[-2]
         from_script = self.get_from_script(table=base_table)
-        column_names = self.get_column_names(base_table)
+        from_script = self.append_plan_join(from_script)
+        from_script = self.optimize_from_script(filter_table, from_script)
+        column_names, sum_columns = self.get_column_names(base_table)
         column_names = ['{}'.format(x) for x in set(column_names)]
         where_clause = "({} = '{}'::text)".format(filter_col, filter_val)
         sel_script = \
-            """SELECT {} {}
-               WHERE {} 
-               GROUP BY {}""".format(
-                ','.join(column_names), from_script, where_clause,
-                ','.join(column_names))
+            """SELECT {},\n{} \n{} \nWHERE {} \nGROUP BY {}""".format(
+                ','.join(column_names), ','.join(sum_columns),
+                from_script, where_clause, ','.join(column_names))
         return sel_script
