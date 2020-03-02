@@ -101,7 +101,7 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
     elif df[bm_col] == BM_CPNUCPSU:
         return (df[br_col] * df[vmc.newuser]) + (df[dctc.BR2] * df[vmc.signup])
     elif df[bm_col] == BM_CPA:
-        if vmc.conv1 in BM_CPA:
+        if vmc.conv1 in df.columns:
             return df[dctc.BR] * df[vmc.conv1]
     elif df[bm_col] == BM_CPA2:
         if df[vmc.date] < df[dctc.PD]:
