@@ -101,6 +101,7 @@ class AwApi(object):
     def video_calc(df):
         for column in VIEW_METRICS:
             df[column] = df[column].str.strip('%').astype(np.float)
+            df['{} - Percent'.format(column)] = df[column]
             df[column] = (df[column] / 100) * df[VIEWS]
         return df
 
