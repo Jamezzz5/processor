@@ -63,7 +63,7 @@ class TwApi(object):
         self.asid_dict = None
         self.adid_dict = None
         self.tweet_dict = None
-        self.v = 5
+        self.v = 7
 
     def input_config(self, config):
         logging.info('Loading Twitter config file: {}.'.format(config))
@@ -203,8 +203,8 @@ class TwApi(object):
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
                                       'tweet_id', 'line_item_id',
                                       parent_filter=self.asid_dict.keys())
-        self.tweet_dict = self.get_ids('scoped_timeline', 'id',
-                                       'text', 'id',)
+        self.tweet_dict = self.get_ids('tweets', 'id',
+                                       'full_text', 'id',)
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -239,6 +239,9 @@ class TwApi(object):
                 params['count'] = '1000'
             if entity == 'promoted_tweets':
                 params['with_deleted'] = 'true'
+            if entity == 'tweets':
+                params['tweet_type'] = 'PUBLISHED'
+                params['timeline_type'] = 'ALL'
         return url, params
 
     def get_data(self, sd=None, ed=None, fields=None):
