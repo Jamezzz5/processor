@@ -258,7 +258,7 @@ class FbApi(object):
 
     def get_report(self, ar):
         try:
-            report = ar.remote_read()
+            report = ar.api_get()
         except FacebookRequestError as e:
             self.request_error(e)
             report = self.get_report(ar)
@@ -302,7 +302,7 @@ class FbApi(object):
 
     @staticmethod
     def get_async_job_percent(async_job):
-        job = async_job.remote_read()
+        job = async_job.api_get()
         percent = job['async_percent_completion']
         logging.info('FB async_job #{}'' percent done:'
                      '{}%'.format(async_job['id'], percent))
