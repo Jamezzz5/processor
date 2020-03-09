@@ -35,6 +35,7 @@ def_metrics = ['Impressions', 'Clicks', 'Cost', 'VideoViews',
 base_conv_metrics = ['Conversions']
 ext_conv_metrics = ['ConversionTypeName', 'ViewThroughConversions',
                     'AllConversions']
+rf_metrics = ['ImpressionReach', 'AverageFrequency']
 conv_metrics = base_conv_metrics + ext_conv_metrics
 
 def_fields = def_params + def_metrics
@@ -114,21 +115,29 @@ class AwApi(object):
         return sd, ed
 
     def parse_fields(self, fields):
-        api_fields = def_fields
+        params = def_params[:]
+        metrics = def_metrics[:]
         self.report_type = 'AD_PERFORMANCE_REPORT'
         if fields is not None:
             if 'Conversions' in fields:
-                api_fields = conv_fields
+                metrics = conv_metrics
+            if 'Campaign' in fields:
+                self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
+                params = camp_params
             if 'UAC' in fields:
-                api_fields = uac_fields
+                fields = camp_params
+                metrics += base_conv_metrics
                 self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
             if 'no_date' in fields:
-                api_fields = no_date_fields
+                params = [x for x in params if x not in date_params]
             if 'no_date' in fields and 'Conversions' in fields:
-                api_fields = no_date_params + conv_metrics
+                params = no_date_params + conv_metrics
             for field in fields:
                 if field == 'Device':
-                    api_fields += ['Device']
+                    metrics += ['Device']
+                if field == 'RF':
+                    metrics += rf_metrics
+        api_fields = metrics + params
         return api_fields
 
     def get_data(self, sd=None, ed=None, fields=None):
