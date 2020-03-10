@@ -125,7 +125,7 @@ class AwApi(object):
                 self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
                 params = camp_params
             if 'UAC' in fields:
-                fields = camp_params
+                params = camp_params + date_params
                 metrics += base_conv_metrics
                 self.report_type = 'CAMPAIGN_PERFORMANCE_REPORT'
             if 'no_date' in fields:
