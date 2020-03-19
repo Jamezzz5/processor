@@ -108,6 +108,16 @@ class DvApi(object):
                                            'Custom Report')
                     self.advertiser_name = 'FB Account ID'
                     self.campaign_name = 'FB Campaign Name'
+        else:
+            self.dimensions = self.def_dimensions
+            self.metrics = self.def_metrics
+            self.dim_end = 50
+            self.metric_start = 51
+            self.metric_end = 310
+            self.metric_tab = 5
+            self.path_to_report = ('Standard', 'Viewability', 'All (template)')
+            self.campaign_name = 'Campaign'
+            self.advertiser_name = 'Advertiser Name'
         return sd, ed, fields
 
     def init_browser(self):
@@ -195,20 +205,41 @@ class DvApi(object):
                   '//span[normalize-space(text())="Custom Range"]',
                   '//*[@id="mat-input-2"]']
         for xpath in xpaths:
-            self.click_on_xpath(xpath)
+            try:
+                self.click_on_xpath(xpath)
+            except ex.WebDriverException as e:
+                logging.warning('Except, retrying. {}'.format(e))
+                time.sleep(5)
+                self.click_on_xpath(xpath)
         self.set_date(sd)
+
+    def get_name_of_report(self, row_num, attempt=0):
+        xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
+                 'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
+                 'mat-row[{}]/mat-cell[2]/a').format(row_num)
+        try:
+            value = self.browser.find_element_by_xpath(xpath).text
+        except ex.NoSuchElementException as e:
+            logging.warning('Could not get element, attempt {}'
+                            ' error: {}'.format(attempt, e))
+            attempt += 1
+            if attempt > 10:
+                logging.warning('Greater 10 attemprts returning None')
+                return None
+            self.go_to_url(self.report_url)
+            value = self.get_name_of_report(row_num, attempt)
+        return value
 
     def find_report_in_table(self):
         time.sleep(2)
         for x in range(1, 10):
-            xpath = ('//*[@id="myReportsWrapper"]/div[2]/dv-table/'
-                     'dv-data-table/div/div[2]/mat-table/mat-row[{}]/'
-                     'mat-cell[2]/a').format(x)
-            value = self.browser.find_element_by_xpath(xpath).text
-            if value == self.report_name:
+            value = self.get_name_of_report(row_num=x)
+            if value and value == self.report_name:
                 logging.info('Found report.')
                 time.sleep(10)
                 return x
+            if not value:
+                return None
 
     def click_on_report(self, row):
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
@@ -218,6 +249,8 @@ class DvApi(object):
 
     def get_report_element(self, attempt=1):
         row = self.find_report_in_table()
+        if not row:
+            return None
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
                  'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a').format(row)
@@ -422,7 +455,7 @@ class DvApi(object):
     @staticmethod
     def get_file_as_df(temp_path=None):
         df = pd.DataFrame()
-        for x in range(20):
+        for x in range(30):
             logging.info('Checking for file.  Attempt {}.'.format(x + 1))
             files = os.listdir(temp_path)
             files = [x for x in files if x[-4:] == '.csv']
