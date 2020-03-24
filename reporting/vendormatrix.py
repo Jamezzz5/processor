@@ -409,6 +409,7 @@ class ImportConfig(object):
             df[vmc.apifields] = api_fields
         self.matrix_df = self.matrix_df.append(df, ignore_index=True,
                                                sort=False)
+        return df[vmc.vendorkey][0]
 
     def add_import_to_vm(self, import_key, account_id, import_filter=None,
                          start_date=None, api_fields=None, key_name=''):
@@ -419,8 +420,9 @@ class ImportConfig(object):
                                       search_val=search_name)
         if account_id:
             self.make_new_config(params, file_name, account_id, import_filter)
-        self.add_to_vm(import_key, file_name, start_date, api_fields,
-                       key_name)
+        vk = self.add_to_vm(import_key, file_name, start_date, api_fields,
+                            key_name)
+        return vk
 
     def add_and_remove_from_vm(self, import_dicts, matrix=None):
         current_imports = self.get_current_imports(matrix=matrix)
@@ -443,6 +445,7 @@ class ImportConfig(object):
         self.add_imports_to_vm(import_dicts)
 
     def add_imports_to_vm(self, import_dicts):
+        vks = []
         for import_dict in import_dicts:
             current_imports = self.get_current_imports()
             if import_dict in current_imports:
@@ -453,9 +456,11 @@ class ImportConfig(object):
             start_date = import_dict[vmc.startdate]
             api_fields = import_dict[vmc.apifields]
             key_name = import_dict['name']
-            self.add_import_to_vm(import_key, account_id, import_filter,
-                                  start_date, api_fields, key_name)
+            vk = self.add_import_to_vm(import_key, account_id, import_filter,
+                                       start_date, api_fields, key_name)
+            vks.append(vk)
         self.matrix_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+        return vks
 
     def update_import(self, import_dict, old_import_dict):
         up_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
