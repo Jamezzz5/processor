@@ -18,7 +18,7 @@ from facebook_business.adobjects.adreportrun import AdReportRun
 def_params = ['campaign_name', 'adset_name', 'ad_name']
 
 def_metrics = ['impressions', 'inline_link_clicks', 'spend',
-               'video_10_sec_watched_actions', 'video_p25_watched_actions',
+               'video_thruplay_watched_actions', 'video_p25_watched_actions',
                'video_p50_watched_actions', 'video_p75_watched_actions',
                'video_p100_watched_actions', 'reach', 'frequency',
                'video_play_actions']
@@ -29,7 +29,7 @@ ab_device = ['action_device', 'action_type']
 
 def_fields = def_params + def_metrics
 
-nested_col = ['video_10_sec_watched_actions', 'video_p100_watched_actions',
+nested_col = ['video_thruplay_watched_actions', 'video_p100_watched_actions',
               'video_p50_watched_actions', 'video_p25_watched_actions',
               'video_p75_watched_actions', 'video_play_actions']
 
@@ -56,7 +56,7 @@ col_name_dic = {'date_start': 'Reporting Starts',
                 'ad_name': 'Ad Name', 'impressions': 'Impressions',
                 'inline_link_clicks': 'Link Clicks',
                 'spend': 'Amount Spent (USD)',
-                'video_10_sec_watched_actions': '10-Second Video Views',
+                'video_thruplay_watched_actions': '10-Second Video Views',
                 'video_p25_watched_actions': 'Video Watches at 25%',
                 'video_p50_watched_actions': 'Video Watches at 50%',
                 'video_p75_watched_actions': 'Video Watches at 75%',
