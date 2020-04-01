@@ -111,7 +111,8 @@ class RedApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-        login_xpaths = ['/html/body/div/div/div[2]/div/form/fieldset[5]/button']
+        time.sleep(2)
+        login_xpaths = ['//button[normalize-space(text())="Sign in"]']
         for xpath in login_xpaths:
             self.click_on_xpath(xpath, sleep=5)
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'

@@ -1,6 +1,6 @@
 pandas==0.24.2
 Numpy==1.16.4
-facebook_business==4.0.3
+facebook_business==6.0.2
 googleads==16.0.0
 oauth2==1.9.0.post1
 psycopg2==2.7.6.1
