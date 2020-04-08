@@ -162,7 +162,7 @@ class DcApi(object):
             return None
         logging.info('Report available.  Downloading.')
         report_url = '{}?alt=media'.format(files_url)
-        self.r = self.make_request(report_url, 'get')
+        self.r = self.make_request(report_url, 'get', json_response=False)
         return self.r
 
     def check_file(self, files_url, attempt=1):
@@ -178,20 +178,30 @@ class DcApi(object):
     def get_files_url(self):
         full_url = self.create_url()
         self.r = self.make_request('{}/run'.format(full_url), 'post')
-        if 'error' in self.r.json():
-            self.request_error()
         file_id = self.r.json()['id']
         files_url = '{}/files/{}'.format(full_url, file_id)
         return files_url
 
-    def make_request(self, url, method, body=None, params=None):
+    def make_request(self, url, method, body=None, params=None, attempt=1,
+                     json_response=True):
         self.get_client()
         try:
             self.r = self.raw_request(url, method, body=body, params=params)
         except requests.exceptions.SSLError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
-            self.r = self.make_request(url, method, body=body)
+            self.r = self.make_request(url=url, method=method, body=body,
+                                       params=params, attempt=attempt,
+                                       json_response=json_response)
+        if json_response and 'error' in self.r.json():
+            logging.warning('Request error.  Retrying {}'.format(self.r.json()))
+            time.sleep(30)
+            attempt += 1
+            if attempt > 10:
+                self.request_error()
+            self.r = self.make_request(url=url, method=method, body=body,
+                                       params=params, attempt=attempt,
+                                       json_response=json_response)
         return self.r
 
     def raw_request(self, url, method, body=None, params=None):
@@ -217,9 +227,6 @@ class DcApi(object):
         report = self.create_report_params()
         full_url = self.create_url()
         self.r = self.make_request(full_url, method='post', body=report)
-        if 'id' not in self.r.json():
-            logging.warning('id not in response as follows: {}'.format(
-                self.r.json()))
         self.report_id = self.r.json()['id']
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
