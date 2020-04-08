@@ -86,7 +86,8 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
     elif df[bm_col] == BM_PA:
         return df[vmc.cost] / .85
     elif df[bm_col] == BM_CPE:
-        return df[br_col] * df[vmc.engagements]
+        if vmc.engagements in df:
+            return df[br_col] * df[vmc.engagements]
     elif df[bm_col] == BM_FLAT or df[bm_col] == BM_FLAT2:
         if df[vmc.date] == df[dctc.PD]:
             return df[br_col] * df[CLI_PD]
@@ -142,9 +143,10 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
 def net_cost_calculation(df):
     logging.info('Calculating Net Cost')
     df = clicks_by_place_date(df)
-    if BM_CPA in df[dctc.BM].unique() and vmc.conv1 not in df.columns:
-        logging.warning('CPA buy model specified '
-                        'without conversion {}.'.format(vmc.conv1))
+    for col in [(BM_CPA, vmc.conv1), (BM_CPE, vmc.engagements)]:
+        if col[0] in df[dctc.BM].unique() and col[1] not in df.columns:
+            logging.warning('{} buy model specified '
+                            'without conversion {}.'.format(col[0], col[1]))
     calc_ser = df[df[dctc.BM].isin(BUY_MODELS)].apply(net_cost, axis=1)
     if not calc_ser.empty:
         df[vmc.cost].update(calc_ser)
