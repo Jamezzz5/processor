@@ -68,7 +68,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -125,7 +125,7 @@ class RedApi(object):
         if self.browser.current_url[:len(self.base_url)] != self.base_url:
             self.go_to_url(self.base_url)
         else:
-            logo_xpath = '//*[@id="app"]/div/div[1]/div/a/img'
+            logo_xpath = '//*[@id="app"]/div/div[1]/div[1]/div/a/img'
             self.click_on_xpath(logo_xpath, sleep=5)
         return True
 
@@ -135,10 +135,9 @@ class RedApi(object):
 
     def set_breakdowns(self, base_xpath=None):
         logging.info('Setting breakdowns.')
-        bd_xpath = 'div[3]/div[1]/div[1]/div/div[3]/div/div/div/div/div[1]'
-        bd_xpath = base_xpath + bd_xpath
+        bd_xpath = '//div[text()="Break Downs"]'
         self.click_on_xpath(bd_xpath)
-        bd_date_xpath = '/html/body/div[6]/div/ul/li[1]'
+        bd_date_xpath = '//li[text()="Date"]'
         self.click_on_xpath(bd_date_xpath)
 
     def get_cal_month(self, lr=1, cal_xpath=None):
@@ -228,7 +227,7 @@ class RedApi(object):
         self.click_on_xpath(export_xpath)
 
     def get_base_xpath(self):
-        base_app_xpath = '//*[@id="app"]/div/div[2]/div[2]'
+        base_app_xpath = '//*[@id="app"]/div/div[1]/div[2]/div'
         try:
             self.browser.find_element_by_xpath(base_app_xpath)
         except ex.NoSuchElementException:
