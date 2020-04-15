@@ -53,9 +53,9 @@ class DvApi(object):
         self.report_type = None
         self.dimensions = self.def_dimensions
         self.metrics = self.def_metrics
-        self.dim_end = 50
-        self.metric_start = 51
-        self.metric_end = 310
+        self.dim_end = 53
+        self.metric_start = 54
+        self.metric_end = 328
         self.metric_tab = 5
         self.path_to_report = ('Standard', 'Viewability', 'All (template)')
         self.campaign_name = 'Campaign'
@@ -111,9 +111,9 @@ class DvApi(object):
         else:
             self.dimensions = self.def_dimensions
             self.metrics = self.def_metrics
-            self.dim_end = 50
-            self.metric_start = 51
-            self.metric_end = 310
+            self.dim_end = 53
+            self.metric_start = 54
+            self.metric_end = 328
             self.metric_tab = 5
             self.path_to_report = ('Standard', 'Viewability', 'All (template)')
             self.campaign_name = 'Campaign'
@@ -363,7 +363,7 @@ class DvApi(object):
     def click_on_filters(self, value):
         logging.info('Setting filters for {}'.format(value))
         campaigns = value.split(',')
-        xpath = '//input[@placeholder="Search"]'
+        xpath = '(//input[@placeholder="Search"])[3]'
         elem = self.browser.find_element_by_xpath(xpath)
         for c in campaigns:
             elem.send_keys(c)
@@ -397,7 +397,7 @@ class DvApi(object):
                     xpath = ('//*[@id="dimensionsComponent"]/div/div[2]/'
                              'div[{}]/rc-filters/div'.format(x))
                     self.click_on_xpath(xpath, sleep=5)
-                    self.click_on_filters(filter_check[0])
+                    self.click_on_filters(value=filter_check[0])
         return True
 
     def click_on_metrics(self, start_check=41, end_check=300, last_tab=5):
