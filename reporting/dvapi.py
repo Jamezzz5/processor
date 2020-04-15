@@ -203,7 +203,10 @@ class DvApi(object):
         xpaths = ['//*[@id="reportBuilderForm"]/mat-card/rc-date-range/'
                   'mat-card/div[1]/dv-date-range-picker/div/div/span',
                   '//span[normalize-space(text())="Custom Range"]',
-                  '//*[@id="mat-input-2"]']
+                  '//*[@id="reportBuilderForm"]/mat-card/rc-date-range/mat-card'
+                  '/div[1]/dv-date-range-picker/div/div[2]/form/'
+                  'mat-form-field[1]/div/div[1]/div[1]/div/span/'
+                  'mat-datepicker-toggle/button/span/mat-icon']
         for xpath in xpaths:
             try:
                 self.click_on_xpath(xpath)
