@@ -19,7 +19,8 @@ def_metrics = ["Served Impressions", "Total Clicks", "Video Played 25%",
                "Video Played 50%", "Video Played 75%", "Video Started",
                "Video Fully Played", "Total Conversions",
                "Post Click Conversions", "Post Impression Conversions",
-               "Total Media Cost"]
+               "Total Media Cost", "Default Tracked Ads",
+               "Default Interactions From Tracked Ads"]
 
 p2c_fields = ['Conversion Date', 'Conversion ID', 'Event Date',
               'Event Type Name', 'Conversion Time Lag', 'Placement Name',
