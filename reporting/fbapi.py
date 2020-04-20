@@ -21,7 +21,7 @@ def_metrics = ['impressions', 'inline_link_clicks', 'spend',
                'video_thruplay_watched_actions', 'video_p25_watched_actions',
                'video_p50_watched_actions', 'video_p75_watched_actions',
                'video_p100_watched_actions', 'reach', 'frequency',
-               'video_play_actions']
+               'video_play_actions', 'estimated_ad_recallers']
 
 fields_actions = ['actions', 'action_values']
 
@@ -65,7 +65,8 @@ col_name_dic = {'date_start': 'Reporting Starts',
                 'frequency': 'Frequency',
                 'ad_id': 'ad_id',
                 'adset_id': 'adset_id',
-                'campaign_id': 'campaign_id'}
+                'campaign_id': 'campaign_id',
+                'estimated_ad_recallers': 'estimated_ad_recallers'}
 
 config_path = utl.config_path
 
