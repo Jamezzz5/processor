@@ -824,6 +824,7 @@ class Event(Base):
     view_monitored_imps = Column(Numeric)
     verificationcost = Column(Numeric)
     videoplays = Column(Numeric)
+    ad_recallers = Column(Numeric)
 
     fullplacement = relationship('Fullplacement')
     upload = relationship('Upload')

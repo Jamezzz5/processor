@@ -79,6 +79,7 @@ ga_goal2 = 'GA - Goal2 Completions'
 ga_pageviews = 'GA - PageViews'
 ga_bounces = 'GA - Bounces'
 ga_timeonpage = 'GA - Time On Page'
+ad_recall = 'Ad Recallers'
 landingpagepi = 'Landing Page' + postimp
 homepagepi = 'Homepage' + postimp
 btnclickpi = 'Button Click' + postimp
@@ -154,17 +155,17 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            btnclick, purchase, checkout, signup, newuser, activeuser, totaluser,
            payuser, download, login, transaction, transaction_revenue, mplay,
            gplay, gplay3, gplay6, ga_sessions, ga_goal1, ga_goal2, ga_pageviews,
-           ga_bounces, ga_timeonpage, landingpagepi, homepagepi, btnclickpi,
-           purchasepi, checkoutpi, signuppi, newuserpi, activeuserpi,
-           downloadpi, loginpi, gplaypi, gplay3pi, gplay6pi, landingpagepc,
-           homepagepc, btnclickpc, purchasepc, checkoutpc, signuppc, newuserpc,
-           activeuserpc, downloadpc, loginpc, gplaypc, gplay3pc, gplay6pc,
-           landingpagess, signupss, sm_totalbuzz, sm_totalbuzzpost,
-           sm_totalreplies, sm_totalreposts, sm_originalposts, sm_impressions,
-           sm_positivesentiment, sm_negativesentiment, sm_passion,
-           sm_uniqueauthors, sm_strongemotion, sm_weakemotion, view_imps,
-           view_total_imps, view_monitored_imps, view_fraud, modelcoefa,
-           modelcoefb, modelcoefc, AD_COST, REP_COST, VER_COST,
+           ga_bounces, ga_timeonpage, ad_recall, landingpagepi, homepagepi,
+           btnclickpi, purchasepi, checkoutpi, signuppi, newuserpi,
+           activeuserpi, downloadpi, loginpi, gplaypi, gplay3pi, gplay6pi,
+           landingpagepc, homepagepc, btnclickpc, purchasepc, checkoutpc,
+           signuppc, newuserpc, activeuserpc, downloadpc, loginpc, gplaypc,
+           gplay3pc, gplay6pc, landingpagess, signupss, sm_totalbuzz,
+           sm_totalbuzzpost, sm_totalreplies, sm_totalreposts, sm_originalposts,
+           sm_impressions, sm_positivesentiment, sm_negativesentiment,
+           sm_passion, sm_uniqueauthors, sm_strongemotion, sm_weakemotion,
+           view_imps, view_total_imps, view_monitored_imps, view_fraud,
+           modelcoefa, modelcoefb, modelcoefc, AD_COST, REP_COST, VER_COST,
            conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
            conv10]
 

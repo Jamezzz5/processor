@@ -684,8 +684,8 @@ class DataSource(object):
         dic = dct.Dict(self.p[vmc.filenamedict])
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
-        dic.auto_functions(err, self.p[vmc.autodicord],
-                           self.p[vmc.autodicplace])
+        dic.auto_functions(err=err, autodicord=self.p[vmc.autodicord],
+                           placement=self.p[vmc.autodicplace])
         df = dic.merge(df, dctc.FPN)
         return df
 
