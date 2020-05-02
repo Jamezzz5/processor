@@ -55,9 +55,9 @@ def get_args(arguments=None):
     parser.add_argument('--tab', action='store_true')
     parser.add_argument('--basic', action='store_true')
     if arguments:
-        args = parser.parse_args(arguments.split())
+        args, unknown = parser.parse_known_args(arguments.split())
     else:
-        args = parser.parse_args()
+        args, unknown = parser.parse_known_args()
     return args
 
 
