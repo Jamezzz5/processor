@@ -65,6 +65,16 @@ class TwApi(object):
         self.tweet_dict = None
         self.v = 7
 
+    def reset_dicts(self):
+        self.df = pd.DataFrame()
+        self.campaign_filter = None
+        self.dates = None
+        self.client = None
+        self.cid_dict = None
+        self.asid_dict = None
+        self.adid_dict = None
+        self.tweet_dict = None
+
     def input_config(self, config):
         logging.info('Loading Twitter config file: {}.'.format(config))
         self.configfile = os.path.join(configpath, config)
@@ -245,6 +255,7 @@ class TwApi(object):
         return url, params
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
         self.df = self.get_df_for_all_dates(sd, ed, fields)
