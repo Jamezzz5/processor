@@ -378,7 +378,7 @@ class DictTranslationConfig(object):
             df.to_csv(os.path.join(self.csvpath, configfile), index=False,
                       encoding='utf-8')
         except IOError:
-            logging.warning('{} could not be opened.  This dictionary'
+            logging.warning('{} could not be opened.  This dictionary '
                             'was not saved.'.format(configfile))
 
     def apply_translation_to_dict(self, data_dict):

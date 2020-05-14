@@ -1,8 +1,11 @@
 import os
+import re
 import shutil
 import logging
+import operator
 import tarfile
 import pandas as pd
+import seaborn as sns
 import datetime as dt
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
@@ -11,15 +14,16 @@ import reporting.dictcolumns as dctc
 
 
 class Analyze(object):
-    def __init__(self, df=pd.DataFrame(), file=None, matrix=None):
+    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.df = df
-        self.file = file
+        self.file_name = file_name
         self.matrix = matrix
-        if self.df.empty and self.file:
+        self.vc = ValueCalc()
+        if self.df.empty and self.file_name:
             self.load_df_from_file()
 
     def load_df_from_file(self):
-        self.df = utl.import_read_csv(self.file)
+        self.df = utl.import_read_csv(self.file_name)
 
     def check_delivery(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
@@ -79,7 +83,100 @@ class Analyze(object):
             shutil.copy(file_name, new_file_name)
         logging.info('Successfully backed up files to {}'.format(bu))
 
+    @staticmethod
+    def make_heat_map(df, cost_cols=None, percent_cols=None):
+        fig, axs = sns.plt.subplots(ncols=len(df.columns),
+                                    gridspec_kw={'hspace': 0, 'wspace': 0})
+        for idx, col in enumerate(df.columns):
+            text_format = ",.0f"
+            sns.heatmap(df[[col]], annot=True, fmt=text_format, linewidths=.5,
+                        cbar=False, cmap="Blues", ax=axs[idx])
+            if col in cost_cols:
+                for t in axs[idx].texts:
+                    t.set_text('$' + t.get_text())
+            if idx != 0:
+                axs[idx].set_ylabel('')
+                axs[idx].get_yaxis().set_ticks([])
+            else:
+                labels = [val[:30] for val in reversed(list(df.index))]
+                axs[idx].set_yticklabels(labels=labels)
+            axs[idx].xaxis.tick_top()
+        sns.plt.show()
+        sns.plt.close()
+
+    def generate_table(self, group, metrics, sort=None):
+        base_metrics = [x for x in metrics if x not in self.vc.metric_names]
+        calc_metrics = [x for x in metrics if x not in base_metrics]
+        df = self.df.groupby(group)[base_metrics].sum()
+        df = self.vc.calculate_all_metrics(calc_metrics, df)
+        cost_cols = [x for x in metrics if metrics[x]]
+        if sort:
+            df = df.sort_values(sort, ascending=False)
+        self.make_heat_map(df, cost_cols)
+
     def do_all_analysis(self):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
+
+
+class ValueCalc(object):
+    file_name = os.path.join(utl.config_path, 'aly_grouped_metrics.csv')
+    metric_name = 'Metric Name'
+    formula = 'Formula'
+    operations = {'+': operator.add, '-': operator.sub, '/': operator.truediv,
+                  '*': operator.mul, '%': operator.mod, '^': operator.xor}
+
+    def __init__(self):
+        self.calculations = self.get_grouped_metrics()
+        self.metric_names = [self.calculations[x][self.metric_name]
+                             for x in self.calculations]
+        self.parse_formulas()
+
+    @staticmethod
+    def get_default_metrics():
+        metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100']
+        formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
+                   'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
+                   'Net Cost Final/Button Click', 'Video Views 100/Video Views']
+        df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
+        return df
+
+    def get_grouped_metrics(self):
+        if os.path.isfile(self.file_name):
+            df = pd.read_csv(self.file_name)
+        else:
+            df = self.get_default_metrics()
+        calculations = df.to_dict(orient='index')
+        return calculations
+
+    def parse_formulas(self):
+        for gm in self.calculations:
+            formula = self.calculations[gm][self.formula]
+            reg_operators = '([' + ''.join(self.operations.keys()) + '])'
+            formula = re.split(reg_operators, formula)
+            self.calculations[gm][self.formula] = formula
+
+    def get_metric_formula(self, metric_name):
+        f = [self.calculations[x][self.formula] for x in self.calculations if
+             self.calculations[x][self.metric_name] == metric_name][0]
+        return f
+
+    def calculate_all_metrics(self, metric_names, df=None):
+        for metric_name in metric_names:
+            df = self.calculate_metric(metric_name, df)
+        return df
+
+    def calculate_metric(self, metric_name, df=None):
+        col = metric_name
+        formula = self.get_metric_formula(metric_name)
+        current_op = None
+        for item in formula:
+            if current_op:
+                df[col] = self.operations[current_op](df[col], df[item])
+                current_op = None
+            elif item in self.operations:
+                current_op = item
+            else:
+                df[col] = df[item]
+        return df

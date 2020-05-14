@@ -102,7 +102,7 @@ def main(arguments=None):
         tb = tbapi.TabApi()
         tb.refresh_extract()
     if args.analyze:
-        aly = az.Analyze(df=df, file=OUTPUT_FILE, matrix=matrix)
+        aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
         aly.do_all_analysis()
 
 
