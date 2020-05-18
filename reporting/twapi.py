@@ -245,10 +245,9 @@ class TwApi(object):
         params = {}
         if entity:
             url += '/{}'.format(entity)
+            params['with_deleted'] = 'true'
             if entity != 'cards':
                 params['count'] = '1000'
-            if entity == 'promoted_tweets':
-                params['with_deleted'] = 'true'
             if entity == 'tweets':
                 params['tweet_type'] = 'PUBLISHED'
                 params['timeline_type'] = 'ALL'
