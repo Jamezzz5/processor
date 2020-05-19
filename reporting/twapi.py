@@ -62,6 +62,7 @@ class TwApi(object):
         self.cid_dict = None
         self.asid_dict = None
         self.adid_dict = None
+        self.promoted_account_id_dict = None
         self.tweet_dict = None
         self.v = 7
 
@@ -73,6 +74,7 @@ class TwApi(object):
         self.cid_dict = None
         self.asid_dict = None
         self.adid_dict = None
+        self.promoted_account_id_dict = None
         self.tweet_dict = None
 
     def input_config(self, config):
@@ -213,6 +215,9 @@ class TwApi(object):
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
                                       'tweet_id', 'line_item_id',
                                       parent_filter=self.asid_dict.keys())
+        self.promoted_account_id_dict = self.get_ids(
+            entity='promoted_accounts', eid='id', name='id',
+            parent='line_item_id', parent_filter=self.asid_dict.keys())
         self.tweet_dict = self.get_ids('tweets', 'id',
                                        'full_text', 'id',)
 
@@ -267,25 +272,41 @@ class TwApi(object):
         full_date_list = self.list_dates(sd, ed)
         timezone = self.get_account_timezone()
         self.get_all_id_dicts(sd)
-        ids_lists = [list(self.adid_dict.keys())[i:i + 20] for i
-                     in range(0, len(self.adid_dict.keys()), 20)]
+        for entity in [('PROMOTED_TWEET', self.adid_dict),
+                       ('PROMOTED_ACCOUNT', self.promoted_account_id_dict)]:
+            entity_name = entity[0]
+            entity_dict = entity[1]
+            ids_lists = [list(entity_dict.keys())[i:i + 20] for i
+                         in range(0, len(entity_dict.keys()), 20)]
+            self.loop_through_dates_for_df(
+                full_date_list=full_date_list, timezone=timezone,
+                ids_lists=ids_lists, fields=fields, entity=entity_name)
+        return self.df
+
+    def loop_through_dates_for_df(self, full_date_list, timezone, ids_lists,
+                                  fields, entity):
         for date in full_date_list:
             sd = self.date_format(date, timezone)
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
             logging.info('Getting Twitter data from '
-                         '{} until {}'.format(sd, ed))
-            for place in ['ALL_ON_TWITTER', 'PUBLISHER_NETWORK']:
+                         '{} until {} for {}'.format(sd, ed, entity))
+            if entity == 'PROMOTED_TWEET':
+                possible_placements = ['ALL_ON_TWITTER', 'PUBLISHER_NETWORK']
+            else:
+                possible_placements = ['ALL_ON_TWITTER']
+            for place in possible_placements:
                 df = self.get_df_for_date(ids_lists, fields, sd, ed,
-                                          date, place)
+                                          date, place, entity=entity)
                 df = self.clean_df(df)
                 self.df = self.df.append(df, sort=True).reset_index(drop=True)
         return self.df
 
-    def get_df_for_date(self, ids_lists, fields, sd, ed, date, place):
+    def get_df_for_date(self, ids_lists, fields, sd, ed, date, place,
+                        entity='PROMOTED_TWEET'):
         df = pd.DataFrame()
         for ids in ids_lists:
             url, params = self.create_stats_url(fields, ids, sd, ed,
-                                                placement=place)
+                                                entity=entity, placement=place)
             data = self.request(url, resp_key=jsondata, params=params)
             self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
@@ -317,6 +338,10 @@ class TwApi(object):
         return date
 
     def add_parents(self, df):
+        for id_key in self.promoted_account_id_dict:
+            current_dict = self.promoted_account_id_dict[id_key]
+            current_dict['name'] = 'PROMOTED ACCOUNT'
+            self.adid_dict[current_dict['parent']] = current_dict
         parent_maps = [[self.adid_dict, 'tweetid'],
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
@@ -343,6 +368,7 @@ class TwApi(object):
                 else:
                     id_dict[str(x['id'])] = {'name': x['text'],
                                              'Card name': None}
+        id_dict['PROMOTED ACCOUNT'] = {'name': 'PROMOTED ACCOUNT'}
         df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
         return df
 
