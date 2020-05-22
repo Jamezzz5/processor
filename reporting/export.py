@@ -388,16 +388,8 @@ class DB(object):
                   """.format(self.schema, table, where_col,
                              ', '.join(['%s'] * len(where_val)))
         self.cursor.execute(command, where_val)
+        columns = [i[0] for i in self.cursor.description]
         data = self.cursor.fetchall()
-        self.connect()
-        command = """
-                  SELECT *
-                  FROM information_schema.columns
-                  WHERE table_schema = '{0}' AND table_name = '{1}'
-                  """.format(self.schema, table)
-        self.cursor.execute(command)
-        columns = self.cursor.fetchall()
-        columns = [x[3] for x in columns]
         data = pd.DataFrame(data=data, columns=columns)
         return data
 
