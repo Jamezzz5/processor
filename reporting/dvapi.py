@@ -55,8 +55,8 @@ class DvApi(object):
         self.metrics = self.def_metrics
         self.dim_end = 53
         self.metric_start = 54
-        self.metric_end = 328
-        self.metric_tab = 5
+        self.metric_end = 341
+        self.metric_tab = 6
         self.path_to_report = ('Standard', 'Viewability', 'All (template)')
         self.campaign_name = 'Campaign'
         self.advertiser_name = 'Advertiser Name'
@@ -400,6 +400,18 @@ class DvApi(object):
                     self.click_on_filters(value=filter_check[0])
         return True
 
+    def click_on_metric(self, xpath, attempt=0):
+        try:
+            self.click_on_xpath(xpath, sleep=5)
+        except ex.ElementClickInterceptedException as e:
+            attempt += 1
+            if attempt > 10:
+                logging.warning('Could not click continuing.')
+                return None
+            logging.warning('Could not click.  Retrying. {}'.format(e))
+            time.sleep(1)
+            self.click_on_metric(xpath, attempt)
+
     def click_on_metrics(self, start_check=41, end_check=300, last_tab=5):
         logging.info('Setting metrics for report.')
         tab = 0
@@ -416,7 +428,7 @@ class DvApi(object):
                     self.click_on_xpath(xpath, sleep=5)
                     value = self.browser.find_element_by_xpath(xpath).text
             if str(value) in self.metrics:
-                self.click_on_xpath(xpath, sleep=5)
+                self.click_on_metric(xpath)
 
     def give_report_name(self, sd):
         xpath = ('//*[@id="reportBuilderForm"]/mat-card/rc-title-bar/div[1]/'
