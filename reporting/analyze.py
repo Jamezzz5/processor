@@ -4,6 +4,7 @@ import shutil
 import logging
 import operator
 import tarfile
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import datetime as dt
@@ -34,7 +35,7 @@ class Analyze(object):
         if f_df.empty:
             logging.info('Nothing has delivered in full.')
         else:
-            del_p = f_df.apply(lambda x: "{0:.2f}%".format(x*100))
+            del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
             logging.info('The following have delivered in full: \n'
                          '{}'.format(del_p))
             o_df = f_df[f_df > 1.5]
@@ -43,6 +44,70 @@ class Analyze(object):
                 logging.info(
                     'The following have over-delivered: \n'
                     '{}'.format(del_p))
+
+    @staticmethod
+    def get_rolling_mean_df(df, value_col, group_cols):
+        pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
+                             values=value_col, aggfunc=np.sum)
+        df = pdf.unstack().reset_index().rename(columns={0: value_col})
+        for x in [3, 7, 30]:
+            ndf = pdf.rolling(
+                window=x, min_periods=1).mean().unstack().reset_index().rename(
+                columns={0: '{} rolling {}'.format(value_col, x)})
+            df = df.merge(ndf, on=group_cols + [vmc.date])
+        return df
+
+    def project_delivery_completion(self, df):
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        average_df = self.get_rolling_mean_df(
+            df=df, value_col=vmc.cost, group_cols=plan_names)
+        last_date = dt.datetime.strftime(
+            dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
+        average_df = average_df[average_df[vmc.date] == last_date]
+        average_df = average_df.drop(columns=[vmc.cost])
+        df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
+        df = df[df[dctc.PNC] - df[vmc.cost] > 0]
+        df = df.reset_index()
+        df = df.merge(average_df, on=plan_names)
+        df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
+            '{} rolling {}'.format(vmc.cost, 3)]
+        df['days'] = df['days'].replace([np.inf, -np.inf], np.nan).fillna(10000)
+        df['completed_date'] = pd.to_datetime(df[vmc.date]) + pd.to_timedelta(
+            np.ceil(df['days']).astype(int), unit='D')
+        no_date_map = ((df['completed_date'] >
+                        dt.datetime.today() + dt.timedelta(days=365)) |
+                       (df['completed_date'] <
+                        dt.datetime.today() - dt.timedelta(days=365)))
+        df.loc[no_date_map, 'completed_date'] = 'Greater than 1 Year'
+        logging.info(
+            'Projected delivery completion dates are as follows: \n'
+            '{}'.format(df[plan_names + ['completed_date']].to_string()))
+
+    def check_raw_file_update_time(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            file_name = source.p[vmc.filename]
+            if os.path.exists(file_name):
+                t = os.path.getmtime(file_name)
+                last_update = dt.datetime.fromtimestamp(t)
+                if last_update.date() == dt.datetime.today().date():
+                    update_tier = 'Today'
+                elif last_update.date() > (
+                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                    update_tier = 'Within A Week'
+                else:
+                    update_tier = 'Greater Than One Week'
+            else:
+                last_update = 'Does Not Exist'
+                update_tier = 'Never'
+            data_dict = {'source': [source.key], 'update_time': [last_update],
+                         'update_tier': [update_tier]}
+            df = df.append(pd.DataFrame(data_dict),
+                           ignore_index=True, sort=False)
+        logging.info(
+            'Raw File update times and tiers are as follows: \n'
+            '{}'.format(df.to_string()))
 
     def check_plan_error(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
@@ -118,6 +183,8 @@ class Analyze(object):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
+        self.project_delivery_completion(self.df)
+        self.check_raw_file_update_time()
 
 
 class ValueCalc(object):
