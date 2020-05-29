@@ -69,6 +69,10 @@ class Analyze(object):
         df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
         df = df[df[dctc.PNC] - df[vmc.cost] > 0]
         df = df.reset_index()
+        if df.empty:
+            logging.warning('Dataframe empty, likely no planned net costs.  '
+                            'Could not project delivery completion.')
+            return False
         df = df.merge(average_df, on=plan_names)
         df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
             '{} rolling {}'.format(vmc.cost, 3)]
@@ -204,8 +208,13 @@ class Analyze(object):
 
     def generate_topline_metrics(self, data_filter=None):
         group = [dctc.CAM]
-        metrics = [cal.TOTAL_COST, cal.NCF, vmc.impressions, vmc.clicks,
-                   'CPC', vmc.landingpage, 'CPLP', vmc.btnclick, 'CPBC']
+        metrics = []
+        potential_metrics = [[cal.TOTAL_COST], [cal.NCF], [vmc.impressions],
+                             [vmc.clicks, 'CPC'], [vmc.landingpage, 'CPLP'],
+                             [vmc.btnclick, 'CPBC']]
+        for metric in potential_metrics:
+            if metric[0] in self.df.columns:
+                metrics += metric
         df = self.generate_df_table(group=group, metrics=metrics,
                                     data_filter=data_filter)
         df = self.give_df_default_format(df)
@@ -225,6 +234,11 @@ class Analyze(object):
             if kpi_formula:
                 kpi_cols = kpi_formula[0][self.vc.formula][::2]
                 metrics = kpi_cols + [kpi]
+                missing_cols = [x for x in kpi_cols if x not in self.df.columns]
+                if missing_cols:
+                    logging.warning(
+                        'Missing columns could not evaluate {}'.format(kpi))
+                    continue
             elif kpi not in self.df.columns:
                 logging.warning('Unknown KPI: {}'.format(kpi))
                 continue
