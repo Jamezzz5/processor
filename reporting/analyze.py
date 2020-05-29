@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import datetime as dt
+import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.vendormatrix as vm
@@ -170,14 +171,76 @@ class Analyze(object):
         sns.plt.close()
 
     def generate_table(self, group, metrics, sort=None):
+        df = self.generate_df_table(group, metrics, sort)
+        cost_cols = [x for x in metrics if metrics[x]]
+        self.make_heat_map(df, cost_cols)
+
+    def generate_df_table(self, group, metrics, sort=None, data_filter=None):
         base_metrics = [x for x in metrics if x not in self.vc.metric_names]
         calc_metrics = [x for x in metrics if x not in base_metrics]
-        df = self.df.groupby(group)[base_metrics].sum()
+        df = self.df.copy()
+        if data_filter:
+            filter_col = data_filter[0]
+            filter_val = data_filter[1]
+            df = df[df[filter_col].isin(filter_val)]
+        df = df.groupby(group)[base_metrics].sum()
         df = self.vc.calculate_all_metrics(calc_metrics, df)
-        cost_cols = [x for x in metrics if metrics[x]]
         if sort:
             df = df.sort_values(sort, ascending=False)
-        self.make_heat_map(df, cost_cols)
+        return df
+
+    @staticmethod
+    def give_df_default_format(df, columns=None):
+        if not columns:
+            columns = df.columns
+        for col in columns:
+            if col in [cal.TOTAL_COST, cal.NCF, 'CPC', 'CPLP', 'CPBC', 'CPCV',
+                       'CPLPV']:
+                format_map = '${:,.2f}'.format
+            else:
+                format_map = '{:,.0f}'.format
+            df[col] = df[col].map(format_map)
+        return df
+
+    def generate_topline_metrics(self, data_filter=None):
+        group = [dctc.CAM]
+        metrics = [cal.TOTAL_COST, cal.NCF, vmc.impressions, vmc.clicks,
+                   'CPC', vmc.landingpage, 'CPLP', vmc.btnclick, 'CPBC']
+        df = self.generate_df_table(group=group, metrics=metrics,
+                                    data_filter=data_filter)
+        df = self.give_df_default_format(df)
+        df = df.transpose()
+        log_info_text = ('Topline metrics are as follows: \n{}'
+                         ''.format(df.to_string()))
+        if data_filter:
+            log_info_text = data_filter[2] + log_info_text
+        logging.info(log_info_text)
+
+    def evaluate_on_kpis(self):
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        for kpi in self.df[dctc.KPI].unique():
+            kpi_formula = [
+                self.vc.calculations[x] for x in self.vc.calculations
+                if self.vc.calculations[x][self.vc.metric_name] == kpi]
+            if kpi_formula:
+                kpi_cols = kpi_formula[0][self.vc.formula][::2]
+                metrics = kpi_cols + [kpi]
+            elif kpi not in self.df.columns:
+                logging.warning('Unknown KPI: {}'.format(kpi))
+                continue
+            else:
+                metrics = [kpi]
+            group = plan_names + [dctc.KPI]
+            df = self.generate_df_table(group=group, metrics=metrics, sort=kpi)
+            df = df.reset_index().replace([np.inf, -np.inf], np.nan)
+            df = df.loc[(df[dctc.KPI] == kpi) & (df[kpi].notnull())]
+            smallest_df = df.nsmallest(n=3, columns=[kpi])
+            largest_df = df.nlargest(n=3, columns=[kpi])
+            for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
+                format_df = self.give_df_default_format(df[0], columns=[kpi])
+                log_info_text = ('{} values for KPI {} are as follows: \n{}'
+                                 ''.format(df[1], kpi, format_df.to_string()))
+                logging.info(log_info_text)
 
     def do_all_analysis(self):
         self.backup_files()
@@ -185,6 +248,14 @@ class Analyze(object):
         self.check_plan_error(self.df)
         self.project_delivery_completion(self.df)
         self.check_raw_file_update_time()
+        self.generate_topline_metrics()
+        last_week_filter = [
+            dt.datetime.strftime(
+                (dt.datetime.today() - dt.timedelta(days=x)), '%Y-%m-%d')
+            for x in range(1, 8)]
+        self.generate_topline_metrics(data_filter=[vmc.date, last_week_filter,
+                                                   'Last Weeks '])
+        self.evaluate_on_kpis()
 
 
 class ValueCalc(object):
@@ -202,10 +273,12 @@ class ValueCalc(object):
 
     @staticmethod
     def get_default_metrics():
-        metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100']
+        metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
+                        'CPCV', 'CPLPV']
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Button Click', 'Video Views 100/Video Views']
+                   'Net Cost Final/Button Click', 'Video Views 100/Video Views',
+                   'Net Cost Final/Video Views', 'Net Cost Final/Landing Page']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
