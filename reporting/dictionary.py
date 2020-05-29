@@ -220,7 +220,10 @@ class DictRelational(object):
             logging.info('Creating {}'.format(self.filename))
             df = pd.DataFrame(columns=self.columns, index=None)
             df.to_csv(self.full_file_path, index=False, encoding='utf-8')
-        self.df = utl.import_read_csv(self.filename, self.csvpath)
+        self.df = utl.import_read_csv(self.filename, self.csvpath,
+                                      empty_df=True)
+        if self.df.empty:
+            self.df = pd.DataFrame(columns=self.columns)
         self.df = utl.data_to_type(self.df, str_col=[self.key])
 
     def add_key_values(self, data_dict):

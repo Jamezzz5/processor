@@ -29,7 +29,8 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
-def import_read_csv(filename, path=None, file_check=True, error_bad=True):
+def import_read_csv(filename, path=None, file_check=True, error_bad=True,
+                    empty_df=False):
     if path:
         filename = os.path.join(path, filename)
     if file_check:
@@ -48,7 +49,10 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True):
                          keep_default_na=False, na_values=na_values)
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
-        df = None
+        if empty_df:
+            df = pd.DataFrame()
+        else:
+            df = None
     return df
 
 
