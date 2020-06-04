@@ -68,7 +68,6 @@ class TwApi(object):
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
-        self.campaign_filter = None
         self.dates = None
         self.client = None
         self.cid_dict = None
