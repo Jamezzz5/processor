@@ -202,10 +202,11 @@ api_szk_key = 'Sizmek'
 api_red_key = 'Reddit'
 api_dv_key = 'DV'
 api_raw_key = 'Rawfile'
+api_adk_key = 'Adikteev'
 api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
             api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
-            api_red_key, api_dv_key, api_raw_key]
+            api_red_key, api_dv_key, api_raw_key, api_adk_key]
 api_translation = {
     api_aw_key: 'aw',
     api_fb_key: 'fb',
@@ -223,4 +224,5 @@ api_translation = {
     api_rc_key: 'rc',
     api_szk_key: 'szk',
     api_red_key: 'red',
-    api_dv_key: 'dv'}
+    api_dv_key: 'dv',
+    api_adk_key: 'adk'}
