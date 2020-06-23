@@ -17,6 +17,7 @@ import reporting.dictcolumns as dctc
 
 class Analyze(object):
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
+        self.analysis_dict = None
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
@@ -206,8 +207,8 @@ class Analyze(object):
             df[col] = df[col].map(format_map)
         return df
 
-    def generate_topline_metrics(self, data_filter=None):
-        group = [dctc.CAM]
+    def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):
+        group = [group]
         metrics = []
         potential_metrics = [[cal.TOTAL_COST], [cal.NCF], [vmc.impressions],
                              [vmc.clicks, 'CPC'], [vmc.landingpage, 'CPLP'],
@@ -224,6 +225,7 @@ class Analyze(object):
         if data_filter:
             log_info_text = data_filter[2] + log_info_text
         logging.info(log_info_text)
+        return df
 
     def evaluate_on_kpis(self):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
@@ -256,19 +258,23 @@ class Analyze(object):
                                  ''.format(df[1], kpi, format_df.to_string()))
                 logging.info(log_info_text)
 
+    def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
+        df = self.generate_topline_metrics(group=group)
+        last_week_filter = [
+            dt.datetime.strftime(
+                (dt.datetime.today() - dt.timedelta(days=x)), '%Y-%m-%d')
+            for x in range(1, 8)]
+        tdf = self.generate_topline_metrics(
+            data_filter=[vmc.date, last_week_filter, 'Last Weeks '])
+        return df, tdf
+
     def do_all_analysis(self):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
         self.project_delivery_completion(self.df)
         self.check_raw_file_update_time()
-        self.generate_topline_metrics()
-        last_week_filter = [
-            dt.datetime.strftime(
-                (dt.datetime.today() - dt.timedelta(days=x)), '%Y-%m-%d')
-            for x in range(1, 8)]
-        self.generate_topline_metrics(data_filter=[vmc.date, last_week_filter,
-                                                   'Last Weeks '])
+        self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
 
 
