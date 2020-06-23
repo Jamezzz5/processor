@@ -8,15 +8,16 @@ import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
-base_url = 'https://www.googleapis.com/analytics/v3/data/ga'
-def_metrics = ['goal1Completions', 'goal2Completions', 'users',
-               'newUsers', 'bounces', 'pageviews', 'totalEvents',
-               'uniqueEvents', 'timeOnPage']
-def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
-            'country']
 
 
 class GaApi(object):
+    base_url = 'https://www.googleapis.com/analytics/v3/data/ga'
+    def_metrics = ['goal1Completions', 'goal2Completions', 'users',
+                   'newUsers', 'bounces', 'pageviews', 'totalEvents',
+                   'uniqueEvents', 'timeOnPage']
+    def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
+                'country', 'dcmClickSitePlacement']
+
     def __init__(self):
         self.config = None
         self.config_file = None
@@ -110,12 +111,12 @@ class GaApi(object):
         sd_url = '&start-date={}'.format(sd)
         ed_url = '&end-date={}'.format(ed)
         dim_url = '&dimensions={}'.format(','.join('ga:' + x
-                                                   for x in def_dims))
+                                                   for x in self.def_dims))
         metrics_url = '&metrics={}'.format(','.join('ga:' + x
                                                     for x in metric))
         start_index_url = '&start-index={}'.format(start_index)
         max_results_url = '&max-results=10000'
-        full_url = (base_url + ids_url + sd_url + ed_url + dim_url +
+        full_url = (self.base_url + ids_url + sd_url + ed_url + dim_url +
                     metrics_url + start_index_url + max_results_url)
         if fields:
             filter_url = '&filters={}'.format(';'.join(fields))
@@ -124,10 +125,11 @@ class GaApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        logging.info('Getting df from {} to {}'.format(sd, ed))
         self.get_client()
         start_index = 1
-        metrics = [def_metrics[x:x + 10]
-                   for x in range(0, len(def_metrics), 10)]
+        metrics = [self.def_metrics[x:x + 10]
+                   for x in range(0, len(self.def_metrics), 10)]
         self.get_df_for_all_metrics(sd, ed, fields, start_index, metrics)
         start_indices = self.get_start_indices()
         for start_index in start_indices:
