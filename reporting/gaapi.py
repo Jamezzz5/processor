@@ -15,8 +15,8 @@ class GaApi(object):
     def_metrics = ['goal1Completions', 'goal2Completions', 'users',
                    'newUsers', 'bounces', 'pageviews', 'totalEvents',
                    'uniqueEvents', 'timeOnPage']
-    def_dims = ['date', 'campaign', 'source', 'medium', 'keyword',
-                'country', 'dcmClickSitePlacement']
+    def_dims = ['date', 'campaign', 'source', 'medium', 'keyword', 'country']
+    dcm_dims = ['dcmClickSitePlacement']
 
     def __init__(self):
         self.config = None
@@ -86,14 +86,17 @@ class GaApi(object):
         sd, ed = self.date_check(sd, ed)
         return sd, ed, fields
 
-    @staticmethod
-    def parse_fields(fields):
+    def parse_fields(self, fields):
         parsed_fields = []
         if fields:
             for field in fields:
-                field = field.split('::')
-                parsed_fields.append(','.join('ga:{}=={}'.format(field[0], x)
-                                              for x in field[1].split(',')))
+                if field == 'DCM':
+                    self.def_dims = self.def_dims + self.dcm_dims
+                else:
+                    field = field.split('::')
+                    parsed_fields.append(
+                        ','.join('ga:{}=={}'.format(field[0], x)
+                                 for x in field[1].split(',')))
         return parsed_fields
 
     @staticmethod
