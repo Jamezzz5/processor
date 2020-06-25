@@ -265,8 +265,16 @@ class Analyze(object):
                 (dt.datetime.today() - dt.timedelta(days=x)), '%Y-%m-%d')
             for x in range(1, 8)]
         tdf = self.generate_topline_metrics(
-            data_filter=[vmc.date, last_week_filter, 'Last Weeks '])
-        return df, tdf
+            data_filter=[vmc.date, last_week_filter, 'Last Weeks '],
+            group=group)
+        two_week_filter = [
+            dt.datetime.strftime(
+                (dt.datetime.today() - dt.timedelta(days=x)), '%Y-%m-%d')
+            for x in range(8, 15)]
+        twdf = self.generate_topline_metrics(
+            data_filter=[vmc.date, two_week_filter, '2 Weeks Ago '],
+            group=group)
+        return df, tdf, twdf
 
     def do_all_analysis(self):
         self.backup_files()
