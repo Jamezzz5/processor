@@ -124,6 +124,7 @@ class Dict(object):
         self.apply_constants()
         self.apply_translation()
         self.apply_relation()
+        self.apply_translation()
         self.clean()
         self.write()
 
