@@ -18,11 +18,11 @@ class RedApi(object):
     base_url = 'https://ads.reddit.com'
     temp_path = 'tmp'
     base_metric = '//*[@id="metrics.'
-    video_metrics = ['videoViewableImpressions', 'videoFullyViewableImpressions',
-                     'videoPlaysWithSound', 'videoPlaysExpanded',
-                     'videoWatches25', 'videoWatches50', 'videoWatches75',
-                     'videoWatches95', 'videoWatches100', 'videoWatches3Secs',
-                     'videoWatches10Secs']
+    video_metrics = [
+        'videoViewableImpressions', 'videoFullyViewableImpressions',
+        'videoPlaysWithSound', 'videoPlaysExpanded', 'videoWatches25',
+        'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
+        'videoWatches3Secs', 'videoWatches10Secs']
 
     def __init__(self):
         self.browser = self.init_browser()
@@ -223,8 +223,10 @@ class RedApi(object):
     def export_to_csv(self, base_xpath=None):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
-        export_xpath = base_xpath + 'div[1]/div[1]/div/div[3]/button'
+        export_xpath = '//div[normalize-space(text())="Export report"]'
         self.click_on_xpath(export_xpath)
+        download_xpath = '//div[normalize-space(text())="Download .csv"]'
+        self.click_on_xpath(download_xpath)
 
     def get_base_xpath(self):
         base_app_xpath = '//*[@id="app"]/div/div[1]/div[2]/div'
