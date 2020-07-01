@@ -27,6 +27,7 @@ class RsApi(object):
         self.config_file = None
         self.api_key = None
         self.game_name = None
+        self.campaign_filter = None
         self.game_id = None
         self.headers = None
         self.config_list = None
@@ -54,6 +55,8 @@ class RsApi(object):
         self.api_key = self.config['api_key']
         self.game_name = self.config['game_name']
         self.config_list = [self.api_key, self.game_name]
+        if 'campaign_filter' in self.config:
+            self.campaign_filter = self.config['campaign_filter']
 
     def check_config(self):
         for item in self.config_list:
@@ -105,17 +108,26 @@ class RsApi(object):
         self.get_raw_data(sd, ed)
         return self.df
 
+    def filter_df_on_campaign(self):
+        logging.info('Filtering dataframe on {}'.format(self.campaign_filter))
+        self.df = self.df[self.df['campaign_name'].fillna('0').str.contains(
+            self.campaign_filter)].reset_index(drop=True)
+
     def get_raw_data(self, sd, ed):
+        logging.info('Getting data from {} to ed {}'.format(sd, ed))
         r_data = self.get_request_data(sd, ed)
         self.set_headers(stats_version)
         self.r = requests.post(stats_url, headers=self.headers, json=r_data)
         self.df = self.data_to_df()
+        if self.campaign_filter:
+            self.filter_df_on_campaign()
+        logging.info('Data successfully retrieved returning dataframe.')
 
     def data_to_df(self):
         try:
             json_data = self.r.json()['results']
         except ValueError:
-            logging.warning('Could not load as json.'
+            logging.warning('Could not load as json.  '
                             'Response: {}'.format(self.r.text))
             sys.exit(0)
         df = pd.DataFrame(json_data)
