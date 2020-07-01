@@ -30,6 +30,7 @@ class RedApi(object):
         self.config_file = None
         self.username = None
         self.password = None
+        self.account = None
         self.config_list = None
         self.config = None
 
@@ -57,12 +58,15 @@ class RedApi(object):
                                 ' Aborting.'.format(item))
                 sys.exit(0)
 
-    @staticmethod
-    def get_data_default_check(sd, ed):
+    def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
+        if fields:
+            for val in fields:
+                if str(val) != 'nan':
+                    self.account = val
         return sd, ed
 
     def init_browser(self):
@@ -82,13 +86,14 @@ class RedApi(object):
         self.enable_download_in_headless_chrome(browser, download_path)
         return browser
 
-    def enable_download_in_headless_chrome(self, driver, download_dir):
+    @staticmethod
+    def enable_download_in_headless_chrome(driver, download_dir):
         # add missing support for chrome "send_command"  to selenium webdriver
         driver.command_executor._commands["send_command"] = \
             ("POST", '/session/$sessionId/chromium/send_command')
         params = {'cmd': 'Page.setDownloadBehavior',
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
-        command_result = driver.execute("send_command", params)
+        driver.execute("send_command", params)
 
     def go_to_url(self, url):
         logging.info('Going to url {}.'.format(url))
@@ -104,7 +109,7 @@ class RedApi(object):
         try:
             self.click_on_xpath('//*[@id="Content"]/h2/a')
         except ex.NoSuchElementException as e:
-            logging.warning('No logo, attempting footer.')
+            logging.warning('No logo, attempting footer.  Error: {}'.format(e))
             self.click_on_xpath('//*[@id="Footer"]/p[2]/a')
         user_pass = [(self.username, '//*[@id="loginUsername"]'),
                      (self.password, '//*[@id="loginPassword"]')]
@@ -133,7 +138,7 @@ class RedApi(object):
         self.browser.find_element_by_xpath(xpath).click()
         time.sleep(sleep)
 
-    def set_breakdowns(self, base_xpath=None):
+    def set_breakdowns(self):
         logging.info('Setting breakdowns.')
         bd_xpath = '//div[text()="Break Downs"]'
         self.click_on_xpath(bd_xpath)
@@ -204,7 +209,7 @@ class RedApi(object):
     def click_individual_metrics(self):
         for metric in self.video_metrics:
             xpath = '{}{}"]'.format(self.base_metric, metric)
-            self.click_on_xpath(xpath, sleep=.5)
+            self.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
         for metric in ['Ad Group Metrics', 'Conversion', 'Video']:
@@ -220,7 +225,7 @@ class RedApi(object):
         apply_button_xpath = '//span[text()="Apply"]'
         self.click_on_xpath(apply_button_xpath)
 
-    def export_to_csv(self, base_xpath=None):
+    def export_to_csv(self):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
         export_xpath = '//div[normalize-space(text())="Export report"]'
@@ -240,10 +245,10 @@ class RedApi(object):
     def create_report(self, sd, ed):
         logging.info('Creating report.')
         base_app_xpath = self.get_base_xpath()
-        self.set_breakdowns(base_xpath=base_app_xpath)
+        self.set_breakdowns()
         self.set_dates(sd, ed, base_xpath=base_app_xpath)
         self.set_metrics(base_xpath=base_app_xpath)
-        self.export_to_csv(base_xpath=base_app_xpath)
+        self.export_to_csv()
 
     @staticmethod
     def get_file_as_df(temp_path=None):
@@ -264,13 +269,22 @@ class RedApi(object):
         shutil.rmtree(temp_path)
         return df
 
+    def change_account(self):
+        account_url = self.browser.current_url.replace(
+            'dashboard/campaigns', 'accounts')
+        self.go_to_url(account_url)
+        account_xpath = '//a[text()="{}"]'.format(self.account)
+        self.click_on_xpath(account_xpath)
+
     def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed = self.get_data_default_check(sd, ed)
+        sd, ed = self.get_data_default_check(sd, ed, fields)
         self.go_to_url(self.base_url)
         sign_in_result = self.sign_in()
         if not sign_in_result:
             self.quit()
             return pd.DataFrame()
+        if self.account:
+            self.change_account()
         self.create_report(sd, ed)
         df = self.get_file_as_df(self.temp_path)
         self.quit()
