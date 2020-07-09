@@ -90,6 +90,9 @@ class SzkApi(object):
         data = {'username': self.username, 'password': self.password}
         r = self.make_request(login_url, method='POST', data=json.dumps(data),
                               headers=self.headers)
+        if 'result' not in r.json():
+            logging.warning('Could not set headers with error as follows: '
+                            '{}'.format(r.json()))
         session_id = r.json()['result']['sessionId']
         self.headers['Authorization'] = session_id
 
