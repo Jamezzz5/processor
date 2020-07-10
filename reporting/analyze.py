@@ -16,8 +16,16 @@ import reporting.dictcolumns as dctc
 
 
 class Analyze(object):
+    date_col = 'date'
+    delivery_col = 'delivery'
+    unknown_col = 'unknown'
+    delivery_comp_col = 'delivery_completion'
+
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
-        self.analysis_dict = None
+        self.analysis_dict = {
+            self.date_col: {
+                self.date_col:
+                    dt.datetime.today().strftime('%Y-%m-%d %H:%M:%S')}}
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
@@ -35,17 +43,22 @@ class Analyze(object):
                                           x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
-            logging.info('Nothing has delivered in full.')
+            delivery_val = 'Nothing has delivered in full.'
+            logging.info(delivery_val)
+            delivery_val = {'under': delivery_val}
         else:
             del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
             logging.info('The following have delivered in full: \n'
                          '{}'.format(del_p))
+            delivery_val = {'full': del_p.to_dict()}
             o_df = f_df[f_df > 1.5]
             if not o_df.empty:
                 del_p = o_df.apply(lambda x: "{0:.2f}%".format(x * 100))
                 logging.info(
                     'The following have over-delivered: \n'
                     '{}'.format(del_p))
+                delivery_val['over'] = del_p.to_dict()
+        self.analysis_dict[self.delivery_col] = delivery_val
 
     @staticmethod
     def get_rolling_mean_df(df, value_col, group_cols):
@@ -71,8 +84,10 @@ class Analyze(object):
         df = df[df[dctc.PNC] - df[vmc.cost] > 0]
         df = df.reset_index()
         if df.empty:
-            logging.warning('Dataframe empty, likely no planned net costs.  '
+            delivery_val = ('Dataframe empty, likely no planned net costs.  '
                             'Could not project delivery completion.')
+            logging.warning(delivery_val)
+            self.analysis_dict[self.delivery_comp_col] = {'none': delivery_val}
             return False
         df = df.merge(average_df, on=plan_names)
         df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
@@ -120,7 +135,9 @@ class Analyze(object):
         er = self.matrix.vendor_set(vm.plan_key)[vmc.filenameerror]
         edf = utl.import_read_csv(er, utl.error_path)
         if edf.empty:
-            logging.info('No Planned error.')
+            plan_error_val = 'No Planned error.'
+            logging.info(plan_error_val)
+            self.analysis_dict[self.unknown_col] = {'none': plan_error_val}
             return True
         df = df[df[dctc.PFPN].isin(edf[vmc.fullplacename].values)][
             plan_names + [vmc.vendorkey]].drop_duplicates()
@@ -133,6 +150,7 @@ class Analyze(object):
                              for k, v in df.to_dict(orient='index').items()])
         logging.info('Undefined placements have the following keys: \n'
                      '{}'.format(df_dict))
+        self.analysis_dict[self.unknown_col] = {'undefined': df.to_dict()}
 
     def backup_files(self):
         bu = os.path.join(utl.backup_path, dt.date.today().strftime('%Y%m%d'))
