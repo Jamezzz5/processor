@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import logging
 import operator
@@ -20,6 +21,10 @@ class Analyze(object):
     delivery_col = 'delivery'
     unknown_col = 'unknown'
     delivery_comp_col = 'delivery_completion'
+    raw_file_update_col = 'raw_file_update'
+    topline_col = 'topline_metrics'
+    kpi_col = 'kpi_col'
+    analysis_dict_file_name = 'analysis_dict.json'
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.analysis_dict = {
@@ -126,6 +131,8 @@ class Analyze(object):
                          'update_tier': [update_tier]}
             df = df.append(pd.DataFrame(data_dict),
                            ignore_index=True, sort=False)
+        df['update_time'] = df['update_time'].astype('U')
+        self.analysis_dict[self.raw_file_update_col] = {'data': df.to_dict()}
         logging.info(
             'Raw File update times and tiers are as follows: \n'
             '{}'.format(df.to_string()))
@@ -247,6 +254,7 @@ class Analyze(object):
 
     def evaluate_on_kpis(self):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        self.analysis_dict[self.kpi_col] = {}
         for kpi in self.df[dctc.KPI].unique():
             kpi_formula = [
                 self.vc.calculations[x] for x in self.vc.calculations
@@ -275,6 +283,9 @@ class Analyze(object):
                 log_info_text = ('{} values for KPI {} are as follows: \n{}'
                                  ''.format(df[1], kpi, format_df.to_string()))
                 logging.info(log_info_text)
+            self.analysis_dict[self.kpi_col][kpi] = {
+                'smallest': smallest_df.to_dict(),
+                'largest': largest_df.to_dict()}
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -292,7 +303,16 @@ class Analyze(object):
         twdf = self.generate_topline_metrics(
             data_filter=[vmc.date, two_week_filter, '2 Weeks Ago '],
             group=group)
+        self.analysis_dict[self.topline_col] = {
+            'total': df.to_dict(),
+            'last_week': tdf.to_dict(),
+            'two_week': twdf.to_dict()
+        }
         return df, tdf, twdf
+
+    def write_analysis_dict(self):
+        with open(self.analysis_dict_file_name, 'w') as fp:
+            json.dump(self.analysis_dict, fp)
 
     def do_all_analysis(self):
         self.backup_files()
@@ -302,6 +322,7 @@ class Analyze(object):
         self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
+        self.write_analysis_dict()
 
 
 class ValueCalc(object):
