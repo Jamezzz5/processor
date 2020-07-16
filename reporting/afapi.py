@@ -113,7 +113,8 @@ class AfApi(object):
             time.sleep(60)
         return self.df
 
-    def get_raw_data(self, sd, ed, field, sources, category, retarget=False):
+    def get_raw_data(self, sd, ed, field, sources, category, retarget=False,
+                     attempts=0):
         logging.info('Getting {} report from {} to {} with source: {}, '
                      'category: {}, retarget: {}'
                      ''.format(field, sd, ed, sources, category, retarget))
@@ -127,27 +128,32 @@ class AfApi(object):
         if self.r and self.r.status_code == 200:
             df = self.data_to_df(self.r)
         else:
-            self.request_error()
-            df = self.get_raw_data(sd, ed, field, sources, category, retarget)
+            attempts = self.request_error(attempts)
+            df = self.get_raw_data(sd, ed, field, sources, category, retarget,
+                                   attempts=attempts)
         return df
 
-    def request_error(self):
+    def request_error(self, attempts=0):
         limit_error = 'Limit reached for'
         wrong_error = 'Something went wrong.'
+        attempts += 1
+        if attempts > 10:
+            logging.warning('Max attempts exceeded: {}'.format(self.r.text))
+            sys.exit(0)
         if not self.r:
-            time.sleep(60)
+            pass
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:
             logging.warning('Limit reached pausing for 60 seconds.  '
                             'Response: {}'.format(self.r.text))
-            time.sleep(60)
         elif (self.r.status_code == 504 or self.r.status_code == 502 or
                 self.r.text[:21] == wrong_error):
             logging.warning('Gateway timeout.  Pausing for 60 seconds.  '
                             'Response: {}'.format(self.r.text))
-            time.sleep(60)
         else:
-            logging.warning('Unknown error: {}'.format(self.r.text))
-            sys.exit(0)
+            logging.warning('Unknown error.  Pausing for 60 seconds.  '
+                            'Response: {}'.format(self.r.text))
+        time.sleep(60)
+        return attempts
 
     @staticmethod
     def data_to_df(r):
