@@ -117,9 +117,14 @@ class RedApi(object):
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
         time.sleep(2)
-        login_xpaths = ['//button[normalize-space(text())="Sign in"]']
+        login_xpaths = ['//button[normalize-space(text())="{}"]'.format(x)
+                        for x in ['Sign in', 'Log in']]
         for xpath in login_xpaths:
-            self.click_on_xpath(xpath, sleep=5)
+            try:
+                self.click_on_xpath(xpath, sleep=5)
+                break
+            except:
+                logging.warning('Could not click xpath: {}'.format(xpath))
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
         try:
             self.browser.find_element_by_xpath(error_xpath)
