@@ -19,18 +19,26 @@ import reporting.dictcolumns as dctc
 class Analyze(object):
     date_col = 'date'
     delivery_col = 'delivery'
+    under_delivery_col = 'under-delivery'
+    full_delivery_col = 'full-delivery'
+    over_delivery_col = 'over-delivery'
     unknown_col = 'unknown'
     delivery_comp_col = 'delivery_completion'
     raw_file_update_col = 'raw_file_update'
     topline_col = 'topline_metrics'
+    lw_topline_col = 'last_week_topline_metrics'
+    tw_topline_col = 'two_week_topline_merics'
     kpi_col = 'kpi_col'
     analysis_dict_file_name = 'analysis_dict.json'
+    analysis_dict_key_col = 'key'
+    analysis_dict_data_col = 'data'
+    analysis_dict_msg_col = 'message'
+    analysis_dict_date_col = 'date'
+    analysis_dict_param_col = 'parameter'
+    analysis_dict_param_2_col = 'parameter_2'
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
-        self.analysis_dict = {
-            self.date_col: {
-                self.date_col:
-                    dt.datetime.today().strftime('%Y-%m-%d %H:%M:%S')}}
+        self.analysis_dict = []
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
@@ -38,8 +46,28 @@ class Analyze(object):
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
+    def get_base_analysis_dict_format(self):
+        analysis_dict_format = {
+            self.analysis_dict_key_col: '',
+            self.analysis_dict_data_col: {},
+            self.analysis_dict_msg_col: '',
+            self.analysis_dict_param_col: '',
+            self.analysis_dict_param_2_col: ''
+        }
+        return analysis_dict_format
+
     def load_df_from_file(self):
         self.df = utl.import_read_csv(self.file_name)
+
+    def add_to_analysis_dict(self, key_col, message='', data='',
+                             param='', param2=''):
+        base_dict = self.get_base_analysis_dict_format()
+        base_dict[self.analysis_dict_key_col] = str(key_col)
+        base_dict[self.analysis_dict_msg_col] = str(message)
+        base_dict[self.analysis_dict_param_col] = str(param)
+        base_dict[self.analysis_dict_param_2_col] = str(param2)
+        base_dict[self.analysis_dict_data_col] = data
+        self.analysis_dict.append(base_dict)
 
     def check_delivery(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
@@ -48,22 +76,30 @@ class Analyze(object):
                                           x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
-            delivery_val = 'Nothing has delivered in full.'
-            logging.info(delivery_val)
-            delivery_val = {'under': delivery_val}
+            delivery_msg = 'Nothing has delivered in full.'
+            logging.info(delivery_msg)
+            self.add_to_analysis_dict(key_col=self.delivery_col,
+                                      param=self.under_delivery_col,
+                                      message=delivery_msg)
         else:
             del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
-            logging.info('The following have delivered in full: \n'
-                         '{}'.format(del_p))
-            delivery_val = {'full': del_p.to_dict()}
+            delivery_msg = 'The following have delivered in full: '
+            logging.info('{}\n{}'.format(delivery_msg, del_p))
+            data = del_p.reset_index().rename(columns={0: 'Delivery'})
+            self.add_to_analysis_dict(key_col=self.delivery_col,
+                                      param=self.full_delivery_col,
+                                      message=delivery_msg,
+                                      data=data.to_dict())
             o_df = f_df[f_df > 1.5]
             if not o_df.empty:
                 del_p = o_df.apply(lambda x: "{0:.2f}%".format(x * 100))
-                logging.info(
-                    'The following have over-delivered: \n'
-                    '{}'.format(del_p))
-                delivery_val['over'] = del_p.to_dict()
-        self.analysis_dict[self.delivery_col] = delivery_val
+                delivery_msg = 'The following have over-delivered:'
+                logging.info('{}\n{}'.format(delivery_msg, del_p))
+                data = del_p.reset_index().rename(columns={0: 'Delivery'})
+                self.add_to_analysis_dict(key_col=self.delivery_col,
+                                          param=self.over_delivery_col,
+                                          message=delivery_msg,
+                                          data=data.to_dict())
 
     @staticmethod
     def get_rolling_mean_df(df, value_col, group_cols):
@@ -89,10 +125,11 @@ class Analyze(object):
         df = df[df[dctc.PNC] - df[vmc.cost] > 0]
         df = df.reset_index()
         if df.empty:
-            delivery_val = ('Dataframe empty, likely no planned net costs.  '
+            delivery_msg = ('Dataframe empty, likely no planned net costs.  '
                             'Could not project delivery completion.')
-            logging.warning(delivery_val)
-            self.analysis_dict[self.delivery_comp_col] = {'none': delivery_val}
+            logging.warning(delivery_msg)
+            self.add_to_analysis_dict(key_col=self.delivery_comp_col,
+                                      message=delivery_msg)
             return False
         df = df.merge(average_df, on=plan_names)
         df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
@@ -104,10 +141,14 @@ class Analyze(object):
                         dt.datetime.today() + dt.timedelta(days=365)) |
                        (df['completed_date'] <
                         dt.datetime.today() - dt.timedelta(days=365)))
+        df['completed_date'] = df['completed_date'].dt.strftime('%Y-%m-%d')
         df.loc[no_date_map, 'completed_date'] = 'Greater than 1 Year'
-        logging.info(
-            'Projected delivery completion dates are as follows: \n'
-            '{}'.format(df[plan_names + ['completed_date']].to_string()))
+        df = df[plan_names + ['completed_date']]
+        delivery_msg = 'Projected delivery completion dates are as follows:'
+        logging.info('{}\n{}'.format(delivery_msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.delivery_comp_col,
+                                  message=delivery_msg,
+                                  data=df.to_dict())
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -132,19 +173,21 @@ class Analyze(object):
             df = df.append(pd.DataFrame(data_dict),
                            ignore_index=True, sort=False)
         df['update_time'] = df['update_time'].astype('U')
-        self.analysis_dict[self.raw_file_update_col] = {'data': df.to_dict()}
-        logging.info(
-            'Raw File update times and tiers are as follows: \n'
-            '{}'.format(df.to_string()))
+        update_msg = 'Raw File update times and tiers are as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.raw_file_update_col,
+                                  message=update_msg, data=df.to_dict())
 
     def check_plan_error(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         er = self.matrix.vendor_set(vm.plan_key)[vmc.filenameerror]
         edf = utl.import_read_csv(er, utl.error_path)
         if edf.empty:
-            plan_error_val = 'No Planned error.'
-            logging.info(plan_error_val)
-            self.analysis_dict[self.unknown_col] = {'none': plan_error_val}
+            plan_error_msg = ('No Planned error - all {} '
+                              'combinations are defined.'.format(plan_names))
+            logging.info(plan_error_msg)
+            self.add_to_analysis_dict(key_col=self.unknown_col,
+                                      message=plan_error_msg)
             return True
         df = df[df[dctc.PFPN].isin(edf[vmc.fullplacename].values)][
             plan_names + [vmc.vendorkey]].drop_duplicates()
@@ -155,9 +198,11 @@ class Analyze(object):
             df[col] = "'" + df[col] + "'"
         df_dict = '\n'.join(['{}{}'.format(k, v)
                              for k, v in df.to_dict(orient='index').items()])
-        logging.info('Undefined placements have the following keys: \n'
-                     '{}'.format(df_dict))
-        self.analysis_dict[self.unknown_col] = {'undefined': df.to_dict()}
+        undefined_msg = 'Undefined placements have the following keys:'
+        logging.info('{}\n{}'.format(undefined_msg, df_dict))
+        self.add_to_analysis_dict(key_col=self.unknown_col,
+                                  message=undefined_msg,
+                                  data=df.to_dict())
 
     def backup_files(self):
         bu = os.path.join(utl.backup_path, dt.date.today().strftime('%Y%m%d'))
@@ -254,7 +299,6 @@ class Analyze(object):
 
     def evaluate_on_kpis(self):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
-        self.analysis_dict[self.kpi_col] = {}
         for kpi in self.df[dctc.KPI].unique():
             kpi_formula = [
                 self.vc.calculations[x] for x in self.vc.calculations
@@ -264,11 +308,16 @@ class Analyze(object):
                 metrics = kpi_cols + [kpi]
                 missing_cols = [x for x in kpi_cols if x not in self.df.columns]
                 if missing_cols:
-                    logging.warning(
-                        'Missing columns could not evaluate {}'.format(kpi))
+                    msg = 'Missing columns could not evaluate {}'.format(kpi)
+                    logging.warning(msg)
+                    self.add_to_analysis_dict(key_col=self.kpi_col,
+                                              message=msg, param=kpi)
                     continue
             elif kpi not in self.df.columns:
-                logging.warning('Unknown KPI: {}'.format(kpi))
+                msg = 'Unknown KPI: {}'.format(kpi)
+                logging.warning(msg)
+                self.add_to_analysis_dict(key_col=self.kpi_col,
+                                          message=msg, param=kpi)
                 continue
             else:
                 metrics = [kpi]
@@ -280,12 +329,13 @@ class Analyze(object):
             largest_df = df.nlargest(n=3, columns=[kpi])
             for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
                 format_df = self.give_df_default_format(df[0], columns=[kpi])
-                log_info_text = ('{} values for KPI {} are as follows: \n{}'
-                                 ''.format(df[1], kpi, format_df.to_string()))
+                msg = '{} values for KPI {} are as follows:'.format(df[1], kpi)
+                log_info_text = ('{}\n{}'.format(msg, format_df.to_string()))
                 logging.info(log_info_text)
-            self.analysis_dict[self.kpi_col][kpi] = {
-                'smallest': smallest_df.to_dict(),
-                'largest': largest_df.to_dict()}
+                self.add_to_analysis_dict(key_col=self.kpi_col,
+                                          message=msg,
+                                          data=df[0].to_dict(),
+                                          param=kpi, param2=df[1])
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -303,11 +353,13 @@ class Analyze(object):
         twdf = self.generate_topline_metrics(
             data_filter=[vmc.date, two_week_filter, '2 Weeks Ago '],
             group=group)
-        self.analysis_dict[self.topline_col] = {
-            'total': df.to_dict(),
-            'last_week': tdf.to_dict(),
-            'two_week': twdf.to_dict()
-        }
+        for val in [(self.topline_col, df), (self.lw_topline_col, tdf),
+                    (self.tw_topline_col, twdf)]:
+            msg = '{} as follows:'.format(val[0].replace('_', ' '))
+            self.add_to_analysis_dict(key_col=self.topline_col,
+                                      message=msg,
+                                      data=val[1].to_dict(),
+                                      param=val[0])
         return df, tdf, twdf
 
     def write_analysis_dict(self):
@@ -341,11 +393,12 @@ class ValueCalc(object):
     @staticmethod
     def get_default_metrics():
         metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
-                        'CPCV', 'CPLPV']
+                        'CPCV', 'CPLPV', 'CPP']
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views', 'Net Cost Final/Landing Page']
+                   'Net Cost Final/Video Views', 'Net Cost Final/Landing Page',
+                   'Net Cost Final/Purchase']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
