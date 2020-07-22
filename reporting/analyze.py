@@ -196,6 +196,7 @@ class Analyze(object):
         df = utl.col_removal(df, None, [dctc.FPN])
         for col in df.columns:
             df[col] = "'" + df[col] + "'"
+        df = df.dropna()
         df_dict = '\n'.join(['{}{}'.format(k, v)
                              for k, v in df.to_dict(orient='index').items()])
         undefined_msg = 'Undefined placements have the following keys:'
