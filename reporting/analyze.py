@@ -258,7 +258,17 @@ class Analyze(object):
         if data_filter:
             filter_col = data_filter[0]
             filter_val = data_filter[1]
-            df = df[df[filter_col].isin(filter_val)]
+            if filter_col in df.columns:
+                df = df[df[filter_col].isin(filter_val)]
+            else:
+                logging.warning('{} not in df columns'.format(filter_col))
+                columns = group + metrics + [filter_col]
+                return pd.DataFrame({x: [] for x in columns})
+        for group_col in group:
+            if group_col not in df.columns:
+                logging.warning('{} not in df columns'.format(group))
+                columns = group + metrics
+                return pd.DataFrame({x: [] for x in columns})
         df = df.groupby(group)[base_metrics].sum()
         df = self.vc.calculate_all_metrics(calc_metrics, df)
         if sort:
@@ -267,15 +277,7 @@ class Analyze(object):
 
     @staticmethod
     def give_df_default_format(df, columns=None):
-        if not columns:
-            columns = df.columns
-        for col in columns:
-            if col in [cal.TOTAL_COST, cal.NCF, 'CPC', 'CPLP', 'CPBC', 'CPCV',
-                       'CPLPV']:
-                format_map = '${:,.2f}'.format
-            else:
-                format_map = '{:,.0f}'.format
-            df[col] = df[col].map(format_map)
+        df = utl.give_df_default_format(df, columns)
         return df
 
     def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):

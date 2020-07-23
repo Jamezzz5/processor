@@ -111,6 +111,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
         if col not in df:
             continue
         df[col] = df[col].astype('U')
+        df[col] = df[col].apply(lambda x: x.replace('$', ''))
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
         df[col] = df[col].replace(['nan', 'NA'], 0)
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -246,4 +247,16 @@ def add_dummy_header(df, header_len, location='head'):
         df = dummy_df.append(df).reset_index(drop=True)
     elif location == 'foot':
         df = df.append(dummy_df).reset_index(drop=True)
+    return df
+
+
+def give_df_default_format(df, columns=None):
+    if not columns:
+        columns = df.columns
+    for col in columns:
+        if 'Cost' in col or col[:2] == 'CP':
+            format_map = '${:,.2f}'.format
+        else:
+            format_map = '{:,.0f}'.format
+        df[col] = df[col].map(format_map)
     return df
