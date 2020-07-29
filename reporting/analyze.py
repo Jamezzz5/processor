@@ -322,6 +322,7 @@ class Analyze(object):
                ' when given linear fit').format(kpi, trend, abs(fit[0]))
         logging.info(msg)
         df['fit'] = fit[0] * df['index'] + fit[1]
+        df[vmc.date] = df[vmc.date].dt.strftime('%Y-%m-%d')
         self.add_to_analysis_dict(
             key_col=self.kpi_col, message=msg, data=df.to_dict(),
             param=kpi, param2='Trend', split=vmc.date)
@@ -367,6 +368,8 @@ class Analyze(object):
         largest_df = df.nlargest(n=number, columns=[kpi])
         for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
             format_df = self.give_df_default_format(df[0], columns=[kpi])
+            if split == vmc.date:
+                df[0][split] = df[0][split].dt.strftime('%Y-%m-%d')
             split_values = ', '.join(str(x) for x in df[0][split].values)
             msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
                 df[1], kpi, split, split_values)
