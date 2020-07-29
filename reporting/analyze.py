@@ -367,7 +367,7 @@ class Analyze(object):
         largest_df = df.nlargest(n=number, columns=[kpi])
         for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
             format_df = self.give_df_default_format(df[0], columns=[kpi])
-            split_values = ', '.join(x for x in df[0][split].values)
+            split_values = ', '.join(str(x) for x in df[0][split].values)
             msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
                 df[1], kpi, split, split_values)
             if filter_col:
