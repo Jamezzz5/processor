@@ -36,6 +36,9 @@ class Analyze(object):
     analysis_dict_date_col = 'date'
     analysis_dict_param_col = 'parameter'
     analysis_dict_param_2_col = 'parameter_2'
+    analysis_dict_filter_col = 'filter_col'
+    analysis_dict_filter_val = 'filter_val'
+    analysis_dict_split_col = 'split_col'
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.analysis_dict = []
@@ -52,7 +55,10 @@ class Analyze(object):
             self.analysis_dict_data_col: {},
             self.analysis_dict_msg_col: '',
             self.analysis_dict_param_col: '',
-            self.analysis_dict_param_2_col: ''
+            self.analysis_dict_param_2_col: '',
+            self.analysis_dict_split_col: '',
+            self.analysis_dict_filter_col: '',
+            self.analysis_dict_filter_val: ''
         }
         return analysis_dict_format
 
@@ -60,12 +66,16 @@ class Analyze(object):
         self.df = utl.import_read_csv(self.file_name)
 
     def add_to_analysis_dict(self, key_col, message='', data='',
-                             param='', param2=''):
+                             param='', param2='', split='',
+                             filter_col='', filter_val=''):
         base_dict = self.get_base_analysis_dict_format()
         base_dict[self.analysis_dict_key_col] = str(key_col)
         base_dict[self.analysis_dict_msg_col] = str(message)
         base_dict[self.analysis_dict_param_col] = str(param)
         base_dict[self.analysis_dict_param_2_col] = str(param2)
+        base_dict[self.analysis_dict_split_col] = str(split)
+        base_dict[self.analysis_dict_filter_col] = str(filter_col)
+        base_dict[self.analysis_dict_filter_val] = str(filter_val)
         base_dict[self.analysis_dict_data_col] = data
         self.analysis_dict.append(base_dict)
 
@@ -300,45 +310,108 @@ class Analyze(object):
         logging.info(log_info_text)
         return df
 
-    def evaluate_on_kpis(self):
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
-        for kpi in self.df[dctc.KPI].unique():
-            kpi_formula = [
-                self.vc.calculations[x] for x in self.vc.calculations
-                if self.vc.calculations[x][self.vc.metric_name] == kpi]
-            if kpi_formula:
-                kpi_cols = kpi_formula[0][self.vc.formula][::2]
-                metrics = kpi_cols + [kpi]
-                missing_cols = [x for x in kpi_cols if x not in self.df.columns]
-                if missing_cols:
-                    msg = 'Missing columns could not evaluate {}'.format(kpi)
-                    logging.warning(msg)
-                    self.add_to_analysis_dict(key_col=self.kpi_col,
-                                              message=msg, param=kpi)
-                    continue
-            elif kpi not in self.df.columns:
-                msg = 'Unknown KPI: {}'.format(kpi)
+    def calculate_kpi_trend(self, kpi, group, metrics):
+        df = self.get_df_based_on_kpi(kpi, group, metrics, split=vmc.date)
+        df = df.sort_values(vmc.date).reset_index(drop=True).reset_index()
+        fit = np.polyfit(df['index'], df[kpi], deg=1)
+        if fit[0] > 0:
+            trend = 'increasing'
+        else:
+            trend = 'decreasing'
+        msg = ('The KPI {} is {} at a rate of {:,.3f} units per day'
+               ' when given linear fit').format(kpi, trend, abs(fit[0]))
+        logging.info(msg)
+        df['fit'] = fit[0] * df['index'] + fit[1]
+        self.add_to_analysis_dict(
+            key_col=self.kpi_col, message=msg, data=df.to_dict(),
+            param=kpi, param2='Trend', split=vmc.date)
+
+    def explain_lowest_kpi_for_vendor(self, kpi, group, metrics, filter_col):
+        smallest_values = self.find_in_analysis_dict(
+            self.kpi_col, param=kpi, param_2='Smallest', split_col=dctc.VEN
+        )[0][self.analysis_dict_data_col][dctc.VEN].values()
+        for val in smallest_values:
+            for split in [dctc.CRE, dctc.TAR, dctc.PKD, dctc.PLD, dctc.ENV]:
+                self.evaluate_smallest_largest_kpi(
+                    kpi, group, metrics, split, filter_col, val, number=1)
+
+    def get_df_based_on_kpi(self, kpi, group, metrics, split=None,
+                            filter_col=None, filter_val=None, sort=None):
+        if split:
+            group = group + [split]
+        if filter_col:
+            group = group + [filter_col]
+        if not sort:
+            sort = kpi
+        df = self.generate_df_table(group=group, metrics=metrics, sort=sort)
+        df = df.reset_index().replace([np.inf, -np.inf], np.nan)
+        df = df.loc[(df[dctc.KPI] == kpi) & (df[kpi].notnull()) & (df[kpi] > 0)]
+        if filter_col:
+            df = df.loc[(df[filter_col] == filter_val)]
+        return df
+
+    def evaluate_smallest_largest_kpi(self, kpi, group, metrics, split=None,
+                                      filter_col=None, filter_val=None,
+                                      number=3):
+        df = self.get_df_based_on_kpi(kpi, group, metrics, split, filter_col,
+                                      filter_val)
+        if df.empty:
+            msg = ('Value(s) for KPI {} broken out by {} could '
+                   'not be calculated'.format(kpi, split))
+            if filter_col:
+                msg = '{} when filtered by the {} {}'.format(
+                    msg, filter_col, filter_val)
+            logging.warning(msg)
+            return False
+        smallest_df = df.nsmallest(n=number, columns=[kpi])
+        largest_df = df.nlargest(n=number, columns=[kpi])
+        for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
+            format_df = self.give_df_default_format(df[0], columns=[kpi])
+            split_values = ', '.join(x for x in df[0][split].values)
+            msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
+                df[1], kpi, split, split_values)
+            if filter_col:
+                msg = '{} when filtered by the {} {}'.format(
+                    msg, filter_col, filter_val)
+            log_info_text = ('{}\n{}'.format(msg, format_df.to_string()))
+            logging.info(log_info_text)
+            self.add_to_analysis_dict(
+                key_col=self.kpi_col, message=msg, data=df[0].to_dict(),
+                param=kpi, param2=df[1], split=split, filter_col=filter_col,
+                filter_val=filter_val)
+
+    def evaluate_on_kpi(self, kpi):
+        kpi_formula = [
+            self.vc.calculations[x] for x in self.vc.calculations
+            if self.vc.calculations[x][self.vc.metric_name] == kpi]
+        if kpi_formula:
+            kpi_cols = kpi_formula[0][self.vc.formula][::2]
+            metrics = kpi_cols + [kpi]
+            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
+            if missing_cols:
+                msg = 'Missing columns could not evaluate {}'.format(kpi)
                 logging.warning(msg)
                 self.add_to_analysis_dict(key_col=self.kpi_col,
                                           message=msg, param=kpi)
-                continue
-            else:
-                metrics = [kpi]
-            group = plan_names + [dctc.KPI]
-            df = self.generate_df_table(group=group, metrics=metrics, sort=kpi)
-            df = df.reset_index().replace([np.inf, -np.inf], np.nan)
-            df = df.loc[(df[dctc.KPI] == kpi) & (df[kpi].notnull())]
-            smallest_df = df.nsmallest(n=3, columns=[kpi])
-            largest_df = df.nlargest(n=3, columns=[kpi])
-            for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
-                format_df = self.give_df_default_format(df[0], columns=[kpi])
-                msg = '{} values for KPI {} are as follows:'.format(df[1], kpi)
-                log_info_text = ('{}\n{}'.format(msg, format_df.to_string()))
-                logging.info(log_info_text)
-                self.add_to_analysis_dict(key_col=self.kpi_col,
-                                          message=msg,
-                                          data=df[0].to_dict(),
-                                          param=kpi, param2=df[1])
+                return False
+        elif kpi not in self.df.columns:
+            msg = 'Unknown KPI: {}'.format(kpi)
+            logging.warning(msg)
+            self.add_to_analysis_dict(key_col=self.kpi_col,
+                                      message=msg, param=kpi)
+            return False
+        else:
+            metrics = [kpi]
+        group = [dctc.CAM, dctc.KPI]
+        self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=dctc.VEN)
+        self.explain_lowest_kpi_for_vendor(
+            kpi=kpi, group=group, metrics=metrics, filter_col=dctc.VEN)
+        self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=vmc.date)
+        self.calculate_kpi_trend(kpi, group, metrics)
+
+    def evaluate_on_kpis(self):
+        for kpi in self.df[dctc.KPI].unique():
+            self.evaluate_on_kpi(kpi)
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -364,6 +437,26 @@ class Analyze(object):
                                       data=val[1].to_dict(),
                                       param=val[0])
         return df, tdf, twdf
+
+    def find_in_analysis_dict(self, key, param=None, param_2=None,
+                              split_col=None, filter_col=None, filter_val=None):
+        item = [x for x in self.analysis_dict
+                if x[self.analysis_dict_key_col] == key]
+        if param:
+            item = [x for x in item if x[self.analysis_dict_param_col] == param]
+        if param_2:
+            item = [x for x in item if
+                    x[self.analysis_dict_param_2_col] == param_2]
+        if split_col:
+            item = [x for x in item if
+                    x[self.analysis_dict_split_col] == split_col]
+        if filter_col:
+            item = [x for x in item if
+                    x[self.analysis_dict_filter_col] == filter_col]
+        if filter_val:
+            item = [x for x in item if
+                    x[self.analysis_dict_filter_val] == filter_val]
+        return item
 
     def write_analysis_dict(self):
         with open(self.analysis_dict_file_name, 'w') as fp:
@@ -396,12 +489,12 @@ class ValueCalc(object):
     @staticmethod
     def get_default_metrics():
         metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
-                        'CPCV', 'CPLPV', 'CPP']
+                        'CPCV', 'CPLPV', 'CPP', 'CPM']
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
                    'Net Cost Final/Video Views', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Purchase']
+                   'Net Cost Final/Purchase', 'Net Cost Final/Impressions']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
@@ -435,6 +528,8 @@ class ValueCalc(object):
         formula = self.get_metric_formula(metric_name)
         current_op = None
         for item in formula:
+            if item == 'Impressions':
+                df[item] = df[item] / 1000
             if current_op:
                 df[col] = self.operations[current_op](df[col], df[item])
                 current_op = None
