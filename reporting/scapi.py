@@ -32,6 +32,7 @@ class ScApi(object):
         self.refresh_token = None
         self.ad_account_id = None
         self.config_list = None
+        self.campaign_filter = None
         self.client = None
         self.granularity = None
         self.breakdown = 'ad'
@@ -63,6 +64,8 @@ class ScApi(object):
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.access_token, self.ad_account_id,
                             self.refresh_token]
+        if 'campaign_filter' in self.config:
+            self.campaign_filter = self.config['campaign_filter']
 
     def check_config(self):
         for item in self.config_list:
@@ -150,6 +153,8 @@ class ScApi(object):
         r = self.make_request(act_url)
         cids = {x['campaign']['id']: x['campaign']['name']
                 for x in r.json()['campaigns']}
+        if self.campaign_filter:
+            cids = {x: cids[x] for x in cids if self.campaign_filter in cids[x]}
         return cids
 
     def get_adsquads(self):
