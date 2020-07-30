@@ -15,9 +15,11 @@ config_path = utl.config_path
 access_token_url = 'https://accounts.snapchat.com/login/oauth2/access_token'
 base_url = 'https://adsapi.snapchat.com/v1/'
 
-def_fields = ['impressions', 'swipes', 'view_time_millis', 'quartile_1',
-              'quartile_2', 'quartile_3', 'view_completion', 'spend',
+add_fields = ['view_time_millis', 'quartile_1', 'quartile_2', 'quartile_3',
+              'view_completion', 'impressions', 'swipes', 'spend',
               'video_views', 'shares', 'saves']
+unique_fields = ['uniques', 'frequency']
+def_fields = add_fields
 
 
 class ScApi(object):
@@ -31,6 +33,8 @@ class ScApi(object):
         self.ad_account_id = None
         self.config_list = None
         self.client = None
+        self.granularity = None
+        self.breakdown = 'ad'
         self.df = pd.DataFrame()
         self.r = None
 
@@ -89,22 +93,40 @@ class ScApi(object):
         ed = pytz.timezone(timezone).localize(ed).isoformat()
         return sd, ed
 
-    @staticmethod
-    def get_data_default_check(sd, ed):
+    def parse_fields(self, fields_to_parse):
+        fields = def_fields
+        if fields_to_parse:
+            for field in fields_to_parse:
+                if field == 'Total' or field == 'Campaign':
+                    self.breakdown = None
+                elif field == 'Unique':
+                    fields = unique_fields
+                    self.granularity = 'LIFETIME'
+        return fields
+
+    def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=2)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        return sd, ed
+        fields = self.parse_fields(fields)
+        return sd, ed, fields
 
-    @staticmethod
-    def create_url(cid):
+    def create_url(self, cid, fields, sd, ed):
+        params = {'start_time': sd, 'end_time': ed}
         camp_url = 'campaigns/{}/stats?'.format(cid)
-        break_url = 'breakdown=ad'
-        field_url = '&fields={}'.format(','.join(def_fields))
-        gran_url = '&granularity=DAY'
-        full_url = (base_url + camp_url + break_url + field_url + gran_url)
-        return full_url
+        field_url = '&fields={}'.format(','.join(fields))
+        full_url = (base_url + camp_url + field_url)
+        if self.granularity:
+            gran_url = '&granularity={}'.format(self.granularity)
+            params = {}
+        else:
+            gran_url = '&granularity=DAY'
+        if self.breakdown:
+            break_url = '&breakdown={}'.format(self.breakdown)
+            full_url += break_url
+        full_url += gran_url
+        return full_url, params
 
     def make_request(self, add_url):
         act_url = base_url + add_url
@@ -145,16 +167,25 @@ class ScApi(object):
                  for x in r.json()['ads']}
         return adids
 
-    def get_data(self, sd=None, ed=None, fields=None):
+    def set_initial_params(self):
+        self.granularity = None
+        self.breakdown = 'ad'
         self.df = pd.DataFrame()
-        sd, ed = self.get_data_default_check(sd, ed)
+        self.r = None
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        self.set_initial_params()
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.date_check(sd, ed)
         cids = self.get_campaigns()
+        logging.info('Getting data from {} to {} for granularity {} breakdown '
+                     '{}.'.format(sd, ed, self.granularity, self.breakdown))
         for cid in cids:
-            self.get_raw_data(sd, ed, cid)
+            self.get_raw_data(sd, ed, cid, fields)
+        logging.info('Data successfully downloaded.')
         self.df['Campaign Name'] = self.df['Campaign Name'].map(cids)
         self.df = self.add_names_to_df()
-        if not self.df.empty:
+        if not self.df.empty and self.breakdown:
             self.df = self.remove_timezone_from_date()
         return self.df
 
@@ -163,37 +194,46 @@ class ScApi(object):
             self.df[col] = self.df[col].astype('U').str[:-6]
         return self.df
 
-    def get_raw_data(self, sd, ed, cid):
-        full_url = self.create_url(cid)
-        self.r = self.client.get(full_url,
-                                 params={'start_time': sd, 'end_time': ed})
+    def get_raw_data(self, sd, ed, cid, fields):
+        full_url, params = self.create_url(cid, fields, sd, ed)
+        self.r = self.client.get(full_url, params=params)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
             tdf['Campaign Name'] = cid
-            self.df = self.df.append(tdf)
+            self.df = self.df.append(tdf, sort=True)
         else:
-            self.request_error(sd, ed, cid)
+            self.request_error(sd, ed, cid, fields)
 
-    def request_error(self, sd, ed, cid):
+    def request_error(self, sd, ed, cid, fields):
         limit_error = 'Limit reached for'
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:
             logging.warning('Limit reached pausing for 120 seconds.')
             time.sleep(120)
-            self.get_raw_data(sd, ed, cid)
+            self.get_raw_data(sd, ed, cid, fields)
         else:
             logging.warning('Unknown error: {}'.format(self.r.text))
             sys.exit(0)
 
-    @staticmethod
-    def data_to_df(r):
+    def data_to_df(self, r):
         df = pd.DataFrame()
-        data = (r.json()['timeseries_stats'][0]['timeseries_stat']
-                        ['breakdown_stats']['ad'])
+        if self.granularity:
+            json_response_key = 'lifetime'
+        else:
+            json_response_key = 'timeseries'
+        data = r.json()[json_response_key + '_stats'][0]
+        data = data[json_response_key + '_stat']
+        if self.breakdown == 'ad':
+            data = data['breakdown_stats']['ad']
+        else:
+            data = [data]
         for ad_data in data:
-            tdf = pd.DataFrame(ad_data['timeseries'])  # type: pd.DataFrame
-            tdf = pd.concat([tdf, tdf['stats'].apply(pd.Series)], axis=1)
+            if self.granularity:
+                tdf = pd.DataFrame(ad_data['stats'], index=[0])
+            else:
+                tdf = pd.DataFrame(ad_data['timeseries'])  # type: pd.DataFrame
+                tdf = pd.concat([tdf, tdf['stats'].apply(pd.Series)], axis=1)
             tdf['id'] = ad_data['id']  # type: pd.DataFrame
-            df = df.append(tdf)
+            df = df.append(tdf, sort=True)
         if 'spend' in df.columns:
             df['spend'] = df['spend'] / 1000000
         df = df.reset_index()
@@ -203,10 +243,14 @@ class ScApi(object):
         if self.df.empty:
             logging.warning('No data for date range, returning empty df.')
             return self.df
+        if not self.breakdown:
+            self.df = utl.col_removal(self.df, 'API_Snapchat', ['id', 'index'])
+            return self.df
         adids = self.get_ads()
         self.df = self.dict_to_cols(self.df, 'id', adids)  # type: pd.DataFrame
         asids = self.get_adsquads()
-        self.df = self.dict_to_cols(self.df, 'ad_squad_id', asids)  # type: pd.DataFrame
+        self.df = self.dict_to_cols(
+            self.df, 'ad_squad_id', asids)  # type: pd.DataFrame
         self.df = self.df.rename(columns={'ad_squad_id': 'Ad Set Name',
                                           'name': 'Ad Name'})
         self.df = utl.col_removal(self.df, 'API_Snapchat',
