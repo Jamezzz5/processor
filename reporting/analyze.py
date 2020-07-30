@@ -39,6 +39,9 @@ class Analyze(object):
     analysis_dict_filter_col = 'filter_col'
     analysis_dict_filter_val = 'filter_val'
     analysis_dict_split_col = 'split_col'
+    analysis_dict_small_param_2 = 'Smallest'
+    analysis_dict_large_param_2 = 'Largest'
+    analysis_dict_only_param_2 = 'Only'
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.analysis_dict = []
@@ -312,7 +315,11 @@ class Analyze(object):
 
     def calculate_kpi_trend(self, kpi, group, metrics):
         df = self.get_df_based_on_kpi(kpi, group, metrics, split=vmc.date)
+        if len(df) < 2:
+            logging.warning('Less than two datapoints for KPI {}'.format(kpi))
+            return False
         df = df.sort_values(vmc.date).reset_index(drop=True).reset_index()
+        df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
         fit = np.polyfit(df['index'], df[kpi], deg=1)
         if fit[0] > 0:
             trend = 'increasing'
@@ -328,10 +335,15 @@ class Analyze(object):
             param=kpi, param2='Trend', split=vmc.date)
 
     def explain_lowest_kpi_for_vendor(self, kpi, group, metrics, filter_col):
-        smallest_values = self.find_in_analysis_dict(
-            self.kpi_col, param=kpi, param_2='Smallest', split_col=dctc.VEN
-        )[0][self.analysis_dict_data_col][dctc.VEN].values()
-        for val in smallest_values:
+        min_val = self.find_in_analysis_dict(
+            self.kpi_col, param=kpi, param_2=self.analysis_dict_small_param_2,
+            split_col=dctc.VEN)
+        if len(min_val) == 0:
+            min_val = self.find_in_analysis_dict(
+                self.kpi_col, param=kpi,
+                param_2=self.analysis_dict_only_param_2, split_col=dctc.VEN)
+        min_val = min_val[0][self.analysis_dict_data_col][dctc.VEN].values()
+        for val in min_val:
             for split in [dctc.CRE, dctc.TAR, dctc.PKD, dctc.PLD, dctc.ENV]:
                 self.evaluate_smallest_largest_kpi(
                     kpi, group, metrics, split, filter_col, val, number=1)
@@ -351,6 +363,24 @@ class Analyze(object):
             df = df.loc[(df[filter_col] == filter_val)]
         return df
 
+    def evaluate_df_kpi_smallest_largest(self, df, kpi, split, filter_col,
+                                         filter_val, small_large='Smallest'):
+        format_df = self.give_df_default_format(df, columns=[kpi])
+        if split == vmc.date:
+            df[split] = df[split].dt.strftime('%Y-%m-%d')
+        split_values = ', '.join(str(x) for x in df[split].values)
+        msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
+            small_large, kpi, split, split_values)
+        if filter_col:
+            msg = '{} when filtered by the {} {}'.format(
+                msg, filter_col, filter_val)
+        log_info_text = ('{}\n{}'.format(msg, format_df.to_string()))
+        logging.info(log_info_text)
+        self.add_to_analysis_dict(
+            key_col=self.kpi_col, message=msg, data=df.to_dict(),
+            param=kpi, param2=small_large, split=split,
+            filter_col=filter_col, filter_val=filter_val)
+
     def evaluate_smallest_largest_kpi(self, kpi, group, metrics, split=None,
                                       filter_col=None, filter_val=None,
                                       number=3):
@@ -364,24 +394,16 @@ class Analyze(object):
                     msg, filter_col, filter_val)
             logging.warning(msg)
             return False
-        smallest_df = df.nsmallest(n=number, columns=[kpi])
-        largest_df = df.nlargest(n=number, columns=[kpi])
-        for df in [[smallest_df, 'Smallest'], [largest_df, 'Largest']]:
-            format_df = self.give_df_default_format(df[0], columns=[kpi])
-            if split == vmc.date:
-                df[0][split] = df[0][split].dt.strftime('%Y-%m-%d')
-            split_values = ', '.join(str(x) for x in df[0][split].values)
-            msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
-                df[1], kpi, split, split_values)
-            if filter_col:
-                msg = '{} when filtered by the {} {}'.format(
-                    msg, filter_col, filter_val)
-            log_info_text = ('{}\n{}'.format(msg, format_df.to_string()))
-            logging.info(log_info_text)
-            self.add_to_analysis_dict(
-                key_col=self.kpi_col, message=msg, data=df[0].to_dict(),
-                param=kpi, param2=df[1], split=split, filter_col=filter_col,
-                filter_val=filter_val)
+        if len(df) < 2:
+            df_list = [[df, self.analysis_dict_only_param_2]]
+        else:
+            smallest_df = df.nsmallest(n=number, columns=[kpi])
+            largest_df = df.nlargest(n=number, columns=[kpi])
+            df_list = [[smallest_df, self.analysis_dict_small_param_2],
+                       [largest_df, self.analysis_dict_large_param_2]]
+        for df in df_list:
+            self.evaluate_df_kpi_smallest_largest(df[0], kpi, split, filter_col,
+                                                  filter_val, df[1])
 
     def evaluate_on_kpi(self, kpi):
         kpi_formula = [
