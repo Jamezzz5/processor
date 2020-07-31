@@ -342,6 +342,8 @@ class Analyze(object):
             min_val = self.find_in_analysis_dict(
                 self.kpi_col, param=kpi,
                 param_2=self.analysis_dict_only_param_2, split_col=dctc.VEN)
+            if len(min_val) == 0:
+                return False
         min_val = min_val[0][self.analysis_dict_data_col][dctc.VEN].values()
         for val in min_val:
             for split in [dctc.CRE, dctc.TAR, dctc.PKD, dctc.PLD, dctc.ENV]:
@@ -357,7 +359,7 @@ class Analyze(object):
         if not sort:
             sort = kpi
         df = self.generate_df_table(group=group, metrics=metrics, sort=sort)
-        df = df.reset_index().replace([np.inf, -np.inf], np.nan)
+        df = df.reset_index().replace([np.inf, -np.inf], np.nan).fillna(0)
         df = df.loc[(df[dctc.KPI] == kpi) & (df[kpi].notnull()) & (df[kpi] > 0)]
         if filter_col:
             df = df.loc[(df[filter_col] == filter_val)]
