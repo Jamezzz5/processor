@@ -54,4 +54,5 @@ temp/
 Raw Data Output.csv
 venv/
 backup/
+raw_data/
 logfile.log

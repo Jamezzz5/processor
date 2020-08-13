@@ -20,6 +20,7 @@ import reporting.szkapi as szkapi
 import reporting.redapi as redapi
 import reporting.dvapi as dvapi
 import reporting.adkapi as adkapi
+import reporting.innapi as innapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -151,7 +152,8 @@ class ImportHandler(object):
                 ('szk', self.matrix.api_szk_key, szkapi.SzkApi),
                 ('red', self.matrix.api_red_key, redapi.RedApi),
                 ('dv', self.matrix.api_dv_key, dvapi.DvApi),
-                ('adk', self.matrix.api_adk_key, adkapi.AdkApi)]
+                ('adk', self.matrix.api_adk_key, adkapi.AdkApi),
+                ('inn', self.matrix.api_inn_key, innapi.InnApi)]
         for api in apis:
             if self.arg_check(api[0]) and api[1]:
                 self.api_calls(api[1], api[2]())
