@@ -774,6 +774,15 @@ def vm_update_rule_check(vm, vm_col):
 def df_transform(df, transform):
     if str(transform) == 'nan':
         return df
+    split_transform = transform.split(':::')
+    for t in split_transform:
+        df = df_single_transform(df, t)
+    return df
+
+
+def df_single_transform(df, transform):
+    if str(transform) == 'nan':
+        return df
     transform = transform.split('::')
     transform_type = transform[0]
     if transform_type == 'MixedDateColumn':
