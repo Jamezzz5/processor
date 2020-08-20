@@ -209,7 +209,7 @@ class RedApi(object):
         cal_xpath = self.open_calendar(base_xpath)
         self.set_date(sd, cal_xpath=cal_xpath)
         self.set_date(ed, cal_xpath=cal_xpath)
-        self.click_on_xpath(cal_xpath + '[2]/td/div/div/button[2]/span')
+        self.click_on_xpath(cal_xpath + '[2]/td/div/div[2]/button[2]/div')
 
     def click_individual_metrics(self):
         for metric in self.video_metrics:
@@ -227,7 +227,7 @@ class RedApi(object):
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
-        apply_button_xpath = '//span[text()="Apply"]'
+        apply_button_xpath = '//div[text()="Apply"]'
         self.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self):
