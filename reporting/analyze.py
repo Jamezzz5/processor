@@ -12,6 +12,7 @@ import datetime as dt
 import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
+import reporting.expcolumns as exc
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 
@@ -545,17 +546,25 @@ class ValueCalc(object):
              self.calculations[x][self.metric_name] == metric_name][0]
         return f
 
-    def calculate_all_metrics(self, metric_names, df=None):
+    def calculate_all_metrics(self, metric_names, df=None, db_translate=None):
+        if db_translate:
+            tdf = pd.read_csv(os.path.join('config', 'db_df_translation.csv'))
+            db_translate = dict(
+                zip(tdf[exc.translation_df], tdf[exc.translation_db]))
         for metric_name in metric_names:
-            df = self.calculate_metric(metric_name, df)
+            df = self.calculate_metric(metric_name, df,
+                                       db_translate=db_translate)
         return df
 
-    def calculate_metric(self, metric_name, df=None):
+    def calculate_metric(self, metric_name, df=None, db_translate=None):
         col = metric_name
         formula = self.get_metric_formula(metric_name)
         current_op = None
+        if db_translate:
+            formula = [db_translate[x] if x in formula[::2] else x
+                       for x in formula]
         for item in formula:
-            if item == 'Impressions':
+            if item.lower() == 'impressions':
                 df[item] = df[item] / 1000
             if current_op:
                 df[col] = self.operations[current_op](df[col], df[item])
