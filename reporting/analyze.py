@@ -149,6 +149,7 @@ class Analyze(object):
         df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
             '{} rolling {}'.format(vmc.cost, 3)]
         df['days'] = df['days'].replace([np.inf, -np.inf], np.nan).fillna(10000)
+        df['days'] = np.where(df['days'] > 10000, 10000, df['days'])
         df['completed_date'] = pd.to_datetime(df[vmc.date]) + pd.to_timedelta(
             np.ceil(df['days']).astype(int), unit='D')
         no_date_map = ((df['completed_date'] >
