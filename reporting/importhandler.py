@@ -22,6 +22,7 @@ import reporting.dvapi as dvapi
 import reporting.adkapi as adkapi
 import reporting.innapi as innapi
 import reporting.tikapi as tikapi
+import reporting.amzapi as amzapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -155,7 +156,8 @@ class ImportHandler(object):
                 ('dv', self.matrix.api_dv_key, dvapi.DvApi),
                 ('adk', self.matrix.api_adk_key, adkapi.AdkApi),
                 ('inn', self.matrix.api_inn_key, innapi.InnApi),
-                ('tik', self.matrix.api_tik_key, tikapi.TikApi)]
+                ('tik', self.matrix.api_tik_key, tikapi.TikApi),
+                ('amz', self.matrix.api_amz_key, amzapi.AmzApi)]
         for api in apis:
             if self.arg_check(api[0]) and api[1]:
                 self.api_calls(api[1], api[2]())
