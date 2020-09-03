@@ -17,11 +17,10 @@ class AmzApi(object):
     base_url = 'https://advertising-api.amazon.com'
     refresh_url = 'https://api.amazon.com/auth/o2/token'
     def_metrics = [
-        'campaignName', 'adGroupName', 'targetingExpression',
-        'targetingText', 'targetingType', 'impressions', 'clicks', 'cost',
-        'attributedConversions30d', 'attributedConversions30dSameSKU',
-        'attributedUnitsOrdered30d', 'attributedSales30d',
-        'attributedSales30dSameSKU']
+        'campaignName', 'adGroupName', 'impressions', 'clicks', 'cost',
+        'attributedConversions30d',
+        'attributedConversions30dSameSKU', 'attributedUnitsOrdered30d',
+        'attributedSales30d', 'attributedSales30dSameSKU']
 
     def __init__(self):
         self.config = None
@@ -135,7 +134,7 @@ class AmzApi(object):
         sd, ed = self.date_check(sd, ed)
         return sd, ed
 
-    def create_url(self, report_type='sp', version=True, record_type='targets',
+    def create_url(self, report_type='sp', version=True, record_type='adGroups',
                    report_id=False):
         url = self.base_url
         if version:
@@ -190,12 +189,19 @@ class AmzApi(object):
             r = self.make_request(url, method='GET', headers=self.headers,
                                   json_response=False)
             df = pd.read_json(io.BytesIO(r.content), compression='gzip')
+            df = df.loc[(df['impressions'] > 0)]
             df['Date'] = report_id_dict['date']
             self.df = self.df.append(df, ignore_index=True)
             self.report_ids = [
                 x for x in self.report_ids if x['report_id'] != report_id]
             report_id_dict['complete'] = True
             self.report_ids.append(report_id_dict)
+        else:
+            logging.info('Report unavailable - waiting 30s.  \n'
+                         'Current status: {}\n Current Status Details: {}'
+                         ''.format(r.json()['status'],
+                                   r.json()['statusDetails']))
+            time.sleep(30)
 
     def make_request(self, url, method, body=None, params=None, headers=None,
                      attempt=1, json_response=True):
