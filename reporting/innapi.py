@@ -99,13 +99,17 @@ class InnApi(object):
         return r
 
     @staticmethod
+    def format_dates(sd, ed):
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        return sd, ed
+
+    @staticmethod
     def date_check(sd, ed):
         if sd > ed or sd == ed:
             logging.warning('Start date greater than or equal to end date.  '
                             'Start date was set to end date.')
             sd = ed - dt.timedelta(days=1)
-        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
-        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         return sd, ed
 
     def get_data_default_check(self, sd, ed):
@@ -119,10 +123,11 @@ class InnApi(object):
         return sd, ed
 
     def get_data(self, sd=None, ed=None, fields=None):
+        sd, ed = self.get_data_default_check(sd, ed)
         full_date_list = self.list_dates(sd, ed)
         client_id, advertiser_id = self.get_advertiser_id()
         for date_list in full_date_list:
-            sd, ed = self.get_data_default_check(date_list[0], date_list[1])
+            sd, ed = self.format_dates(date_list[0], date_list[1])
             self.request_reports(sd, ed, client_id, advertiser_id)
         for idx, resp_token in enumerate(self.response_tokens):
             logging.info('Attempting to get report {} of {}'
@@ -147,8 +152,11 @@ class InnApi(object):
         url = (self.base_url + '/clients/{}/advertisers/{}/reports/delivery/'
                'dateFrom/{}/dateTo/{}'.format(client_id, advertiser_id, sd, ed))
         r = self.make_request(url, method='GET', headers=self.headers)
-        resp_token = r.json()['data']['reportStatusToken']
-        self.response_tokens.append(resp_token)
+        if 'data' in r.json() and 'reportStatusToken' in r.json()['data']:
+            resp_token = r.json()['data']['reportStatusToken']
+            self.response_tokens.append(resp_token)
+        else:
+            logging.warning('Could not get status token: {}.'.format(r.json()))
 
     def check_and_get_report(self, resp_token):
         df = pd.DataFrame()
@@ -173,7 +181,8 @@ class InnApi(object):
         while sd <= ed:
             cur_end = sd + dt.timedelta(days=4)
             if cur_end > dt.datetime.today():
-                cur_end = pd.Timestamp(dt.datetime.today().date())
+                cur_end = pd.Timestamp((dt.datetime.today() +
+                                        dt.timedelta(days=1)).date())
             dates.append((sd, cur_end))
             sd = sd + dt.timedelta(days=5)
         return dates
