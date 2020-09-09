@@ -18,9 +18,9 @@ class AmzApi(object):
     refresh_url = 'https://api.amazon.com/auth/o2/token'
     def_metrics = [
         'campaignName', 'adGroupName', 'impressions', 'clicks', 'cost',
-        'attributedConversions30d',
-        'attributedConversions30dSameSKU', 'attributedUnitsOrdered30d',
-        'attributedSales30d', 'attributedSales30dSameSKU']
+        'attributedConversions14d',
+        'attributedConversions14dSameSKU', 'attributedUnitsOrdered14d',
+        'attributedSales14d', 'attributedSales14dSameSKU']
 
     def __init__(self):
         self.config = None
@@ -33,6 +33,7 @@ class AmzApi(object):
         self.campaign_id = None
         self.profile_id = None
         self.report_ids = []
+        self.report_types = ['sp', 'hsa']
         self.config_list = None
         self.client = None
         self.headers = None
@@ -61,10 +62,9 @@ class AmzApi(object):
         self.client_secret = self.config['client_secret']
         self.access_token = self.config['access_token']
         self.refresh_token = self.config['refresh_token']
+        self.advertiser_id = self.config['advertiser_id']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token]
-        if 'advertiser_id' in self.config:
-            self.advertiser_id = self.config['advertiser_id']
         if 'campaign_id' in self.config:
             self.campaign_id = self.config['campaign_id']
 
@@ -124,7 +124,17 @@ class AmzApi(object):
             sd = ed - dt.timedelta(days=1)
         return sd, ed
 
-    def get_data_default_check(self, sd, ed):
+    def set_fields(self, fields):
+        if fields:
+            for field in fields:
+                if field == 'nan':
+                    self.report_types = ['sp', 'hsa']
+                elif field == 'sp':
+                    self.report_types.append('sp')
+                elif field == 'hsa':
+                    self.report_types.append('hsa')
+
+    def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=2)
         if ed is None:
@@ -132,6 +142,7 @@ class AmzApi(object):
         if dt.datetime.today().date() == ed.date():
             ed += dt.timedelta(days=1)
         sd, ed = self.date_check(sd, ed)
+        self.set_fields(fields)
         return sd, ed
 
     def create_url(self, report_type='sp', version=True, record_type='adGroups',
@@ -147,7 +158,7 @@ class AmzApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.get_profiles()
-        sd, ed = self.get_data_default_check(sd, ed)
+        sd, ed = self.get_data_default_check(sd, ed, fields)
         date_list = self.list_dates(sd, ed)
         self.request_reports_for_all_dates(date_list)
         self.check_and_get_all_reports(self.report_ids)
@@ -160,15 +171,26 @@ class AmzApi(object):
 
     def request_report(self, report_date):
         report_date_string = dt.datetime.strftime(report_date, '%Y%m%d')
-        logging.info('Requesting report for {}'.format(report_date_string))
-        url = self.create_url(report_type='sp')
-        body = {'reportDate': report_date_string,
-                'metrics': ','.join(self.def_metrics)}
-        r = self.make_request(url, method='POST', headers=self.headers,
-                              body=body)
-        report_id = r.json()['reportId']
-        self.report_ids.append({'report_id': report_id, 'date': report_date,
-                                'complete': False})
+        for report_type in self.report_types:
+            if report_type == 'hsa':
+                has_video = [True, False]
+            else:
+                has_video = [False]
+            for vid in has_video:
+                logging.info(
+                    'Requesting report for date: {} type: {} video: {}'.format(
+                        report_date_string, report_type, vid))
+                url = self.create_url(report_type=report_type)
+                body = {'reportDate': report_date_string,
+                        'metrics': ','.join(self.def_metrics)}
+                if vid:
+                    body['creativeType'] = 'video'
+                r = self.make_request(url, method='POST', headers=self.headers,
+                                      body=body)
+                report_id = r.json()['reportId']
+                self.report_ids.append(
+                    {'report_id': report_id, 'date': report_date,
+                     'complete': False})
 
     def check_and_get_all_reports(self, report_ids):
         for report_id in report_ids:
@@ -189,9 +211,11 @@ class AmzApi(object):
             r = self.make_request(url, method='GET', headers=self.headers,
                                   json_response=False)
             df = pd.read_json(io.BytesIO(r.content), compression='gzip')
-            df = df.loc[(df['impressions'] > 0)]
-            df['Date'] = report_id_dict['date']
-            self.df = self.df.append(df, ignore_index=True)
+            if not df.empty:
+                if 'impressions' in df.columns:
+                    df = df.loc[(df['impressions'] > 0)]
+                df['Date'] = report_id_dict['date']
+                self.df = self.df.append(df, ignore_index=True)
             self.report_ids = [
                 x for x in self.report_ids if x['report_id'] != report_id]
             report_id_dict['complete'] = True
