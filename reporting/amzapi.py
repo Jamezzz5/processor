@@ -167,30 +167,38 @@ class AmzApi(object):
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
-            self.request_report(report_date)
+            self.request_reports_for_date(report_date)
 
-    def request_report(self, report_date):
-        report_date_string = dt.datetime.strftime(report_date, '%Y%m%d')
+    def request_reports_for_date(self, report_date):
         for report_type in self.report_types:
             if report_type == 'hsa':
                 has_video = [True, False]
             else:
                 has_video = [False]
             for vid in has_video:
-                logging.info(
-                    'Requesting report for date: {} type: {} video: {}'.format(
-                        report_date_string, report_type, vid))
-                url = self.create_url(report_type=report_type)
-                body = {'reportDate': report_date_string,
-                        'metrics': ','.join(self.def_metrics)}
-                if vid:
-                    body['creativeType'] = 'video'
-                r = self.make_request(url, method='POST', headers=self.headers,
-                                      body=body)
-                report_id = r.json()['reportId']
-                self.report_ids.append(
-                    {'report_id': report_id, 'date': report_date,
-                     'complete': False})
+                self.make_report_request(report_date, report_type, vid)
+
+    def make_report_request(self, report_date, report_type, vid):
+        report_date_string = dt.datetime.strftime(report_date, '%Y%m%d')
+        logging.info(
+            'Requesting report for date: {} type: {} video: {}'.format(
+                report_date_string, report_type, vid))
+        url = self.create_url(report_type=report_type)
+        body = {'reportDate': report_date_string,
+                'metrics': ','.join(self.def_metrics)}
+        if vid:
+            body['creativeType'] = 'video'
+        r = self.make_request(url, method='POST', headers=self.headers,
+                              body=body)
+        if 'reportId' not in r.json():
+            logging.warning('reportId not in json: {}'.format(r.json()))
+            time.sleep(30)
+            self.make_report_request(report_date, report_type, vid)
+        else:
+            report_id = r.json()['reportId']
+            self.report_ids.append(
+                {'report_id': report_id, 'date': report_date,
+                 'complete': False})
 
     def check_and_get_all_reports(self, report_ids):
         for report_id in report_ids:
