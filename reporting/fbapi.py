@@ -21,7 +21,7 @@ def_metrics = ['impressions', 'inline_link_clicks', 'spend',
                'video_thruplay_watched_actions', 'video_p25_watched_actions',
                'video_p50_watched_actions', 'video_p75_watched_actions',
                'video_p100_watched_actions', 'reach', 'frequency',
-               'video_play_actions', 'estimated_ad_recallers']
+               'video_play_actions', 'estimated_ad_recallers', 'clicks']
 
 fields_actions = ['actions', 'action_values']
 
@@ -43,6 +43,7 @@ breakdown_placement = ['publisher_platform', 'platform_position',
 breakdown_impdevice = ['impression_device']
 breakdown_country = ['country']
 breakdown_device = ['device_platform']
+breakdown_product = ['product_id']
 
 ad_status_enbaled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
                      'PREAPPROVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED',
@@ -143,6 +144,8 @@ class FbApi(object):
                 breakdowns.extend(breakdown_impdevice)
             if item == 'Device':
                 breakdowns.extend(breakdown_device)
+            if item == 'Product':
+                breakdowns.extend(breakdown_product)
             if item == 'Action Device':
                 action_breakdowns.extend(ab_device)
             if 'Attribution' in item:
