@@ -13,6 +13,7 @@ from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
+conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
 configpath = utl.config_path
 
 base_url = 'https://ads-api.twitter.com'
@@ -43,6 +44,30 @@ colnamedic = {'billed_charge_local_micro': 'Spend',
               'video_views_75': 'Video played 75%',
               'video_views_100': 'Video completions',
               'video_total_views': 'Video views'}
+web_conversions = ['conversion_purchases', 'conversion_sign_ups',
+                   'conversion_site_visits', 'conversion_downloads',
+                   'conversion_custom']
+mobile_conversions = ['mobile_conversion_spent_credits',
+                      'mobile_conversion_installs',
+                      'mobile_conversion_content_views',
+                      'mobile_conversion_add_to_wishlists',
+                      'mobile_conversion_checkouts_initiated',
+                      'mobile_conversion_reservations',
+                      'mobile_conversion_tutorials_completed',
+                      'mobile_conversion_achievements_unlocked',
+                      'mobile_conversion_searches',
+                      'mobile_conversion_add_to_carts',
+                      'mobile_conversion_payment_info_additions',
+                      'mobile_conversion_re_engages',
+                      'mobile_conversion_shares', 'mobile_conversion_rates',
+                      'mobile_conversion_logins', 'mobile_conversion_updates',
+                      'mobile_conversion_levels_achieved',
+                      'mobile_conversion_invites',
+                      'mobile_conversion_key_page_views',
+                      'mobile_conversion_downloads',
+                      'mobile_conversion_sign_ups',
+                      'mobile_conversion_site_visits',
+                      'mobile_conversion_purchases']
 
 
 class TwApi(object):
@@ -228,6 +253,8 @@ class TwApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields is None:
             fields = def_fields
+        else:
+            fields = def_fields + conv_fields
         return sd, ed, fields
 
     def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
@@ -310,6 +337,12 @@ class TwApi(object):
             self.dates = self.get_dates(date)
             id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
             id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
+            for col in mobile_conversions + web_conversions:
+                if col in id_df.columns:
+                    col_df = id_df[col].apply(pd.Series)
+                    col_df.columns = ['{} - {}'.format(col, col_1)
+                                      for col_1 in col_df.columns]
+                    id_df = pd.concat([id_df, col_df], axis=1)
             df = df.append(id_df, sort=True)
         return df
 
@@ -402,6 +435,9 @@ class TwApi(object):
     def clean_df(self, df):
         if df.empty:
             return df
+        for col in mobile_conversions + web_conversions:
+            if col in df.columns:
+                df = utl.col_removal(df, 'API_Twitter', [col], warn=False)
         df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
         ndf = utl.data_to_type(ndf, str_col=[colcid], int_col=[coldate])
