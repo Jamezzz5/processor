@@ -670,6 +670,21 @@ class ScriptBuilder(object):
         self.tables = [x for x in self.metadata.sorted_tables
                        if x.name not in self.omit_tables]
         self.completed_tables = self.omit_tables
+        self.dimensions, self.metrics = self.get_all_columns()
+
+    def get_all_columns(self):
+        import decimal
+        dimensions, metrics = [], []
+        for table in self.tables:
+            for col in table.columns:
+                if not col.foreign_keys and not col.primary_key:
+                    if col.type.python_type == decimal.Decimal:
+                        metrics.append(col.name)
+                    else:
+                        dimensions.append(col.name)
+        dimensions = set(dimensions)
+        metrics = set(metrics)
+        return dimensions, metrics
 
     def append_plan_join(self, original_from_script):
         table = self.tables[-1]
