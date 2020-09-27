@@ -192,8 +192,12 @@ class AmzApi(object):
                               body=body)
         if 'reportId' not in r.json():
             logging.warning('reportId not in json: {}'.format(r.json()))
-            time.sleep(30)
-            self.make_report_request(report_date, report_type, vid)
+            if 'code' in r.json() and r.json()['code'] == '406':
+                logging.warning('Could not request date range is too long.')
+                sys.exit(0)
+            else:
+                time.sleep(30)
+                self.make_report_request(report_date, report_type, vid)
         else:
             report_id = r.json()['reportId']
             self.report_ids.append(
