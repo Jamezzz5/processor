@@ -164,7 +164,13 @@ class AmzApi(object):
         self.request_reports_for_all_dates(date_list)
         self.check_and_get_all_reports(self.report_ids)
         logging.info('All reports downloaded - returning dataframe.')
+        self.df = self.filter_df_on_campaign(self.df)
         return self.df
+
+    def filter_df_on_campaign(self, df):
+        if self.campaign_id:
+            df = df[df['campaignName'].str.contains(self.campaign_id)]
+        return df
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
