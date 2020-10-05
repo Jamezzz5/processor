@@ -157,6 +157,7 @@ class AmzApi(object):
         return url
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.report_ids = []
         self.get_profiles()
         sd, ed = self.get_data_default_check(sd, ed, fields)
         date_list = self.list_dates(sd, ed)
