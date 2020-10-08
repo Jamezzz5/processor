@@ -14,10 +14,13 @@ config_path = utl.config_path
 class TikApi(object):
     base_url = 'https://ads.tiktok.com'
     ad_url = '/open_api/v1.1/ad/get/'
-    ad_report_url = '/open_api/v1.1/audience/ad/get/'
+    ad_report_url = '/open_api/v1.1/reports/ad/get/'
     dimensions = ['COUNTRY', 'DAY', 'ID']
     metrics = ['click_cnt', 'conversion_cost', 'conversion_rate', 'convert_cnt',
-               'ctr', 'show_cnt', 'stat_cost', 'time_attr_convert_cnt']
+               'ctr', 'show_cnt', 'stat_cost', 'time_attr_convert_cnt',
+               'play_duration_2s', 'play_duration_6s', 'play_over',
+               'play_third_quartile', 'play_midpoint', 'play_first_quartile',
+               'total_play']
 
     def __init__(self):
         self.config = None
@@ -132,22 +135,27 @@ class TikApi(object):
         ad_ids = [ad_ids[x:x + 100] for x in range(0, len(ad_ids), 100)]
         return ad_ids
 
-    def request_and_get_data(self, sd, ed, ad_ids):
+    def request_and_get_data(self, sd, ed):
         url = self.base_url + self.ad_report_url
         params = {'advertiser_id': self.advertiser_id, 'start_date': sd,
-                  'end_date': ed, 'dimensions': json.dumps(self.dimensions),
-                  'fields': json.dumps(self.metrics)}
-        for idx, ad_id_list in enumerate(ad_ids):
-            logging.info('Getting data from {} to {}.  Data pull {} of {}'
-                         ''.format(sd, ed, idx + 1, len(ad_id_list)))
-            params['ad_ids'] = json.dumps(ad_id_list)
+                  'end_date': ed,
+                  'fields': json.dumps(self.metrics),
+                  'group_by': json.dumps(['STAT_GROUP_BY_FIELD_ID',
+                                          'STAT_GROUP_BY_FIELD_STAT_TIME']),
+                  'page_size': 1000}
+        for x in range(1, 1000):
+            logging.info('Getting data from {} to {}.  Page #{}.'
+                         ''.format(sd, ed, x))
+            params['page'] = x
             r = self.make_request(url=url, method='GET', headers=self.headers,
                                   params=params)
-            df = pd.DataFrame(
-                list(pd.DataFrame(r.json()['data']['list'])['dimensions']))
-            df = df.join(pd.DataFrame(
-                list(pd.DataFrame(r.json()['data']['list'])['metrics'])))
+            df = pd.DataFrame(r.json()['data']['list'])
             self.df = self.df.append(df, ignore_index=True)
+            page_rem = r.json()['data']['page_info']['total_page']
+            if x >= page_rem:
+                break
+            logging.info('Data retrieved {} pages remaining'
+                         ''.format(page_rem - x))
         self.df = self.df.merge(pd.DataFrame(self.ad_id_list), on='ad_id',
                                 how='left')
         logging.info('Data successfully pulled.  Returning df.')
@@ -155,6 +163,7 @@ class TikApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
-        ad_ids = self.get_ad_ids()
-        self.df = self.request_and_get_data(sd, ed, ad_ids)
+        self.get_ad_ids()
+        self.df = pd.DataFrame()
+        self.df = self.request_and_get_data(sd, ed)
         return self.df
