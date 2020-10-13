@@ -219,7 +219,10 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 ed = string_to_date(values[1])
                 tdf = tdf.loc[(df[query[0]] >= sd) & (df[query[0]] <= ed)]
             else:
-                tdf = tdf.loc[tdf[query[0]].isin(values)]
+                if len(query) == 3 and query[2] == 'EXCLUDE':
+                    tdf = tdf.loc[~tdf[query[0]].isin(values)]
+                else:
+                    tdf = tdf.loc[tdf[query[0]].isin(values)]
         q_idx = list(tdf.index.values)
         for metric in metrics:
             if metric not in df:
