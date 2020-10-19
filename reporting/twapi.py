@@ -374,6 +374,7 @@ class TwApi(object):
             current_dict = self.promoted_account_id_dict[id_key]
             current_dict['name'] = 'PROMOTED ACCOUNT'
             self.adid_dict[current_dict['parent']] = current_dict
+            self.adid_dict[id_key] = current_dict
         parent_maps = [[self.adid_dict, 'tweetid'],
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
