@@ -149,6 +149,10 @@ class TikApi(object):
             params['page'] = x
             r = self.make_request(url=url, method='GET', headers=self.headers,
                                   params=params)
+            if 'data' not in r.json():
+                logging.warning('Data not in response as follows:\n'
+                                '{}'.format(r.json()))
+                return self.df
             df = pd.DataFrame(r.json()['data']['list'])
             self.df = self.df.append(df, ignore_index=True)
             page_rem = r.json()['data']['page_info']['total_page']
