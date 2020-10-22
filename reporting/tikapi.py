@@ -149,7 +149,7 @@ class TikApi(object):
             params['page'] = x
             r = self.make_request(url=url, method='GET', headers=self.headers,
                                   params=params)
-            if 'data' not in r.json():
+            if 'data' not in r.json() or 'list' not in r.json()['data']:
                 logging.warning('Data not in response as follows:\n'
                                 '{}'.format(r.json()))
                 return self.df

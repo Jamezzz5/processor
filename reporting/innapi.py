@@ -160,7 +160,7 @@ class InnApi(object):
 
     def check_and_get_report(self, resp_token):
         df = pd.DataFrame()
-        for x in range(100):
+        for x in range(500):
             logging.info('Checking for report attempt: {}'.format(x + 1))
             url = self.base_url + '/reports/{}/status'.format(resp_token)
             r = self.make_request(url, method='GET', headers=self.headers)
