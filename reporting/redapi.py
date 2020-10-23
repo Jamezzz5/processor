@@ -118,7 +118,7 @@ class RedApi(object):
             elem.send_keys(item[0])
         time.sleep(2)
         login_xpaths = ['//button[normalize-space(text())="{}"]'.format(x)
-                        for x in ['Sign in', 'Log in']]
+                        for x in ['Sign in', 'Log in', 'Log In']]
         for xpath in login_xpaths:
             try:
                 self.click_on_xpath(xpath, sleep=5)
