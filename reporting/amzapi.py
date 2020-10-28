@@ -115,6 +115,7 @@ class AmzApi(object):
             logging.warning('Could not find the specified profile, check that'
                             'the provided account ID {} is correct and API has '
                             'access.'.format(self.advertiser_id))
+            sys.exit(0)
 
     @staticmethod
     def date_check(sd, ed):
