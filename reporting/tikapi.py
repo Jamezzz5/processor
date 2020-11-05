@@ -165,9 +165,15 @@ class TikApi(object):
         logging.info('Data successfully pulled.  Returning df.')
         return self.df
 
+    def filter_df_on_campaign(self, df):
+        if self.campaign_id:
+            df = df[df['campaign_name'].str.contains(self.campaign_id)]
+        return df
+
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
         self.get_ad_ids()
         self.df = pd.DataFrame()
         self.df = self.request_and_get_data(sd, ed)
+        self.df = self.filter_df_on_campaign(self.df)
         return self.df
