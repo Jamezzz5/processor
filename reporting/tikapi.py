@@ -170,10 +170,14 @@ class TikApi(object):
             df = df[df['campaign_name'].str.contains(self.campaign_id)]
         return df
 
+    def reset_params(self):
+        self.df = pd.DataFrame()
+        self.ad_id_list = []
+
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
+        self.reset_params()
         self.get_ad_ids()
-        self.df = pd.DataFrame()
         self.df = self.request_and_get_data(sd, ed)
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
