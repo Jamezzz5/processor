@@ -1,10 +1,13 @@
 import os
+import io
 import sys
 import ast
+import gzip
 import pytz
 import json
 import time
 import logging
+import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -89,6 +92,7 @@ class TwApi(object):
         self.adid_dict = None
         self.promoted_account_id_dict = None
         self.tweet_dict = None
+        self.async_requests = []
         self.v = 7
 
     def reset_dicts(self):
@@ -100,6 +104,7 @@ class TwApi(object):
         self.adid_dict = None
         self.promoted_account_id_dict = None
         self.tweet_dict = None
+        self.async_requests = []
 
     def input_config(self, config):
         logging.info('Loading Twitter config file: {}.'.format(config))
@@ -136,21 +141,21 @@ class TwApi(object):
         self.client = OAuth1Session(self.consumer_key, self.consumer_secret,
                                     self.access_token, self.access_token_secret)
 
-    def make_request(self, url, params=None):
+    def make_request(self, url, params=None, method='GET'):
         self.get_client()
         try:
             if params:
-                r = self.client.request(method='GET', url=url, params=params)
+                r = self.client.request(method=method, url=url, params=params)
             else:
-                r = self.client.request(method='GET', url=url)
+                r = self.client.request(method=method, url=url)
         except ConnectionError as e:
             logging.warning('Connection error retrying. \n: {}'.format(e))
             time.sleep(60)
             r = self.make_request(url=url, params=params)
         return r
 
-    def request(self, url, resp_key=None, params=None):
-        r = self.make_request(url=url, params=params)
+    def request(self, url, resp_key=None, params=None, method='GET'):
+        r = self.make_request(url=url, params=params, method=method)
         try:
             data = r.json()
         except IOError:
@@ -258,15 +263,23 @@ class TwApi(object):
         return sd, ed, fields
 
     def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
-                         entity='PROMOTED_TWEET', placement='ALL_ON_TWITTER'):
-        params = {'entity_ids': ','.join(ids),
-                  'entity': entity,
-                  'granularity': 'DAY',
-                  'start_time': sd,
-                  'end_time': ed,
-                  'metric_groups': ','.join(fields),
-                  'placement': placement}
-        act_url = '/{}/stats/accounts/{}'.format(self.v, self.account_id)
+                         entity='PROMOTED_TWEET', placement='ALL_ON_TWITTER',
+                         async_request=False):
+        params = {}
+        if fields:
+            params = {'entity_ids': ','.join(ids),
+                      'entity': entity,
+                      'granularity': 'DAY',
+                      'start_time': sd,
+                      'end_time': ed,
+                      'metric_groups': ','.join(fields),
+                      'placement': placement}
+        if async_request:
+            job_url = '/jobs/'
+        else:
+            job_url = '/'
+        act_url = '/{}/stats{}accounts/{}'.format(
+            self.v, job_url, self.account_id)
         url = base_url + act_url
         return url, params
 
@@ -284,17 +297,20 @@ class TwApi(object):
                 params['timeline_type'] = 'ALL'
         return url, params
 
-    def get_data(self, sd=None, ed=None, fields=None):
+    def get_data(self, sd=None, ed=None, fields=None, async_request=False):
         self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
-        self.df = self.get_df_for_all_dates(sd, ed, fields)
+        self.df = self.get_df_for_all_dates(sd, ed, fields,
+                                            async_request=async_request)
+        if async_request:
+            self.check_all_ids()
         if not self.df.empty:
             self.df = self.add_parents(self.df)
             self.df = self.rename_cols()
         return self.df
 
-    def get_df_for_all_dates(self, sd, ed, fields):
+    def get_df_for_all_dates(self, sd, ed, fields, async_request=False):
         full_date_list = self.list_dates(sd, ed)
         timezone = self.get_account_timezone()
         self.get_all_id_dicts(sd)
@@ -306,11 +322,12 @@ class TwApi(object):
                          in range(0, len(entity_dict.keys()), 20)]
             self.loop_through_dates_for_df(
                 full_date_list=full_date_list, timezone=timezone,
-                ids_lists=ids_lists, fields=fields, entity=entity_name)
+                ids_lists=ids_lists, fields=fields, entity=entity_name,
+                async_request=async_request)
         return self.df
 
     def loop_through_dates_for_df(self, full_date_list, timezone, ids_lists,
-                                  fields, entity):
+                                  fields, entity, async_request=False):
         for date in full_date_list:
             sd = self.date_format(date, timezone)
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
@@ -322,29 +339,70 @@ class TwApi(object):
                 possible_placements = ['ALL_ON_TWITTER']
             for place in possible_placements:
                 df = self.get_df_for_date(ids_lists, fields, sd, ed,
-                                          date, place, entity=entity)
-                df = self.clean_df(df)
-                self.df = self.df.append(df, sort=True).reset_index(drop=True)
+                                          date, place, entity=entity,
+                                          async_request=async_request)
+                if not async_request:
+                    df = self.clean_df(df)
+                    self.df = self.df.append(
+                        df, sort=True).reset_index(drop=True)
         return self.df
 
+    def get_df_for_date_synchronous(self, ids, fields, sd, ed, date,
+                                    place, entity, df):
+        url, params = self.create_stats_url(fields, ids, sd, ed,
+                                            entity=entity, placement=place)
+        data = self.request(url, resp_key=jsondata, params=params)
+        self.dates = self.get_dates(date)
+        id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
+        id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
+        for col in mobile_conversions + web_conversions:
+            if col in id_df.columns:
+                col_df = id_df[col].apply(pd.Series)
+                col_df.columns = ['{} - {}'.format(col, col_1)
+                                  for col_1 in col_df.columns]
+                id_df = pd.concat([id_df, col_df], axis=1)
+        df = df.append(id_df, sort=True)
+        return df
+
+    def make_request_for_date_asynchronous(self, ids, fields, sd, ed,
+                                           date, place, entity):
+        twitter_request = TwitterAsyncRequests(
+            ids, fields, sd, ed, date, place, entity)
+        url, params = self.create_stats_url(
+            fields, ids, sd, ed, entity=entity, placement=place,
+            async_request=True)
+        data = self.request(
+            url, resp_key=jsondata, params=params, method='POST')
+        twitter_request.data = data
+        self.async_requests.append(twitter_request)
+
     def get_df_for_date(self, ids_lists, fields, sd, ed, date, place,
-                        entity='PROMOTED_TWEET'):
+                        entity='PROMOTED_TWEET', async_request=False):
         df = pd.DataFrame()
         for ids in ids_lists:
-            url, params = self.create_stats_url(fields, ids, sd, ed,
-                                                entity=entity, placement=place)
-            data = self.request(url, resp_key=jsondata, params=params)
-            self.dates = self.get_dates(date)
-            id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
-            id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
-            for col in mobile_conversions + web_conversions:
-                if col in id_df.columns:
-                    col_df = id_df[col].apply(pd.Series)
-                    col_df.columns = ['{} - {}'.format(col, col_1)
-                                      for col_1 in col_df.columns]
-                    id_df = pd.concat([id_df, col_df], axis=1)
-            df = df.append(id_df, sort=True)
+            if async_request:
+                self.make_request_for_date_asynchronous(
+                    ids, fields, sd, ed, date, place, entity)
+            else:
+                df = self.get_df_for_date_synchronous(
+                    ids, fields, sd, ed, date, place, entity, df)
         return df
+
+    def check_all_ids(self):
+        job_ids = [x.data['data']['id'] for x in self.async_requests]
+        url, params = self.create_stats_url(async_request=True)
+        params['count'] = 1000
+        for job_id in job_ids:
+            params['job_ids'] = '{}'.format(job_id)
+            data = self.request(url=url, params=params, method='GET')
+            for d in data['data']:
+                if d['status'] == 'SUCCESS':
+                    url = d['url']
+                    r = requests.get(url)
+                    zip_obj = gzip.GzipFile(
+                        fileobj=io.BytesIO(r.content), mode='rb')
+                    response_data = json.loads(zip_obj.read())
+
 
     @staticmethod
     def get_date_info(sd, ed):
@@ -476,3 +534,15 @@ class TwApi(object):
     def rename_cols(self):
         self.df = self.df.rename(columns=colnamedic)
         return self.df
+
+
+class TwitterAsyncRequests(object):
+    def __init__(self, ids, fields, sd, ed, date, place, entity, data=None):
+        self.ids = ids
+        self.fields = fields
+        self.sd = sd
+        self.ed = ed
+        self.date = date
+        self.place = place
+        self.entity = entity
+        self.data = data
