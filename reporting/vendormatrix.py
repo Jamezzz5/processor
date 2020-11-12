@@ -358,8 +358,9 @@ class ImportConfig(object):
         file_name = os.path.join(self.file_path, file_name)
         if not os.path.exists(file_name):
             if self.base_path:
-                file_name = os.path.join(
-                    self.base_path, 'processor', 'config', file_name)
+                file_name = os.path.join(self.base_path, 'processor', file_name)
+                if not os.path.exists(file_name):
+                    return None
             else:
                 return None
         with open(file_name, 'r') as f:
