@@ -281,10 +281,11 @@ class ImportConfig(object):
     file_name = 'import_config.csv'
     file_path = utl.config_path
 
-    def __init__(self, matrix=None, default_param_ic=None):
+    def __init__(self, matrix=None, default_param_ic=None, base_path=None):
         self.matrix = None
         self.df = None
         self.matrix_df = None
+        self.base_path = base_path
         self.default_param_ic = default_param_ic
         if matrix:
             self.import_vm()
@@ -356,7 +357,11 @@ class ImportConfig(object):
     def load_file(self, file_name, file_library):
         file_name = os.path.join(self.file_path, file_name)
         if not os.path.exists(file_name):
-            return None
+            if self.base_path:
+                file_name = os.path.join(
+                    self.base_path, 'processor', 'config', file_name)
+            else:
+                return None
         with open(file_name, 'r') as f:
             config_file = file_library.load(f)
         return config_file
