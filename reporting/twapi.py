@@ -165,7 +165,7 @@ class TwApi(object):
             time.sleep(300)
             data = self.request(url, resp_key, params)
         if resp_key and resp_key not in data:
-            logging.warning('{} not in data, retrying. '
+            logging.warning('{} not in response, retrying. '
                             ' {}'.format(resp_key, data))
             time.sleep(60)
             data = self.request(url, resp_key, params)
@@ -304,7 +304,7 @@ class TwApi(object):
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
         if async_request:
-            self.check_all_ids()
+            self.get_df_for_all_async_requests()
         if not self.df.empty:
             self.df = self.add_parents(self.df)
             self.df = self.rename_cols()
@@ -352,6 +352,10 @@ class TwApi(object):
         url, params = self.create_stats_url(fields, ids, sd, ed,
                                             entity=entity, placement=place)
         data = self.request(url, resp_key=jsondata, params=params)
+        df = self.convert_response_to_df(data=data, date=date, df=df)
+        return df
+
+    def convert_response_to_df(self, data, date, df):
         self.dates = self.get_dates(date)
         id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
         id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
@@ -388,21 +392,37 @@ class TwApi(object):
                     ids, fields, sd, ed, date, place, entity, df)
         return df
 
-    def check_all_ids(self):
-        job_ids = [x.data['data']['id'] for x in self.async_requests]
+    def get_df_for_all_async_requests(self):
+        async_requests = [x for x in self.async_requests if not x.completed]
+        if async_requests:
+            df = self.check_all_ids(df=self.df, async_requests=async_requests)
+            df = self.clean_df(df)
+            self.df = self.df.append(df, sort=True).reset_index(drop=True)
+            self.get_df_for_all_async_requests()
+        else:
+            return True
+
+    def check_all_ids(self, df=pd.DataFrame(), async_requests=None):
         url, params = self.create_stats_url(async_request=True)
         params['count'] = 1000
-        for job_id in job_ids:
+        for idx, async_request in enumerate(async_requests):
+            job_id = async_request.data['data']['id']
+            logging.info('Checking job {} of {} remaining id: {}'.format(
+                idx + 1, len(async_requests), job_id))
             params['job_ids'] = '{}'.format(job_id)
             data = self.request(url=url, params=params, method='GET')
             for d in data['data']:
                 if d['status'] == 'SUCCESS':
-                    url = d['url']
-                    r = requests.get(url)
+                    logging.info('Job {} completed adding to df'.format(job_id))
+                    data_dl_url = d['url']
+                    r = requests.get(data_dl_url)
                     zip_obj = gzip.GzipFile(
                         fileobj=io.BytesIO(r.content), mode='rb')
                     response_data = json.loads(zip_obj.read())
-
+                    df = self.convert_response_to_df(
+                        data=response_data, date=async_request.date, df=df)
+                    async_request.completed = True
+        return df
 
     @staticmethod
     def get_date_info(sd, ed):
@@ -546,3 +566,4 @@ class TwitterAsyncRequests(object):
         self.place = place
         self.entity = entity
         self.data = data
+        self.completed = False
