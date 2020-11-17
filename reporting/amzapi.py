@@ -253,10 +253,14 @@ class AmzApi(object):
             report_id_dict['complete'] = True
             self.report_ids.append(report_id_dict)
         else:
-            logging.info('Report unavailable - waiting 30s.  \n'
-                         'Current status: {}\n Current Status Details: {}'
-                         ''.format(r.json()['status'],
-                                   r.json()['statusDetails']))
+            if 'status' in r.json():
+                logging.info('Report unavailable - waiting 30s.  \n'
+                             'Current status: {}\n Current Status Details: {}'
+                             ''.format(r.json()['status'],
+                                       r.json()['statusDetails']))
+            else:
+                logging.info('Report unavailable - waiting 30s.  \n'
+                             'Current error: {}'.format(r.json()))
             time.sleep(30)
 
     def make_request(self, url, method, body=None, params=None, headers=None,
