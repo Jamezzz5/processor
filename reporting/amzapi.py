@@ -5,6 +5,7 @@ import json
 import time
 import logging
 import requests
+import oauthlib
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -88,13 +89,23 @@ class AmzApi(object):
                 token = self.refresh_client_token(extra, attempt)
         return token
 
-    def get_client(self):
+    def get_client(self, errors=0):
         token = {'access_token': self.access_token,
                  'refresh_token': self.refresh_token}
         extra = {'client_id': self.client_id,
                  'client_secret': self.client_secret}
         self.client = OAuth2Session(self.client_id, token=token)
-        token = self.refresh_client_token(extra)
+        try:
+            token = self.refresh_client_token(extra)
+        except oauthlib.oauth2.rfc6749.errors.CustomOAuth2Error as e:
+            logging.warning('Could not get token attempting again. '
+                            'Oauth error as follows {}'.format(e))
+            time.sleep(30)
+            errors += 1
+            if errors > 10:
+                logging.warning('Could not get token exiting.')
+                sys.exit(0)
+            self.get_client(errors=errors + 1)
         self.client = OAuth2Session(self.client_id, token=token)
 
     def set_headers(self):
@@ -226,7 +237,7 @@ class AmzApi(object):
         report_id = report_id_dict['report_id']
         url = self.create_url(report_id=report_id)
         r = self.make_request(url, method='GET', headers=self.headers)
-        if 'SUCCESS' in r.json()['status']:
+        if 'status' in r.json() and 'SUCCESS' in r.json()['status']:
             logging.info('Report available - downloading.')
             url += '/download'
             r = self.make_request(url, method='GET', headers=self.headers,
