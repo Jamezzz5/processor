@@ -297,7 +297,7 @@ class TwApi(object):
                 params['timeline_type'] = 'ALL'
         return url, params
 
-    def get_data(self, sd=None, ed=None, fields=None, async_request=False):
+    def get_data(self, sd=None, ed=None, fields=None, async_request=True):
         self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
@@ -395,34 +395,46 @@ class TwApi(object):
     def get_df_for_all_async_requests(self):
         async_requests = [x for x in self.async_requests if not x.completed]
         if async_requests:
-            df = self.check_all_ids(df=self.df, async_requests=async_requests)
-            df = self.clean_df(df)
-            self.df = self.df.append(df, sort=True).reset_index(drop=True)
+            logging.info('{} jobs have not yet been completed.'.format(
+                len(async_requests)))
+            async_requests = async_requests.copy()
+            self.df = self.check_all_async_request_ids(
+                async_requests=async_requests)
             self.get_df_for_all_async_requests()
         else:
+            logging.info('All jobs completed returning df.')
             return True
 
-    def check_all_ids(self, df=pd.DataFrame(), async_requests=None):
+    def check_all_async_request_ids(self, async_requests=None):
         url, params = self.create_stats_url(async_request=True)
         params['count'] = 1000
+        async_requests = [async_requests[x:x + 200]
+                          for x in range(0, len(async_requests), 200)]
         for idx, async_request in enumerate(async_requests):
-            job_id = async_request.data['data']['id']
-            logging.info('Checking job {} of {} remaining id: {}'.format(
-                idx + 1, len(async_requests), job_id))
-            params['job_ids'] = '{}'.format(job_id)
+            job_id = [x.data['data']['id'] for x in async_request]
+            logging.info('Checking job batch {} of {}'.format(
+                idx + 1, len(async_requests)))
+            params['job_ids'] = ','.join('{}'.format(x) for x in job_id)
             data = self.request(url=url, params=params, method='GET')
             for d in data['data']:
                 if d['status'] == 'SUCCESS':
-                    logging.info('Job {} completed adding to df'.format(job_id))
+                    df = pd.DataFrame()
+                    cur_job = [x for x in self.async_requests
+                               if x.data['data']['id'] == d['id']][0]
+                    logging.debug('Job {} completed adding to df'
+                                  ''.format(d['id']))
                     data_dl_url = d['url']
                     r = requests.get(data_dl_url)
                     zip_obj = gzip.GzipFile(
                         fileobj=io.BytesIO(r.content), mode='rb')
                     response_data = json.loads(zip_obj.read())
                     df = self.convert_response_to_df(
-                        data=response_data, date=async_request.date, df=df)
-                    async_request.completed = True
-        return df
+                        data=response_data, date=cur_job.date, df=df)
+                    df = self.clean_df(df)
+                    self.df = self.df.append(df, sort=True).reset_index(
+                        drop=True)
+                    cur_job.completed = True
+        return self.df
 
     @staticmethod
     def get_date_info(sd, ed):
