@@ -11,6 +11,7 @@ BM_CPV = 'CPV'
 BM_CPCV = 'CPCV'
 BM_CPLP = 'CPLP'
 BM_CPLP2 = 'CPLP2'
+BM_CPLP3 = 'CPLP3'
 BM_CPVM = 'CPVM'
 BM_AV = 'AV'
 BM_FLAT = 'FLAT'
@@ -28,7 +29,8 @@ BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
 BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPCV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
               BM_FLATIMP, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4,
-              BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU, BM_CPE, BM_CPLP2]
+              BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU, BM_CPE, BM_CPLP2,
+              BM_CPLP3]
 
 AGENCY_FEES = 'Agency Fees'
 AGENCY_THRESH = 'Agency Fee Threshold'
@@ -122,6 +124,13 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
             return df[dctc.BR] * df[vmc.conv1]
         elif df[dctc.PD2] > df[vmc.date] >= df[dctc.PD]:
             return df[dctc.BR2] * df[vmc.conv1]
+    elif df[bm_col] == BM_CPLP3:
+        if df[vmc.date] >= df[dctc.PD2]:
+            return df[dctc.BR3] * df[vmc.landingpage]
+        elif df[vmc.date] < df[dctc.PD]:
+            return df[dctc.BR] * df[vmc.landingpage]
+        elif df[dctc.PD2] > df[vmc.date] >= df[dctc.PD]:
+            return df[dctc.BR2] * df[vmc.landingpage]
     elif df[bm_col] == BM_CPA4:
         if df[vmc.date] >= df[dctc.PD3]:
             return df[dctc.BR4] * df[vmc.conv1]
