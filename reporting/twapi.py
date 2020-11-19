@@ -377,8 +377,12 @@ class TwApi(object):
             async_request=True)
         data = self.request(
             url, resp_key=jsondata, params=params, method='POST')
-        twitter_request.data = data
-        self.async_requests.append(twitter_request)
+        if ('data' in data and isinstance(data['data'], dict)
+                and 'id' in data['data']):
+            twitter_request.data = data
+            self.async_requests.append(twitter_request)
+        else:
+            logging.warning('Response was incorrect: {}'.format(data))
 
     def get_df_for_date(self, ids_lists, fields, sd, ed, date, place,
                         entity='PROMOTED_TWEET', async_request=False):
@@ -418,23 +422,28 @@ class TwApi(object):
             data = self.request(url=url, params=params, method='GET')
             for d in data['data']:
                 if d['status'] == 'SUCCESS':
-                    df = pd.DataFrame()
-                    cur_job = [x for x in self.async_requests
-                               if x.data['data']['id'] == d['id']][0]
-                    logging.debug('Job {} completed adding to df'
-                                  ''.format(d['id']))
-                    data_dl_url = d['url']
-                    r = requests.get(data_dl_url)
-                    zip_obj = gzip.GzipFile(
-                        fileobj=io.BytesIO(r.content), mode='rb')
-                    response_data = json.loads(zip_obj.read())
-                    df = self.convert_response_to_df(
-                        data=response_data, date=cur_job.date, df=df)
-                    df = self.clean_df(df)
-                    self.df = self.df.append(df, sort=True).reset_index(
-                        drop=True)
-                    cur_job.completed = True
+                    self.get_df_from_completed_job(d)
         return self.df
+
+    def get_df_from_completed_job(self, d):
+        df = pd.DataFrame()
+        cur_job = [x for x in self.async_requests
+                   if x.data['data']['id'] == d['id']][0]
+        logging.debug('Job {} completed adding to df'.format(d['id']))
+        data_dl_url = d['url']
+        try:
+            r = requests.get(data_dl_url)
+        except requests.exceptions.SSLError as e:
+            logging.warning('SSL error with job: {} Retrying.'
+                            'Error: {}'.format(d['id'], e))
+            return None
+        zip_obj = gzip.GzipFile(fileobj=io.BytesIO(r.content), mode='rb')
+        response_data = json.loads(zip_obj.read())
+        df = self.convert_response_to_df(
+            data=response_data, date=cur_job.date, df=df)
+        df = self.clean_df(df)
+        self.df = self.df.append(df, sort=True).reset_index(drop=True)
+        cur_job.completed = True
 
     @staticmethod
     def get_date_info(sd, ed):
