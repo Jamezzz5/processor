@@ -1,4 +1,5 @@
 import os
+import ast
 import sys
 import yaml
 import time
@@ -25,7 +26,8 @@ date_params = ['Date']
 camp_params = ['AccountDescriptiveName', 'CampaignName']
 ag_params = ['AdGroupName']
 ad_params = ['ImageCreativeName', 'Headline', 'HeadlinePart1', 'DisplayUrl',
-             'HeadlinePart2', 'Description', 'Description1', 'Description2']
+             'HeadlinePart2', 'Description', 'Description1', 'Description2',
+             'ResponsiveSearchAdDescriptions', 'ResponsiveSearchAdHeadlines']
 no_date_params = camp_params + ag_params + ad_params
 def_params = date_params + no_date_params
 
@@ -174,6 +176,10 @@ class AwApi(object):
             self.df['Cost'] /= 1000000
         if 'Views' in self.df.columns:
             self.df = self.video_calc(self.df)
+        for col in ['Responsive Search Ad descriptions',
+                    'Responsive Search Ad headlines']:
+            if col in self.df.columns:
+                self.df = self.convert_search_ad_descriptions(col, self.df)
         return self.df
 
     def download_report(self, report_downloader, report):
@@ -196,3 +202,21 @@ class AwApi(object):
             time.sleep(30)
             report_downloader = self.get_downloader()
         return report_downloader
+
+    def convert_search_ad_descriptions(self, col, df):
+        df[col] = df[col].apply(lambda x: self.convert_dictionary(x))
+        ndf = df[col].apply(pd.Series).fillna(0)
+        for new_col in ndf.columns:
+            tdf = ndf[new_col].apply(pd.Series)
+            tdf.columns = ['{}-{}'.format(x, tdf['pinnedField'][0])
+                           for x in tdf.columns]
+            df = pd.concat([df, tdf], axis=1)
+        df = df.drop(col, axis=1)
+        return df
+
+    @staticmethod
+    def convert_dictionary(x):
+        if str(x) == str('nan'):
+            return 0
+        x = str(x).strip('[]')
+        return ast.literal_eval(x)
