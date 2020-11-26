@@ -178,7 +178,8 @@ class AwApi(object):
             self.df = self.video_calc(self.df)
         for col in ['Responsive Search Ad descriptions',
                     'Responsive Search Ad headlines']:
-            if col in self.df.columns:
+            if (col in self.df.columns and len(self.df[col]) > 0 and
+                    self.df[col][0] != ' --'):
                 self.df = self.convert_search_ad_descriptions(col, self.df)
         return self.df
 
