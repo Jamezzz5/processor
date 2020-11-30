@@ -205,12 +205,18 @@ class AwApi(object):
         return report_downloader
 
     def convert_search_ad_descriptions(self, col, df):
+        df[col] = df[col].replace(' --', '[{}]')
         df[col] = df[col].apply(lambda x: self.convert_dictionary(x))
         ndf = df[col].apply(pd.Series).fillna(0)
-        for new_col in ndf.columns:
+        for idx, new_col in enumerate(ndf.columns):
             tdf = ndf[new_col].apply(pd.Series)
-            tdf.columns = ['{}-{}'.format(x, tdf['pinnedField'][0])
-                           for x in tdf.columns]
+            tdf = tdf.fillna(0)
+            if 'pinnedField' in tdf.columns:
+                tdf.columns = ['{}-{}'.format(x, tdf['pinnedField'][0])
+                               for x in tdf.columns]
+            else:
+                tdf.columns = ['{}-{}'.format(x, idx)
+                               for x in tdf.columns]
             df = pd.concat([df, tdf], axis=1)
         df = df.drop(col, axis=1)
         return df
