@@ -16,8 +16,8 @@ stats_version = '2.0.0'
 def_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad',
               'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
 def_fields = ['clicks', 'converted_users', 'conversion_rate', 'launches',
-              'launches_per_user', 'average_user_retention']
-nested_cols = []
+              'launches_per_user', 'average_user_retention', 'impressions']
+nested_cols = ['goals']
 def_fields.extend(nested_cols)
 
 
@@ -110,7 +110,7 @@ class RsApi(object):
 
     def filter_df_on_campaign(self):
         logging.info('Filtering dataframe on {}'.format(self.campaign_filter))
-        self.df = self.df[self.df['campaign_name'].fillna('0').str.contains(
+        self.df = self.df[self.df['campaign'].fillna('0').str.contains(
             self.campaign_filter)].reset_index(drop=True)
 
     def get_raw_data(self, sd, ed):
@@ -135,7 +135,9 @@ class RsApi(object):
             n_df = self.flatten_nested_cols(df, col)
             for n_col in n_df.columns:
                 n2_df = self.flatten_nested_cols(n_df, n_col)
-                df = df.join(n2_df)
+                for n2_col in n2_df.columns:
+                    n3_df = self.flatten_nested_cols(n2_df, n2_col)
+                    df = df.join(n3_df)
         df = df.drop(nested_cols, axis=1)
         return df
 
