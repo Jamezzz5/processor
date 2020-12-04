@@ -179,6 +179,10 @@ class DvApi(object):
         cal_date_xpath = '//*[@id="mat-datepicker-0"]/div[1]/div/button[1]'
         for x in range(12):
             cur_month = self.browser.find_element_by_xpath(cal_date_xpath).text
+            cur_month_dt = dt.datetime.strptime(cur_month, '%b %Y')
+            if (cur_month_dt.month < desired_date.month and
+                    cur_month_dt.year == desired_date.year):
+                month_xpath = '//*[@id="mat-datepicker-0"]/div[1]/div/button[3]'
             if cur_month != desired_date.strftime('%b %Y').upper():
                 self.click_on_xpath(month_xpath)
             else:
