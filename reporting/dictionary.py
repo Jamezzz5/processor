@@ -421,12 +421,12 @@ class DictTranslationConfig(object):
             if col2 not in data_dict.columns:
                 continue
             if fnc_type == 'Select':
-                data_dict.loc[(data_dict[col2] == col2_q) &
+                data_dict.loc[(data_dict[col2].astype('U') == col2_q) &
                               (data_dict[col] == val), col] = nval
             if fnc_type == 'Set':
-                data_dict.loc[data_dict[col2] == col2_q, col] = nval
+                data_dict.loc[data_dict[col2].astype('U') == col2_q, col] = nval
             if fnc_type == 'Append':
-                mask = ((data_dict[col2] == col2_q) &
+                mask = ((data_dict[col2].astype('U') == col2_q) &
                         (data_dict[col].str[-len(nval):] != nval))
                 data_dict.loc[mask, col] = (data_dict.loc[mask, col] + nval)
         return data_dict
