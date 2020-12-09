@@ -12,3 +12,4 @@ requests_oauthlib==1.0.0
 pytz==2020.1
 selenium==3.12.0
 seaborn==0.10.0
+boto3==1.9.184

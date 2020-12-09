@@ -1,7 +1,9 @@
 import sys
 import json
+import io
 import logging
 import boto
+import boto3
 import gzip
 from io import BytesIO, StringIO
 import pandas as pd
@@ -27,7 +29,7 @@ class S3(object):
         self.df = pd.DataFrame()
 
     def input_config(self, config):
-        logging.info('Loading S3 config file: ' + str(config))
+        logging.info('Loading S3 config file: {}'.format(config))
         self.config_file = config_path + config
         self.load_config()
         self.check_config()
@@ -37,7 +39,7 @@ class S3(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.config_file + ' not found.  Aborting.')
+            logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
         self.bucket = self.config['bucket']
         self.prefix = self.config['prefix']
@@ -49,7 +51,7 @@ class S3(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in S3 config file.  Aborting.')
+                logging.warning('{} not in config file. Aborting.'.format(item))
                 sys.exit(0)
 
     @staticmethod
@@ -90,3 +92,16 @@ class S3(object):
                 tdf = self.get_file_as_df(key)
                 self.df = self.df.append(tdf)
         return self.df
+
+    def s3_write_file(self, df, file_name='raw_data'):
+        csv_file = '{}{}'.format(file_name, '.csv')
+        zip_file = '{}{}'.format(file_name, '.gzip')
+        client = boto3.client(service_name='s3',
+                              use_ssl=True,
+                              aws_access_key_id=self.access_key,
+                              aws_secret_access_key=self.access_secret)
+        buffer = io.BytesIO()
+        with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
+            f.write(df.to_csv().encode())
+        buffer.seek(0)
+        client.upload_fileobj(buffer, self.bucket, zip_file)

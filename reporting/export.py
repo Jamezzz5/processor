@@ -12,6 +12,7 @@ import sqlalchemy as sqa
 import reporting.ftp as ftp
 import reporting.utils as utl
 import reporting.models as mdl
+import reporting.awss3 as awss3
 import reporting.expcolumns as exc
 
 log = logging.getLogger()
@@ -43,6 +44,9 @@ class ExportHandler(object):
         elif (self.config[exc.export_type][exp_key] == 'FTP' and
               (self.args == 'ftp' or self.args == 'all')):
             self.export_ftp(exp_key)
+        elif (self.config[exc.export_type][exp_key] == 'S3' and
+              (self.args == 's3' or self.args == 'all')):
+            self.export_s3(exp_key)
 
     def export_db(self, exp_key):
         dbu = DBUpload()
@@ -58,6 +62,14 @@ class ExportHandler(object):
         ftp_class.input_config(self.config[exc.config_file][exp_key])
         ftp_class.ftp_write_file(dft_class.df,
                                  self.config[exc.output_file][exp_key])
+
+    def export_s3(self, exp_key):
+        s3_class = awss3.S3()
+        dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
+                                  self.config[exc.output_file][exp_key])
+        s3_class.input_config(self.config[exc.config_file][exp_key])
+        s3_class.s3_write_file(dft_class.df,
+                               self.config[exc.output_file][exp_key])
 
 
 class DBUpload(object):
