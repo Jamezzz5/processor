@@ -93,15 +93,24 @@ class S3(object):
                 self.df = self.df.append(tdf)
         return self.df
 
-    def s3_write_file(self, df, file_name='raw_data'):
-        csv_file = '{}{}'.format(file_name, '.csv')
-        zip_file = '{}{}'.format(file_name, '.gzip')
+    def get_client(self):
         client = boto3.client(service_name='s3',
                               use_ssl=True,
                               aws_access_key_id=self.access_key,
                               aws_secret_access_key=self.access_secret)
+        return client
+
+    def s3_write_file(self, df, file_name='raw'):
+        csv_file = '{}{}'.format(file_name, '.csv')
+        zip_file = '{}{}'.format(file_name, '.gzip')
+        today_str = dt.datetime.strftime(dt.datetime.today(), '%Y%m%d')
+        today_folder_name = '{}/{}/'.format(self.prefix, today_str)
+        product_name = '{}_{}'.format(df['uploadid'].unique()[0],
+                                      '_'.join(df['productname'].unique()))
+        zip_file = '{}{}/{}'.format(today_folder_name, product_name, zip_file)
+        client = self.get_client()
         buffer = io.BytesIO()
         with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
             f.write(df.to_csv().encode())
         buffer.seek(0)
-        client.upload_fileobj(buffer, self.bucket, zip_file)
+        client.upload_fileobj(Fileobj=buffer, Bucket=self.bucket, Key=zip_file)

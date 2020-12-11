@@ -65,11 +65,11 @@ class ExportHandler(object):
 
     def export_s3(self, exp_key):
         s3_class = awss3.S3()
+        db = DB(config='dbconfig.json')
         dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
-                                  self.config[exc.output_file][exp_key])
+                                  self.config[exc.output_file][exp_key], db)
         s3_class.input_config(self.config[exc.config_file][exp_key])
-        s3_class.s3_write_file(dft_class.df,
-                               self.config[exc.output_file][exp_key])
+        s3_class.s3_write_file(dft_class.df)
 
 
 class DBUpload(object):
