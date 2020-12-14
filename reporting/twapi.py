@@ -404,6 +404,7 @@ class TwApi(object):
             async_requests = async_requests.copy()
             self.df = self.check_all_async_request_ids(
                 async_requests=async_requests)
+            time.sleep(30)
             self.get_df_for_all_async_requests()
         else:
             logging.info('All jobs completed returning df.')
