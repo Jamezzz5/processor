@@ -223,7 +223,7 @@ class RedApi(object):
 
     def set_metrics(self, base_xpath):
         logging.info('Setting metrics.')
-        metric_button_xpath = 'div[1]/div[1]/div/div[2]/div/button'
+        metric_button_xpath = 'div[1]/div[1]/div/div[2]/button/div'
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
