@@ -30,6 +30,8 @@ class Analyze(object):
     lw_topline_col = 'last_week_topline_metrics'
     tw_topline_col = 'two_week_topline_merics'
     kpi_col = 'kpi_col'
+    raw_columns = 'raw_file_columns'
+    vk_metrics = 'vendor_key_metrics'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -467,6 +469,52 @@ class Analyze(object):
                                       param=val[0])
         return df, tdf, twdf
 
+    def get_column_names_from_raw_files(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            file_name = source.p[vmc.filename]
+            first_row = source.p[vmc.firstrow]
+            missing_cols = []
+            if os.path.exists(file_name):
+                tdf = pd.read_csv(file_name, nrows=first_row + 5)
+                tdf = utl.first_last_adj(tdf, first_row, 0)
+                cols = list(tdf.columns)
+                active_metrics = source.get_active_metrics()
+                for k, v in active_metrics.items():
+                    for c in v:
+                        if c not in cols:
+                            missing_cols.append({k: c})
+            else:
+                cols = []
+            data_dict = {vmc.vendorkey: [source.key], self.raw_columns: [cols],
+                         'missing': [missing_cols]}
+            df = df.append(pd.DataFrame(data_dict),
+                           ignore_index=True, sort=False)
+        update_msg = 'Columns and missing columns by key as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.raw_columns,
+                                  message=update_msg, data=df.to_dict())
+
+    def get_metrics_by_vendor_key(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = self.df.copy()
+        metrics = []
+        for source in data_sources:
+            metrics.extend(source.get_active_metrics())
+        metrics = list(set(metrics))
+        metrics = [x for x in metrics if x in df.columns]
+        agg_map = {x: [np.min, np.max] if (x == vmc.date) else np.sum
+                   for x in metrics}
+        df = df.groupby([vmc.vendorkey]).agg(agg_map)
+        df.columns = [' - '.join(col).strip() for col in df.columns]
+        df.columns = [x[:-6] if x[-6:] == ' - sum' else x for x in df.columns]
+        df = df.reset_index()
+        update_msg = 'Metrics by vendor key are as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.vk_metrics,
+                                  message=update_msg, data=df.to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -499,6 +547,8 @@ class Analyze(object):
         self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
+        self.get_column_names_from_raw_files()
+        self.get_metrics_by_vendor_key()
         self.write_analysis_dict()
 
 
