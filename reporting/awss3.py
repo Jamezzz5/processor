@@ -113,4 +113,5 @@ class S3(object):
         with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
             f.write(df.to_csv().encode())
         buffer.seek(0)
-        client.upload_fileobj(Fileobj=buffer, Bucket=self.bucket, Key=zip_file)
+        client.upload_fileobj(Fileobj=buffer, Bucket=self.bucket, Key=zip_file,
+                              ExtraArgs={'ACL': 'bucket-owner-full-control'})
