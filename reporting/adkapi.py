@@ -72,7 +72,7 @@ class AdkApi(object):
         self.headers['authorization'] = 'Bearer {}'.format(access_token)
 
     def make_request(self, url, method, headers=None, json_body=None, data=None,
-                     params=None, attempt=1):
+                     params=None, attempt=1, json_response=False):
         if not json_body:
             json_body = {}
         if not headers:
@@ -91,13 +91,27 @@ class AdkApi(object):
         except requests.exceptions.ConnectionError as e:
             attempt += 1
             if attempt > 100:
-                logging.warning('Could not connection with error: {}'.format(e))
+                logging.warning('Could not connect with error: {}'.format(e))
                 r = None
             else:
                 logging.warning('Connection error, pausing for 60s '
                                 'and retrying: {}'.format(e))
                 time.sleep(60)
-                r = self.make_request(url, method, headers, json_body, attempt)
+                r = self.make_request(url, method, headers, json_body, attempt,
+                                      json_response)
+        if json_response:
+            try:
+                r.json()
+            except:
+                attempt += 1
+                if attempt > 100:
+                    logging.warning(
+                        'Could not connect with error: {}'.format(e))
+                    r = None
+                else:
+                    logging.warning('No json in response retrying: {}')
+                    r = self.make_request(url, method, headers, json_body,
+                                          attempt, json_response)
         return r
 
     @staticmethod
@@ -154,7 +168,7 @@ class AdkApi(object):
         url = self.base_url + '/report/company/creative/daily/client'
         params = {'campaign_ids': cids, 'start_date': sd, 'end_date': ed}
         r = self.make_request(url, method='GET', headers=self.headers,
-                              params=params)
+                              params=params, json_response=True)
         df = pd.DataFrame(r.json()['data'])
         logging.info('Data retrieved.')
         return df
