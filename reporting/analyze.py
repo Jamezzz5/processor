@@ -477,7 +477,7 @@ class Analyze(object):
             first_row = source.p[vmc.firstrow]
             missing_cols = []
             if os.path.exists(file_name):
-                tdf = pd.read_csv(file_name, nrows=first_row + 5)
+                tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
                 tdf = utl.first_last_adj(tdf, first_row, 0)
                 cols = list(tdf.columns)
                 active_metrics = source.get_active_metrics()

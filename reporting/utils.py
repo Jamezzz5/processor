@@ -30,7 +30,7 @@ def dir_check(directory):
 
 
 def import_read_csv(filename, path=None, file_check=True, error_bad=True,
-                    empty_df=False):
+                    empty_df=False, nrows=None):
     if path:
         filename = os.path.join(path, filename)
     if file_check:
@@ -40,13 +40,15 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
     try:
         df = pd.read_csv(filename, parse_dates=True, encoding='utf-8',
                          keep_default_na=False, na_values=na_values,
-                         error_bad_lines=error_bad)
+                         error_bad_lines=error_bad, nrows=nrows)
     except pd.io.common.CParserError:
         df = pd.read_csv(filename, parse_dates=True, sep=None, engine='python',
-                         keep_default_na=False, na_values=na_values)
+                         keep_default_na=False, na_values=na_values,
+                         nrows=nrows)
     except UnicodeDecodeError:
         df = pd.read_csv(filename, parse_dates=True, encoding='iso-8859-1',
-                         keep_default_na=False, na_values=na_values)
+                         keep_default_na=False, na_values=na_values,
+                         nrows=nrows)
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         if empty_df:
