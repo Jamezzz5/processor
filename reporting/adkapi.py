@@ -97,8 +97,8 @@ class AdkApi(object):
                 logging.warning('Connection error, pausing for 60s '
                                 'and retrying: {}'.format(e))
                 time.sleep(60)
-                r = self.make_request(url, method, headers, json_body, attempt,
-                                      json_response)
+                r = self.make_request(url, method, headers, json_body, data,
+                                      params, attempt, json_response)
         if json_response:
             try:
                 r.json()
@@ -110,8 +110,8 @@ class AdkApi(object):
                     r = None
                 else:
                     logging.warning('No json in response retrying: {}')
-                    r = self.make_request(url, method, headers, json_body,
-                                          attempt, json_response)
+                    r = self.make_request(url, method, headers, json_body, data,
+                                          params, attempt, json_response)
         return r
 
     @staticmethod
