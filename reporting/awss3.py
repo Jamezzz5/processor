@@ -104,8 +104,9 @@ class S3(object):
     def s3_write_file(self, df, file_name='raw'):
         csv_file = '{}{}'.format(file_name, '.csv')
         zip_file = '{}{}'.format(file_name, '.gzip')
-        today_str = dt.datetime.strftime(dt.datetime.today(), '%Y%m%d')
-        today_folder_name = '{}/{}/'.format(self.prefix, today_str)
+        today_yr = dt.datetime.strftime(dt.datetime.today(), '%Y')
+        today_str = dt.datetime.strftime(dt.datetime.today(), '%m%d')
+        today_folder_name = '{}/{}/{}/'.format(self.prefix, today_yr, today_str)
         product_name = '{}_{}'.format(df['uploadid'].unique()[0],
                                       '_'.join(df['productname'].unique()))
         product_name = re.sub(r'\W+', '', product_name)
@@ -117,3 +118,4 @@ class S3(object):
         buffer.seek(0)
         client.upload_fileobj(Fileobj=buffer, Bucket=self.bucket, Key=zip_file,
                               ExtraArgs={'ACL': 'bucket-owner-full-control'})
+        logging.info('File was successfully uploaded as: {}'.format(zip_file))
