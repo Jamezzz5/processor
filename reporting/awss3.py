@@ -108,7 +108,7 @@ class S3(object):
         today_folder_name = '{}/{}/'.format(self.prefix, today_str)
         product_name = '{}_{}'.format(df['uploadid'].unique()[0],
                                       '_'.join(df['productname'].unique()))
-        product_name = re.sub(r'[\W_]+', '', product_name)
+        product_name = re.sub(r'\W+', '', product_name)
         zip_file = '{}{}/{}'.format(today_folder_name, product_name, zip_file)
         client = self.get_client()
         buffer = io.BytesIO()
