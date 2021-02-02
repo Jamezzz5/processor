@@ -72,7 +72,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -217,7 +217,8 @@ class RedApi(object):
             self.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
-        for metric in ['Ad Group Metrics', 'Conversion', 'Video']:
+        for metric in ['Conversion', 'Video', 'App Install Conversions',
+                       'Settings']:
             metric_xpath = '//label[text()="{}"]'.format(metric)
             self.click_on_xpath(metric_xpath, sleep=1)
 
