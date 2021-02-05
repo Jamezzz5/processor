@@ -101,16 +101,25 @@ class S3(object):
                               aws_secret_access_key=self.access_secret)
         return client
 
-    def s3_write_file(self, df, file_name='raw'):
+    def s3_write_file(self, df, file_name='raw', default_format=True):
         csv_file = '{}{}'.format(file_name, '.csv')
-        zip_file = '{}{}'.format(file_name, '.gzip')
+        if default_format:
+            gzip_extension = '.gzip'
+        else:
+            gzip_extension = '.gz'
+        zip_file = '{}{}'.format(file_name, gzip_extension)
         today_yr = dt.datetime.strftime(dt.datetime.today(), '%Y')
         today_str = dt.datetime.strftime(dt.datetime.today(), '%m%d')
         today_folder_name = '{}/{}/{}/'.format(self.prefix, today_yr, today_str)
         product_name = '{}_{}'.format(df['uploadid'].unique()[0],
                                       '_'.join(df['productname'].unique()))
         product_name = re.sub(r'\W+', '', product_name)
-        zip_file = '{}{}/{}'.format(today_folder_name, product_name, zip_file)
+        if default_format:
+            zip_file = '{}{}/{}'.format(
+                today_folder_name, product_name, zip_file)
+        else:
+            zip_file = '{}/{}{}'.format(
+                product_name, today_folder_name, zip_file)
         client = self.get_client()
         buffer = io.BytesIO()
         with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
