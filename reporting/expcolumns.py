@@ -4,6 +4,7 @@ output_file = 'Output_File'
 config_file = 'Config_File'
 translation_file = 'Translation_File'
 schema_file = 'Schema_File'
+default_format = 'Default_Format'
 
 table = 'Table'
 pk = 'PK'
