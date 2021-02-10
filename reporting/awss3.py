@@ -110,16 +110,16 @@ class S3(object):
         zip_file = '{}{}'.format(file_name, gzip_extension)
         today_yr = dt.datetime.strftime(dt.datetime.today(), '%Y')
         today_str = dt.datetime.strftime(dt.datetime.today(), '%m%d')
-        today_folder_name = '{}/{}/{}/'.format(self.prefix, today_yr, today_str)
+        today_folder_name = '{}/{}/'.format(today_yr, today_str)
         product_name = '{}_{}'.format(df['uploadid'].unique()[0],
                                       '_'.join(df['productname'].unique()))
         product_name = re.sub(r'\W+', '', product_name)
         if default_format:
-            zip_file = '{}{}/{}'.format(
-                today_folder_name, product_name, zip_file)
+            zip_file = '{}/{}{}/{}'.format(
+                self.prefix, today_folder_name, product_name, zip_file)
         else:
-            zip_file = '{}/{}{}'.format(
-                product_name, today_folder_name, zip_file)
+            zip_file = '{}/{}/{}{}'.format(
+                self.prefix, product_name, today_folder_name, zip_file)
         client = self.get_client()
         buffer = io.BytesIO()
         with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
