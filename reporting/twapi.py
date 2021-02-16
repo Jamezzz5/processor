@@ -93,7 +93,7 @@ class TwApi(object):
         self.promoted_account_id_dict = None
         self.tweet_dict = None
         self.async_requests = []
-        self.v = 7
+        self.v = 8
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
@@ -513,7 +513,6 @@ class TwApi(object):
         uri_dict = {}
         for uri in card_uris:
             url, params = self.create_base_url('cards')
-            url += '/all'
             params['card_uris'] = ','.join(uri)
             d = self.request(url, params=params)
             if 'data' not in d:
