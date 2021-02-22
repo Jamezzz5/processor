@@ -51,6 +51,7 @@ class VendorMatrix(object):
         self.api_tik_key = []
         self.api_amz_key = []
         self.api_cri_key = []
+        self.api_pm_key = []
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -147,6 +148,8 @@ class VendorMatrix(object):
                     self.api_amz_key.append(vk)
                 if vk_split[vk][1] == vmc.api_cri_key:
                     self.api_cri_key.append(vk)
+                if vk_split[vk][1] == vmc.api_pm_key:
+                    self.api_pm_key.append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)
