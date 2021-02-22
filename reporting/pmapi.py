@@ -4,8 +4,6 @@ import json
 import time
 import shutil
 import logging
-import operator
-import calendar
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -46,7 +44,6 @@ class PmApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-
         self.username = self.config['username']
         self.password = self.config['password']
         self.title = self.config['campaign_filter']
@@ -155,7 +152,6 @@ class PmApi(object):
                      [ed.date().__str__(), ed_path]]
         for date_info in start_end:
             self.change_dates(date_info[0], date_info[1])
-
         done_path = '//*[@id="date-filter-menu-date-picker-button"]/a/span'
         self.click_on_xpath(done_path)
 
@@ -190,7 +186,6 @@ class PmApi(object):
         time.sleep(5)
         df = utl.import_read_csv(temp_file)
         shutil.rmtree(temp_path)
-        print(type(df))
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
