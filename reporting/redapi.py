@@ -72,7 +72,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -209,7 +209,13 @@ class RedApi(object):
         cal_xpath = self.open_calendar(base_xpath)
         self.set_date(sd, cal_xpath=cal_xpath)
         self.set_date(ed, cal_xpath=cal_xpath)
-        self.click_on_xpath(cal_xpath + '[2]/td/div/div[2]/button[2]/div')
+        try:
+            self.click_on_xpath(
+                cal_xpath + '[2]/td/div/div[2]/div[2]/button[2]')
+        except ex.NoSuchElementException as e:
+            logging.warning('Could not click update trying another selector.'
+                            '  Error: {}'.format(e))
+            self.click_on_xpath(cal_xpath + '[2]/td/div/div[2]/button[2]/div')
 
     def click_individual_metrics(self):
         for metric in self.video_metrics:
