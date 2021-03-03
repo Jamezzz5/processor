@@ -513,14 +513,16 @@ class TwApi(object):
         uri_dict = {}
         for uri in card_uris:
             url, params = self.create_base_url('cards')
-            params['card_uris'] = ','.join(uri)
-            d = self.request(url, params=params)
-            if 'data' not in d:
-                logging.warning('Card not found got response: {}'.format(d))
-                uri_dict[uri] = 'No Card Name'
-            else:
-                for x in d['data']:
-                    uri_dict[x['card_uri']] = x['name']
+            urls = [url + '/all', url]
+            for u in urls:
+                params['card_uris'] = ','.join(uri)
+                d = self.request(u, params=params)
+                if 'data' not in d:
+                    logging.warning('Card not found got response: {}'.format(d))
+                    uri_dict[uri] = 'No Card Name'
+                else:
+                    for x in d['data']:
+                        uri_dict[x['card_uri']] = x['name']
         df['Card name'] = df['Card name'].map(uri_dict)
         return df
 
