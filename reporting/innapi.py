@@ -134,7 +134,13 @@ class InnApi(object):
                          ''.format(idx + 1, len(self.response_tokens)))
             df = self.check_and_get_report(resp_token)
             self.df = self.df.append(df, ignore_index=True)
+            self.df = self.filter_df_on_campaign(self.df)
         return self.df
+
+    def filter_df_on_campaign(self, df):
+        if self.campaign_filter:
+            df = df[df['Campaign Name'].str.contains(self.campaign_filter)]
+        return df
 
     def get_advertiser_id(self):
         self.set_headers()
