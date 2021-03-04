@@ -16,6 +16,7 @@ config_path = utl.config_path
 class InnApi(object):
     auth_url = 'https://papi.innovid.com/v3/authenticate'
     base_url = 'https://papi.innovid.com/v3'
+    campaignName = 'Campaign Name'
 
     def __init__(self):
         self.config = None
@@ -31,6 +32,7 @@ class InnApi(object):
         self.cid_dict = {}
         self.df = pd.DataFrame()
         self.r = None
+        self.campaign_id = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -55,6 +57,8 @@ class InnApi(object):
         self.campaign_filter = self.config['campaign_filter']
         self.config_list = [self.config, self.username, self.password,
                             self.advertiser]
+        if 'campaign_id' in self.config:
+            self.campaign_id = self.config['campaign_id']
 
     def check_config(self):
         for item in self.config_list:
@@ -135,6 +139,11 @@ class InnApi(object):
             df = self.check_and_get_report(resp_token)
             self.df = self.df.append(df, ignore_index=True)
         return self.df
+
+    def filter_df_on_campaign(self, df):
+        if self.campaign_id:
+            df = df[df[campaignName].str.contains(self.campaign_id)]
+        return df
 
     def get_advertiser_id(self):
         self.set_headers()
