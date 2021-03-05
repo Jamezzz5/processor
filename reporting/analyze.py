@@ -620,8 +620,12 @@ class ValueCalc(object):
             if item.lower() == 'impressions':
                 df[item] = df[item] / 1000
             if current_op:
-                df[col] = self.operations[current_op](df[col], df[item])
-                current_op = None
+                if col in df and item in df:
+                    df[col] = self.operations[current_op](df[col], df[item])
+                    current_op = None
+                else:
+                    logging.warning('{} missing could not calc.'.format(item))
+                    return df
             elif item in self.operations:
                 current_op = item
             else:
