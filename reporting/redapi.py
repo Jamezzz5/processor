@@ -147,7 +147,7 @@ class RedApi(object):
         logging.info('Setting breakdowns.')
         bd_xpath = '//div[text()="Break Downs"]'
         self.click_on_xpath(bd_xpath)
-        bd_date_xpath = '//a[text()="Date"]'
+        bd_date_xpath = '//button[contains(text(),"Date")]'
         self.click_on_xpath(bd_date_xpath)
 
     def get_cal_month(self, lr=1, cal_xpath=None):
