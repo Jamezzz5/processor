@@ -121,6 +121,10 @@ class Analyze(object):
     def get_rolling_mean_df(df, value_col, group_cols):
         pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
                              values=value_col, aggfunc=np.sum)
+        if len(pdf.columns) > 10000:
+            logging.warning('Maximum 10K combos for calculation, data set '
+                            'has {}'.format(len(pdf.columns)))
+            return pd.DataFrame()
         df = pdf.unstack().reset_index().rename(columns={0: value_col})
         for x in [3, 7, 30]:
             ndf = pdf.rolling(
@@ -133,6 +137,13 @@ class Analyze(object):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         average_df = self.get_rolling_mean_df(
             df=df, value_col=vmc.cost, group_cols=plan_names)
+        if average_df.empty:
+            delivery_msg = ('Average df empty, maybe too large.  '
+                            'Could not project delivery completion.')
+            logging.warning(delivery_msg)
+            self.add_to_analysis_dict(key_col=self.delivery_comp_col,
+                                      message=delivery_msg)
+            return False
         last_date = dt.datetime.strftime(
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         average_df = average_df[average_df[vmc.date] == last_date]
@@ -620,8 +631,12 @@ class ValueCalc(object):
             if item.lower() == 'impressions':
                 df[item] = df[item] / 1000
             if current_op:
-                df[col] = self.operations[current_op](df[col], df[item])
-                current_op = None
+                if col in df and item in df:
+                    df[col] = self.operations[current_op](df[col], df[item])
+                    current_op = None
+                else:
+                    logging.warning('{} missing could not calc.'.format(item))
+                    return df
             elif item in self.operations:
                 current_op = item
             else:
