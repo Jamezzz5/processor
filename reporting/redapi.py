@@ -72,7 +72,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        co.headless = False
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -183,7 +183,10 @@ class RedApi(object):
 
     def click_on_date(self, date):
         date = dt.datetime.strftime(date, '%a %b %d %Y')
-        cal_date_xpath = "//div[@aria-label='{}']".format(date)
+        if date == (dt.datetime.today() - dt.timedelta(days=1)):
+            cal_date_xpath = "//div[@class='DayPicker-Day DayPicker-Day--today']"
+        else:
+            cal_date_xpath = "//div[@aria-label='{}']".format(date)
         self.click_on_xpath(cal_date_xpath)
 
     def find_and_click_date(self, date, left_month, right_month, cal_xpath):
