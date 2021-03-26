@@ -184,7 +184,6 @@ class RedApi(object):
     def click_on_date(self, date):
         date = dt.datetime.strftime(date, '%a %b %d %Y')
         if date == dt.datetime.strftime(dt.datetime.today(), '%a %b %d %Y'):
-            print('hit')
             cal_date_xpath = "//div[@class='DayPicker-Day DayPicker-Day--today']"
         else:
             cal_date_xpath = "//div[@aria-label='{}']".format(date)
