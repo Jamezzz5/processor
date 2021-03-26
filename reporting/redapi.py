@@ -72,7 +72,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        co.headless = False
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -147,7 +147,7 @@ class RedApi(object):
         logging.info('Setting breakdowns.')
         bd_xpath = '//div[text()="Break Downs"]'
         self.click_on_xpath(bd_xpath)
-        bd_date_xpath = '//button[contains(text(),"Date")]'
+        bd_date_xpath = '//button[contains(normalize-space(),"Date")]'
         self.click_on_xpath(bd_date_xpath)
 
     def get_cal_month(self, lr=1, cal_xpath=None):
@@ -242,7 +242,7 @@ class RedApi(object):
         utl.dir_check(self.temp_path)
         export_xpath = '//div[normalize-space(text())="Export report"]'
         self.click_on_xpath(export_xpath)
-        download_xpath = '//div[normalize-space(text())="Download .csv"]'
+        download_xpath = '//button[normalize-space(text())="Download .csv"]'
         self.click_on_xpath(download_xpath)
 
     def get_base_xpath(self):
