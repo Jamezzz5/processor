@@ -7,7 +7,6 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
 url = 'https://reporting.trader.adgear.com/v1/reports'
@@ -47,7 +46,6 @@ class SamApi(object):
         self.load_config()
         self.check_config()
 
-
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
@@ -76,7 +74,8 @@ class SamApi(object):
         self.check_empty_df()
         return self.df
 
-    def get_data_default_check(self, sd, ed):
+    @staticmethod
+    def get_data_default_check(sd, ed):
         if sd is None:
             sd = dt.datetime.today()
         if ed is None:
