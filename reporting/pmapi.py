@@ -10,7 +10,6 @@ import reporting.utils as utl
 import selenium.webdriver as wd
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
-import socket
 
 
 class PmApi(object):
