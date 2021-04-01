@@ -61,7 +61,7 @@ class RedApi(object):
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
-        if ed is None:
+        if ed is None or ed.date() == dt.datetime.today().date():
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields:
             for val in fields:
