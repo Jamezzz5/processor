@@ -78,7 +78,6 @@ class PmApi(object):
         co.add_experimental_option('prefs', prefs)
         browser = wd.Chrome(options=co)
         browser.maximize_window()
-        browser.set_page_load_timeout(3)
         browser.set_script_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
         return browser
@@ -128,6 +127,8 @@ class PmApi(object):
         title_bar.send_keys(title)
         top_result = '//a[@class=\"top-result top-result-0 brandtag\"]'
         self.click_on_xpath(top_result)
+        title = self.browser.find_element_by_xpath("//*[@class='entity-name']")
+        logging.info('Getting data for {}.'.format(title.text))
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
