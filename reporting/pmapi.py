@@ -10,6 +10,7 @@ import reporting.utils as utl
 import selenium.webdriver as wd
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
+import socket
 
 
 class PmApi(object):
@@ -78,6 +79,7 @@ class PmApi(object):
         co.add_experimental_option('prefs', prefs)
         browser = wd.Chrome(options=co)
         browser.maximize_window()
+        browser.set_page_load_timeout(3)
         browser.set_script_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
         return browser
@@ -189,6 +191,7 @@ class PmApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.browser = self.init_browser()
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.go_to_url(self.base_url)
         self.sign_in()
