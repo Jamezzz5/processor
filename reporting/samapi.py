@@ -9,7 +9,7 @@ import datetime as dt
 import reporting.utils as utl
 
 config_path = utl.config_path
-url = 'https://reporting.trader.adgear.com/v1/reports'
+base_url = 'https://reporting.trader.adgear.com/v1/reports'
 
 
 class SamApi(object):
@@ -33,7 +33,6 @@ class SamApi(object):
         self.client = None
         self.df = pd.DataFrame()
         self.r = None
-        self.v = 1
         self.v = 1
 
     def input_config(self, config):
@@ -105,36 +104,37 @@ class SamApi(object):
                 ]
             }
         }
-        self.r = self.make_request(url, 'post', body, header)
+        self.r = self.make_request('post', body, header)
 
-    def make_request(self, url, method, body=None, header=None):
+    def make_request(self, method, body=None, header=None):
         try:
-            self.r = self.raw_request(url, method, body=body, header=header)
+            self.r = self.raw_request(method, body=body, header=header)
         except requests.exceptions.SSLError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
-            self.r = self.make_request(url, method, body=body, header=header)
+            self.r = self.make_request(method, body=body, header=header)
         return self.r
 
-    def raw_request(self, url, method, body=None, header=None):
+    def raw_request(self, method, body=None, header=None):
         if method == 'post':
-            self.r = requests.post(url, json=body, headers=header)
-            response = json.loads(self.r.text)
+            self.r = requests.post(base_url, json=body, headers=header)
+            response = self.r.json()
             self.report_id = response["id"]
         elif method == 'get':
-            url = url + '/' + str(self.report_id)
+            url = base_url + '/' + str(self.report_id)
             self.r = requests.get(url, headers=header)
         return self.r
 
     def get_raw_data(self):
         header = self.create_header()
+        response = None
         for x in range(1, 101):
-            self.r = self.make_request(url, 'get', header=header)
-            response = json.loads(self.r.text)
-            if not (response.get('urls') is None) and not response['urls'] == []:
+            self.r = self.make_request('get', header=header)
+            response = self.r.json()
+            if response.get('urls') and response['urls']:
                 break
             else:
-                logging.warning('Rate limit exceeded. Pausing. '
+                logging.warning('Waiting for Request. '
                                 'Response: {}'.format(self.r.json()))
                 time.sleep(60)
         report_url = (response['urls'])
@@ -149,8 +149,8 @@ class SamApi(object):
     def create_report_query(self, sd, ed):
         query = {
             "type": "trader_delivery_all",
-            "start_date": sd.date().__str__(),
-            "end_date": ed.date().__str__(),
+            "start_date": str(sd.date()),
+            "end_date": str(ed.date()),
             "time_zone": "America/New_York",
             "dimensions": self.default_dimensions,
             "metrics": self.default_metrics,
