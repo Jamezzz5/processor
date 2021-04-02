@@ -123,7 +123,7 @@ class DvApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        co.headless = False
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -190,7 +190,7 @@ class DvApi(object):
 
     def set_date(self, date):
         self.get_cal_month(lr=2, desired_date=date)
-        for row in range(1, 6):
+        for row in range(1, 7):
             for col in range(1, 8):
                 xpath = '//*[@id="mat-datepicker-0"]/div[2]/mat-month-view/' \
                         'table/tbody/tr[{}]/td[{}]'.format(row, col)
