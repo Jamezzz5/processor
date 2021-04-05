@@ -127,6 +127,8 @@ class PmApi(object):
         title_bar.send_keys(title)
         top_result = '//a[@class=\"top-result top-result-0 brandtag\"]'
         self.click_on_xpath(top_result)
+        title = self.browser.find_element_by_xpath("//*[@class='entity-name']")
+        logging.info('Getting data for {}.'.format(title.text))
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
@@ -189,6 +191,7 @@ class PmApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.browser = self.init_browser()
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.go_to_url(self.base_url)
         self.sign_in()

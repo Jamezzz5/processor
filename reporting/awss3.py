@@ -114,12 +114,8 @@ class S3(object):
         product_name = '{}_{}'.format(df['uploadid'].unique()[0],
                                       '_'.join(df['productname'].unique()))
         product_name = re.sub(r'\W+', '', product_name)
-        if default_format:
-            zip_file = '{}/{}{}/{}'.format(
-                self.prefix, today_folder_name, product_name, zip_file)
-        else:
-            zip_file = '{}/{}/{}{}'.format(
-                self.prefix, product_name, today_folder_name, zip_file)
+        zip_file = '{}/{}{}/{}'.format(
+            self.prefix, today_folder_name, product_name, zip_file)
         client = self.get_client()
         buffer = io.BytesIO()
         with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
