@@ -30,6 +30,7 @@ class PmApi(object):
         self.config_list = None
         self.config = None
         self.title = None
+        self.publisher = None
 
     def input_config(self, config):
         logging.info('Loading Pathmatics config file: {}.'.format(config))
@@ -46,12 +47,16 @@ class PmApi(object):
             sys.exit(0)
         self.username = self.config['username']
         self.password = self.config['password']
-        self.title = self.config['campaign_filter']
+        self.title = self.config['account_filter']
+        if not self.config['campaign_filter'] == "":
+            self.publisher = self.config['campaign_filter']
+        else:
+            self.publisher = 1
 
     def check_config(self):
-        if self.config['campaign_filter'] == '':
+        if self.config['account_filter'] == '':
             logging.warning('{} not in config file. '
-                            ' Aborting.'.format(self.config['campaign_filter']))
+                            ' Aborting.'.format(self.config['account_filter']))
             sys.exit(0)
 
     def get_data_default_check(self, sd, ed, fields):
@@ -125,8 +130,10 @@ class PmApi(object):
         title_bar = \
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
         title_bar.send_keys(title)
-        top_result = '//a[@class=\"top-result top-result-0 brandtag\"]'
-        self.click_on_xpath(top_result)
+        time.sleep(10)
+        title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
+            .format(self.publisher)
+        self.click_on_xpath(title_result)
         title = self.browser.find_element_by_xpath("//*[@class='entity-name']")
         logging.info('Getting data for {}.'.format(title.text))
 
@@ -146,6 +153,7 @@ class PmApi(object):
         self.find_elem(date_path).send_keys(date)
 
     def set_dates(self, sd, ed):
+        logging.info('Getting data from {} to {}.'.format(sd, ed))
         self.open_calendar()
         base_path = '//*[@id="date-filter-menu-date-picker-container"]'
         sd_path = base_path + '/div[1]/div[1]/input'
@@ -168,7 +176,11 @@ class PmApi(object):
 
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
-        self.click_on_xpath(export_xpath)
+        try:
+            self.click_on_xpath(export_xpath)
+        except ex.NoSuchElementException:
+            logging.error('No data for title. Aborting.')
+            sys.exit(0)
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
         self.click_on_xpath(xlsx_path)
         self.set_metrics()
@@ -176,13 +188,82 @@ class PmApi(object):
         self.click_on_xpath(download_xpath)
 
     @staticmethod
-    def get_file_as_df(temp_path=None):
+    def get_url(html):
+        url_loc = [html.find("video src=\""), html.find("img src=\"")]
+        if url_loc == [-1, -1]:
+            return None, None
+        url_loc = min(i for i in url_loc if i > -1)
+        html = html[url_loc:]
+        html = html.split('\"', 2)
+        # Underscores UTF-8 Encoded to Avoid Splitting
+        url = html[1].replace('_', '%5F')
+        html = html[2]
+        return url, html
+
+    def get_size_spend(self, element):
+        element.click()
+        self.browser.implicitly_wait(10)
+        dialogue_box = self.browser.find_element_by_xpath("//*[@class=\"creative-dialog-metrics\"]")
+        html = dialogue_box.get_attribute('innerHTML')
+        size_loc = html.find('Dimensions &amp; Type</h2>')
+        if size_loc == -1:
+            size = ""
+        else:
+            size = html[(size_loc + len('Dimensions &amp; Type<h/2>')):]
+            size = size.split(',')[0]
+            size = size.split('<span>')[1]
+        spend_loc = html.find('Spend: ')
+        spend = html[(spend_loc + len('Spend: ')):]
+        spend = spend.split('</div>')[0]
+        close = self.browser.find_element_by_xpath('//*[@class=\"icon-32 large-x-grey dialog-close-x\"]')
+        close.click()
+        return size, spend
+
+    def get_creatives(self):
+        urls = []
+        sizes = []
+        spends = []
+        element = self.browser.find_element_by_xpath('//*[@id="top-creatives-grid"]')
+        html = element.get_attribute('innerHTML')
+        try:
+            creative_elements = self.browser.find_elements_by_xpath("//*[@class=\"creative-snapshot-cover\"]")
+        except ex.NoSuchElementException:
+            logging.warning('No creatives found.')
+            return urls, sizes, spends
+        for creative_element in creative_elements:
+            url, html = self.get_url(html)
+            if url:
+                urls.append(url)
+            else:
+                break
+            size, spend = self.get_size_spend(creative_element)
+            sizes.append(size)
+            spends.append(spend)
+        return urls, sizes, spends
+
+    def create_creatives_df(self):
+        logging.info('Getting creative data')
+        creatives = pd.DataFrame()
+        creatives['Creative'] = ""
+        creatives['Size'] = ""
+        creatives['Creative Spend'] = ""
+        urls, sizes, spends = self.get_creatives()
+        for url, size, spend in zip(urls, sizes, spends):
+            new_row = [url, size, spend]
+            creatives.loc[0 if pd.isnull(creatives.index.max()) else
+                          creatives.index.max() + 1] = new_row
+        return creatives
+
+    @staticmethod
+    def get_file_as_df(temp_path=None, creatives=None):
         pd.DataFrame()
         file = os.listdir(temp_path)
         file_path = os.path.join(temp_path, file[0])
         sheet_names = ['Daily Spend', 'Daily Impressions', 'Top Sites']
         df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
                                      parse_dates=True), ignore_index=True)
+        dfs = [df, creatives]
+        df = pd.concat(dfs, ignore_index=True)
         df.to_csv('tmp/output.csv', encoding='utf-8')
         temp_file = os.path.join(temp_path, 'output.csv')
         time.sleep(5)
@@ -197,7 +278,8 @@ class PmApi(object):
         self.sign_in()
         self.create_report(sd, ed, self.title)
         self.export_to_csv()
-        df = self.get_file_as_df(self.temp_path)
+        creatives = self.create_creatives_df()
+        df = self.get_file_as_df(self.temp_path, creatives)
         self.quit()
         return df
 
