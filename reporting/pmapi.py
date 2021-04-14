@@ -255,15 +255,14 @@ class PmApi(object):
         return creatives
 
     @staticmethod
-    def get_file_as_df(temp_path=None, creatives=None):
+    def get_file_as_df(temp_path=None, creative_df=None):
         pd.DataFrame()
         file = os.listdir(temp_path)
         file_path = os.path.join(temp_path, file[0])
         sheet_names = ['Daily Spend', 'Daily Impressions', 'Top Sites']
-        df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
-                                     parse_dates=True), ignore_index=True)
-        dfs = [df, creatives]
-        df = pd.concat(dfs, ignore_index=True)
+        data_df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
+                            parse_dates=True), ignore_index=True)
+        df = pd.concat([data_df, creative_df], ignore_index=True)
         df.to_csv('tmp/output.csv', encoding='utf-8')
         temp_file = os.path.join(temp_path, 'output.csv')
         time.sleep(5)
@@ -278,8 +277,8 @@ class PmApi(object):
         self.sign_in()
         self.create_report(sd, ed, self.title)
         self.export_to_csv()
-        creatives = self.create_creatives_df()
-        df = self.get_file_as_df(self.temp_path, creatives)
+        creative_df = self.create_creatives_df()
+        df = self.get_file_as_df(self.temp_path, creative_df)
         self.quit()
         return df
 
