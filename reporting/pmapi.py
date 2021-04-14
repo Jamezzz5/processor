@@ -203,7 +203,8 @@ class PmApi(object):
     def get_size_spend(self, element):
         element.click()
         self.browser.implicitly_wait(10)
-        dialogue_box = self.browser.find_element_by_xpath("//*[@class=\"creative-dialog-metrics\"]")
+        dialogue_box = self.browser.find_element_by_xpath(
+            "//*[@class=\"creative-dialog-metrics\"]")
         html = dialogue_box.get_attribute('innerHTML')
         size_loc = html.find('Dimensions &amp; Type</h2>')
         if size_loc == -1:
@@ -215,7 +216,8 @@ class PmApi(object):
         spend_loc = html.find('Spend: ')
         spend = html[(spend_loc + len('Spend: ')):]
         spend = spend.split('</div>')[0]
-        close = self.browser.find_element_by_xpath('//*[@class=\"icon-32 large-x-grey dialog-close-x\"]')
+        close = self.browser.find_element_by_xpath(
+            '//*[@class=\"icon-32 large-x-grey dialog-close-x\"]')
         close.click()
         return size, spend
 
@@ -223,10 +225,12 @@ class PmApi(object):
         urls = []
         sizes = []
         spends = []
-        element = self.browser.find_element_by_xpath('//*[@id="top-creatives-grid"]')
+        element = self.browser.find_element_by_xpath(
+            '//*[@id="top-creatives-grid"]')
         html = element.get_attribute('innerHTML')
         try:
-            creative_elements = self.browser.find_elements_by_xpath("//*[@class=\"creative-snapshot-cover\"]")
+            creative_elements = self.browser.find_elements_by_xpath(
+                "//*[@class=\"creative-snapshot-cover\"]")
         except ex.NoSuchElementException:
             logging.warning('No creatives found.')
             return urls, sizes, spends
