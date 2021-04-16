@@ -13,11 +13,10 @@ games_version = '1.1.0'
 stats_url = 'https://api.marketing.gamesight.io/stats'
 stats_version = '2.0.0'
 
-def_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad',
-              'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
+def_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad']
 def_fields = ['clicks', 'converted_users', 'conversion_rate', 'launches',
               'launches_per_user', 'average_user_retention', 'impressions']
-nested_cols = ['goals']
+nested_cols = ['network_reported_performance', 'goals']
 def_fields.extend(nested_cols)
 
 
