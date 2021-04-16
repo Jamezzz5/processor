@@ -190,7 +190,7 @@ class DvApi(object):
 
     def set_date(self, date):
         self.get_cal_month(lr=2, desired_date=date)
-        for row in range(1, 6):
+        for row in range(1, 7):
             for col in range(1, 8):
                 xpath = '//*[@id="mat-datepicker-0"]/div[2]/mat-month-view/' \
                         'table/tbody/tr[{}]/td[{}]'.format(row, col)
