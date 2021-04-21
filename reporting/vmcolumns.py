@@ -216,7 +216,11 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
             api_red_key, api_dv_key, api_raw_key, api_adk_key, api_inn_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
+<<<<<<< HEAD
             api_gs_key, api_qt_key]
+=======
+            api_gs_key,api_qt_key]
+>>>>>>> df9ab0bd48f214eed8bcc7ebb8b503c8f3ee94fb
 api_translation = {
     api_aw_key: 'aw',
     api_fb_key: 'fb',
@@ -242,5 +246,6 @@ api_translation = {
     api_cri_key: 'cri',
     api_pm_key: 'pm',
     api_sam_key: 'sam',
-    api_gs_key: 'gs'
+    api_gs_key: 'gs',
+    api_qt_key: 'qt'
 }

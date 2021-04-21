@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-import time
 import logging
 import requests
 import pandas as pd
@@ -73,8 +72,9 @@ class QtApi(object):
     def get_token(self):
         logging.info('Retrieving access token')
         token_header = {"Content-Type": "application/x-www-form-urlencoded"}
-        params = (('username', self.username), ('password',
-                                self.password), ('grant_type', 'password'))
+        params = (('username', self.username), 
+                  ('password', self.password), 
+                  ('grant_type', 'password'))
         r = requests.post(self.token_url, data=params, headers=token_header)
         token = r.json()
         logging.info('Access token retrieved')
