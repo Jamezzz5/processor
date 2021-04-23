@@ -22,7 +22,7 @@ def_fields.extend(nested_cols)
 
 
 display_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad']
-display_fields = ['impressions', 'clicks' ]
+display_fields = ['impressions', 'clicks']
 display_nested_cols = ['network_reported_performance', 'goals']
 display_fields.extend(display_nested_cols)
 
