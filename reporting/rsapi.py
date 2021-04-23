@@ -21,6 +21,12 @@ nested_cols = ['goals']
 def_fields.extend(nested_cols)
 
 
+display_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad']
+display_fields = ['impressions', 'clicks' ]
+display_nested_cols = ['network_reported_performance', 'goals']
+display_fields.extend(display_nested_cols)
+
+
 class RsApi(object):
     def __init__(self):
         self.config = None
@@ -94,18 +100,23 @@ class RsApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         return sd, ed
 
-    def get_request_data(self, sd, ed):
+    def get_request_data(self, sd, ed, fields):
         r_data = {'groups': def_groups,
                   'fields': def_fields,
                   'game_id': self.game_id,
                   'filters': {'start_date': sd,
                               'end_date': ed}}
+        if fields:
+            for field in fields:
+                if field == 'Display':
+                    r_data['groups'] = display_groups
+                    r_data['fields'] = display_fields
         return r_data
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.date_check(sd, ed)
         self.get_id()
-        self.get_raw_data(sd, ed)
+        self.get_raw_data(sd, ed, fields)
         return self.df
 
     def filter_df_on_campaign(self):
@@ -113,17 +124,17 @@ class RsApi(object):
         self.df = self.df[self.df['campaign'].fillna('0').str.contains(
             self.campaign_filter)].reset_index(drop=True)
 
-    def get_raw_data(self, sd, ed):
+    def get_raw_data(self, sd, ed, fields):
         logging.info('Getting data from {} to ed {}'.format(sd, ed))
-        r_data = self.get_request_data(sd, ed)
+        r_data = self.get_request_data(sd, ed, fields)
         self.set_headers(stats_version)
         self.r = requests.post(stats_url, headers=self.headers, json=r_data)
-        self.df = self.data_to_df()
+        self.df = self.data_to_df(fields)
         if self.campaign_filter:
             self.filter_df_on_campaign()
         logging.info('Data successfully retrieved returning dataframe.')
 
-    def data_to_df(self):
+    def data_to_df(self, fields):
         try:
             json_data = self.r.json()['results']
         except ValueError:
@@ -131,6 +142,10 @@ class RsApi(object):
                             'Response: {}'.format(self.r.text))
             sys.exit(0)
         df = pd.DataFrame(json_data)
+        if fields:
+            for field in fields:
+                if field == 'Display':
+                    nested_cols.insert(0, 'network_reported_performance')
         for col in nested_cols:
             n_df = self.flatten_nested_cols(df, col)
             for n_col in n_df.columns:
