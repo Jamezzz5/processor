@@ -1,7 +1,6 @@
 import logging
 import numpy as np
 import pandas as pd
-import datetime as dt
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
@@ -30,9 +29,9 @@ BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
 BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPCV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
-              BM_FLATIMP, BM_FLAT2, BM_FLATCOUNT, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4,
-              BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU, BM_CPE, BM_CPLP2,
-              BM_CPLP3]
+              BM_FLATIMP, BM_FLAT2, BM_FLATCOUNT, BM_PA, BM_CPA, BM_CPA2, 
+              BM_CPA3, BM_CPA4, BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU,
+              BM_CPE, BM_CPLP2, BM_CPLP3]
 
 AGENCY_FEES = 'Agency Fees'
 AGENCY_THRESH = 'Agency Fee Threshold'
@@ -64,7 +63,8 @@ DROP_COL = ([CLI_PD, NC_CUM_SUM, NC_SUM_DATE, PLACE_DATE,
 def clicks_by_place_date(df):
     df[dctc.PN] = df[dctc.PN].replace(np.nan, 'None')
     df[PLACE_DATE] = (df[vmc.date].astype('U') + df[dctc.PN].astype('U'))
-    df_cpd = df.loc[df[dctc.BM].isin([BM_FLAT, BM_FLAT2, BM_FLATIMP, BM_FLATCOUNT])]
+    df_cpd = df.loc[df[dctc.BM].isin([
+        BM_FLAT, BM_FLAT2, BM_FLATIMP, BM_FLATCOUNT])]
     if not df_cpd.empty:
         df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
                   .apply(lambda x: x / x.astype(float).sum()))
