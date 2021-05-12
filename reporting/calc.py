@@ -17,6 +17,7 @@ BM_AV = 'AV'
 BM_FLAT = 'FLAT'
 BM_FLAT2 = 'Flat'
 BM_FLATIMP = 'FlatImp'
+BM_FLATCOUNT = 'FLATCount'
 BM_PA = 'Programmaddict'
 BM_CPA = 'CPA'
 BM_CPACPM = 'CPA/CPM'
@@ -28,9 +29,9 @@ BM_CPA4 = 'CPA4'
 BM_CPA5 = 'CPA5'
 BM_FLATDATE = 'FlatDate'
 BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPCV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
-              BM_FLATIMP, BM_FLAT2, BM_PA, BM_CPA, BM_CPA2, BM_CPA3, BM_CPA4,
-              BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU, BM_CPE, BM_CPLP2,
-              BM_CPLP3]
+              BM_FLATIMP, BM_FLAT2, BM_FLATCOUNT, BM_PA, BM_CPA, BM_CPA2, 
+              BM_CPA3, BM_CPA4, BM_CPA5, BM_FLATDATE, BM_CPACPM, BM_CPNUCPSU,
+              BM_CPE, BM_CPLP2, BM_CPLP3]
 
 AGENCY_FEES = 'Agency Fees'
 AGENCY_THRESH = 'Agency Fee Threshold'
@@ -62,7 +63,8 @@ DROP_COL = ([CLI_PD, NC_CUM_SUM, NC_SUM_DATE, PLACE_DATE,
 def clicks_by_place_date(df):
     df[dctc.PN] = df[dctc.PN].replace(np.nan, 'None')
     df[PLACE_DATE] = (df[vmc.date].astype('U') + df[dctc.PN].astype('U'))
-    df_cpd = df.loc[df[dctc.BM].isin([BM_FLAT, BM_FLAT2, BM_FLATIMP])]
+    df_cpd = df.loc[df[dctc.BM].isin([
+        BM_FLAT, BM_FLAT2, BM_FLATIMP, BM_FLATCOUNT])]
     if not df_cpd.empty:
         df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
                   .apply(lambda x: x / x.astype(float).sum()))
@@ -97,6 +99,8 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
     elif df[bm_col] == BM_FLATIMP:
         if df[vmc.date] == df[dctc.PD]:
             return df[br_col] * df[IMP_PD]
+    elif df[bm_col] == BM_FLATCOUNT:
+        return df[br_col] * df[CLI_PD]
     elif df[bm_col] == BM_CPACPM:
         if df[vmc.date] < df[dctc.PD]:
             return df[br_col] * df[vmc.conv1]
