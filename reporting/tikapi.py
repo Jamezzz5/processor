@@ -13,8 +13,8 @@ config_path = utl.config_path
 
 class TikApi(object):
     base_url = 'https://ads.tiktok.com'
-    ad_url = '/open_api/v1.1/ad/get/'
-    ad_report_url = '/open_api/v1.1/reports/ad/get/'
+    ad_url = '/open_api/v1.2/ad/get/'
+    ad_report_url = '/open_api/v1.2/reports/ad/get/'
     dimensions = ['COUNTRY', 'DAY', 'ID']
     metrics = ['click_cnt', 'conversion_cost', 'conversion_rate', 'convert_cnt',
                'ctr', 'show_cnt', 'stat_cost', 'time_attr_convert_cnt',
