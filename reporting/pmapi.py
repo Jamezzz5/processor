@@ -259,7 +259,7 @@ class PmApi(object):
         return creatives
 
     @staticmethod
-    def get_file_as_df(temp_path=None, creative_df=None):
+    def get_file_as_df(temp_path=None, creative_df=None, ed=None):
         pd.DataFrame()
         file = os.listdir(temp_path)
         file_path = os.path.join(temp_path, file[0])
@@ -267,6 +267,7 @@ class PmApi(object):
         data_df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
                             parse_dates=True), ignore_index=True)
         df = pd.concat([data_df, creative_df], ignore_index=True)
+        df['Date'].fillna(value=ed, inplace=True)
         df.to_csv('tmp/output.csv', encoding='utf-8')
         temp_file = os.path.join(temp_path, 'output.csv')
         time.sleep(5)
@@ -282,7 +283,7 @@ class PmApi(object):
         self.create_report(sd, ed, self.title)
         self.export_to_csv()
         creative_df = self.create_creatives_df()
-        df = self.get_file_as_df(self.temp_path, creative_df)
+        df = self.get_file_as_df(self.temp_path, creative_df, ed)
         self.quit()
         return df
 
