@@ -232,7 +232,8 @@ class FbApi(object):
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
                      action_breakdowns, attribution_window, ad_status,
-                     time_breakdown=1, level=AdsInsights.Level.ad):
+                     time_breakdown=1, level=AdsInsights.Level.ad,
+                     times_requested=1):
         logging.info('Making FB request for {} to {}'.format(sd, ed))
         params = {'level': level,
                   'breakdowns': breakdowns,
@@ -258,7 +259,15 @@ class FbApi(object):
         except FacebookRequestError as e:
             self.request_error(e, date_list, field_list)
             return True
-        self.async_requests.append(insights)
+        init_dict = {
+            'sd': sd, 'ed': ed, 'date_list': date_list,
+            'field_list': field_list, 'breakdowns': breakdowns,
+            'action_breakdowns': action_breakdowns,
+            'attribution_window': attribution_window, 'ad_status': ad_status,
+            'time_breakdown': time_breakdown, 'level': level,
+            'insights': insights, 'times_requested': times_requested}
+        fb_request = FacebookRequest(init_dict=init_dict)
+        self.async_requests.append(fb_request)
 
     def get_report(self, ar):
         try:
@@ -270,10 +279,26 @@ class FbApi(object):
 
     def check_and_get_async_jobs(self, async_jobs):
         self.async_requests = []
-        for job in async_jobs:
+        for fb_request in async_jobs:
+            job = fb_request.insights
             ar = AdReportRun(job['id'])
             report = self.get_report(ar)
             percent = report['async_percent_completion']
+            need_reset = fb_request.check_last_percent(percent)
+            if need_reset:
+                logging.warning(
+                    'FB async_job #{} has been stuck for {} attempts and will '
+                    'be requested again.  This is request #{}'.format(
+                        job['id'], fb_request.times_requested * 10,
+                        fb_request.times_requested))
+                self.make_request(
+                    fb_request.sd, fb_request.ed, fb_request.date_list,
+                    fb_request.field_list, fb_request.breakdowns,
+                    fb_request.action_breakdowns,
+                    fb_request.attribution_window, fb_request.ad_status,
+                    fb_request.time_breakdown, fb_request.level,
+                    fb_request.times_requested + 1)
+                continue
             logging.info('FB async_job #{} percent done '
                          '{}%'.format(job['id'], percent))
             if percent == 100 and (report['async_status'] == 'Job Completed'):
@@ -289,8 +314,9 @@ class FbApi(object):
                     complete_job = None
                 if complete_job:
                     self.df = self.df.append(complete_job, ignore_index=True)
+                    fb_request.complete = True
             else:
-                self.async_requests.append(job)
+                self.async_requests.append(fb_request)
         if self.async_requests:
             time.sleep(30)
             self.check_and_get_async_jobs(self.async_requests)
@@ -420,3 +446,38 @@ class FbApi(object):
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
+
+
+class FacebookRequest(object):
+    def __init__(self, init_dict=None):
+        self.sd = None
+        self.ed = None
+        self.date_list = None
+        self.field_list = None
+        self.breakdowns = None
+        self.action_breakdowns = None
+        self.attribution_window = None
+        self.ad_status = None
+        self.time_breakdown = None
+        self.times_requested = 1
+        self.insights = None
+        self.level = None
+        self.complete = False
+        self.last_percent = 0
+        self.consecutive_same_percent = 0
+        self.init_dict = init_dict
+        if self.init_dict:
+            self.set_from_init_dict()
+
+    def set_from_init_dict(self):
+        for k, v in self.init_dict.items():
+            setattr(self, k, v)
+
+    def check_last_percent(self, new_percent):
+        if new_percent == self.last_percent:
+            self.consecutive_same_percent += 1
+        self.last_percent = new_percent
+        if self.consecutive_same_percent > 10 * self.times_requested:
+            return True
+        else:
+            return False
