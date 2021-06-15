@@ -32,6 +32,10 @@ class DcApi(object):
         'dfa:activityClickThroughConversions', 'dfa:totalConversions',
         'dfa:totalConversionsRevenue', 'dfa:activityViewThroughConversions',
         'dfa:activityViewThroughRevenue', 'dfa:activityClickThroughRevenue']
+    col_rename_dict = {
+        'Site (CM360)': 'Site (DCM)', 'DV360 Cost USD': 'DBM Cost USD',
+        'DV360 Cost (Account Currency)': 'DBM Cost (Account Currency)'
+    }
 
     def __init__(self):
         self.config = None
@@ -133,6 +137,7 @@ class DcApi(object):
         if not self.r:
             return pd.DataFrame()
         self.df = self.get_df_from_response()
+        self.df = self.rename_cols()
         return self.df
 
     def find_first_line(self):
@@ -297,3 +302,7 @@ class DcApi(object):
                 for x in self.campaign_id.split(',')]
             criteria['dimensionFilters'].extend(campaign_filters)
         return criteria
+
+    def rename_cols(self):
+        self.df.iloc[0] = self.df.iloc[0].replace(self.col_rename_dict)
+        return self.df
