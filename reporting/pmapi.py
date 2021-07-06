@@ -17,8 +17,8 @@ class PmApi(object):
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
     base_metric = '//*[@id="export-menu-grid"]/div/div/'
-    metrics = {'daily_spend': 'div[3]/div', 'daily_imps': 'div[4]/div',
-               'top_sites': 'div[6]/div'}
+    metrics = {'daily_spend': 'div[5]/div', 'daily_imps': 'div[4]/div',
+               'top_sites': 'div[7]/div'}
 
     def __init__(self):
         self.browser = self.init_browser()
