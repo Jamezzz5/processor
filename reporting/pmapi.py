@@ -16,9 +16,11 @@ class PmApi(object):
     config_path = utl.config_path
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
-    base_metric = '//*[@id="export-menu-grid"]/div/div/'
-    metrics = {'daily_spend': 'div[5]/div', 'daily_imps': 'div[4]/div',
-               'top_sites': 'div[7]/div'}
+    metrics = {'daily_spend': "//div[@data-label='Top Sites']",
+               'daily_imps': "//div[@data-label='<span class=\"export-option-"
+                             "granularity-plural\">Daily</span> Spend']",
+               'top_sites': "//div[@data-label='<span class=\"export-option-"
+                            "granularity-plural\">Daily</span> Impressions']"}
 
     def __init__(self):
         self.browser = self.init_browser()
@@ -171,8 +173,7 @@ class PmApi(object):
 
     def set_metrics(self):
         for metric in self.metrics:
-            metric_path = self.base_metric + self.metrics[metric]
-            self.click_on_xpath(metric_path)
+            self.click_on_xpath(self.metrics[metric])
 
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
