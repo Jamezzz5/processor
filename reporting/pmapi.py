@@ -16,11 +16,6 @@ class PmApi(object):
     config_path = utl.config_path
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
-    metrics = {'daily_spend': "//div[@data-label='Top Sites']",
-               'daily_imps': "//div[@data-label='<span class=\"export-option-"
-                             "granularity-plural\">Daily</span> Spend']",
-               'top_sites': "//div[@data-label='<span class=\"export-option-"
-                            "granularity-plural\">Daily</span> Impressions']"}
 
     def __init__(self):
         self.browser = self.init_browser()
@@ -75,7 +70,7 @@ class PmApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        co.headless = False
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -171,10 +166,6 @@ class PmApi(object):
         self.search_title(title)
         self.set_dates(sd, ed)
 
-    def set_metrics(self):
-        for metric in self.metrics:
-            self.click_on_xpath(self.metrics[metric])
-
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
         try:
@@ -184,7 +175,6 @@ class PmApi(object):
             sys.exit(0)
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
         self.click_on_xpath(xlsx_path)
-        self.set_metrics()
         download_xpath = '//*[@id="pick-export-options"]'
         self.click_on_xpath(download_xpath)
 
