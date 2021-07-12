@@ -51,7 +51,7 @@ class DcApi(object):
         self.report_id = None
         self.config_list = None
         self.client = None
-        self.version = '3.3'
+        self.version = '3.5'
         self.df = pd.DataFrame()
         self.r = None
 
