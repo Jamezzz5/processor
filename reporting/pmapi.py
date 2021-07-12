@@ -16,11 +16,6 @@ class PmApi(object):
     config_path = utl.config_path
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
-    metrics = {'daily_spend': "//div[@data-label='Top Sites']",
-               'daily_imps': "//div[@data-label='<span class=\"export-option-"
-                             "granularity-plural\">Daily</span> Spend']",
-               'top_sites': "//div[@data-label='<span class=\"export-option-"
-                            "granularity-plural\">Daily</span> Impressions']"}
 
     def __init__(self):
         self.browser = self.init_browser()
@@ -171,10 +166,6 @@ class PmApi(object):
         self.search_title(title)
         self.set_dates(sd, ed)
 
-    def set_metrics(self):
-        for metric in self.metrics:
-            self.click_on_xpath(self.metrics[metric])
-
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
         try:
@@ -184,7 +175,6 @@ class PmApi(object):
             sys.exit(0)
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
         self.click_on_xpath(xlsx_path)
-        self.set_metrics()
         download_xpath = '//*[@id="pick-export-options"]'
         self.click_on_xpath(download_xpath)
 
@@ -262,8 +252,18 @@ class PmApi(object):
     @staticmethod
     def get_file_as_df(temp_path=None, creative_df=None, ed=None):
         pd.DataFrame()
-        file = os.listdir(temp_path)
-        file_path = os.path.join(temp_path, file[0])
+        file_path = None
+        for x in range(1, 101):
+            try:
+                file = os.listdir(temp_path)
+                file_path = os.path.join(temp_path, file[0])
+            except (IndexError, FileNotFoundError):
+                logging.warning('Data not downloaded. Waiting. Attempt {}.'
+                                .format(x))
+                time.sleep(10)
+            else:
+                logging.info('Data downloaded.')
+                break
         sheet_names = ['Daily Spend', 'Daily Impressions', 'Top Sites']
         data_df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
                             parse_dates=True), ignore_index=True)
