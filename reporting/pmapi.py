@@ -252,8 +252,15 @@ class PmApi(object):
     @staticmethod
     def get_file_as_df(temp_path=None, creative_df=None, ed=None):
         pd.DataFrame()
-        file = os.listdir(temp_path)
-        file_path = os.path.join(temp_path, file[0])
+        file_path = None
+        for x in range(1, 101):
+            try:
+                file = os.listdir(temp_path)
+                file_path = os.path.join(temp_path, file[0])
+            except (IndexError, FileNotFoundError):
+                logging.warning('Data not downloaded. Waiting. Attempt {}.'
+                                .format(x))
+                time.sleep(10)
         sheet_names = ['Daily Spend', 'Daily Impressions', 'Top Sites']
         data_df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
                             parse_dates=True), ignore_index=True)
