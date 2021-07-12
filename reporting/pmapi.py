@@ -70,7 +70,7 @@ class PmApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        co.headless = False
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -261,6 +261,9 @@ class PmApi(object):
                 logging.warning('Data not downloaded. Waiting. Attempt {}.'
                                 .format(x))
                 time.sleep(10)
+            else:
+                logging.info('Data downloaded.')
+                break
         sheet_names = ['Daily Spend', 'Daily Impressions', 'Top Sites']
         data_df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
                             parse_dates=True), ignore_index=True)
