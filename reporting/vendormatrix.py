@@ -897,6 +897,10 @@ def df_single_transform(df, transform):
         col_name = transform[1]
         col_val = transform[2]
         df[col_name] = col_val
+    if transform_type == 'FilterCol':
+        col_name = transform[1]
+        col_val = transform[2]
+        df = df[df[col_name].str.contains(col_val)]
     return df
 
 
