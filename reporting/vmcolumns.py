@@ -124,6 +124,11 @@ view_imps = 'Viewable Impressions'
 view_total_imps = 'Viewable Total Impressions'
 view_monitored_imps = 'Viewable Monitored Impressions'
 view_fraud = 'Fraud Incidents'
+steam_totalvisits = 'Steam - Total Visits'
+steam_trackedvisits = 'Steam - Tracked Visits'
+steam_wishlists = 'Steam - Wishlists'
+steam_purchases = 'Steam - Purchases'
+steam_activations = 'Steam - Activations'
 modelcoefa = 'modelcoefa'
 modelcoefb = 'modelcoefb'
 modelcoefc = 'modelcoefc'
@@ -165,6 +170,8 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            sm_impressions, sm_positivesentiment, sm_negativesentiment,
            sm_passion, sm_uniqueauthors, sm_strongemotion, sm_weakemotion,
            view_imps, view_total_imps, view_monitored_imps, view_fraud,
+           steam_totalvisits, steam_trackedvisits, steam_wishlists,
+           steam_purchases, steam_activations,
            modelcoefa, modelcoefb, modelcoefc, AD_COST, REP_COST, VER_COST,
            conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
            conv10]

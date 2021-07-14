@@ -845,3 +845,24 @@ class Plan(Base):
 
     fullplacement = relationship('Fullplacement')
     upload = relationship('Upload')
+
+
+class EventSteam(Base):
+    __tablename__ = 'eventsteam'
+    __table_args__ = {'schema': 'lqadb'}
+
+    eventsteamid = Column(BigInteger, primary_key=True, server_default=text(
+        "nextval('lqadb.eventsteam_eventsteamid_seq'::regclass)"))
+    eventsteamname = Column(Text)
+    eventid = Column(ForeignKey(
+        'lqadb.event.eventid', ondelete='CASCADE'))
+    steam_totalvisits = Column(Numeric)
+    steam_trackedvisits = Column(Numeric)
+    steam_wishlists = Column(Numeric)
+    steam_purchases = Column(Numeric)
+    steam_activations = Column(Numeric)
+
+    uploadid = Column(ForeignKey('lqadb.upload.uploadid', ondelete='CASCADE'))
+
+    event = relationship('Event')
+    upload = relationship('Upload')
