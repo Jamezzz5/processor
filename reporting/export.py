@@ -633,7 +633,7 @@ class DFTranslation(object):
         sliced_df = self.df[exp_cols].drop_duplicates()
         sliced_df = self.group_for_upload(sliced_df, exp_cols)
         sliced_df = self.clean_types_for_upload(sliced_df)
-        sliced_df = self.remove_zero_rows(sliced_df)
+        sliced_df = self.remove_zero_rows(sliced_df, original_cols=columns)
         return sliced_df
 
     def group_for_upload(self, df, exp_cols):
@@ -670,10 +670,15 @@ class DFTranslation(object):
             df[col] = df[col].astype(np.int64)
         return df
 
-    def remove_zero_rows(self, df):
+    def remove_zero_rows(self, df, original_cols):
         real_cols = [x for x in self.real_columns if x in df.columns]
+        ori_real_cols = [x for x in self.real_columns if x in original_cols]
         if not real_cols:
-            return df
+            if not ori_real_cols:
+                return df
+            else:
+                for col in ori_real_cols:
+                    df[col] = 0
         df['realcolsum'] = df[real_cols].sum(axis=1)
         df = df[df['realcolsum'] != 0]
         df = df.drop(['realcolsum'], axis=1)
