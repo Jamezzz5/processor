@@ -15,23 +15,23 @@ base_url = 'https://www.googleapis.com/dfareporting'
 
 class DcApi(object):
     default_fields = [
-        'dfa:campaign', 'dfa:campaignId', 'dfa:site', 'dfa:placement',
-        'dfa:date', 'dfa:placementId', 'dfa:creative', 'dfa:ad']
+        'campaign', 'campaignId', 'site', 'placement',
+        'date', 'placementId', 'creative', 'ad']
     default_metrics = [
-        'dfa:impressions', 'dfa:clicks', 'dfa:clickRate',
-        'dfa:activeViewViewableImpressions',
-        'dfa:activeViewMeasurableImpressions',
-        'dfa:activeViewEligibleImpressions', 'dfa:totalConversions',
-        'dfa:dbmCost', 'dfa:dbmCostUsd', 'dfa:mediaCost',
-        'dfa:totalConversionsRevenue', 'dfa:richMediaVideoViews',
-        'dfa:richMediaTrueViewViews', 'dfa:richMediaVideoCompletions',
-        'dfa:richMediaVideoThirdQuartileCompletes',
-        'dfa:richMediaVideoMidpoints',
-        'dfa:richMediaVideoFirstQuartileCompletes', 'dfa:richMediaVideoPlays']
+        'impressions', 'clicks', 'clickRate',
+        'activeViewViewableImpressions',
+        'activeViewMeasurableImpressions',
+        'activeViewEligibleImpressions', 'totalConversions',
+        'mediaCost', 'dv360Cost', 'dv360CostUsd',
+        'totalConversionsRevenue', 'richMediaVideoViews',
+        'richMediaTrueViewViews', 'richMediaVideoCompletions',
+        'richMediaVideoThirdQuartileCompletes',
+        'richMediaVideoMidpoints',
+        'richMediaVideoFirstQuartileCompletes', 'richMediaVideoPlays']
     default_conversion_metrics = [
-        'dfa:activityClickThroughConversions', 'dfa:totalConversions',
-        'dfa:totalConversionsRevenue', 'dfa:activityViewThroughConversions',
-        'dfa:activityViewThroughRevenue', 'dfa:activityClickThroughRevenue']
+        'activityClickThroughConversions', 'totalConversions',
+        'totalConversionsRevenue', 'activityViewThroughConversions',
+        'activityViewThroughRevenue', 'activityClickThroughRevenue']
     col_rename_dict = {
         'Site (CM360)': 'Site (DCM)', 'DV360 Cost USD': 'DBM Cost USD',
         'DV360 Cost (Account Currency)': 'DBM Cost (Account Currency)'
@@ -281,14 +281,14 @@ class DcApi(object):
                 'filters': []
             },
             'dimensionFilters': [{
-                'dimensionName': 'dfa:advertiser',
+                'dimensionName': 'advertiser',
                 'id': self.advertiser_id,
                 'kind': 'dfareporting#dimensionValue'}]
         }
         fl_ids = self.get_floodlight_tag_ids()
         if fl_ids:
             criteria['activities']['filters'] = [
-                {'dimensionName': 'dfa:activity',
+                {'dimensionName': 'activity',
                  'id': x,
                  'kind': 'dfareporting#dimensionValue'} for x in fl_ids]
         else:
@@ -296,7 +296,7 @@ class DcApi(object):
             criteria.pop('activities')
         if self.campaign_id:
             campaign_filters = [
-                {'dimensionName': 'dfa:campaign',
+                {'dimensionName': 'campaign',
                  'id': x,
                  'kind': 'dfareporting#dimensionValue'}
                 for x in self.campaign_id.split(',')]
