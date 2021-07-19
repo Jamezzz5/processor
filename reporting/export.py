@@ -121,7 +121,17 @@ class DBUpload(object):
 
     def get_upload_df(self, table):
         cols = self.dbs.get_cols_for_export(table)
+        cols_to_add = []
+        if exc.event_name in cols and exc.event_steam_name not in cols:
+            cols_to_add = [x for x in self.dft.real_columns
+                           if x not in cols and
+                           x not in ['plannednetcost', 'modelcoefa',
+                                     'modelcoefb', 'modelcoefc']]
+            cols += cols_to_add
         ul_df = self.dft.slice_for_upload(cols)
+        if cols_to_add:
+            ul_df = utl.col_removal(ul_df, key='None', removal_cols=cols_to_add,
+                                    warn=False)
         if not ul_df.empty:
             ul_df = self.add_ids_to_df(self.dbs.fk, ul_df)
         return ul_df
