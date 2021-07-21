@@ -32,6 +32,8 @@ class Analyze(object):
     kpi_col = 'kpi_col'
     raw_columns = 'raw_file_columns'
     vk_metrics = 'vendor_key_metrics'
+    vendor_metrics = 'vendor_metrics'
+    missing_metrics = 'missing_metrics'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -308,7 +310,7 @@ class Analyze(object):
         df = utl.give_df_default_format(df, columns)
         return df
 
-    def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):
+    def get_table_without_format(self, data_filter=None, group=dctc.CAM):
         group = [group]
         metrics = []
         potential_metrics = [[cal.TOTAL_COST], [cal.NCF], [vmc.impressions],
@@ -319,6 +321,10 @@ class Analyze(object):
                 metrics += metric
         df = self.generate_df_table(group=group, metrics=metrics,
                                     data_filter=data_filter)
+        return df
+
+    def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):
+        df = self.get_table_without_format(data_filter, group)
         df = self.give_df_default_format(df)
         df = df.transpose()
         log_info_text = ('Topline metrics are as follows: \n{}'
@@ -528,6 +534,32 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.vk_metrics,
                                   message=update_msg, data=df.to_dict())
 
+    def find_missing_metrics(self):
+        df = self.get_table_without_format(group=dctc.VEN)
+        format_df = self.give_df_default_format(df.copy())
+        df = df.T
+        update_msg = 'Metrics by vendor are as follows:'
+        logging.info('{}\n{}'.format(update_msg, format_df.to_string()))
+        self.add_to_analysis_dict(key_col=self.vendor_metrics,
+                                  message=update_msg,
+                                  data=format_df.T.to_dict())
+        mdf = pd.DataFrame()
+        for col in df.columns:
+            missing_metrics = df[df[col] == 0][col].index.to_list()
+            if missing_metrics:
+                miss_dict = {dctc.VEN: col,
+                             self.missing_metrics: missing_metrics}
+                mdf = mdf.append(pd.DataFrame(miss_dict),
+                                 ignore_index=True, sort=False)
+        if mdf.empty:
+            missing_msg = 'No vendors have missing metrics.'
+            logging.info('{}'.format(missing_msg))
+        else:
+            missing_msg = 'The following vendors have missing metrics:'
+            logging.info('{}\n{}'.format(missing_msg, mdf.to_string()))
+        self.add_to_analysis_dict(key_col=self.missing_metrics,
+                                  message=missing_msg, data=mdf.to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -562,6 +594,7 @@ class Analyze(object):
         self.evaluate_on_kpis()
         self.get_column_names_from_raw_files()
         self.get_metrics_by_vendor_key()
+        self.find_missing_metrics()
         self.write_analysis_dict()
 
 
