@@ -277,10 +277,27 @@ class FbApi(object):
             report = self.get_report(ar)
         return report
 
+    def reset_report_request(self, fb_request):
+        self.make_request(
+            fb_request.sd, fb_request.ed, fb_request.date_list,
+            fb_request.field_list, fb_request.breakdowns,
+            fb_request.action_breakdowns,
+            fb_request.attribution_window, fb_request.ad_status,
+            fb_request.time_breakdown, fb_request.level,
+            fb_request.times_requested + 1)
+
     def check_and_get_async_jobs(self, async_jobs):
         self.async_requests = []
         for fb_request in async_jobs:
-            job = fb_request.insights
+            try:
+                job = fb_request.insights
+            except AttributeError as e:
+                logging.warning(
+                    'A FB async_job does not contain insights and will '
+                    'be requested again.  This is request #{} Error: {}'.format(
+                        fb_request.times_requested, e))
+                self.reset_report_request(fb_request)
+                continue
             ar = AdReportRun(job['id'])
             report = self.get_report(ar)
             percent = report['async_percent_completion']
@@ -291,13 +308,7 @@ class FbApi(object):
                     'be requested again.  This is request #{}'.format(
                         job['id'], fb_request.times_requested * 10,
                         fb_request.times_requested))
-                self.make_request(
-                    fb_request.sd, fb_request.ed, fb_request.date_list,
-                    fb_request.field_list, fb_request.breakdowns,
-                    fb_request.action_breakdowns,
-                    fb_request.attribution_window, fb_request.ad_status,
-                    fb_request.time_breakdown, fb_request.level,
-                    fb_request.times_requested + 1)
+                self.reset_report_request(fb_request)
                 continue
             logging.info('FB async_job #{} percent done '
                          '{}%'.format(job['id'], percent))
