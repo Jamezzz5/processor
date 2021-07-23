@@ -866,3 +866,29 @@ class EventSteam(Base):
 
     event = relationship('Event')
     upload = relationship('Upload')
+
+
+class EventConv(Base):
+    __tablename__ = 'eventconv'
+    __table_args__ = {'schema': 'lqadb'}
+
+    eventconvid = Column(BigInteger, primary_key=True, server_default=text(
+        "nextval('lqadb.eventconv_eventconvid_seq'::regclass)"))
+    eventconvname = Column(Text)
+    eventid = Column(ForeignKey(
+        'lqadb.event.eventid', ondelete='CASCADE'))
+    conv1_cpa = Column(Numeric)
+    conv2 = Column(Numeric)
+    conv3 = Column(Numeric)
+    conv4 = Column(Numeric)
+    conv5 = Column(Numeric)
+    conv6 = Column(Numeric)
+    conv7 = Column(Numeric)
+    conv8 = Column(Numeric)
+    conv9 = Column(Numeric)
+    conv10 = Column(Numeric)
+
+    uploadid = Column(ForeignKey('lqadb.upload.uploadid', ondelete='CASCADE'))
+
+    event = relationship('Event')
+    upload = relationship('Upload')

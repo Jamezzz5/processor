@@ -33,5 +33,6 @@ upload_name_param = ['agencyname', 'clientname', 'productname', 'campaignname']
 
 event_name = 'eventname'
 event_steam_name = 'eventsteamname'
+event_conv_name = 'eventsteamname'
 plan_name = 'planname'
 full_placement_name = 'fullplacementname'

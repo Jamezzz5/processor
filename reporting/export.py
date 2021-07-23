@@ -122,7 +122,9 @@ class DBUpload(object):
     def get_upload_df(self, table):
         cols = self.dbs.get_cols_for_export(table)
         cols_to_add = []
-        if exc.event_name in cols and exc.event_steam_name not in cols:
+        other_event_cols = [exc.event_steam_name, exc.event_conv_name]
+        if exc.event_name in cols and not any(
+                [x in cols for x in other_event_cols]):
             cols_to_add = [x for x in self.dft.real_columns
                            if x not in cols and
                            x not in ['plannednetcost', 'modelcoefa',
@@ -635,8 +637,8 @@ class DFTranslation(object):
                                             str(self.upload_id))
         self.df[exc.event_name] = (self.df[exc.event_date].astype('U') +
                                    self.df[exc.full_placement_name])
-        self.df[exc.plan_name] = self.df[exc.event_name]
-        self.df[exc.event_steam_name] = self.df[exc.event_name]
+        for col in [exc.plan_name, exc.event_steam_name, exc.event_conv_name]:
+            self.df[col] = self.df[exc.event_name]
 
     def slice_for_upload(self, columns):
         exp_cols = [x for x in columns if x in list(self.df.columns)]
