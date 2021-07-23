@@ -55,6 +55,7 @@ def get_args(arguments=None):
     parser.add_argument('--exp', choices=['all', 'db', 'ftp'])
     parser.add_argument('--tab', action='store_true')
     parser.add_argument('--basic', action='store_true')
+    parser.add_argument('--nolog', action='store_true')
     if arguments:
         args, unknown = parser.parse_known_args(arguments.split())
     else:
@@ -66,8 +67,9 @@ OUTPUT_FILE = 'Raw Data Output.csv'
 
 
 def main(arguments=None):
-    set_log()
     args = get_args(arguments)
+    if not args.nolog:
+        set_log()
     if args.update == 'all' or args.update == 'vm':
         vm.vm_update()
     if args.update == 'all' or args.update == 'dct':
