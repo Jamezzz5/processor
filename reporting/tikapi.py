@@ -121,7 +121,10 @@ class TikApi(object):
     def get_ad_ids(self):
         self.set_headers()
         url = self.base_url + self.ad_url
-        params = {'advertiser_id': self.advertiser_id, 'page_size': 1000}
+        params = {'advertiser_id': self.advertiser_id,
+                  'filtering': json.dumps(
+                      {'primary_status': 'STATUS_ALL',
+                       'status': 'AD_STATUS_ALL'})}
         ad_ids = []
         for x in range(1, 100):
             params['page'] = x
@@ -142,7 +145,8 @@ class TikApi(object):
                   'fields': json.dumps(self.metrics),
                   'group_by': json.dumps(['STAT_GROUP_BY_FIELD_ID',
                                           'STAT_GROUP_BY_FIELD_STAT_TIME']),
-                  'page_size': 1000}
+                  'page_size': 1000,
+                  'filtering': json.dumps({'primary_status': 'STATUS_ALL'})}
         for x in range(1, 1000):
             logging.info('Getting data from {} to {}.  Page #{}.'
                          ''.format(sd, ed, x))
