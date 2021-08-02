@@ -369,20 +369,24 @@ class TwApi(object):
         return df
 
     def make_request_for_date_asynchronous(self, ids, fields, sd, ed,
-                                           date, place, entity):
+                                           date, place, entity,
+                                           times_requested=1):
         twitter_request = TwitterAsyncRequests(
-            ids, fields, sd, ed, date, place, entity)
+            ids, fields, sd, ed, date, place, entity,
+            times_requested=times_requested)
         url, params = self.create_stats_url(
             fields, ids, sd, ed, entity=entity, placement=place,
             async_request=True)
-        data = self.request(
-            url, resp_key=jsondata, params=params, method='POST')
+        data = self.request(url, params=params, method='POST')
         if ('data' in data and isinstance(data['data'], dict)
                 and 'id' in data['data']):
             twitter_request.data = data
             self.async_requests.append(twitter_request)
         else:
             logging.warning('Response was incorrect: {}'.format(data))
+            time.sleep(30)
+            self.make_request_for_date_asynchronous(
+                ids, fields, sd, ed, date, place, entity, times_requested)
 
     def get_df_for_date(self, ids_lists, fields, sd, ed, date, place,
                         entity='PROMOTED_TWEET', async_request=False):
@@ -422,8 +426,25 @@ class TwApi(object):
             params['job_ids'] = ','.join('{}'.format(x) for x in job_id)
             data = self.request(url=url, params=params, method='GET')
             for d in data['data']:
+                current_request = [x for x in self.async_requests
+                                   if x.data['data']['id'] == d['id']][0]
+                needs_reset = current_request.check_for_reset()
                 if d['status'] == 'SUCCESS':
                     self.get_df_from_completed_job(d)
+                elif d['status'] == 'FAILED' or needs_reset:
+                    logging.warning(
+                        'Job #{} has been attempted {} times and will be '
+                        'requested again.  Status: {}'.format(
+                            d['id'], current_request.attempts_processing,
+                            d['status']))
+                    self.make_request_for_date_asynchronous(
+                        current_request.ids, current_request.fields,
+                        current_request.sd, current_request.ed,
+                        current_request.date, current_request.place,
+                        current_request.entity,
+                        current_request.times_requested + 1)
+                    self.async_requests = [x for x in self.async_requests
+                                           if x.data['data']['id'] != d['id']]
         return self.df
 
     def get_df_from_completed_job(self, d):
@@ -580,7 +601,8 @@ class TwApi(object):
 
 
 class TwitterAsyncRequests(object):
-    def __init__(self, ids, fields, sd, ed, date, place, entity, data=None):
+    def __init__(self, ids, fields, sd, ed, date, place, entity, data=None,
+                 times_requested=1):
         self.ids = ids
         self.fields = fields
         self.sd = sd
@@ -590,3 +612,12 @@ class TwitterAsyncRequests(object):
         self.entity = entity
         self.data = data
         self.completed = False
+        self.times_requested = times_requested
+        self.attempts_processing = 0
+
+    def check_for_reset(self):
+        self.attempts_processing += 1
+        if self.attempts_processing > 20 * self.times_requested:
+            return True
+        else:
+            return False
