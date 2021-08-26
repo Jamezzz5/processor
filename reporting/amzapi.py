@@ -287,17 +287,15 @@ class AmzApi(object):
         return self.r
 
     def raw_request(self, url, method, body=None, params=None, headers=None):
-        if not body:
-            body = {}
-        if not headers:
-            headers = {}
-        if not params:
-            params = {}
+        kwargs = {}
+        for kwarg in [(body, 'json'), (params, 'params'), (headers, 'headers')]:
+            if kwarg[0]:
+                kwargs[kwarg[1]] = kwarg[0]
         if method == 'POST':
             request_method = self.client.post
         else:
             request_method = self.client.get
-        self.r = request_method(url, json=body, params=params, headers=headers)
+        self.r = request_method(url, **kwargs)
         return self.r
 
     def request_error(self):
