@@ -93,7 +93,7 @@ class TwApi(object):
         self.promoted_account_id_dict = None
         self.tweet_dict = None
         self.async_requests = []
-        self.v = 8
+        self.v = 9
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
