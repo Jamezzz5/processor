@@ -121,17 +121,17 @@ class PmApi(object):
         self.find_elem(xpath).click()
         time.sleep(sleep)
 
-    def search_title(self, title):
+    def search_title(self):
         self.browser.implicitly_wait(10)
         title_bar = \
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
-        title_bar.send_keys(title)
+        title_bar.send_keys(self.pm_title)
         time.sleep(10)
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
         self.click_on_xpath(title_result)
-        title = self.browser.find_element_by_xpath("//*[@class='entity-name']")
-        logging.info('Getting data for {}.'.format(title.text))
+        title_result = self.browser.find_element_by_xpath("//*[@class='entity-name']")
+        logging.info('Getting data for {}.'.format(title_result.text))
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
@@ -161,8 +161,8 @@ class PmApi(object):
         done_path = '//*[@id="date-filter-menu-date-picker-button"]/a/span'
         self.click_on_xpath(done_path)
 
-    def create_report(self, sd, ed, title):
-        self.search_title(title)
+    def create_report(self, sd, ed):
+        self.search_title()
         self.set_dates(sd, ed)
 
     def export_to_csv(self):
@@ -330,7 +330,7 @@ class PmApi(object):
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.go_to_url(self.base_url)
         self.sign_in()
-        self.create_report(sd, ed, self.pm_title)
+        self.create_report(sd, ed)
         self.export_to_csv()
         creative_df = self.create_creatives_df()
         df = self.get_file_as_df(self.temp_path, creative_df, ed)
