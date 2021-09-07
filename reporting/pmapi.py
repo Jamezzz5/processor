@@ -23,11 +23,11 @@ class PmApi(object):
         self.config_file = None
         self.username = None
         self.password = None
-        self.account = None
         self.config_list = None
         self.config = None
-        self.title = None
+        self.pm_title = None
         self.publisher = None
+        self.ispot_title = None
 
     def input_config(self, config):
         logging.info('Loading Pathmatics config file: {}.'.format(config))
@@ -44,7 +44,7 @@ class PmApi(object):
             sys.exit(0)
         self.username = self.config['username']
         self.password = self.config['password']
-        self.title = self.config['account_filter']
+        self.pm_title = self.config['account_filter']
         if not self.config['campaign_filter'] == "":
             self.publisher = self.config['campaign_filter']
         else:
@@ -62,9 +62,8 @@ class PmApi(object):
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields:
-            for val in fields:
-                if str(val) != 'nan':
-                    self.account = val
+            if str(fields) != 'nan':
+                self.ispot_title = fields[0].lower()
         return sd, ed
 
     def init_browser(self):
@@ -122,17 +121,17 @@ class PmApi(object):
         self.find_elem(xpath).click()
         time.sleep(sleep)
 
-    def search_title(self, title):
+    def search_title(self):
         self.browser.implicitly_wait(10)
         title_bar = \
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
-        title_bar.send_keys(title)
+        title_bar.send_keys(self.pm_title)
         time.sleep(10)
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
         self.click_on_xpath(title_result)
-        title = self.browser.find_element_by_xpath("//*[@class='entity-name']")
-        logging.info('Getting data for {}.'.format(title.text))
+        title_result = self.browser.find_element_by_xpath("//*[@class='entity-name']")
+        logging.info('Getting data for {}.'.format(title_result.text))
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
@@ -162,8 +161,8 @@ class PmApi(object):
         done_path = '//*[@id="date-filter-menu-date-picker-button"]/a/span'
         self.click_on_xpath(done_path)
 
-    def create_report(self, sd, ed, title):
-        self.search_title(title)
+    def create_report(self, sd, ed):
+        self.search_title()
         self.set_dates(sd, ed)
 
     def export_to_csv(self):
@@ -212,10 +211,7 @@ class PmApi(object):
         close.click()
         return size, spend
 
-    def get_creatives(self):
-        urls = []
-        sizes = []
-        spends = []
+    def get_pm_creatives(self, urls, sizes, spends):
         element = self.browser.find_element_by_xpath(
             '//*[@id="top-creatives-grid"]')
         html = element.get_attribute('innerHTML')
@@ -234,6 +230,59 @@ class PmApi(object):
             size, spend = self.get_size_spend(creative_element)
             sizes.append(size)
             spends.append(spend)
+
+    def search_and_view_ispot(self):
+        elem = self.browser.find_element_by_xpath('//*[@id="search-term"]')
+        elem.send_keys(self.ispot_title)
+        elem.send_keys(Keys.RETURN)
+
+        try:
+            elem = self.browser.find_element_by_xpath('//*[@class="view-all"]')
+            elem.click()
+        except (ex.NoSuchElementException, ex.
+                ElementClickInterceptedException):
+            pass
+
+    def get_ispot_creatives(self, urls, sizes, spends):
+        ispot_url = 'https://www.ispot.tv/search/'
+        self.browser.get(ispot_url)
+        try:
+            elem = self.browser.find_element_by_xpath(
+                '//*[@id="cookie-consent-close-btn"]')
+            elem.click()
+        except ex.NoSuchElementException:
+            pass
+        self.search_and_view_ispot()
+        while True:
+            ads = self.browser.find_elements_by_xpath(
+                '//li[@class="ad-thumbnails__item"]/a')
+            hrefs = []
+            for ad in ads:
+                if self.ispot_title in ad.text.lower():
+                    hrefs.append(ad.get_attribute("href"))
+
+            for href in hrefs:
+                self.browser.get(href)
+                elem = self.browser.find_element_by_xpath(
+                    '//video[@id="video-main"]/source')
+                url = elem.get_attribute("src")
+                self.browser.execute_script("window.history.go(-1)")
+                urls.append(url)
+                sizes.append("")
+                spends.append("0.000001")
+            try:
+                elem = self.browser.find_element_by_xpath('//*[@class="next"]')
+                elem.click()
+            except ex.NoSuchElementException:
+                break
+
+    def get_creatives(self):
+        urls = []
+        sizes = []
+        spends = []
+        self.get_pm_creatives(urls, sizes, spends)
+        if self.ispot_title:
+            self.get_ispot_creatives(urls, sizes, spends)
         return urls, sizes, spends
 
     def create_creatives_df(self):
@@ -281,7 +330,7 @@ class PmApi(object):
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.go_to_url(self.base_url)
         self.sign_in()
-        self.create_report(sd, ed, self.title)
+        self.create_report(sd, ed)
         self.export_to_csv()
         creative_df = self.create_creatives_df()
         df = self.get_file_as_df(self.temp_path, creative_df, ed)
