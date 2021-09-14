@@ -145,7 +145,7 @@ class RedApi(object):
 
     def set_breakdowns(self):
         logging.info('Setting breakdowns.')
-        bd_xpath = '//div[text()="Break Downs"]'
+        bd_xpath = '//div[text()="Breakdown"]'
         self.click_on_xpath(bd_xpath)
         bd_date_xpath = '//button[contains(normalize-space(),"Date")]'
         self.click_on_xpath(bd_date_xpath)
@@ -197,7 +197,7 @@ class RedApi(object):
         self.find_and_click_date(date, left_month, right_month, cal_xpath)
 
     def open_calendar(self, base_xpath):
-        cal_button_xpath = 'div[1]/div[2]/div/div'
+        cal_button_xpath = '/div/div/div'
         cal_xpath = base_xpath + cal_button_xpath
         self.click_on_xpath(cal_xpath)
         cal_table_xpath = '[2]/table/tbody/tr'
@@ -223,14 +223,14 @@ class RedApi(object):
             self.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
-        for metric in ['Conversion', 'Video', 'App Install Conversions',
+        for metric in ['Conversion', 'Video', 'App Install',
                        'Settings']:
             metric_xpath = '//label[text()="{}"]'.format(metric)
             self.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
         logging.info('Setting metrics.')
-        metric_button_xpath = 'div[1]/div[1]/div/div[2]/button/div'
+        metric_button_xpath = 'button/div'
         metric_xpath = base_xpath + metric_button_xpath
         self.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
