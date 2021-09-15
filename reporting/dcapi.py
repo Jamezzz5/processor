@@ -51,6 +51,7 @@ class DcApi(object):
         self.report_id = None
         self.config_list = None
         self.client = None
+        self.date_range = None
         self.version = '3.5'
         self.df = pd.DataFrame()
         self.r = None
@@ -130,7 +131,22 @@ class DcApi(object):
         full_url = (user_url + report_url)
         return full_url
 
+    def parse_fields(self, sd, ed, fields):
+        self.date_range = {
+            'startDate': sd.strftime('%Y-%m-%d'),
+            'endDate': ed.strftime('%Y-%m-%d')
+        }
+        if fields and fields != ['nan']:
+            self.date_range = {'kind': 'dfareporting#dateRange',
+                               'relativeDateRange': 'LAST_365_DAYS'}
+            for field in fields:
+                if field == '60':
+                    self.date_range['relativeDateRange'] = 'LAST_60_DAYS'
+                elif field == '30':
+                    self.date_range['relativeDateRange'] = 'LAST_30_DAYS'
+
     def get_data(self, sd=None, ed=None, fields=None):
+        self.parse_fields(sd, ed, fields)
         self.create_report()
         files_url = self.get_files_url()
         self.r = self.get_report(files_url)
@@ -270,8 +286,7 @@ class DcApi(object):
 
     def create_report_criteria(self):
         criteria = {
-            'dateRange': {'kind': 'dfareporting#dateRange',
-                          'relativeDateRange': 'LAST_365_DAYS'},
+            'dateRange': self.date_range,
             'dimensions': [{'kind': 'dfareporting#sortedDimension', 'name': x}
                            for x in self.default_fields],
             'metricNames': self.default_metrics,
