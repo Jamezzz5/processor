@@ -274,7 +274,7 @@ class RedApi(object):
                 logging.info('File downloaded.')
                 temp_file = os.path.join(temp_path, files)
                 time.sleep(5)
-                df = utl.import_read_csv(temp_file)
+                df = utl.import_read_csv(temp_file, empty_df=True)
                 os.remove(temp_file)
                 break
             time.sleep(5)
