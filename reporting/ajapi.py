@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import logging
@@ -9,15 +10,14 @@ import reporting.utils as utl
 
 config_path = utl.config_path
 
-base_url = 'http://api.adjust.com/kpis/v1/'
-
-def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus',
-              'events', 'clicks', 'impressions', 'cost']
-def_groupings = ['days', 'countries', 'events', 'os_names',
-                 'partners', 'trackers']
-
 
 class AjApi(object):
+    base_url = 'https://api.adjust.com/kpis/v1/'
+    def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus',
+                  'events', 'clicks', 'impressions', 'cost']
+    def_groupings = ['days', 'countries', 'events', 'os_names',
+                     'partners', 'campaign', 'adgroup', 'creative']
+
     def __init__(self):
         self.config = None
         self.config_file = None
@@ -30,14 +30,13 @@ class AjApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
+            logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
             sys.exit(0)
-        logging.info('Loading AJ config file: ' + str(config))
-        self.config_file = config_path + config
+        logging.info('Loading AJ config file: {}'.format(config))
+        self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.config_file = config_path + config
 
     def load_config(self):
         try:
@@ -49,12 +48,14 @@ class AjApi(object):
         self.app_token = self.config['app_token']
         self.tracker_token = self.config['tracker_token']
         self.api_token = self.config['api_token']
-        self.config_list = [self.config, self.app_token, self.api_token]
+        self.config_list = [('app_token', self.app_token),
+                            ('api_token', self.api_token)]
 
     def check_config(self):
         for item in self.config_list:
-            if item == '':
-                logging.warning(item + 'not in AJ config file.  Aborting.')
+            if item[1] == '':
+                logging.warning('{} not in AJ config file.  Aborting.'.format(
+                    item[0]))
                 sys.exit(0)
 
     @staticmethod
@@ -76,17 +77,14 @@ class AjApi(object):
         return sd, ed
 
     def create_url(self, sd, ed):
-        app_url = '{}?'.format(self.app_token)
-        token_url = 'user_token={}'.format(self.api_token)
-        kpi_url = '&kpis={}'.format(','.join(def_fields))
-        sded_url = '&start_date={}&end_date={}'.format(sd, ed)
-        group_url = '&grouping={}'.format(','.join(def_groupings))
-        full_url = (base_url + app_url + token_url + kpi_url + sded_url +
-                    group_url)
+        full_url = '{}{}'.format(self.base_url, self.app_token)
+        params = {'user_token': self.api_token,
+                  'kpis': ','.join(self.def_fields),
+                  'start_date': sd, 'end_date': ed,
+                  'grouping': ','.join(self.def_groupings)}
         if self.tracker_token:
-            track_url = '&tracker_filter={}'.format(self.tracker_token)
-            full_url += track_url
-        return full_url
+            params['tracker_filter'] = self.tracker_token
+        return full_url, params
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.df = pd.DataFrame()
@@ -96,12 +94,14 @@ class AjApi(object):
         return self.df
 
     def get_raw_data(self, sd, ed):
-        full_url = self.create_url(sd, ed)
+        logging.info('Getting data from {} to {}'.format(sd, ed))
+        full_url, params = self.create_url(sd, ed)
         headers = {'Accept': 'text/csv'}
-        self.r = requests.get(full_url, headers=headers)
+        self.r = requests.get(full_url, headers=headers, params=params)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
             self.df = self.df.append(tdf)
+            logging.info('Data downloaded, returning df.')
         else:
             self.request_error()
 
@@ -112,4 +112,5 @@ class AjApi(object):
     @staticmethod
     def data_to_df(r):
         df = pd.read_csv(StringIO(r.text))
+        df.columns = ['date' if 'date' in x else x for x in df.columns]
         return df
