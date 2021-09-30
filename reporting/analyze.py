@@ -34,6 +34,7 @@ class Analyze(object):
     vk_metrics = 'vendor_key_metrics'
     vendor_metrics = 'vendor_metrics'
     missing_metrics = 'missing_metrics'
+    flagged_metrics = 'flagged_metrics'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -560,6 +561,34 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.missing_metrics,
                                   message=missing_msg, data=mdf.to_dict())
 
+    def flag_errant_metrics(self):
+        df = self.get_table_without_format(group=dctc.VEN)
+        vendor_df = df.T
+        checks = {'CTR': ['Impressions', 'Clicks']}
+        thresholds = {'CTR': {'Google SEM': 0.2, 'All': 0.06}}
+        for check, metrics in checks.items():
+            edf = pd.DataFrame()
+            for vendor in vendor_df.columns:
+                num = vendor_df[vendor][metrics[1]]
+                den = vendor_df[vendor][metrics[0]]
+                if not den == 0:
+                    value = num / den
+                    if thresholds[check].get(vendor):
+                        threshold = thresholds[check][vendor]
+                    else:
+                        threshold = thresholds[check]['All']
+                    if value > threshold:
+                        errant_dict = {dctc.VEN: [vendor], metrics[0]: [den],
+                                       metrics[1]: [num], check: [value],
+                                       'Benchmark': threshold}
+                        edf = edf.append(pd.DataFrame(errant_dict),
+                                         ignore_index=True, sort=False)
+            flagged_msg = \
+                "The following vendors have unusually high {}s.".format(check)
+            logging.info('{}\n{}'.format(flagged_msg, edf.to_string()))
+            self.add_to_analysis_dict(key_col=self.flagged_metrics, param=check,
+                                      message=flagged_msg, data=edf.to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -595,6 +624,7 @@ class Analyze(object):
         self.get_column_names_from_raw_files()
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
+        self.flag_errant_metrics()
         self.write_analysis_dict()
 
 
