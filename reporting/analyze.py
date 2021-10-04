@@ -573,10 +573,12 @@ class Analyze(object):
                 threshold_dict[all_threshold])
             edf = edf[edf['CTR'] > edf[threshold_col]]
             if not edf.empty:
+                edf = edf[[metric_name, threshold_col]]
+                edf = edf.replace([np.inf, -np.inf], np.nan).fillna(0)
                 flagged_msg = ('The following vendors have unusually high {}s'
                                '.'.format(metric_name))
                 logging.info('{}\n{}'.format(
-                    flagged_msg, edf[[metric_name, threshold_col]].to_string()))
+                    flagged_msg, edf.to_string()))
                 self.add_to_analysis_dict(
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
