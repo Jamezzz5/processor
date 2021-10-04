@@ -34,6 +34,7 @@ class Analyze(object):
     vk_metrics = 'vendor_key_metrics'
     vendor_metrics = 'vendor_metrics'
     missing_metrics = 'missing_metrics'
+    flagged_metrics = 'flagged_metrics'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -313,9 +314,10 @@ class Analyze(object):
     def get_table_without_format(self, data_filter=None, group=dctc.CAM):
         group = [group]
         metrics = []
-        potential_metrics = [[cal.TOTAL_COST], [cal.NCF], [vmc.impressions],
-                             [vmc.clicks, 'CPC'], [vmc.landingpage, 'CPLP'],
-                             [vmc.btnclick, 'CPBC']]
+        potential_metrics = [[cal.TOTAL_COST], [cal.NCF],
+                             [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
+                             [vmc.landingpage, 'CPLP'], [vmc.btnclick, 'CPBC'],
+                             [vmc.purchase, 'CPP']]
         for metric in potential_metrics:
             if metric[0] in self.df.columns:
                 metrics += metric
@@ -560,6 +562,25 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.missing_metrics,
                                   message=missing_msg, data=mdf.to_dict())
 
+    def flag_errant_metrics(self):
+        df = self.get_table_without_format(group=dctc.VEN)
+        all_threshold = 'All'
+        threshold_col = 'threshold'
+        thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
+        for metric_name, threshold_dict in thresholds.items():
+            edf = df.copy()
+            edf[threshold_col] = edf.index.map(threshold_dict).fillna(
+                threshold_dict[all_threshold])
+            edf = edf[edf['CTR'] > edf[threshold_col]]
+            if not edf.empty:
+                flagged_msg = ('The following vendors have unusually high {}s'
+                               '.'.format(metric_name))
+                logging.info('{}\n{}'.format(
+                    flagged_msg, edf[[metric_name, threshold_col]].to_string()))
+                self.add_to_analysis_dict(
+                    key_col=self.flagged_metrics, param=metric_name,
+                    message=flagged_msg, data=edf.to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -595,6 +616,7 @@ class Analyze(object):
         self.get_column_names_from_raw_files()
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
+        self.flag_errant_metrics()
         self.write_analysis_dict()
 
 
@@ -661,7 +683,7 @@ class ValueCalc(object):
             formula = [db_translate[x] if x in formula[::2] else x
                        for x in formula]
         for item in formula:
-            if item.lower() == 'impressions':
+            if item.lower() == 'impressions' and 'Clicks' not in formula:
                 df[item] = df[item] / 1000
             if current_op:
                 if col in df and item in df:
