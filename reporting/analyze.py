@@ -314,9 +314,10 @@ class Analyze(object):
     def get_table_without_format(self, data_filter=None, group=dctc.CAM):
         group = [group]
         metrics = []
-        potential_metrics = [[cal.TOTAL_COST], [cal.NCF], [vmc.impressions],
-                             [vmc.clicks, 'CPC'], [vmc.landingpage, 'CPLP'],
-                             [vmc.btnclick, 'CPBC']]
+        potential_metrics = [[cal.TOTAL_COST], [cal.NCF],
+                             [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
+                             [vmc.landingpage, 'CPLP'], [vmc.btnclick, 'CPBC'],
+                             [vmc.purchase, 'CPP']]
         for metric in potential_metrics:
             if metric[0] in self.df.columns:
                 metrics += metric
@@ -563,31 +564,22 @@ class Analyze(object):
 
     def flag_errant_metrics(self):
         df = self.get_table_without_format(group=dctc.VEN)
-        vendor_df = df.T
-        checks = {'CTR': ['Impressions', 'Clicks']}
-        thresholds = {'CTR': {'Google SEM': 0.2, 'All': 0.06}}
-        for check, metrics in checks.items():
-            edf = pd.DataFrame()
-            for vendor in vendor_df.columns:
-                num = vendor_df[vendor][metrics[1]]
-                den = vendor_df[vendor][metrics[0]]
-                if not den == 0:
-                    value = num / den
-                    if thresholds[check].get(vendor):
-                        threshold = thresholds[check][vendor]
-                    else:
-                        threshold = thresholds[check]['All']
-                    if value > threshold:
-                        errant_dict = {dctc.VEN: [vendor], metrics[0]: [den],
-                                       metrics[1]: [num], check: [value],
-                                       'Benchmark': threshold}
-                        edf = edf.append(pd.DataFrame(errant_dict),
-                                         ignore_index=True, sort=False)
-            flagged_msg = \
-                "The following vendors have unusually high {}s.".format(check)
-            logging.info('{}\n{}'.format(flagged_msg, edf.to_string()))
-            self.add_to_analysis_dict(key_col=self.flagged_metrics, param=check,
-                                      message=flagged_msg, data=edf.to_dict())
+        all_threshold = 'All'
+        threshold_col = 'threshold'
+        thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
+        for metric_name, threshold_dict in thresholds.items():
+            edf = df.copy()
+            edf[threshold_col] = edf.index.map(threshold_dict).fillna(
+                threshold_dict[all_threshold])
+            edf = edf[edf['CTR'] > edf[threshold_col]]
+            if not edf.empty:
+                flagged_msg = ('The following vendors have unusually high {}s'
+                               '.'.format(metric_name))
+                logging.info('{}\n{}'.format(
+                    flagged_msg, edf[[metric_name, threshold_col]].to_string()))
+                self.add_to_analysis_dict(
+                    key_col=self.flagged_metrics, param=metric_name,
+                    message=flagged_msg, data=edf.to_dict())
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
@@ -691,7 +683,7 @@ class ValueCalc(object):
             formula = [db_translate[x] if x in formula[::2] else x
                        for x in formula]
         for item in formula:
-            if item.lower() == 'impressions':
+            if item.lower() == 'impressions' and 'Clicks' not in formula:
                 df[item] = df[item] / 1000
             if current_op:
                 if col in df and item in df:
