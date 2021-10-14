@@ -210,13 +210,9 @@ class VendorMatrix(object):
             for col in [vmc.autodicord, vmc.fullplacename]:
                 new_value = '|'.join(str(x) for x in source[col].split('\r\n'))
                 self.vm_change(index, col, new_value)
-            active_metric_cols = list(source['active_metrics'].keys())
-            for col in vmc.datacol:
-                if col in active_metric_cols:
-                    new_value = '|'.join(str(x)
-                                         for x in source['active_metrics'][col])
-                else:
-                    new_value = ''
+            for col in list(source['active_metrics'].keys()):
+                new_value = '|'.join(str(x)
+                                     for x in source['active_metrics'][col])
                 self.vm_change(index, col, new_value)
         self.write()
 
@@ -264,9 +260,12 @@ class VendorMatrix(object):
     def sort_vendor_list(self):
         self.set_full_filename()
         self.vl = self.vm_df[vmc.vendorkey].to_list()
+        sheet_name_splitter = '---'
         self.vl = sorted((x for x in self.vl if x not in self.process_omit_list
-                          and os.path.isfile(self.vm[vmc.filename][x])),
-                         key=lambda x: os.stat(self.vm[vmc.filename][x]))
+                          and os.path.isfile(self.vm[vmc.filename][x].
+                                             split(sheet_name_splitter)[0])),
+                         key=lambda x: os.stat(self.vm[vmc.filename][x].
+                                             split(sheet_name_splitter)[0]))
         self.vl.append(plan_key)
 
     def vm_loop(self):
@@ -905,6 +904,10 @@ def df_single_transform(df, transform):
         col_name = transform[1]
         col_val = transform[2]
         df = df[df[col_name].str.contains(col_val)]
+    if transform_type == 'CombineColumns':
+        cols = transform[1].split('|')
+        df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
+        df.drop(cols[1], axis=1, inplace=True)
     return df
 
 
