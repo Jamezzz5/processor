@@ -210,9 +210,13 @@ class VendorMatrix(object):
             for col in [vmc.autodicord, vmc.fullplacename]:
                 new_value = '|'.join(str(x) for x in source[col].split('\r\n'))
                 self.vm_change(index, col, new_value)
-            for col in list(source['active_metrics'].keys()):
-                new_value = '|'.join(str(x)
-                                     for x in source['active_metrics'][col])
+            active_metric_cols = list(source['active_metrics'].keys())
+            for col in vmc.datacol:
+                if col in active_metric_cols:
+                    new_value = '|'.join(str(x)
+                                         for x in source['active_metrics'][col])
+                else:
+                    new_value = ''
                 self.vm_change(index, col, new_value)
         self.write()
 
