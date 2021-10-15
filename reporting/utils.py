@@ -31,7 +31,7 @@ def dir_check(directory):
 
 def import_read_csv(filename, path=None, file_check=True, error_bad=True,
                     empty_df=False, nrows=None):
-    sheet_name_splitter = '---'
+    sheet_name_splitter = ':::'
     sheet_names = []
     if sheet_name_splitter in filename:
         filename = filename.split(sheet_name_splitter)
