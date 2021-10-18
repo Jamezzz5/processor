@@ -22,6 +22,7 @@ POST = 'POST'
 na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN',
              'null', '-nan', '1.#IND', '1.#QNAN', 'N/A', 'NULL', 'NaN', 'n/a',
              'nan']
+sheet_name_splitter = ':::'
 
 
 def dir_check(directory):
@@ -31,30 +32,41 @@ def dir_check(directory):
 
 def import_read_csv(filename, path=None, file_check=True, error_bad=True,
                     empty_df=False, nrows=None):
+    sheet_names = []
+    if sheet_name_splitter in filename:
+        filename = filename.split(sheet_name_splitter)
+        sheet_names = filename[1:]
+        filename = filename[0]
     if path:
         filename = os.path.join(path, filename)
     if file_check:
         if not os.path.isfile(filename):
             logging.warning('{} not found.  Continuing.'.format(filename))
             return pd.DataFrame()
+    file_type = os.path.splitext(filename)[1].lower()
+    kwargs = {'parse_dates': True, 'keep_default_na': False,
+              'na_values': na_values, 'nrows': nrows}
+    if sheet_names:
+        kwargs['sheet_name'] = sheet_names
+    if file_type == '.csv':
+        read_func = pd.read_csv
+    else:
+        read_func = pd.read_excel
     try:
-        df = pd.read_csv(filename, parse_dates=True, encoding='utf-8',
-                         keep_default_na=False, na_values=na_values,
-                         error_bad_lines=error_bad, nrows=nrows)
+        df = read_func(filename, encoding='utf-8',
+                       error_bad_lines=error_bad, **kwargs)
     except pd.io.common.CParserError:
-        df = pd.read_csv(filename, parse_dates=True, sep=None, engine='python',
-                         keep_default_na=False, na_values=na_values,
-                         nrows=nrows)
+        df = read_func(filename, sep=None, engine='python', **kwargs)
     except UnicodeDecodeError:
-        df = pd.read_csv(filename, parse_dates=True, encoding='iso-8859-1',
-                         keep_default_na=False, na_values=na_values,
-                         nrows=nrows)
+        df = read_func(filename, encoding='iso-8859-1', **kwargs)
     except pd.io.common.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         if empty_df:
             df = pd.DataFrame()
         else:
             df = None
+    if sheet_names:
+        df = pd.concat(df, ignore_index=True, sort=True)
     return df
 
 

@@ -264,9 +264,13 @@ class VendorMatrix(object):
     def sort_vendor_list(self):
         self.set_full_filename()
         self.vl = self.vm_df[vmc.vendorkey].to_list()
-        self.vl = sorted((x for x in self.vl if x not in self.process_omit_list
-                          and os.path.isfile(self.vm[vmc.filename][x])),
-                         key=lambda x: os.stat(self.vm[vmc.filename][x]))
+        self.vl = sorted(
+            (x for x in self.vl
+             if x not in self.process_omit_list
+             and os.path.isfile(self.vm[vmc.filename][x].
+                                split(utl.sheet_name_splitter)[0])),
+            key=lambda x: os.path.getsize(self.vm[vmc.filename][x].
+                                          split(utl.sheet_name_splitter)[0]))
         self.vl.append(plan_key)
 
     def vm_loop(self):
@@ -905,6 +909,10 @@ def df_single_transform(df, transform):
         col_name = transform[1]
         col_val = transform[2]
         df = df[df[col_name].str.contains(col_val)]
+    if transform_type == 'CombineColumns':
+        cols = transform[1].split('|')
+        df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
+        df.drop(cols[1], axis=1, inplace=True)
     return df
 
 
