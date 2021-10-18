@@ -20,7 +20,8 @@ class TikApi(object):
                'ctr', 'show_cnt', 'stat_cost', 'time_attr_convert_cnt',
                'play_duration_2s', 'play_duration_6s', 'play_over',
                'play_third_quartile', 'play_midpoint', 'play_first_quartile',
-               'total_play', 'ad_comment', 'ad_like', 'ad_share', 'ad_home_visited']
+               'total_play', 'ad_comment', 'ad_like', 'ad_share',
+               'ad_home_visited']
 
     def __init__(self):
         self.config = None
