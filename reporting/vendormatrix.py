@@ -264,12 +264,13 @@ class VendorMatrix(object):
     def sort_vendor_list(self):
         self.set_full_filename()
         self.vl = self.vm_df[vmc.vendorkey].to_list()
-        sheet_name_splitter = ':::'
-        self.vl = sorted((x for x in self.vl if x not in self.process_omit_list
-                          and os.path.isfile(self.vm[vmc.filename][x].
-                                             split(sheet_name_splitter)[0])),
-                         key=lambda x: os.stat(self.vm[vmc.filename][x].
-                                             split(sheet_name_splitter)[0]))
+        self.vl = sorted(
+            (x for x in self.vl
+             if x not in self.process_omit_list
+             and os.path.isfile(self.vm[vmc.filename][x].
+                                split(utl.sheet_name_splitter)[0])),
+            key=lambda x: os.path.getsize(self.vm[vmc.filename][x].
+                                          split(utl.sheet_name_splitter)[0]))
         self.vl.append(plan_key)
 
     def vm_loop(self):
