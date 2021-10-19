@@ -48,10 +48,10 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
               'na_values': na_values, 'nrows': nrows}
     if sheet_names:
         kwargs['sheet_name'] = sheet_names
-    if file_type == '.csv':
-        read_func = pd.read_csv
-    else:
+    if file_type == '.xlsx':
         read_func = pd.read_excel
+    else:
+        read_func = pd.read_csv
     try:
         df = read_func(filename, encoding='utf-8',
                        error_bad_lines=error_bad, **kwargs)
