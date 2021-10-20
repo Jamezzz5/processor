@@ -295,7 +295,7 @@ class PmApi(object):
         for url, size, spend in zip(urls, sizes, spends):
             new_row = [url, size, spend]
             creatives.loc[0 if pd.isnull(creatives.index.max()) else
-            creatives.index.max() + 1] = new_row
+                          creatives.index.max() + 1] = new_row
         return creatives
 
     @staticmethod
