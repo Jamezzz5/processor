@@ -127,7 +127,7 @@ class PmApi(object):
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
         title_bar.send_keys(self.pm_title)
         time.sleep(10)
-        title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]' \
+        title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
         self.click_on_xpath(title_result)
         title_result = self.browser.find_element_by_xpath("//*[@class='entity-name']")
