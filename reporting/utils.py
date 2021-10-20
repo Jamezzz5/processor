@@ -67,6 +67,7 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
             df = None
     if sheet_names:
         df = pd.concat(df, ignore_index=True, sort=True)
+    df = df.rename(columns=lambda x: x.strip())
     return df
 
 
@@ -142,6 +143,8 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
         if col not in df:
             continue
         df[col] = df[col].astype('U')
+        df[col] = df[col].str.strip()
+        df[col] = df[col].apply(lambda x: ' '.join(x.split()))
     for col in int_col:
         if col not in df:
             continue
