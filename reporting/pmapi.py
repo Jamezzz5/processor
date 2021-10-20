@@ -299,7 +299,18 @@ class PmApi(object):
         return creatives
 
     @staticmethod
-    def get_file_as_df(temp_path=None, creative_df=None, ed=None):
+    def clean_date_df(df):
+        metric_names = ['Desktop Display ($)',
+                        'Mobile Display ($)', 'Mobile Video ($)',
+                        'Desktop Video ($)', 'Facebook ($)']
+        df = df.melt(
+            id_vars=[x for x in df.columns if x not in metric_names],
+            value_vars=[x for x in metric_names if x in df.columns],
+            var_name='Environment-variable',
+            value_name='Environment-value')
+        return df
+
+    def get_file_as_df(self, temp_path=None, creative_df=None, ed=None):
         pd.DataFrame()
         file_path = None
         for x in range(1, 101):
@@ -313,10 +324,13 @@ class PmApi(object):
             else:
                 logging.info('Data downloaded.')
                 break
-        sheet_names = ['Daily Spend', 'Daily Impressions', 'Top Sites']
-        data_df = pd.concat(pd.read_excel(file_path, sheet_name=sheet_names,
-                            parse_dates=True), ignore_index=True)
-        df = pd.concat([data_df, creative_df], ignore_index=True)
+        sheet_names = {'Date': 'Daily Spend', 'Target': 'Top Sites'}
+        date_df = pd.read_excel(file_path, sheet_name=sheet_names['Date'],
+                                parse_dates=True)
+        target_df = pd.read_excel(file_path, sheet_name=sheet_names['Target'],
+                                  parse_dates=True)
+        date_df = self.clean_date_df(date_df)
+        df = pd.concat([date_df, target_df, creative_df], ignore_index=True)
         df['Date'].fillna(value=ed, inplace=True)
         df.to_csv('tmp/output.csv', encoding='utf-8')
         temp_file = os.path.join(temp_path, 'output.csv')
