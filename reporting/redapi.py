@@ -282,7 +282,7 @@ class RedApi(object):
 
     def change_account(self):
         account_url = self.browser.current_url.replace(
-            'dashboard/campaigns', 'accounts')
+            'dashboard?entity=campaigns', 'accounts')
         self.go_to_url(account_url)
         account_xpath = '//a[text()="{}"]'.format(self.account)
         self.click_on_xpath(account_xpath)
