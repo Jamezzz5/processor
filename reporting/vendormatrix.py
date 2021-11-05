@@ -81,16 +81,24 @@ class VendorMatrix(object):
 
     def write(self):
         logging.info('Writing vendormatrix to {}.'.format(csv_full_file))
-        self.vm_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+        rules = [x for x in self.vm_df.columns if 'RULE' in x]
+        cols = [vmc.vendorkey] + vmc.vmkeys + rules
+        self.vm_df[cols].to_csv(csv_full_file, index=False, encoding='utf-8')
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
             logging.error('No Plan Net key in Vendor Matrix.  Add it.')
             sys.exit(0)
 
+    def add_file_name_col(self):
+        self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
+            utl.sheet_name_splitter).str[0]
+        return self.vm_df
+
     def vm_parse(self):
         self.vm_df = pd.DataFrame(columns=vmc.datacol)
         self.vm_df = self.read()
+        self.vm_df = self.add_file_name_col()
         self.vm = self.vm_df.copy()
         self.plan_net_check()
         drop = [item for item in self.vm.columns.values.tolist()
@@ -772,8 +780,14 @@ class DataSource(object):
 
     def write(self, df=None):
         logging.debug('Writing {}'.format(self.p[vmc.filename]))
+        file_type = os.path.splitext(self.p[vmc.filename_true])[1].lower()
+        if file_type == '.xlsx':
+            write_func = df.to_excel
+        else:
+            write_func = df.to_csv
         try:
-            df.to_csv(self.p[vmc.filename], index=False, encoding='utf-8')
+            write_func(self.p[vmc.filename_true], index=False,
+                       encoding='utf-8')
         except IOError:
             logging.warning('{} could not be opened.  This file was not saved.'
                             ''.format(self.p[vmc.filename]))
