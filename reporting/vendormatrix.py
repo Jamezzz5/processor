@@ -263,11 +263,11 @@ class VendorMatrix(object):
         return self.tdf
 
     def set_full_filename(self):
-        self.vm[vmc.filename] = {x: self.vm[vmc.filename][x]
-                                 if '/' in self.vm[vmc.filename][x]
-                                 else os.path.join(utl.raw_path,
-                                                   self.vm[vmc.filename][x])
-                                 for x in self.vm[vmc.filename]}
+        for col in [vmc.filename, vmc.filename_true]:
+            self.vm[col] = {
+                x: self.vm[col][x] if '/' in self.vm[col][x]
+                else os.path.join(utl.raw_path, self.vm[col][x])
+                for x in self.vm[col]}
 
     def sort_vendor_list(self):
         self.set_full_filename()
