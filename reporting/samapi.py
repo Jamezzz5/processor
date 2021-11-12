@@ -82,7 +82,8 @@ class SamApi(object):
         return sd, ed
 
     def check_empty_df(self):
-        if self.df.iloc[0, 0] == 'No data returned by the reporting service.':
+        if (self.df.empty or self.df.iloc[0, 0] ==
+                'No data returned by the reporting service.'):
             logging.warning('No data in response, returning empty df.')
             self.df = pd.DataFrame()
 
