@@ -88,7 +88,7 @@ class TtdApi(object):
                               x['ReportExecutionState'] == 'Complete']
                 data.extend(match_data)
                 i += 1
-            elif ('Message'in raw_data and
+            elif ('Message' in raw_data and
                     raw_data['Message'] == 'Too Many Requests'):
                 logging.warning('Rate limit exceeded, '
                                 'pausing for 300s: {}'.format(raw_data))
@@ -110,9 +110,17 @@ class TtdApi(object):
             sys.exit(0)
         return error_response_count
 
+    def get_df_from_response(self, r):
+        try:
+            self.df = pd.read_csv(StringIO(r.content.decode('utf-8')))
+        except pd.io.common.EmptyDataError:
+            logging.warning('Report is empty, returning blank df.')
+            self.df = pd.DataFrame()
+        return self.df
+
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
         dl_url = self.get_download_url()
         r = requests.get(dl_url, headers=self.headers)
-        self.df = pd.read_csv(StringIO(r.content.decode('utf-8')))
+        self.df = self.get_df_from_response(r)
         return self.df
