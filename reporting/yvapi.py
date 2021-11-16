@@ -1,0 +1,174 @@
+import os
+import sys
+import json
+import logging
+import requests
+import pandas as pd
+import datetime as dt
+import reporting.utils as utl
+import time
+import jwt
+
+config_path = utl.config_path
+
+
+class YvApi(object):
+
+    token_url = "https://id.b2b.verizonmedia.com/identity/oauth2/access_token"
+    aud = "https://id.b2b.verizonmedia.com/identity/oauth2/access_token?realm=dsp"
+    auth_url = "http://api-sched-v3.admanagerplus.yahoo.com/yamplus_api/extreport/"
+    start_time_str = "T00:00:00-08:00"
+    end_time_str = "T23:59:59-08:00"
+
+    def __init__(self):
+        self.config = None
+        self.config_file = None
+        self.username = None
+        self.password = None
+        self.client_id = None
+        self.client_secret = None
+        self.advertiser = None
+        self.campaign_filter = None
+        self.config_list = None
+        self.header = None
+        self.act_id = None
+        self.access_token = None
+        self.response_tokens = []
+        self.aid_dict = {}
+        self.cid_dict = {}
+        self.df = pd.DataFrame()
+        self.r = None
+        self.jwt_token = None
+        self.report_id = None
+        self.url = None
+
+    def input_config(self, config):
+        if str(config) == 'nan':
+            logging.warning('Config file name not in vendor matrix.  '
+                            'Aborting.')
+            sys.exit(0)
+        logging.info(
+            'Loading Yahoo DSP - Verizon config file: {}'.format(config))
+        self.config_file = os.path.join(self.config_path, config)
+        self.load_config()
+        self.check_config()
+
+    def load_config(self):
+        try:
+            with open(self.config_file, 'r') as f:
+                self.config = json.load(f)
+        except IOError:
+            logging.error('{} not found.  Aborting.'.format(self.config_file))
+            sys.exit(0)
+        self.client_id = self.config["client_id"]
+        self.client_secret = self.config["client_secret"]
+        self.advertiser = int(self.config["advertiser"])
+        self.config_list = [self.config, self.client_id, self.client_secret,
+                            self.advertiser]
+
+    def check_config(self):
+        for item in self.config_list:
+            if item == '':
+                logging.warning('{} not in Yahoo DSP - Verizon config file.  '
+                                'Aborting.'.format(item))
+                sys.exit(0)
+
+    def set_header(self):
+        token = self.get_token()
+        self.access_token = token['access_token']
+        self.header = {"X-Auth-Method": "OAuth2",
+                       "X-Auth-Token": self.access_token}
+        logging.info('Header set with access token')
+
+    def get_token(self):
+        logging.info('Retrieving access token')
+        token_header = {"Content-Type": "application/x-www-form-urlencoded",
+                        "Accept": "application/json"}
+        assertion = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        jwt_header = {
+            "alg": "HS256",
+            "typ": "jwt"
+        }
+
+        jwt_payload = {
+            "aud": self.aud,
+            "iss": self.client_id,
+            "sub": self.client_id,
+            "exp": time.time() + 600,
+            "iat": time.time(),
+            "jti": "f8799df2-254e-11ec-9621-0242ac130002"
+        }
+        jwt_token = jwt.encode(payload=jwt_payload, key=self.client_secret,
+                               headers=jwt_header)
+        self.jwt_token = jwt_token
+        params = {
+            "grant_type": "client_credentials",
+            "client_assertion_type": assertion,
+            "client_assertion": jwt_token,
+            "scope": "dsp-api-access",
+            "realm": "dsp"}
+        r = requests.post(self.token_url, data=params, headers=token_header)
+        token = r.json()
+        logging.info('Access token retrieved')
+        self.access_token = token
+        return token
+
+    @staticmethod
+    def format_dates(sd, ed):
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        return sd, ed
+
+    @staticmethod
+    def date_check(sd, ed):
+        if sd > ed or sd == ed:
+            logging.warning('Start date greater than or equal to end date.'
+                            'Start date was set to end date.')
+            sd = ed - dt.timedelta(days=1)
+        return sd, ed
+
+    def get_data_default_check(self, sd, ed):
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=2)
+        if ed is None:
+            ed = dt.datetime.today() + dt.timedelta(days=1)
+        if dt.datetime.today().date() == ed.date():
+            ed += dt.timedelta(days=1)
+        sd, ed = self.date_check(sd, ed)
+        return sd, ed
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        self.set_header()
+        sd, ed = self.get_data_default_check(sd, ed)
+        sd, ed = self.format_dates(sd, ed)
+        logging.info('Getting data from {} to {}'.format(sd, ed))
+        sd_time = sd + self.start_time_str
+        ed_time = ed + self.end_time_str
+        payload = {
+            "reportOption": {
+                "timezone": "America/Los_Angeles",
+                "currency": 4,
+                "dimensionTypeIds": [4, 5, 8, 34, 39],
+                "metricTypeIds": [1, 2, 23, 25, 26, 27, 28, 29, 44, 109, 110, 138],
+                "accountIds": [self.advertiser]
+            },
+            "intervalTypeId": 2,
+            "dateTypeId": 11,
+            "startDate": sd_time,
+            "endDate": ed_time
+        }
+
+        auth_header = {"Content-Type": "application/json",
+                       "X-Auth-Method": "OAuth2",
+                       "X-Auth-Token": self.access_token
+                       }
+        r = requests.post(self.auth_url, headers=auth_header, json=payload)
+
+        download_url = "http://api-sched-v3.admanagerplus.yahoo.com/yamplus_api/extreport/" + \
+            r.json()['customerReportId']
+        time.sleep(10)
+        r_report = requests.get(download_url, headers=auth_header)
+        print(r_report.json())
+        tdf = pd.DataFrame(r_report.json()['url'])
+        logging.info('Data downloaded, returning df')
+        return tdf
