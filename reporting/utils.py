@@ -23,7 +23,7 @@ na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN',
              'null', '-nan', '1.#IND', '1.#QNAN', 'N/A', 'NULL', 'NaN', 'n/a',
              'nan']
 sheet_name_splitter = ':::'
-
+tmp_file_suffix = 'TMP'
 
 def dir_check(directory):
     if not os.path.isdir(directory):
