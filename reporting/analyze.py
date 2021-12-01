@@ -583,19 +583,19 @@ class Analyze(object):
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
 
-    @staticmethod
-    def processor_clean_functions(df, cd, cds_name, clean_functions):
+    def processor_clean_functions(self, df, cd, cds_name, clean_functions, vk):
         for text, clean_func in clean_functions.items():
             try:
                 df = clean_func(df)
             except Exception as e:
                 msg = 'Could not {} with error: {}'.format(text, e)
                 cd[text][cds_name] = (False, msg)
+                self.write_raw_file_dict(vk, cd)
                 return df, cd, False
+            self.write_raw_file_dict(vk, cd)
         return df, cd, True
 
-    @staticmethod
-    def compare_start_end_date_raw(df, cd, cds_name, cds, vk='vk'):
+    def compare_start_end_date_raw(self, df, cd, cds_name, cds, vk='vk'):
         df = df.copy()
         df[vmc.vendorkey] = vk
         df[vmc.date] = cds.p[vmc.date][0]
@@ -622,7 +622,14 @@ class Analyze(object):
                      cds.p[vmc.startdate], cds.p[vmc.enddate],
                      min_date, max_date))
         cd[vmc.startdate][cds_name] = msg
+        self.write_raw_file_dict(vk, cd)
         return cd
+
+    @staticmethod
+    def write_raw_file_dict(vk, cd):
+        file_name = '{}.json'.format(vk)
+        with open(file_name, 'w') as fp:
+            json.dump(cd, fp)
 
     def compare_raw_files(self, vk):
         ds = self.matrix.get_data_source(vk)
@@ -646,6 +653,7 @@ class Analyze(object):
                 ds.remove_cols_and_make_calculations}
         for x in ccols + list(clean_functions.keys()):
             cd[x] = {}
+        self.write_raw_file_dict(vk, cd)
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
                 df = cds.get_raw_df()
@@ -660,8 +668,10 @@ class Analyze(object):
                            'Please save the new file.')
                 cd['file_load'][cds_name] = (
                     '{} file could not be loaded.  {}'.format(cds_name, msg))
+                self.write_raw_file_dict(vk, cd)
                 continue
             cd['file_load'][cds_name] = (True, 'File was successfully read.')
+            self.write_raw_file_dict(vk, cd)
             for col in [vmc.fullplacename, vmc.placement, vmc.date] + ccols:
                 cols_to_check = ds.p[col]
                 if col == vmc.placement:
@@ -676,20 +686,24 @@ class Analyze(object):
                 else:
                     msg = (True, '{} columns are in the raw file.'.format(col))
                 cd[col][cds_name] = msg
+                self.write_raw_file_dict(vk, cd)
             if df is None or df.empty:
                 msg = '{} file is empty skipping checks.'.format(cds_name)
                 cd['empty'][cds_name] = (False, msg)
+                self.write_raw_file_dict(vk, cd)
                 continue
             total_mb = int(round(df.memory_usage(index=True).sum() / 1000000))
             msg = '{} file has {} rows and is {}MB.'.format(
                 cds_name, len(df.index), total_mb)
             cd['empty'][cds_name] = (True, msg)
+            self.write_raw_file_dict(vk, cd)
             cd = self.compare_start_end_date_raw(df, cd, cds_name, cds, vk)
             df, cd, success = self.processor_clean_functions(
-                df, cd, cds_name, clean_functions)
+                df, cd, cds_name, clean_functions, vk)
             if not success:
                 continue
             cds.df = df
+            self.write_raw_file_dict(vk, cd)
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
