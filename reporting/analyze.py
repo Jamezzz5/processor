@@ -35,6 +35,7 @@ class Analyze(object):
     vendor_metrics = 'vendor_metrics'
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
+    placement_col = 'placement_col'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -705,6 +706,31 @@ class Analyze(object):
             cds.df = df
             self.write_raw_file_dict(vk, cd)
 
+    def find_placement_name_column(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            file_name = source.p[vmc.filename]
+            first_row = source.p[vmc.firstrow]
+            p_col = source.p[vmc.placement]
+            if os.path.exists(file_name):
+                tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
+                tdf = utl.first_last_adj(tdf, first_row, 0)
+                tdf = tdf.applymap(lambda x: str(x).count('_'))\
+                    .apply(lambda x: sum(x))
+                r_col = tdf.idxmax(axis=1)
+                if r_col > p_col:
+                    data_dict = {vmc.vendorkey: [source.key],
+                                 'Current Placement Col:': p_col,
+                                 'Suggested:': r_col}
+                    df = df.append(pd.DataFrame(data_dict),
+                                   ignore_index=True, sort=False)
+        update_msg = 'The following data sources have more breakouts in ' \
+                     'another column. Consider changing placement name source:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.placement_col,
+                                  message=update_msg, data=df.to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -741,6 +767,7 @@ class Analyze(object):
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
+        self.find_placement_name_column()
         self.write_analysis_dict()
 
 
