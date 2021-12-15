@@ -665,7 +665,7 @@ class Analyze(object):
                 if total <= 0:
                     msg = (False, 'Sum of column {} was {}'.format(col, total))
                 else:
-                    msg = (True, total)
+                    msg = (True, int(total))
                 if cds_name == 'New':
                     old_total = cd[col]['Old'][1]
                     if (not isinstance(old_total, str) and
