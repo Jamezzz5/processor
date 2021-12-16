@@ -73,7 +73,6 @@ class DbApi(object):
         self.access_token = self.config['access_token']
         self.refresh_token = self.config['refresh_token']
         self.refresh_url = self.config['refresh_url']
-        self.report_id = self.config['report_id']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url]
         if 'advertiser_id' in self.config:
@@ -111,7 +110,7 @@ class DbApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.create_report()
+        self.create_report(sd, ed)
         self.get_raw_data()
         self.check_empty_df()
         self.remove_footer()
@@ -125,24 +124,25 @@ class DbApi(object):
     def remove_footer(self):
         self.df = self.df[~self.df.isnull().any(axis=1)]
 
-    def create_report(self):
-        if self.report_id:
-            return
+    def create_report(self, sd, ed):
         logging.info('No report specified, creating.')
         query_url = self.create_query_url()
         params = self.create_report_params()
         metadata = self.create_report_metadata()
-        end_time = round((dt.datetime.today() + dt.timedelta(
-            days=365) - dt.datetime.utcfromtimestamp(0)).total_seconds() * 1000)
+        start_time = round((sd - dt.datetime.utcfromtimestamp(0))
+                           .total_seconds() * 1000)
+        end_time = round((ed - dt.datetime.utcfromtimestamp(0))
+                         .total_seconds() * 1000)
         body = {
             'kind': 'doubleclickbidmanager#query',
             'metadata': metadata,
             'params': params,
             'schedule': {
-                'endTimeMs': end_time,
-                'frequency': 'DAILY',
-                'nextRunMinuteOfDay': 0,
-                'nextRunTimezoneCode': 'America/Los_Angeles'}}
+                'frequency': 'ONE_TIME'},
+        "reportDataStartTimeMs": start_time,
+        "reportDataEndTimeMs": end_time,
+        "timezoneCode": 'America/Los_Angeles'
+        }
         self.r = self.make_request(query_url, method='post', body=body)
         if 'queryId' not in self.r.json():
             logging.warning('queryId not in response:{}'.format(self.r.json()))
@@ -216,7 +216,7 @@ class DbApi(object):
         report_name = '{}_{}_report'.format(
             self.advertiser_id, self.campaign_id)
         metadata = {
-            'dataRange': 'LAST_90_DAYS',
+            'dataRange': 'CUSTOM_DATES',
             'format': 'CSV',
             'title': report_name}
         return metadata
