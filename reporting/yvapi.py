@@ -1,22 +1,23 @@
 import os
 import sys
+import jwt
+import time
 import json
 import logging
 import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-import time
-import jwt
 
 config_path = utl.config_path
 
 
 class YvApi(object):
-
-    token_url = "https://id.b2b.verizonmedia.com/identity/oauth2/access_token"
-    aud = "https://id.b2b.verizonmedia.com/identity/oauth2/access_token?realm=dsp"
-    auth_url = "http://api-sched-v3.admanagerplus.yahoo.com/yamplus_api/extreport/"
+    b2b_url = 'https://id.b2b.verizonmedia.com'
+    token_url = "{}/identity/oauth2/access_token".format(b2b_url)
+    aud = "{}/identity/oauth2/access_token?realm=dsp".format(b2b_url)
+    schedule_url = 'http://api-sched-v3.admanagerplus.yahoo.com'
+    report_url = '{}/yamplus_api/extreport/'.format(schedule_url)
     start_time_str = "T00:00:00-08:00"
     end_time_str = "T23:59:59-08:00"
 
@@ -49,7 +50,7 @@ class YvApi(object):
             sys.exit(0)
         logging.info(
             'Loading Yahoo DSP - Verizon config file: {}'.format(config))
-        self.config_file = os.path.join(self.config_path, config)
+        self.config_file = os.path.join(utl.config_path, config)
         self.load_config()
         self.check_config()
 
@@ -89,7 +90,6 @@ class YvApi(object):
             "alg": "HS256",
             "typ": "jwt"
         }
-
         jwt_payload = {
             "aud": self.aud,
             "iss": self.client_id,
@@ -137,19 +137,45 @@ class YvApi(object):
         sd, ed = self.date_check(sd, ed)
         return sd, ed
 
-    def get_data(self, sd=None, ed=None, fields=None):
-        self.set_header()
-        sd, ed = self.get_data_default_check(sd, ed)
-        sd, ed = self.format_dates(sd, ed)
-        logging.info('Getting data from {} to {}'.format(sd, ed))
-        sd_time = sd + self.start_time_str
-        ed_time = ed + self.end_time_str
+    def check_file(self, download_url, attempt=1):
+        r = requests.get(download_url, headers=self.header)
+        if 'status' in r.json() and r.json()['status'] == 'Success':
+            return True, r
+        else:
+            logging.info('Report unavailable.  Attempt {}.  '
+                         'Response: {}'.format(attempt, r.json()))
+            time.sleep(30)
+            return False, r
+
+    def get_report(self, download_url):
+        report_status = False
+        r = None
+        for x in range(1, 101):
+            report_status, r = self.check_file(download_url, attempt=x)
+            if report_status:
+                break
+        if not report_status:
+            logging.warning('Report could not download returning blank df.')
+            return None
+        logging.info('Report available.  Downloading.')
+        if 'url' in r.json():
+            df = pd.read_csv(r.json()['url'])
+        else:
+            logging.warning('Url not in response likely no rows, '
+                            'returning blank df.')
+            df = pd.DataFrame()
+        return df
+
+    def request_report(self, sd, ed):
+        sd_time = '{}{}'.format(sd, self.start_time_str)
+        ed_time = '{}{}'.format(ed, self.end_time_str)
         payload = {
             "reportOption": {
                 "timezone": "America/Los_Angeles",
                 "currency": 4,
                 "dimensionTypeIds": [4, 5, 8, 34, 39],
-                "metricTypeIds": [1, 2, 23, 25, 26, 27, 28, 29, 44, 109, 110, 138],
+                "metricTypeIds": [1, 2, 23, 25, 26, 27, 28,
+                                  29, 44, 109, 110, 138],
                 "accountIds": [self.advertiser]
             },
             "intervalTypeId": 2,
@@ -157,18 +183,18 @@ class YvApi(object):
             "startDate": sd_time,
             "endDate": ed_time
         }
+        self.header['Content-Type'] = 'application/json'
+        r = requests.post(self.report_url, headers=self.header, json=payload)
+        report_id = r.json()['customerReportId']
+        download_url = "{}{}".format(self.report_url, report_id)
+        return download_url
 
-        auth_header = {"Content-Type": "application/json",
-                       "X-Auth-Method": "OAuth2",
-                       "X-Auth-Token": self.access_token
-                       }
-        r = requests.post(self.auth_url, headers=auth_header, json=payload)
-
-        download_url = "http://api-sched-v3.admanagerplus.yahoo.com/yamplus_api/extreport/" + \
-            r.json()['customerReportId']
-        time.sleep(10)
-        r_report = requests.get(download_url, headers=auth_header)
-        print(r_report.json())
-        tdf = pd.DataFrame(r_report.json()['url'])
+    def get_data(self, sd=None, ed=None, fields=None):
+        self.set_header()
+        sd, ed = self.get_data_default_check(sd, ed)
+        sd, ed = self.format_dates(sd, ed)
+        logging.info('Getting data from {} to {}'.format(sd, ed))
+        download_url = self.request_report(sd, ed)
+        df = self.get_report(download_url)
         logging.info('Data downloaded, returning df')
-        return tdf
+        return df
