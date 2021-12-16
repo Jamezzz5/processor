@@ -583,6 +583,179 @@ class Analyze(object):
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
 
+    @staticmethod
+    def processor_clean_functions(df, cd, cds_name, clean_functions):
+        success = True
+        for text, clean_func in clean_functions.items():
+            if not success:
+                msg = 'A previous step failed to process.'
+                cd[text][cds_name] = (False, msg)
+                continue
+            try:
+                df = clean_func(df)
+                msg = 'Successfully able to {}'.format(text)
+                cd[text][cds_name] = (True, msg)
+            except Exception as e:
+                msg = 'Could not {} with error: {}'.format(text, e)
+                cd[text][cds_name] = (False, msg)
+                success = False
+        return df, cd, success
+
+    @staticmethod
+    def compare_start_end_date_raw(df, cd, cds_name, cds, vk='vk'):
+        df = df.copy()
+        df[vmc.vendorkey] = vk
+        df[vmc.date] = df[cds.p[vmc.date][0]]
+        df = utl.data_to_type(df=df, date_col=vmc.datadatecol)
+        df = df[[vmc.vendorkey, vmc.date]].groupby([vmc.vendorkey]).agg(
+            {vmc.date: [np.min, np.max]})
+        df.columns = [' - '.join(col).strip() for col in df.columns]
+        tdf = df.reset_index()
+        max_date = tdf['{} - amax'.format(vmc.date)][0]
+        min_date = tdf['{} - amin'.format(vmc.date)][0]
+        if max_date < cds.p[vmc.startdate]:
+            msg = ('Last day in raw file {} is less than start date {}.\n'
+                   'Result will be blank.  Change start date.'.format(
+                     max_date, cds.p[vmc.startdate]))
+            msg = (False, msg)
+        elif min_date > cds.p[vmc.enddate]:
+            msg = ('First day in raw file {} is less than end date {}.\n'
+                   'Result will be blank.  Change end date.'.format(
+                     min_date, cds.p[vmc.enddate]))
+            msg = (False, msg)
+        else:
+            msg = ('Some or all data in raw file with date range {} - {} '
+                   'falls between start and end dates {} - {}'.format(
+                     cds.p[vmc.startdate], cds.p[vmc.enddate],
+                     min_date, max_date))
+        cd[vmc.startdate][cds_name] = (True, msg)
+        return cd
+
+    def check_raw_file_against_plan_net(self, df, cd, cds_name):
+        plan_df = self.matrix.vendor_get(vm.plan_key)
+        if plan_df.empty:
+            msg = (False, 'Plan net is empty could not check.')
+        else:
+            plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+            df = vm.full_placement_creation(df, None, dctc.FPN, plan_names)
+            missing = [x for x in df[dctc.FPN].unique()
+                       if x not in plan_df[dctc.FPN].unique()]
+            if not missing:
+                msg = (True, 'All values defined in plan net.')
+            else:
+                missing = ', '.join(missing)
+                msg = (False, 'The following values were not in the plan net '
+                              'dictionary: {}'.format(missing))
+        cd[vm.plan_key][cds_name] = msg
+        return cd
+
+    @staticmethod
+    def write_raw_file_dict(vk, cd):
+        utl.dir_check(utl.tmp_file_suffix)
+        file_name = '{}.json'.format(vk)
+        file_name = os.path.join(utl.tmp_file_suffix, file_name)
+        with open(file_name, 'w') as fp:
+            json.dump(cd, fp)
+
+    @staticmethod
+    def check_combine_col_totals(cd, df, cds_name, c_cols):
+        for col in c_cols:
+            if col in df.columns:
+                total = df[col].sum()
+                if total <= 0:
+                    msg = (False, 'Sum of column {} was {}'.format(col, total))
+                else:
+                    msg = (True, int(total))
+                if cds_name == 'New':
+                    old_total = cd[col]['Old'][1]
+                    if (not isinstance(old_total, str) and
+                            not isinstance(total, str) and old_total > total):
+                        msg = (
+                            False, 'Old file total {} was greater than new '
+                                   'file total {} for col {}'.format(
+                                      old_total, total, col))
+                cd[col][cds_name] = msg
+        return cd
+
+    @staticmethod
+    def get_base_raw_file_dict(ds):
+        cd = {'file_load': {},
+              vmc.fullplacename: {},
+              vmc.placement: {},
+              vmc.date: {},
+              'empty': {},
+              vmc.startdate: {}}
+        c_cols = [x for x in vmc.datafloatcol if ds.p[x] != ['nan']]
+        clean_functions = {
+            'get and merge dictionary': ds.get_and_merge_dictionary,
+            'combine data': ds.combine_data,
+            'remove cols and make calculations':
+                ds.remove_cols_and_make_calculations}
+        for x in c_cols + list(clean_functions.keys()) + [vm.plan_key]:
+            cd[x] = {}
+        return cd, clean_functions, c_cols
+
+    def compare_raw_files(self, vk):
+        ds = self.matrix.get_data_source(vk)
+        tds = self.matrix.get_data_source(vk)
+        file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
+        tmp_file = ds.p[vmc.filename_true].replace(
+            file_type, '{}{}'.format(utl.tmp_file_suffix, file_type))
+        tds.p[vmc.filename_true] = tmp_file
+        tds.p[vmc.filename] = tmp_file
+        cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
+        for cds_name, cds in {'Old': ds, 'New': tds}.items():
+            try:
+                df = cds.get_raw_df()
+            except Exception as e:
+                logging.warning('Unknown exception: {}'.format(e))
+                if cds_name == 'New':
+                    msg = 'Please open the file in excel, select all columns, '
+                    'select General in the Number format dropdown, '
+                    'save as a csv and retry.'
+                else:
+                    msg = ('The old file may not exist.  '
+                           'Please save the new file.')
+                cd['file_load'][cds_name] = (
+                    False,
+                    '{} file could not be loaded.  {}'.format(cds_name, msg))
+                continue
+            cd['file_load'][cds_name] = (True, 'File was successfully read.')
+            for col in [vmc.fullplacename, vmc.placement, vmc.date] + c_cols:
+                cols_to_check = ds.p[col]
+                if col == vmc.placement:
+                    cols_to_check = [ds.p[col]]
+                missing_cols = [x for x in cols_to_check
+                                if x.replace('::', '') not in df.columns]
+                if missing_cols:
+                    msg = (False,
+                           'Columns specified in the {} are not in the'
+                           ' new file those columns are: '
+                           '{}'.format(col, ','.join(missing_cols)))
+                else:
+                    msg = (True, '{} columns are in the raw file.'.format(col))
+                cd[col][cds_name] = msg
+            if df is None or df.empty:
+                msg = '{} file is empty skipping checks.'.format(cds_name)
+                cd['empty'][cds_name] = (False, msg)
+                continue
+            total_mb = int(round(df.memory_usage(index=True).sum() / 1000000))
+            msg = '{} file has {} rows and is {}MB.'.format(
+                cds_name, len(df.index), total_mb)
+            cd['empty'][cds_name] = (True, msg)
+            cd = self.compare_start_end_date_raw(df, cd, cds_name, cds, vk)
+            df, cd, success = self.processor_clean_functions(
+                df, cd, cds_name, clean_functions)
+            if not success:
+                for col in [vm.plan_key]:
+                    msg = ('Could not fully process files so no '
+                           'additional checks could be made.')
+                    cd[col][cds_name] = (False, msg)
+            cd = self.check_combine_col_totals(cd, df, cds_name, c_cols)
+            cd = self.check_raw_file_against_plan_net(df, cd, cds_name)
+            cds.df = df
+        self.write_raw_file_dict(vk, cd)
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict

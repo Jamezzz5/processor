@@ -200,6 +200,10 @@ class VendorMatrix(object):
         ven_param = {x: self.vm[x][vk] for x in self.vm}
         return ven_param
 
+    def vm_change_on_key(self, vk, col, new_value):
+        idx = self.vm_df[self.vm_df[vmc.vendorkey] == vk].index
+        self.vm_change(idx, col, new_value)
+
     def vm_change(self, index, col, new_value):
         self.vm_df.loc[index, col] = new_value
 

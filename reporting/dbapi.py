@@ -216,7 +216,7 @@ class DbApi(object):
         report_name = '{}_{}_report'.format(
             self.advertiser_id, self.campaign_id)
         metadata = {
-            'dataRange': 'LAST_365_DAYS',
+            'dataRange': 'LAST_90_DAYS',
             'format': 'CSV',
             'title': report_name}
         return metadata
