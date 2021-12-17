@@ -73,6 +73,7 @@ class DbApi(object):
         self.access_token = self.config['access_token']
         self.refresh_token = self.config['refresh_token']
         self.refresh_url = self.config['refresh_url']
+        self.report_id = self.config['report_id']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url]
         if 'advertiser_id' in self.config:
@@ -125,6 +126,8 @@ class DbApi(object):
         self.df = self.df[~self.df.isnull().any(axis=1)]
 
     def create_report(self, sd, ed):
+        if self.report_id:
+            return
         logging.info('No report specified, creating.')
         query_url = self.create_query_url()
         params = self.create_report_params()
@@ -147,10 +150,9 @@ class DbApi(object):
         if 'queryId' not in self.r.json():
             logging.warning('queryId not in response:{}'.format(self.r.json()))
         self.report_id = self.r.json()['queryId']
-        self.config['report_id'] = self.report_id
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
-        logging.info('Report created.  Pausing for 30s.')
+        logging.info('Report created -- ID: {}. Pausing for 30s.'.format(self.report_id))
         time.sleep(30)
 
     def make_request(self, url, method, body=None):
