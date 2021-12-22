@@ -611,23 +611,24 @@ class Analyze(object):
             {vmc.date: [np.min, np.max]})
         df.columns = [' - '.join(col).strip() for col in df.columns]
         tdf = df.reset_index()
-        max_date = tdf['{} - amax'.format(vmc.date)][0]
-        min_date = tdf['{} - amin'.format(vmc.date)][0]
-        if max_date < cds.p[vmc.startdate]:
+        max_date = tdf['{} - amax'.format(vmc.date)][0].date()
+        min_date = tdf['{} - amin'.format(vmc.date)][0].date()
+        sd = cds.p[vmc.startdate].date()
+        ed = cds.p[vmc.enddate].date()
+        if max_date < sd:
             msg = ('Last day in raw file {} is less than start date {}.\n'
                    'Result will be blank.  Change start date.'.format(
-                     max_date, cds.p[vmc.startdate]))
+                     max_date, sd))
             msg = (False, msg)
-        elif min_date > cds.p[vmc.enddate]:
+        elif min_date > ed:
             msg = ('First day in raw file {} is less than end date {}.\n'
                    'Result will be blank.  Change end date.'.format(
-                     min_date, cds.p[vmc.enddate]))
+                     min_date, ed))
             msg = (False, msg)
         else:
             msg = ('Some or all data in raw file with date range {} - {} '
                    'falls between start and end dates {} - {}'.format(
-                     cds.p[vmc.startdate], cds.p[vmc.enddate],
-                     min_date, max_date))
+                     sd, ed, min_date, max_date))
         cd[vmc.startdate][cds_name] = (True, msg)
         return cd
 
