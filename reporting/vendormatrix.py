@@ -515,7 +515,8 @@ class ImportConfig(object):
             vk = self.add_import_to_vm(import_key, account_id, import_filter,
                                        start_date, api_fields, key_name)
             vks.append(vk)
-        self.matrix_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+        self.matrix.vm_df = self.matrix_df
+        self.matrix.write()
         return vks
 
     def update_import(self, import_dict, old_import_dict):
