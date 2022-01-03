@@ -605,31 +605,37 @@ class Analyze(object):
     def compare_start_end_date_raw(df, cd, cds_name, cds, vk='vk'):
         df = df.copy()
         df[vmc.vendorkey] = vk
-        df[vmc.date] = df[cds.p[vmc.date][0]]
-        df = utl.data_to_type(df=df, date_col=vmc.datadatecol)
-        df = df[[vmc.vendorkey, vmc.date]].groupby([vmc.vendorkey]).agg(
-            {vmc.date: [np.min, np.max]})
-        df.columns = [' - '.join(col).strip() for col in df.columns]
-        tdf = df.reset_index()
-        max_date = tdf['{} - amax'.format(vmc.date)][0].date()
-        min_date = tdf['{} - amin'.format(vmc.date)][0].date()
-        sd = cds.p[vmc.startdate].date()
-        ed = cds.p[vmc.enddate].date()
-        if max_date < sd:
-            msg = ('Last day in raw file {} is less than start date {}.\n'
-                   'Result will be blank.  Change start date.'.format(
-                     max_date, sd))
-            msg = (False, msg)
-        elif min_date > ed:
-            msg = ('First day in raw file {} is less than end date {}.\n'
-                   'Result will be blank.  Change end date.'.format(
-                     min_date, ed))
+        date_col_name = cds.p[vmc.date][0]
+        if str(date_col_name) == 'nan' or date_col_name not in df.columns:
+            msg = 'Date not specified or not column names.'
             msg = (False, msg)
         else:
-            msg = ('Some or all data in raw file with date range {} - {} '
-                   'falls between start and end dates {} - {}'.format(
-                     sd, ed, min_date, max_date))
-        cd[vmc.startdate][cds_name] = (True, msg)
+            df[vmc.date] = df[cds.p[vmc.date][0]]
+            df = utl.data_to_type(df=df, date_col=vmc.datadatecol)
+            df = df[[vmc.vendorkey, vmc.date]].groupby([vmc.vendorkey]).agg(
+                {vmc.date: [np.min, np.max]})
+            df.columns = [' - '.join(col).strip() for col in df.columns]
+            tdf = df.reset_index()
+            max_date = tdf['{} - amax'.format(vmc.date)][0].date()
+            min_date = tdf['{} - amin'.format(vmc.date)][0].date()
+            sd = cds.p[vmc.startdate].date()
+            ed = cds.p[vmc.enddate].date()
+            if max_date < sd:
+                msg = ('Last day in raw file {} is less than start date {}.\n'
+                       'Result will be blank.  Change start date.'.format(
+                         max_date, sd))
+                msg = (False, msg)
+            elif min_date > ed:
+                msg = ('First day in raw file {} is less than end date {}.\n'
+                       'Result will be blank.  Change end date.'.format(
+                         min_date, ed))
+                msg = (False, msg)
+            else:
+                msg = ('Some or all data in raw file with date range {} - {} '
+                       'falls between start and end dates {} - {}'.format(
+                         sd, ed, min_date, max_date))
+                msg = (True, msg)
+        cd[vmc.startdate][cds_name] = msg
         return cd
 
     def check_raw_file_against_plan_net(self, df, cd, cds_name):
