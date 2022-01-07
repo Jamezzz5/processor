@@ -35,6 +35,7 @@ class Analyze(object):
     vendor_metrics = 'vendor_metrics'
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
+    max_api_length = 'max_api_length'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -583,6 +584,31 @@ class Analyze(object):
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
 
+    def check_api_date_length(self):
+        vk_list = []
+        data_sources = self.matrix.get_all_data_sources()
+        max_date_dict = {
+            vmc.api_amz_key: 60, vmc.api_szk_key: 60, vmc.api_db_key: 60,
+            vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30}
+        data_sources = [x for x in data_sources if 'API_' in x.key]
+        for ds in data_sources:
+            if 'API_' in ds.key:
+                key = ds.key.split('_')[1]
+                if key in max_date_dict.keys():
+                    max_date = max_date_dict[key]
+                    date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
+                    if date_range > (max_date - 3):
+                        vk_list.append(ds.key)
+        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        if vk_list:
+            msg = 'The following APIs are within 3 days of their max length:'
+            logging.info('{}\n{}'.format(msg, vk_list))
+        else:
+            msg = 'No APIs within 3 days of max length.'
+            logging.info('{}'.format(msg))
+        self.add_to_analysis_dict(key_col=self.max_api_length,
+                                  message=msg, data=mdf.to_dict())
+
     @staticmethod
     def processor_clean_functions(df, cd, cds_name, clean_functions):
         success = True
@@ -799,6 +825,7 @@ class Analyze(object):
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
+        self.check_api_date_length()
         self.write_analysis_dict()
 
 
