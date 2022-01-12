@@ -600,6 +600,8 @@ class Analyze(object):
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
         mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        mdf[self.max_api_length] = mdf[vmc.vendorkey].str.split(
+            '_').str[1].replace(max_date_dict)
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
             logging.info('{}\n{}'.format(msg, vk_list))
