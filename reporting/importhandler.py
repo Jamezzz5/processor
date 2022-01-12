@@ -28,6 +28,7 @@ import reporting.pmapi as pmapi
 import reporting.samapi as samapi
 import reporting.gsapi as gsapi
 import reporting.qtapi as qtapi
+import reporting.yvapi as yvapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -167,7 +168,8 @@ class ImportHandler(object):
                 ('pm', self.matrix.api_pm_key, pmapi.PmApi),
                 ('sam', self.matrix.api_sam_key, samapi.SamApi),
                 ('gs', self.matrix.api_gs_key, gsapi.GsApi),
-                ('qt', self.matrix.api_qt_key, qtapi.QtApi)]
+                ('qt', self.matrix.api_qt_key, qtapi.QtApi),
+                ('yv', self.matrix.api_yv_key, yvapi.YvApi)]
         for api in apis:
             if self.arg_check(api[0]) and api[1]:
                 self.api_calls(api[1], api[2]())

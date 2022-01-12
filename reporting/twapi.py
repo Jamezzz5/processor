@@ -459,6 +459,9 @@ class TwApi(object):
             logging.warning('SSL error with job: {} Retrying.'
                             'Error: {}'.format(d['id'], e))
             return None
+        if r.status_code == 504:
+            logging.warning('504 code with job: {} Retrying.'.format(d['id']))
+            return None
         zip_obj = gzip.GzipFile(fileobj=io.BytesIO(r.content), mode='rb')
         response_data = json.loads(zip_obj.read())
         df = self.convert_response_to_df(

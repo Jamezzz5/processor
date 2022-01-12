@@ -16,6 +16,8 @@ config_path = utl.config_path
 
 class AmzApi(object):
     base_url = 'https://advertising-api.amazon.com'
+    eu_url = 'https://advertising-api-eu.amazon.com'
+    fe_url = 'https://advertising-api-fe.amazon.com'
     refresh_url = 'https://api.amazon.com/auth/o2/token'
     def_metrics = [
         'campaignName', 'adGroupName', 'impressions', 'clicks', 'cost',
@@ -115,18 +117,20 @@ class AmzApi(object):
 
     def get_profiles(self):
         self.set_headers()
-        url = '{}/v{}/profiles'.format(self.base_url, self.version)
-        r = self.make_request(url, method='GET', headers=self.headers)
-        profile = [x for x in r.json() if
-                   self.advertiser_id[1:] in x['accountInfo']['id']]
-        if profile:
-            self.profile_id = profile[0]['profileId']
-            self.set_headers()
-        else:
-            logging.warning('Could not find the specified profile, check that'
-                            'the provided account ID {} is correct and API has '
-                            'access.'.format(self.advertiser_id))
-            sys.exit(0)
+        for endpoint in [self.base_url, self.eu_url, self.fe_url]:
+            url = '{}/v{}/profiles'.format(endpoint, self.version)
+            r = self.make_request(url, method='GET', headers=self.headers)
+            profile = [x for x in r.json() if
+                       self.advertiser_id[1:] in x['accountInfo']['id']]
+            if profile:
+                self.profile_id = profile[0]['profileId']
+                self.set_headers()
+                self.base_url = endpoint
+                return True
+        logging.warning('Could not find the specified profile, check that'
+                        'the provided account ID {} is correct and API has '
+                        'access.'.format(self.advertiser_id))
+        sys.exit(0)
 
     @staticmethod
     def date_check(sd, ed):

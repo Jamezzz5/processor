@@ -55,6 +55,7 @@ class VendorMatrix(object):
         self.api_sam_key = []
         self.api_gs_key = []
         self.api_qt_key = []
+        self.api_yv_key = []
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -167,6 +168,8 @@ class VendorMatrix(object):
                     self.api_gs_key.append(vk)
                 if vk_split[vk][1] == vmc.api_qt_key:
                     self.api_qt_key.append(vk)
+                if vk_split[vk][1] == vmc.api_yv_key:
+                    self.api_yv_key.append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)
@@ -196,6 +199,10 @@ class VendorMatrix(object):
     def vendor_set(self, vk):
         ven_param = {x: self.vm[x][vk] for x in self.vm}
         return ven_param
+
+    def vm_change_on_key(self, vk, col, new_value):
+        idx = self.vm_df[self.vm_df[vmc.vendorkey] == vk].index
+        self.vm_change(idx, col, new_value)
 
     def vm_change(self, index, col, new_value):
         self.vm_df.loc[index, col] = new_value
@@ -508,7 +515,8 @@ class ImportConfig(object):
             vk = self.add_import_to_vm(import_key, account_id, import_filter,
                                        start_date, api_fields, key_name)
             vks.append(vk)
-        self.matrix_df.to_csv(csv_full_file, index=False, encoding='utf-8')
+        self.matrix.vm_df = self.matrix_df
+        self.matrix.write()
         return vks
 
     def update_import(self, import_dict, old_import_dict):
