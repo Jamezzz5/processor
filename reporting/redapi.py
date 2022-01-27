@@ -153,7 +153,13 @@ class RedApi(object):
     def get_cal_month(self, lr=1, cal_xpath=None):
         month_xpath = '[2]/div[{}]/div[1]/div'.format(lr)
         cal_month_xpath = cal_xpath + month_xpath
-        month = self.browser.find_element_by_xpath(cal_month_xpath).text
+        try:
+            month = self.browser.find_element_by_xpath(cal_month_xpath).text
+        except ex.NoSuchElementException as e:
+            logging.warning('Could not click update trying another selector.'
+                            '  Error: {}'.format(e))
+            cal_month_xpath = cal_month_xpath.replace('7', '8')
+            month = self.browser.find_element_by_xpath(cal_month_xpath).text
         month = dt.datetime.strptime(month, '%B %Y')
         if lr == 2:
             last_day = calendar.monthrange(month.year, month.month)[1]
@@ -200,7 +206,7 @@ class RedApi(object):
         cal_button_xpath = '/div/div/div'
         cal_xpath = base_xpath + cal_button_xpath
         self.click_on_xpath(cal_xpath)
-        cal_table_xpath = '/html/body/div[8]/div/table/tbody/tr'
+        cal_table_xpath = '/html/body/div[7]/div/table/tbody/tr'
         return cal_table_xpath
 
     def set_dates(self, sd, ed, base_xpath=None):
