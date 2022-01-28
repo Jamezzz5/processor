@@ -803,6 +803,8 @@ class Analyze(object):
             if os.path.exists(file_name):
                 tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
                 tdf = utl.first_last_adj(tdf, first_row, 0)
+                if tdf.empty:
+                    continue
                 tdf = tdf.applymap(lambda x: str(x).count('_'))\
                     .apply(lambda x: sum(x))
                 r_col = tdf.idxmax(axis=1)

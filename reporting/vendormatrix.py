@@ -23,8 +23,9 @@ plan_key = 'Plan Net'
 
 
 class VendorMatrix(object):
-    def __init__(self):
-        log.info('Initializing Vendor Matrix')
+    def __init__(self, display_log=True):
+        if display_log:
+            log.info('Initializing Vendor Matrix')
         utl.dir_check(csv_path)
         self.vm = None
         self.vm_df = pd.DataFrame()
@@ -328,7 +329,7 @@ class ImportConfig(object):
             self.default_param_ic = self
 
     def import_vm(self):
-        self.matrix = VendorMatrix()
+        self.matrix = VendorMatrix(display_log=False)
         self.matrix_df = self.matrix.read()
         self.df = self.read()
 
