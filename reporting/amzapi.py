@@ -41,6 +41,7 @@ class AmzApi(object):
         self.client = None
         self.headers = None
         self.version = '2'
+        self.amazon_dsp = False
         self.df = pd.DataFrame()
         self.r = None
 
@@ -127,6 +128,21 @@ class AmzApi(object):
                 self.set_headers()
                 self.base_url = endpoint
                 return True
+            dsp_profile = [x for x in r.json() if 'agency'
+                           in x['accountInfo']['type']]
+            if dsp_profile:
+                dsp_id = str(dsp_profile[0]['profileId'])
+                self.headers['Amazon-Advertising-API-Scope'] = dsp_id
+                url = '{}/dsp/advertisers'.format(endpoint)
+                r = self.make_request(url, method='GET', headers=self.headers)
+                profile = [x for x in r.json()['response'] if
+                           self.advertiser_id in x['advertiserId']]
+                if profile:
+                    self.profile_id = profile[0]['advertiserId']
+                    self.set_headers()
+                    self.base_url = endpoint
+                    self.amazon_dsp = True
+                    return True
         logging.warning('Could not find the specified profile, check that'
                         'the provided account ID {} is correct and API has '
                         'access.'.format(self.advertiser_id))
@@ -177,9 +193,13 @@ class AmzApi(object):
         self.df = pd.DataFrame()
         self.get_profiles()
         sd, ed = self.get_data_default_check(sd, ed, fields)
-        date_list = self.list_dates(sd, ed)
-        self.request_reports_for_all_dates(date_list)
-        self.check_and_get_all_reports(self.report_ids)
+        if self.amazon_dsp:
+            report_id = self.request_dsp_report(sd, ed)
+            self.get_dsp_report(report_id)
+        else:
+            date_list = self.list_dates(sd, ed)
+            self.request_reports_for_all_dates(date_list)
+            self.check_and_get_all_reports(self.report_ids)
         logging.info('All reports downloaded - returning dataframe.')
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
@@ -188,6 +208,58 @@ class AmzApi(object):
         if self.campaign_id:
             df = df[df['campaignName'].str.contains(self.campaign_id)]
         return df
+
+    def request_dsp_report(self, sd, ed):
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        logging.info('Requesting DSP report for dates: {} to {}'.format(sd, ed))
+        body = {
+            "endDate": ed,
+            "format": "JSON",
+            "metrics": ['totalCost', 'impressions', 'clickThroughs',
+                        'videoStart', 'videoFirstQuartile', 'videoMidpoint',
+                        'videoThirdQuartile', 'videoComplete'],
+            "type": "CAMPAIGN",
+            "startDate": sd,
+            "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
+            "timeUnit": "DAILY"
+        }
+        self.headers['Accept'] = 'application/vnd.dspcreatereports.v3+json'
+        url = '{}/accounts/{}/dsp/reports'.format(
+            self.base_url, self.profile_id)
+        r = self.make_request(url, method='POST', body=body,
+                              headers=self.headers)
+        if 'reportId' in r.json():
+            report_id = r.json()['reportId']
+        else:
+            logging.warning('Error in request as follows: {}'.format(r.json()))
+            sys.exit(0)
+        return report_id
+
+    def get_dsp_report(self, report_id):
+        self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
+        url = '{}/accounts/{}/dsp/reports/{}'.format(
+            self.base_url, self.profile_id, report_id)
+        for attempt in range(100):
+            logging.info(
+                'Checking for report {} attempt {}'.format(
+                    report_id, attempt + 1))
+            r = self.make_request(url, method='GET', headers=self.headers)
+            if 'status' in r.json():
+                if r.json()['status'] == 'SUCCESS':
+                    report_url = r.json()['location']
+                    r = requests.get(report_url)
+                    df = pd.DataFrame(r.json())
+                    df['date'] = df['date'].apply(
+                        lambda x: dt.datetime.fromtimestamp(x / 1000).date())
+                    self.df = df
+                    break
+                else:
+                    time.sleep(15)
+            else:
+                logging.warning(
+                    'No status in response as follows: {}'.format(r.json()))
+                sys.exit(0)
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:

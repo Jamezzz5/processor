@@ -169,7 +169,8 @@ class ImportHandler(object):
                 ('sam', self.matrix.api_sam_key, samapi.SamApi),
                 ('gs', self.matrix.api_gs_key, gsapi.GsApi),
                 ('qt', self.matrix.api_qt_key, qtapi.QtApi),
-                ('yv', self.matrix.api_yv_key, yvapi.YvApi)]
+                ('yv', self.matrix.api_yv_key, yvapi.YvApi),
+                ('amd', self.matrix.api_amd_key, amzapi.AmzApi)]
         for api in apis:
             if self.arg_check(api[0]) and api[1]:
                 self.api_calls(api[1], api[2]())
