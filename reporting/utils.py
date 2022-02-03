@@ -166,7 +166,6 @@ def first_last_adj(df, first_row, last_row):
         logging.warning('At least one column name is undefined.  Your first'
                         'row is likely incorrect. For reference the first few'
                         'rows are:\n' + str(df.head()))
-        sys.exit(0)
     return df
 
 
