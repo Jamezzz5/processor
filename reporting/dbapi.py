@@ -47,6 +47,8 @@ class DbApi(object):
         self.report_id = None
         self.config_list = None
         self.client = None
+        self.start_time = None
+        self.end_time = None
         self.df = pd.DataFrame()
         self.r = None
         self.v = 1
@@ -88,6 +90,26 @@ class DbApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
+    @staticmethod
+    def get_data_default_check(sd, ed, fields):
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=1)
+        if ed is None:
+            ed = dt.datetime.today() - dt.timedelta(days=1)
+        return sd, ed, fields
+
+    def parse_fields(self, sd, ed, fields):
+        self.start_time = round((sd - dt.datetime.utcfromtimestamp(0))
+                                .total_seconds() * 1000)
+        self.end_time = round((ed - dt.datetime.utcfromtimestamp(0))
+                              .total_seconds() * 1000)
+        if fields and fields != ['nan']:
+            self.default_metrics += [
+                'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
+                'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
+                'METRIC_ACTIVE_VIEW_UNVIEWABLE_IMPRESSIONS'
+            ]
+
     def get_client(self):
         token = {'access_token': self.access_token,
                  'refresh_token': self.refresh_token,
@@ -111,7 +133,7 @@ class DbApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.create_report(sd, ed)
+        self.create_report(sd, ed, fields)
         self.get_raw_data()
         self.check_empty_df()
         self.remove_footer()
@@ -125,26 +147,24 @@ class DbApi(object):
     def remove_footer(self):
         self.df = self.df[~self.df.isnull().any(axis=1)]
 
-    def create_report(self, sd, ed):
+    def create_report(self, sd, ed, fields):
         if self.report_id:
             return
         logging.info('No report specified, creating.')
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        self.parse_fields(sd, ed, fields)
         query_url = self.create_query_url()
         params = self.create_report_params()
         metadata = self.create_report_metadata()
-        start_time = round((sd - dt.datetime.utcfromtimestamp(0))
-                           .total_seconds() * 1000)
-        end_time = round((ed - dt.datetime.utcfromtimestamp(0))
-                         .total_seconds() * 1000)
         body = {
             'kind': 'doubleclickbidmanager#query',
             'metadata': metadata,
             'params': params,
             'schedule': {
                 'frequency': 'ONE_TIME'},
-        "reportDataStartTimeMs": start_time,
-        "reportDataEndTimeMs": end_time,
-        "timezoneCode": 'America/Los_Angeles'
+            "reportDataStartTimeMs": self.start_time,
+            "reportDataEndTimeMs": self.end_time,
+            "timezoneCode": 'America/Los_Angeles'
         }
         self.r = self.make_request(query_url, method='post', body=body)
         if 'queryId' not in self.r.json():
