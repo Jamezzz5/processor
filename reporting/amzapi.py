@@ -173,6 +173,9 @@ class AmzApi(object):
             ed = dt.datetime.today() + dt.timedelta(days=1)
         if dt.datetime.today().date() == ed.date():
             ed += dt.timedelta(days=1)
+        if self.amazon_dsp:
+            if ed.date() > dt.datetime.today().date():
+                ed = dt.datetime.today()
         sd, ed = self.date_check(sd, ed)
         self.set_fields(fields)
         return sd, ed
@@ -227,14 +230,24 @@ class AmzApi(object):
         self.headers['Accept'] = 'application/vnd.dspcreatereports.v3+json'
         url = '{}/accounts/{}/dsp/reports'.format(
             self.base_url, self.profile_id)
-        r = self.make_request(url, method='POST', body=body,
-                              headers=self.headers)
-        if 'reportId' in r.json():
-            report_id = r.json()['reportId']
-        else:
-            logging.warning('Error in request as follows: {}'.format(r.json()))
-            sys.exit(0)
-        return report_id
+        for x in range(5):
+            r = self.make_request(url, method='POST', body=body,
+                                  headers=self.headers)
+            if 'reportId' in r.json():
+                report_id = r.json()['reportId']
+                return report_id
+            elif ('message' in r.json() and r.json()['message'] ==
+                    'Too Many Requests'):
+                logging.warning(
+                    'Too many requests pausing.  Attempt: {}.  '
+                    'Response: {}'.format((x + 1), r.json()))
+                time.sleep(30)
+            else:
+                logging.warning('Error in request as follows: '
+                                '{}'.format(r.json()))
+                sys.exit(0)
+        logging.warning('Could not generate report, exiting')
+        sys.exit(0)
 
     def get_dsp_report(self, report_id):
         self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
