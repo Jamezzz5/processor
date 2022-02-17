@@ -934,6 +934,8 @@ def df_single_transform(df, transform):
     if transform_type == 'FilterCol':
         col_name = transform[1]
         col_val = transform[2]
+        df = df.dropna(subset=[col_name])
+        df = df.reset_index(drop=True)
         df = df[df[col_name].str.contains(col_val)]
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
