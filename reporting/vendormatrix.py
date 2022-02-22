@@ -936,7 +936,14 @@ def df_single_transform(df, transform):
         col_val = transform[2]
         df = df.dropna(subset=[col_name])
         df = df.reset_index(drop=True)
-        df = df[df[col_name].str.contains(col_val)]
+        exclude_toggle = False
+        if len(transform) > 3:
+            if transform[3] == 'Exclude':
+                exclude_toggle = True
+        if exclude_toggle:
+            df = df[~df[col_name].str.contains(col_val)]
+        else:
+            df = df[df[col_name].str.contains(col_val)]
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
         df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
