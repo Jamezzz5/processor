@@ -324,7 +324,7 @@ class PmApi(object):
             else:
                 logging.info('Data downloaded.')
                 break
-        sheet_names = {'Date': 'Daily Spend', 'Target': 'Top Sites'}
+        sheet_names = {'Date': 'Daily Spend', 'Target': 'Top Publishers'}
         date_df = pd.read_excel(file_path, sheet_name=sheet_names['Date'],
                                 parse_dates=True)
         target_df = pd.read_excel(file_path, sheet_name=sheet_names['Target'],
