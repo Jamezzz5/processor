@@ -37,6 +37,8 @@ class Analyze(object):
     flagged_metrics = 'flagged_metrics'
     placement_col = 'placement_col'
     max_api_length = 'max_api_length'
+    double_counting_all = 'double_counting_all'
+    double_counting_partial = 'double_counting_partial'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -820,6 +822,53 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.placement_col,
                                   message=update_msg, data=df.to_dict())
 
+    def find_metric_double_counting(self):
+        rdf = pd.DataFrame()
+        groups = [dctc.VEN, vmc.vendorkey, dctc.PN]
+        metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.views,
+                   vmc.views25, vmc.views50, vmc.views75, vmc.views100]
+        df = self.generate_df_table(groups, metrics, sort=None,
+                                    data_filter=None)
+        df.reset_index(inplace=True)
+        df = df[df.duplicated(subset=dctc.PN, keep=False)]
+        for metric in metrics:
+            tdf = df[df[metric] > 0]
+            tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
+            if not tdf.empty:
+                tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size() \
+                    .reset_index().rename(columns={0: 'Num Duplicates'})
+                tdf['Metric'] = metric
+                rdf = pd.concat([rdf, tdf], ignore_index=True)
+        sdf = df.groupby([dctc.VEN, vmc.vendorkey]).size() \
+            .reset_index().rename(columns={0: 'Total Num Placements'})
+        sdf = sdf.groupby(dctc.VEN).max().reset_index()
+        rdf = sdf[[dctc.VEN, 'Total Num Placements']]\
+            .merge(rdf, how='inner', on=dctc.VEN)
+        rdf = rdf.groupby([dctc.VEN, 'Metric', 'Total Num Placements',
+                           'Num Duplicates'])[vmc.vendorkey] \
+            .apply(lambda x: ','.join(x)).reset_index()
+        rdf = rdf.groupby([dctc.VEN, 'Metric', vmc.vendorkey,
+                           'Num Duplicates']).max().reset_index()
+        msg = 'The following vendors are double counting metrics on all ' \
+              'placements from the following sources:'
+        logging.info('{}\n{}'.format(msg, rdf[rdf['Total Num Placements'] ==
+                                              rdf['Num Duplicates']]
+                                     .to_string()))
+        self.add_to_analysis_dict(
+            key_col=self.double_counting_all,
+            message=msg, data=rdf[rdf['Total Num Placements'] ==
+                                  rdf['Num Duplicates']].to_dict())
+        msg = 'The following vendors are double counting metrics on some ' \
+              'placements from the following sources. Check only untracked '  \
+              'placements are being uploaded in rawfiles:'
+        logging.info('{}\n{}'.format(msg, rdf[rdf['Total Num Placements'] >
+                                              rdf['Num Duplicates']]
+                                     .to_string()))
+        self.add_to_analysis_dict(
+            key_col=self.double_counting_partial,
+            message=msg, data=rdf[rdf['Total Num Placements'] >
+                                  rdf['Num Duplicates']].to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -857,6 +906,7 @@ class Analyze(object):
         self.find_missing_metrics()
         self.flag_errant_metrics()
         self.find_placement_name_column()
+        self.find_metric_double_counting()
         self.check_api_date_length()
         self.write_analysis_dict()
 
