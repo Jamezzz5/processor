@@ -831,6 +831,8 @@ class Analyze(object):
                                     data_filter=None)
         df.reset_index(inplace=True)
         df = df[df.duplicated(subset=dctc.PN, keep=False)]
+        if df.empty:
+            return
         for metric in metrics:
             tdf = df[df[metric] > 0]
             tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
