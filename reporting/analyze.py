@@ -832,7 +832,7 @@ class Analyze(object):
         df.reset_index(inplace=True)
         df = df[df.duplicated(subset=dctc.PN, keep=False)]
         if df.empty:
-            return
+            return None
         for metric in metrics:
             tdf = df[df[metric] > 0]
             tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
@@ -844,6 +844,9 @@ class Analyze(object):
         sdf = df.groupby([dctc.VEN, vmc.vendorkey]).size() \
             .reset_index().rename(columns={0: 'Total Num Placements'})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
+        if dctc.VEN not in sdf.columns or dctc.VEN not in rdf.columns:
+            logging.warning('Vendor not in df, returning.')
+            return None
         rdf = sdf[[dctc.VEN, 'Total Num Placements']]\
             .merge(rdf, how='inner', on=dctc.VEN)
         rdf = rdf.groupby([dctc.VEN, 'Metric', 'Total Num Placements',
