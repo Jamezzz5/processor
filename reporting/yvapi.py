@@ -13,7 +13,7 @@ config_path = utl.config_path
 
 
 class YvApi(object):
-    b2b_url = 'https://id.b2b.verizonmedia.com'
+    b2b_url = 'https://id.b2b.yahooinc.com'
     token_url = "{}/identity/oauth2/access_token".format(b2b_url)
     aud = "{}/identity/oauth2/access_token?realm=dsp".format(b2b_url)
     schedule_url = 'http://api-sched-v3.admanagerplus.yahoo.com'
@@ -108,7 +108,13 @@ class YvApi(object):
             "scope": "dsp-api-access",
             "realm": "dsp"}
         r = requests.post(self.token_url, data=params, headers=token_header)
-        token = r.json()
+        try:
+            token = r.json()
+        except json.decoder.JSONDecodeError as e:
+            logging.warning(
+                'Response not json, exiting. \nError: {}\n Response'.format(
+                    e, r.text))
+            sys.exit(0)
         logging.info('Access token retrieved')
         self.access_token = token
         return token
