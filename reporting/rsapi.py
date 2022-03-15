@@ -8,26 +8,39 @@ import datetime as dt
 import reporting.utils as utl
 
 config_path = utl.config_path
-games_url = 'https://api.marketing.gamesight.io/games'
-games_version = '1.1.0'
-stats_url = 'https://api.marketing.gamesight.io/stats'
-stats_version = '2.0.0'
-
-def_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad',
-              'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
-def_fields = ['clicks', 'converted_users', 'conversion_rate', 'launches',
-              'launches_per_user', 'average_user_retention', 'impressions']
-nested_cols = ['goals']
-def_fields.extend(nested_cols)
-
-
-display_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group', 'ad']
-display_fields = ['impressions', 'clicks']
-display_nested_cols = ['network_reported_performance', 'goals']
-display_fields.extend(display_nested_cols)
 
 
 class RsApi(object):
+    games_url = 'https://api.marketing.gamesight.io/games'
+    games_version = '1.1.0'
+    stats_url = 'https://api.marketing.gamesight.io/stats'
+    stats_version = '3.0.0'
+    def_groups = [
+        "game_id", "team_id", "network", "campaign", "ad_group", "ad",
+        "clicked_at_date", "country", "browser", "platform",
+        "touchpoint_type", "touchpoint_os_family", "touchpoint_device_brand",
+        "ad_type", "placement", "keyword", "creative", "site_id", "sub_site_id",
+        "sub1", "sub2", "sub3", "sub4", "sub5", "sub6", "sub7", "sub8", "sub9",
+        "sub10"]
+    def_fields = [
+        "impressions", "impressions_unique", "clicks", "clicks_unique",
+        "click_through_rate", "cost_amount", "cost_currency",
+        "network_impressions", "network_clicks", "network_click_through_rate",
+        "network_cost_amount", "network_cost_currency", "display_impressions",
+        "display_clicks", "display_click_through_rate", "display_cost_amount",
+        "display_cost_currency", "goal_rate", "goal_revenue_amount",
+        "goal_revenue_currency", "steam_total_visits", "steam_tracked_visits",
+        "steam_wishlists", "steam_purchases", "steam_activations",
+    ]
+    nested_cols = ['goals']
+    def_fields.extend(nested_cols)
+
+    display_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group',
+                      'ad']
+    display_fields = ['impressions', 'clicks']
+    display_nested_cols = ['network_reported_performance', 'goals']
+    display_fields.extend(display_nested_cols)
+
     def __init__(self):
         self.config = None
         self.config_file = None
@@ -49,7 +62,7 @@ class RsApi(object):
         self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        self.set_headers(games_version)
+        self.set_headers(self.games_version)
 
     def load_config(self):
         try:
@@ -73,11 +86,12 @@ class RsApi(object):
 
     def set_headers(self, version):
         self.headers = {'Authorization': self.api_key,
+                        'Accept': 'application/json',
                         'Content-Type': 'application/json',
                         'X-Api-Version': version}
 
     def get_id(self):
-        r = requests.get(games_url, headers=self.headers)
+        r = requests.get(self.games_url, headers=self.headers)
         self.game_id = [x['id'] for x in r.json()['games']
                         if x['name'] == self.game_name]
         self.game_id = int(self.game_id[0])
@@ -101,16 +115,17 @@ class RsApi(object):
         return sd, ed
 
     def get_request_data(self, sd, ed, fields):
-        r_data = {'groups': def_groups,
-                  'fields': def_fields,
+        r_data = {'groups': self.def_groups,
+                  'fields': self.def_fields,
                   'game_id': self.game_id,
                   'filters': {'start_date': sd,
-                              'end_date': ed}}
+                              'end_date': ed,
+                              'include_unattributed':  False}}
         if fields:
             for field in fields:
                 if field == 'Display':
-                    r_data['groups'] = display_groups
-                    r_data['fields'] = display_fields
+                    r_data['groups'] = self.display_groups
+                    r_data['fields'] = self.display_fields
         return r_data
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -127,8 +142,9 @@ class RsApi(object):
     def get_raw_data(self, sd, ed, fields):
         logging.info('Getting data from {} to ed {}'.format(sd, ed))
         r_data = self.get_request_data(sd, ed, fields)
-        self.set_headers(stats_version)
-        self.r = requests.post(stats_url, headers=self.headers, json=r_data)
+        self.set_headers(self.stats_version)
+        self.r = requests.post(
+            self.stats_url, headers=self.headers, json=r_data)
         self.df = self.data_to_df(fields)
         if self.campaign_filter:
             self.filter_df_on_campaign()
@@ -145,15 +161,15 @@ class RsApi(object):
         if fields:
             for field in fields:
                 if field == 'Display':
-                    nested_cols.insert(0, 'network_reported_performance')
-        for col in nested_cols:
+                    self.nested_cols.insert(0, 'network_reported_performance')
+        for col in self.nested_cols:
             n_df = self.flatten_nested_cols(df, col)
             for n_col in n_df.columns:
                 n2_df = self.flatten_nested_cols(n_df, n_col)
                 for n2_col in n2_df.columns:
                     n3_df = self.flatten_nested_cols(n2_df, n2_col)
                     df = df.join(n3_df)
-        df = df.drop(nested_cols, axis=1)
+        df = df.drop(self.nested_cols, axis=1)
         return df
 
     @staticmethod
