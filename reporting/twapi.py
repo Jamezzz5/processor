@@ -519,7 +519,8 @@ class TwApi(object):
 
     def add_tweets(self, df):
         ad_name_dict = {str(x): self.tweet_dict[x]['ad_name']
-                        for x in self.tweet_dict}
+                        for x in self.tweet_dict
+                        if 'ad_name' in self.tweet_dict[x]}
         df['ad_name'] = df['tweetid'].astype(str)
         df['ad_name'] = df['ad_name'].replace(ad_name_dict)
         df['ad_name'] = df['ad_name'].fillna('Untitled ad')
