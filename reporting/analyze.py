@@ -805,22 +805,25 @@ class Analyze(object):
             if os.path.exists(file_name):
                 tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
                 tdf = utl.first_last_adj(tdf, first_row, 0)
+                tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
                 if tdf.empty:
                     continue
-                tdf = tdf.applymap(lambda x: str(x).count('_'))\
-                    .apply(lambda x: sum(x))
+                tdf = tdf.applymap(
+                    lambda x: str(x).count('_')).apply(lambda x: sum(x))
                 r_col = tdf.idxmax(axis=1)
-                if r_col > p_col:
+                if tdf[r_col] >= (tdf[p_col] + 9):
                     data_dict = {vmc.vendorkey: [source.key],
-                                 'Current Placement Col:': p_col,
-                                 'Suggested:': r_col}
+                                 'Current Placement Col': p_col,
+                                 'Suggested Col': r_col}
                     df = df.append(pd.DataFrame(data_dict),
                                    ignore_index=True, sort=False)
-        update_msg = 'The following data sources have more breakouts in ' \
-                     'another column. Consider changing placement name source:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
-        self.add_to_analysis_dict(key_col=self.placement_col,
-                                  message=update_msg, data=df.to_dict())
+        if not df.empty:
+            update_msg = ('The following data sources have more breakouts in '
+                          'another column. Consider changing placement name '
+                          'source:')
+            logging.info('{}\n{}'.format(update_msg, df.to_string()))
+            self.add_to_analysis_dict(key_col=self.placement_col,
+                                      message=update_msg, data=df.to_dict())
 
     def find_metric_double_counting(self):
         rdf = pd.DataFrame()
