@@ -171,7 +171,8 @@ class TwApi(object):
             data = self.request(url, resp_key, params)
         return data
 
-    def get_id_dict(self, url, params, eid, name, parent, sd=None):
+    def get_id_dict(self, url, params, eid, name, parent, sd=None,
+                    ad_name=None):
         data = self.request(url, params=params)
         if sd:
             data['data'] = [x for x in data['data'] if
@@ -180,8 +181,13 @@ class TwApi(object):
                                  x['end_time'], '%Y-%m-%dT%H:%M:%SZ') > sd)
                             or not x['end_time']]
         if 'data' in data:
-            id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
-                       for x in data['data']}
+            if ad_name:
+                id_dict = {x[eid]: {'parent': x[parent], 'name': x[name],
+                                    'ad_name': x[ad_name]}
+                           for x in data['data']}
+            else:
+                id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
+                           for x in data['data']}
         else:
             logging.warning('Data not in response: {}'.format(data))
             id_dict = {}
@@ -189,7 +195,8 @@ class TwApi(object):
                                         sd, params)
         return id_dict
 
-    def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None):
+    def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None,
+                ad_name=None):
         url, params = self.create_base_url(entity)
         if parent_filter:
             original_params = params.copy()
@@ -205,7 +212,8 @@ class TwApi(object):
         id_dict = {}
         for param in params:
             new_id_dict = self.get_id_dict(url=url, params=param, eid=eid,
-                                           name=name, parent=parent, sd=sd)
+                                           name=name, parent=parent, sd=sd,
+                                           ad_name=ad_name)
             id_dict.update(new_id_dict)
         if self.campaign_filter and entity == 'campaigns':
             id_dict = {k: v for k, v in id_dict.items()
@@ -215,7 +223,7 @@ class TwApi(object):
                             'attempting without start date.'.format(entity, sd))
             id_dict = self.get_ids(entity=entity, eid=eid, name=name,
                                    parent=parent, sd=None,
-                                   parent_filter=parent_filter)
+                                   parent_filter=parent_filter, ad_name=ad_name)
         return id_dict
 
     def page_through_ids(self, data, id_dict, first_url, eid, name, parent,
@@ -248,7 +256,7 @@ class TwApi(object):
             entity='promoted_accounts', eid='id', name='id',
             parent='line_item_id', parent_filter=self.asid_dict.keys())
         self.tweet_dict = self.get_ids('tweets', 'id',
-                                       'full_text', 'id',)
+                                       'full_text', 'id', ad_name='name')
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -510,6 +518,11 @@ class TwApi(object):
         return df
 
     def add_tweets(self, df):
+        ad_name_dict = {str(x): self.tweet_dict[x]['ad_name']
+                        for x in self.tweet_dict}
+        df['ad_name'] = df['tweetid'].astype(str)
+        df['ad_name'] = df['ad_name'].replace(ad_name_dict)
+        df['ad_name'] = df['ad_name'].fillna('Untitled ad')
         tweet_ids = df['tweetid'].unique()
         id_dict = {}
         tids = [tweet_ids[x:x + 100] for x in range(0, len(tweet_ids), 100)]
