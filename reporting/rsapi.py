@@ -30,8 +30,7 @@ class RsApi(object):
         "display_clicks", "display_click_through_rate", "display_cost_amount",
         "display_cost_currency", "goal_rate", "goal_revenue_amount",
         "goal_revenue_currency", "steam_total_visits", "steam_tracked_visits",
-        "steam_wishlists", "steam_purchases", "steam_activations",
-    ]
+        "steam_wishlists", "steam_purchases", "steam_activations"]
     nested_cols = ['goals']
     def_fields.extend(nested_cols)
 
@@ -76,6 +75,8 @@ class RsApi(object):
         self.config_list = [self.api_key, self.game_name]
         if 'campaign_filter' in self.config:
             self.campaign_filter = self.config['campaign_filter']
+        if 'domain' in self.config and self.config['domain']:
+            self.stats_url = self.config['domain']
 
     def check_config(self):
         for item in self.config_list:
