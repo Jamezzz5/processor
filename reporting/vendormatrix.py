@@ -716,12 +716,18 @@ class DataSource(object):
             self.set_in_vendormatrix(vm_rule[col], new_rule[col], matrix)
         return matrix
 
-    def get_raw_df(self):
+    def get_raw_df_before_transform(self):
         df = utl.import_read_csv(self.p[vmc.filename])
         if df is None or df.empty:
             return df
         df = utl.add_header(df, self.p[vmc.header], self.p[vmc.firstrow])
         df = utl.first_last_adj(df, self.p[vmc.firstrow], self.p[vmc.lastrow])
+        return df
+
+    def get_raw_df(self):
+        df = self.get_raw_df_before_transform()
+        if df is None or df.empty:
+            return df
         df = df_transform(df, self.p[vmc.transform])
         df = full_placement_creation(df, self.key, dctc.FPN,
                                      self.p[vmc.fullplacename])
@@ -869,18 +875,34 @@ def df_single_transform(df, transform):
         df = df.reset_index()
     if transform_type == 'Merge':
         merge_file = transform[1]
-        left_merge = transform[2]
-        right_merge = transform[3]
-        merge_df = pd.read_csv(merge_file)
-        dfs = {left_merge: df, right_merge: merge_df}
-        for col in dfs:
-            if dfs[col][col].dtype == 'float64':
-                dfs[col][col] = dfs[col][col].fillna(0).astype('int')
-            dfs[col][col] = dfs[col][col].astype('U')
-            dfs[col][col] = dfs[col][col].str.strip('.0')
+        if '.' in merge_file:
+            merge_df = pd.read_csv(merge_file)
+        else:
+            matrix = VendorMatrix(display_log=False)
+            matrix.sort_vendor_list()
+            ven_param = matrix.vendor_set(merge_file)
+            ds = DataSource(merge_file, matrix.vm_rules_dict, **ven_param)
+            merge_df = ds.get_raw_df_before_transform()
+        merge_cols = transform[2:]
+        left_merge = merge_cols[::2]
+        right_merge = merge_cols[1::2]
+        dfs = {'left': {'cols': left_merge, 'df': df},
+               'right': {'cols': right_merge, 'df': merge_df}}
+        for side in dfs:
+            col = dfs[side]['cols']
+            cdf = dfs[side]['df']
+            for c in col:
+                if cdf[c].dtype == 'float64':
+                    cdf[c] = cdf[c].fillna(0).astype('int')
+                cdf[c] = cdf[c].astype('U')
+                cdf[c] = cdf[c].str.strip('.0')
+            cdf = full_placement_creation(cdf, 'None', 'merge-col', col)
+            dfs[side]['df'] = cdf
+        df = dfs['left']['df']
+        merge_df = dfs['right']['df']
         filename = 'Merge-{}-{}.csv'.format(left_merge, right_merge)
         err = er.ErrorReport(df, merge_df, None, filename,
-                             merge_col=[left_merge, right_merge])
+                             merge_col=['merge-col', 'merge-col'])
         df = err.merge_df
         df = df.drop('_merge', axis=1)
     if transform_type == 'DateSplit':
