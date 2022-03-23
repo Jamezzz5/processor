@@ -873,7 +873,7 @@ def df_single_transform(df, transform):
         if type(df.columns) == pd.MultiIndex:
             df.columns = [' - '.join([str(y) for y in x]) for x in df.columns]
         df = df.reset_index()
-    if transform_type == 'Merge':
+    if transform_type == 'Merge' or transform_type == 'MergeReplace':
         merge_file = transform[1]
         if '.' in merge_file:
             merge_df = pd.read_csv(merge_file)
@@ -885,7 +885,8 @@ def df_single_transform(df, transform):
             merge_df = ds.get_raw_df_before_transform()
         merge_cols = transform[2:]
         left_merge = merge_cols[::2]
-        right_merge = merge_cols[1::2]
+        right_merge_full = merge_cols[1::2]
+        right_merge = [x.split(',')[0] for x in right_merge_full]
         dfs = {'left': {'cols': left_merge, 'df': df},
                'right': {'cols': right_merge, 'df': merge_df}}
         for side in dfs:
@@ -900,11 +901,22 @@ def df_single_transform(df, transform):
             dfs[side]['df'] = cdf
         df = dfs['left']['df']
         merge_df = dfs['right']['df']
-        filename = 'Merge-{}-{}.csv'.format(left_merge, right_merge)
-        err = er.ErrorReport(df, merge_df, None, filename,
-                             merge_col=['merge-col', 'merge-col'])
-        df = err.merge_df
-        df = df.drop('_merge', axis=1)
+        if transform_type == 'MergeReplace':
+            for idx, col in enumerate(right_merge_full):
+                cols = col.split(',')
+                col_id = cols[0]
+                col_name = cols[1]
+                replace_col = left_merge[idx]
+                ndf = merge_df[cols].drop_duplicates()
+                ndf = ndf.set_index(col_id).to_dict(orient='dict')[col_name]
+                df[replace_col] = df[replace_col].astype('U').replace(ndf)
+        else:
+            filename = 'Merge-{}-{}.csv'.format(
+                '-'.join(left_merge), '-'.join(right_merge))
+            err = er.ErrorReport(df, merge_df, None, filename,
+                                 merge_col=['merge-col', 'merge-col'])
+            df = err.merge_df
+            df = df.drop('_merge', axis=1)
     if transform_type == 'DateSplit':
         start_date = transform[1]
         end_date = transform[2]
