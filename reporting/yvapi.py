@@ -66,6 +66,8 @@ class YvApi(object):
         self.advertiser = int(self.config["advertiser"])
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.advertiser]
+        if 'campaign' in self.config:
+            self.campaign_filter = self.config['campaign']
 
     def check_config(self):
         for item in self.config_list:
@@ -195,6 +197,12 @@ class YvApi(object):
         download_url = "{}{}".format(self.report_url, report_id)
         return download_url
 
+    def filter_df_on_campaign(self, df):
+        logging.info('Filtering dataframe on {}'.format(self.campaign_filter))
+        df = df[df['Campaign Name'].fillna('0').str.contains(
+            self.campaign_filter)].reset_index(drop=True)
+        return df
+
     def get_data(self, sd=None, ed=None, fields=None):
         self.set_header()
         sd, ed = self.get_data_default_check(sd, ed)
@@ -202,5 +210,8 @@ class YvApi(object):
         logging.info('Getting data from {} to {}'.format(sd, ed))
         download_url = self.request_report(sd, ed)
         df = self.get_report(download_url)
-        logging.info('Data downloaded, returning df')
+        logging.info('Data downloaded.')
+        if self.campaign_filter:
+            df = self.filter_df_on_campaign(df)
+        logging.info('Returning df.')
         return df
