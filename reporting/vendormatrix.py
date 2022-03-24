@@ -886,7 +886,7 @@ def df_single_transform(df, transform):
         merge_cols = transform[2:]
         left_merge = merge_cols[::2]
         right_merge_full = merge_cols[1::2]
-        right_merge = [x.split(',')[0] for x in right_merge_full]
+        right_merge = [x.split('|')[0] for x in right_merge_full]
         dfs = {'left': {'cols': left_merge, 'df': df},
                'right': {'cols': right_merge, 'df': merge_df}}
         for side in dfs:
@@ -903,7 +903,7 @@ def df_single_transform(df, transform):
         merge_df = dfs['right']['df']
         if transform_type == 'MergeReplace':
             for idx, col in enumerate(right_merge_full):
-                cols = col.split(',')
+                cols = col.split('|')
                 col_id = cols[0]
                 col_name = cols[1]
                 replace_col = left_merge[idx]
@@ -982,6 +982,20 @@ def df_single_transform(df, transform):
         cols = transform[1].split('|')
         df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
         df.drop(cols[1], axis=1, inplace=True)
+    if transform_type == 'EqualReplace':
+        col = transform[1]
+        comp_cols = transform[2].split('|')
+        replace_val = transform[3]
+        comp_col = comp_cols[0]
+        delimiter = comp_cols[1]
+        idx = comp_cols[2]
+        comp = df[col].str.split(delimiter).str[int(idx)] == df[
+            comp_col].astype('U')
+        df[col] = np.where(comp, replace_val, df[col])
+    if transform_type == 'RenameCol':
+        cols = transform[1:]
+        replace_dict = {x.split('|')[0]: x.split('|')[1] for x in cols}
+        df = df.rename(columns=replace_dict)
     return df
 
 
