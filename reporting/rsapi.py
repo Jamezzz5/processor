@@ -17,9 +17,7 @@ class RsApi(object):
     stats_version = '3.0.0'
     def_groups = [
         "game_id", "team_id", "network", "campaign", "ad_group", "ad",
-        "clicked_at_date", "country", "browser", "platform",
-        "touchpoint_type", "touchpoint_os_family", "touchpoint_device_brand",
-        "ad_type", "placement", "keyword", "creative", "site_id", "sub_site_id",
+        "platform", "ad_type", "placement", "creative",
         "sub1", "sub2", "sub3", "sub4", "sub5", "sub6", "sub7", "sub8", "sub9",
         "sub10"]
     def_fields = [
@@ -33,6 +31,9 @@ class RsApi(object):
         "steam_wishlists", "steam_purchases", "steam_activations"]
     nested_cols = ['goals']
     def_fields.extend(nested_cols)
+    date_trigger = ['triggered_at_date']
+    date_click = ['clicked_at_date']
+    def_groups.extend(date_click)
 
     display_groups = ['network', 'clicked_at_date', 'campaign', 'ad_group',
                       'ad']
@@ -127,6 +128,13 @@ class RsApi(object):
                 if field == 'Display':
                     r_data['groups'] = self.display_groups
                     r_data['fields'] = self.display_fields
+                if field == 'DateTriggered':
+                    group = [x for x in self.def_groups if
+                             x not in self.date_click] + self.date_trigger
+                    r_data['groups'] = group
+                    r_data['filters'] = {'start_triggered_at_date': sd,
+                                         'end_triggered_at_date': ed,
+                                         'include_unattributed': False}
         return r_data
 
     def get_data(self, sd=None, ed=None, fields=None):
