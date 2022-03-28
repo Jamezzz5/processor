@@ -897,6 +897,9 @@ class Analyze(object):
         df = df.drop(columns=['Clicks_y'])
         df = df.rename(columns={'Date': 'First Click Date',
                                 'Clicks_x': 'Clicks'})
+        df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df['First Click Date'] = df[
+            'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
         cdf = df[df['_merge'] == 'both']
         ndf = df[df['_merge'] == 'left_only']
         if not cdf.empty:
