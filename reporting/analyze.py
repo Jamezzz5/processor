@@ -889,7 +889,6 @@ class Analyze(object):
         tdf.reset_index(inplace=True)
         df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
         df.reset_index(inplace=True)
-        df[dctc.PD] = pd.to_datetime(df[dctc.PD], format='%Y-%m-%d %H:%M:%S')
         df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
         df = df.merge(tdf.drop_duplicates(),
                       on=[dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, cal.NCF],
