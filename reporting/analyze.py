@@ -39,6 +39,8 @@ class Analyze(object):
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
+    missing_flat_costs = 'missing_flat_costs'
+    missing_flat_clicks = 'missing_flat_clicks'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -872,6 +874,49 @@ class Analyze(object):
                 key_col=self.double_counting_partial,
                 message=msg, data=pdf.to_dict())
 
+    def find_missing_flat_spend(self):
+        groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, vmc.date]
+        metrics = [cal.NCF, vmc.clicks]
+        metrics = [metric for metric in metrics if metric in self.df.columns]
+        df = self.generate_df_table(groups, metrics, sort=None,
+                                    data_filter=None)
+        df.reset_index(inplace=True)
+        df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
+        if df.empty:
+            return None
+        tdf = df[df[vmc.clicks] > 0]
+        tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
+        tdf.reset_index(inplace=True)
+        df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
+        df.reset_index(inplace=True)
+        df[dctc.PD] = pd.to_datetime(df[dctc.PD], format='%Y-%m-%d %H:%M:%S')
+        df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
+        df = df.merge(tdf.drop_duplicates(),
+                      on=[dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, cal.NCF],
+                      how='left', indicator=True)
+        df = df.drop(columns=['Clicks_y'])
+        df = df.rename(columns={'Date': 'First Click Date',
+                                'Clicks_x': 'Clicks'})
+        cdf = df[df['_merge'] == 'both']
+        ndf = df[df['_merge'] == 'left_only']
+        if not cdf.empty:
+            cdf = cdf.iloc[:, :-1]
+            msg = ('The following flat packages have passed their placement '
+                   'date and have no net cost:')
+            logging.info('{}\n{}'.format(msg, cdf.to_string()))
+            self.add_to_analysis_dict(
+                key_col=self.missing_flat_costs,
+                message=msg, data=cdf.to_dict())
+        if not ndf.empty:
+            ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
+            msg = ('The following flat packages have passed their placement '
+                   'date and have no net cost nor associated clicks:')
+            logging.info('{}\n{}'.format(msg, ndf.to_string()))
+            self.add_to_analysis_dict(
+                key_col=self.missing_flat_clicks,
+                message=msg, data=ndf.to_dict())
+        return True
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -910,6 +955,7 @@ class Analyze(object):
         self.flag_errant_metrics()
         self.find_placement_name_column()
         self.find_metric_double_counting()
+        self.find_missing_flat_spend()
         self.check_api_date_length()
         self.write_analysis_dict()
 
