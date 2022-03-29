@@ -813,7 +813,8 @@ class Analyze(object):
                 tdf = tdf.applymap(
                     lambda x: str(x).count('_')).apply(lambda x: sum(x))
                 r_col = tdf.idxmax(axis=1)
-                if tdf[r_col] >= (tdf[p_col] + 9):
+                if (r_col in tdf.columns and p_col in tdf.columns and
+                        tdf[r_col] >= (tdf[p_col] + 9)):
                     data_dict = {vmc.vendorkey: [source.key],
                                  'Current Placement Col': p_col,
                                  'Suggested Col': r_col}
