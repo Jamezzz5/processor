@@ -873,7 +873,8 @@ def df_single_transform(df, transform):
         if type(df.columns) == pd.MultiIndex:
             df.columns = [' - '.join([str(y) for y in x]) for x in df.columns]
         df = df.reset_index()
-    if transform_type == 'Merge' or transform_type == 'MergeReplace':
+    if (transform_type == 'Merge' or transform_type == 'MergeReplace'
+            or transform_type == 'MergeReplaceExclude'):
         merge_file = transform[1]
         if '.' in merge_file:
             merge_df = pd.read_csv(merge_file)
@@ -901,7 +902,8 @@ def df_single_transform(df, transform):
             dfs[side]['df'] = cdf
         df = dfs['left']['df']
         merge_df = dfs['right']['df']
-        if transform_type == 'MergeReplace':
+        if (transform_type == 'MergeReplace'
+                or transform_type == 'MergeReplaceExclude'):
             for idx, col in enumerate(right_merge_full):
                 cols = col.split('|')
                 col_id = cols[0]
@@ -909,6 +911,9 @@ def df_single_transform(df, transform):
                 replace_col = left_merge[idx]
                 ndf = merge_df[cols].drop_duplicates()
                 ndf = ndf.set_index(col_id).to_dict(orient='dict')[col_name]
+                if transform_type == 'MergeReplaceExclude':
+                    mask = df[replace_col].astype('U').isin(ndf.keys())
+                    df = df[mask].reset_index(drop=True)
                 df[replace_col] = df[replace_col].astype('U').replace(ndf)
         else:
             filename = 'Merge-{}-{}.csv'.format(
