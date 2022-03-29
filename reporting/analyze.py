@@ -813,13 +813,14 @@ class Analyze(object):
                 tdf = tdf.applymap(
                     lambda x: str(x).count('_')).apply(lambda x: sum(x))
                 r_col = tdf.idxmax(axis=1)
-                if (r_col in tdf.columns and p_col in tdf.columns and
+                if (r_col in tdf and p_col in tdf and
                         tdf[r_col] >= (tdf[p_col] + 9)):
-                    data_dict = {vmc.vendorkey: [source.key],
-                                 'Current Placement Col': p_col,
-                                 'Suggested Col': r_col}
-                    df = df.append(pd.DataFrame(data_dict),
-                                   ignore_index=True, sort=False)
+                    if 25 <= tdf[r_col] <= 35:
+                        data_dict = {vmc.vendorkey: [source.key],
+                                     'Current Placement Col': p_col,
+                                     'Suggested Col': r_col}
+                        df = df.append(pd.DataFrame(data_dict),
+                                       ignore_index=True, sort=False)
         if not df.empty:
             update_msg = ('The following data sources have more breakouts in '
                           'another column. Consider changing placement name '
