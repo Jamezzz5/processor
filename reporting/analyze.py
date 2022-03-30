@@ -840,6 +840,7 @@ class Analyze(object):
         df.reset_index(inplace=True)
         sdf = df.groupby([dctc.VEN, vmc.vendorkey]).size()
         sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
+        sdf = sdf.astype({'Total Num Placements': str})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
         df = df[df.duplicated(subset=dctc.PN, keep=False)]
         if df.empty:
@@ -850,6 +851,7 @@ class Analyze(object):
             if not tdf.empty:
                 tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
                 tdf = tdf.reset_index().rename(columns={0: 'Num Duplicates'})
+                tdf = tdf.astype({'Num Duplicates': str})
                 tdf['Metric'] = metric
                 rdf = pd.concat([rdf, tdf], ignore_index=True)
         if rdf.empty:
