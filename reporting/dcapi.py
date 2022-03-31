@@ -16,7 +16,7 @@ base_url = 'https://www.googleapis.com/dfareporting'
 class DcApi(object):
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
-        'date', 'placementId', 'creative', 'ad']
+        'dfa:date', 'placementId', 'creative', 'ad']
     default_metrics = [
         'impressions', 'clicks', 'clickRate',
         'activeViewViewableImpressions',
