@@ -903,6 +903,7 @@ class Analyze(object):
         df = df.drop(columns=['Clicks_y'])
         df = df.rename(columns={'Date': 'First Click Date',
                                 'Clicks_x': 'Clicks'})
+        df = df.astype({"Clicks": str})
         df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
         df['First Click Date'] = df[
             'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
