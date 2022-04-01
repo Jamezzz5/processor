@@ -1,6 +1,7 @@
 postclick = '_PostClick'
 postimp = '_PostImpression'
 siteserve = '_SiteServed'
+planned_suffix = ' (Planned)'
 
 vendorkey = 'Vendor Key'
 filename = 'FILENAME'

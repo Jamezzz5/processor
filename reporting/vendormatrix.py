@@ -760,7 +760,14 @@ class DataSource(object):
         df = combining_data(df, self.key, vmc.datadatecol, **self.p)
         df = utl.data_to_type(df, date_col=vmc.datadatecol)
         df = utl.apply_rules(df, self.vm_rules, utl.PRE, **self.p)
-        df = combining_data(df, self.key, vmc.datafloatcol, **self.p)
+        if self.p[vmc.omit_plan] == 'MEDIAPLAN':
+            float_cols = []
+            for col in vmc.datafloatcol:
+                self.p[col + vmc.planned_suffix] = self.p[col]
+                float_cols.append(col + vmc.planned_suffix)
+        else:
+            float_cols = vmc.datafloatcol
+        df = combining_data(df, self.key, float_cols, **self.p)
         df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
         return df
 
