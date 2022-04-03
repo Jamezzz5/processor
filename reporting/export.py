@@ -122,7 +122,8 @@ class DBUpload(object):
     def get_upload_df(self, table):
         cols = self.dbs.get_cols_for_export(table)
         cols_to_add = []
-        other_event_cols = [exc.event_steam_name, exc.event_conv_name]
+        other_event_cols = [
+            exc.event_steam_name, exc.event_conv_name, exc.eventplanname]
         if exc.event_name in cols and not any(
                 [x in cols for x in other_event_cols]):
             cols_to_add = [x for x in self.dft.real_columns

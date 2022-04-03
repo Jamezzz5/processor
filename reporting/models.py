@@ -892,3 +892,38 @@ class EventConv(Base):
 
     event = relationship('Event')
     upload = relationship('Upload')
+
+
+class EventPlan(Base):
+    __tablename__ = 'eventplan'
+    __table_args__ = {'schema': 'lqadb'}
+
+    eventplanid = Column(BigInteger, primary_key=True, server_default=text(
+        "nextval('lqadb.eventplan_eventplanid_seq'::regclass)"))
+    eventplanname = Column(Text)
+    eventid = Column(ForeignKey(
+        'lqadb.event.eventid', ondelete='CASCADE'))
+    plan_impressions = Column(Numeric)
+    plan_clicks = Column(Numeric)
+    plan_netcost = Column(Numeric)
+    plan_adservingcost = Column(Numeric)
+    plan_agencyfees = Column(Numeric)
+    plan_totalcost = Column(Numeric)
+    plan_videoviews = Column(Numeric)
+    plan_videoviews25 = Column(Numeric)
+    plan_videoviews50 = Column(Numeric)
+    plan_videoviews75 = Column(Numeric)
+    plan_videoviews100 = Column(Numeric)
+    plan_landingpage = Column(Numeric)
+    plan_homepage = Column(Numeric)
+    plan_buttonclick = Column(Numeric)
+    plan_purchase = Column(Numeric)
+    plan_signup = Column(Numeric)
+    plan_verificationcost = Column(Numeric)
+    plan_reportingcost = Column(Numeric)
+    plan_dcmservicefee = Column(Numeric)
+
+    uploadid = Column(ForeignKey('lqadb.upload.uploadid', ondelete='CASCADE'))
+
+    event = relationship('Event')
+    upload = relationship('Upload')
