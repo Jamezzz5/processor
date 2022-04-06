@@ -815,7 +815,7 @@ class Analyze(object):
                 r_col = tdf.idxmax(axis=1)
                 if (r_col in tdf and p_col in tdf
                         and tdf[r_col] >= (tdf[p_col] + 9)
-                        and 75 <= tdf[r_col].mean() <= 105):
+                        and 75 <= tdf[r_col] <= 105):
                     data_dict = {vmc.vendorkey: [source.key],
                                  'Current Placement Col': p_col,
                                  'Suggested Col': r_col}
