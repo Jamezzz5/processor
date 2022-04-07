@@ -813,21 +813,25 @@ class Analyze(object):
                 tdf = tdf.applymap(
                     lambda x: str(x).count('_')).apply(lambda x: sum(x))
                 r_col = tdf.idxmax(axis=1)
-                if (r_col in tdf and p_col in tdf and
-                        tdf[r_col] >= (tdf[p_col] + 9)):
-                    if 25 <= tdf[r_col] <= 35:
-                        data_dict = {vmc.vendorkey: [source.key],
-                                     'Current Placement Col': p_col,
-                                     'Suggested Col': r_col}
-                        df = df.append(pd.DataFrame(data_dict),
-                                       ignore_index=True, sort=False)
-        if not df.empty:
-            update_msg = ('The following data sources have more breakouts in '
-                          'another column. Consider changing placement name '
-                          'source:')
-            logging.info('{}\n{}'.format(update_msg, df.to_string()))
-            self.add_to_analysis_dict(key_col=self.placement_col,
-                                      message=update_msg, data=df.to_dict())
+                if (r_col in tdf and p_col in tdf
+                        and tdf[r_col] >= (tdf[p_col] + 9)
+                        and 75 <= tdf[r_col] <= 105):
+                    data_dict = {vmc.vendorkey: [source.key],
+                                 'Current Placement Col': p_col,
+                                 'Suggested Col': r_col}
+                    df = df.append(pd.DataFrame(data_dict),
+                                   ignore_index=True, sort=False)
+        if df.empty:
+            msg = ('Placement Name columns look correct. '
+                   'No columns w/ more breakouts.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following data sources have more breakouts in '
+                   'another column. Consider changing placement name '
+                   'source:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.placement_col,
+                                  message=msg, data=df.to_dict())
 
     def find_metric_double_counting(self):
         rdf = pd.DataFrame()
@@ -843,43 +847,51 @@ class Analyze(object):
         sdf = sdf.astype({'Total Num Placements': str})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
         df = df[df.duplicated(subset=dctc.PN, keep=False)]
-        if df.empty:
-            return None
-        for metric in metrics:
-            tdf = df[df[metric] > 0]
-            tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
-            if not tdf.empty:
-                tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
-                tdf = tdf.reset_index().rename(columns={0: 'Num Duplicates'})
-                tdf = tdf.astype({'Num Duplicates': str})
-                tdf['Metric'] = metric
-                rdf = pd.concat([rdf, tdf], ignore_index=True)
-        if rdf.empty:
-            return None
-        rdf = sdf[[dctc.VEN, 'Total Num Placements']].merge(
-            rdf, how='inner', on=dctc.VEN)
-        rdf = rdf.groupby([dctc.VEN, 'Metric', 'Total Num Placements',
-                           'Num Duplicates'])[vmc.vendorkey].apply(
-            lambda x: ','.join(x)).reset_index()
-        rdf = rdf.groupby([dctc.VEN, 'Metric', vmc.vendorkey,
-                           'Num Duplicates']).max().reset_index()
-        adf = rdf[rdf['Total Num Placements'] == rdf['Num Duplicates']]
-        pdf = rdf[rdf['Total Num Placements'] > rdf['Num Duplicates']]
-        if not adf.empty:
-            msg = ('The following vendors are double counting metrics on all '
-                   'placements from the following sources:')
-            logging.info('{}\n{}'.format(msg, adf.to_string()))
-            self.add_to_analysis_dict(
-                key_col=self.double_counting_all,
-                message=msg, data=adf.to_dict())
-        if not pdf.empty:
-            msg = ('The following vendors are double counting metrics on some '
-                   'placements from the following sources. Check only '
-                   'untracked placements are being uploaded in rawfiles:')
-            logging.info('{}\n{}'.format(msg, pdf.to_string()))
-            self.add_to_analysis_dict(
-                key_col=self.double_counting_partial,
-                message=msg, data=pdf.to_dict())
+        if not df.empty:
+            for metric in metrics:
+                tdf = df[df[metric] > 0]
+                tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
+                if not tdf.empty:
+                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
+                    tdf = tdf.reset_index().rename(
+                        columns={0: 'Num Duplicates'})
+                    tdf = tdf.astype({'Num Duplicates': str})
+                    tdf['Metric'] = metric
+                    rdf = pd.concat([rdf, tdf], ignore_index=True)
+        if not rdf.empty:
+            rdf = sdf[[dctc.VEN, 'Total Num Placements']].merge(
+                rdf, how='inner', on=dctc.VEN)
+            rdf = rdf.groupby([dctc.VEN, 'Metric', 'Total Num Placements',
+                               'Num Duplicates'])[vmc.vendorkey].apply(
+                lambda x: ','.join(x)).reset_index()
+            rdf = rdf.groupby([dctc.VEN, 'Metric', vmc.vendorkey,
+                               'Num Duplicates']).max().reset_index()
+            adf = rdf[rdf['Total Num Placements'] == rdf['Num Duplicates']]
+            pdf = rdf[rdf['Total Num Placements'] > rdf['Num Duplicates']]
+        else:
+            adf = pd.DataFrame()
+            pdf = pd.DataFrame()
+        if adf.empty:
+            amsg = ('No vendors are double counting on all placements '
+                    'for any one metric.')
+            logging.info('{}'.format(amsg))
+        else:
+            amsg = ('The following vendors are double counting metrics on all '
+                    'placements from the following sources:')
+            logging.info('{}\n{}'.format(amsg, adf.to_string()))
+        self.add_to_analysis_dict(key_col=self.double_counting_all,
+                                  message=amsg, data=adf.to_dict())
+        if pdf.empty:
+            pmsg = ('No vendors are double counting on only some placements '
+                    'for any one metric.')
+            logging.info('{}'.format(pmsg))
+        else:
+            pmsg = ('The following vendors are double counting metrics on some'
+                    ' placements from the following sources. Check only'
+                    ' untracked placements are being uploaded in rawfiles:')
+            logging.info('{}\n{}'.format(pmsg, pdf.to_string()))
+        self.add_to_analysis_dict(key_col=self.double_counting_partial,
+                                  message=pmsg, data=pdf.to_dict())
 
     def find_missing_flat_spend(self):
         groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, vmc.date]
@@ -889,43 +901,50 @@ class Analyze(object):
                                     data_filter=None)
         df.reset_index(inplace=True)
         df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
-        if df.empty:
-            return None
-        tdf = df[df[vmc.clicks] > 0]
-        tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
-        tdf.reset_index(inplace=True)
-        df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
-        df.reset_index(inplace=True)
-        df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
-        df = df.merge(tdf.drop_duplicates(),
-                      on=[dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, cal.NCF],
-                      how='left', indicator=True)
-        df = df.drop(columns=['Clicks_y'])
-        df = df.rename(columns={'Date': 'First Click Date',
-                                'Clicks_x': 'Clicks'})
-        df = df.astype({"Clicks": str})
-        df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
-        df['First Click Date'] = df[
-            'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-        cdf = df[df['_merge'] == 'both']
-        ndf = df[df['_merge'] == 'left_only']
-        if not cdf.empty:
+        if not df.empty:
+            tdf = df[df[vmc.clicks] > 0]
+            tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
+            tdf.reset_index(inplace=True)
+            df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
+            df.reset_index(inplace=True)
+            df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
+            df = df.merge(tdf.drop_duplicates(),
+                          on=[dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, cal.NCF],
+                          how='left', indicator=True)
+            df = df.drop(columns=['Clicks_y'])
+            df = df.rename(columns={'Date': 'First Click Date',
+                                    'Clicks_x': 'Clicks'})
+            df = df.astype({"Clicks": str})
+            df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
+            df['First Click Date'] = df[
+                'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            cdf = df[df['_merge'] == 'both']
             cdf = cdf.iloc[:, :-1]
-            msg = ('The following flat packages have passed their placement '
-                   'date and have no net cost:')
-            logging.info('{}\n{}'.format(msg, cdf.to_string()))
-            self.add_to_analysis_dict(
-                key_col=self.missing_flat_costs,
-                message=msg, data=cdf.to_dict())
-        if not ndf.empty:
+            ndf = df[df['_merge'] == 'left_only']
             ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
-            msg = ('The following flat packages have passed their placement '
-                   'date and have no net cost nor associated clicks:')
-            logging.info('{}\n{}'.format(msg, ndf.to_string()))
-            self.add_to_analysis_dict(
-                key_col=self.missing_flat_clicks,
-                message=msg, data=ndf.to_dict())
-        return True
+        else:
+            cdf = pd.DataFrame()
+            ndf = pd.DataFrame()
+        if cdf.empty:
+            cmsg = ('All flat packages past their placement date, '
+                    'with clicks, have net cost.')
+            logging.info('{}'.format(cmsg))
+        else:
+            cmsg = ('The following flat packages have passed their placement '
+                    'date and have no net cost:')
+            logging.info('{}\n{}'.format(cmsg, cdf.to_string()))
+        self.add_to_analysis_dict(key_col=self.missing_flat_costs,
+                                  message=cmsg, data=cdf.to_dict())
+        if ndf.empty:
+            nmsg = ('All flat packages past their placement '
+                    'date have associated clicks.')
+            logging.info('{}'.format(nmsg))
+        else:
+            nmsg = ('The following flat packages have passed their placement '
+                    'date and have no net cost nor associated clicks:')
+            logging.info('{}\n{}'.format(nmsg, ndf.to_string()))
+        self.add_to_analysis_dict(key_col=self.missing_flat_clicks,
+                                  message=nmsg, data=ndf.to_dict())
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
