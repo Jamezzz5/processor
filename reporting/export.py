@@ -638,7 +638,8 @@ class DFTranslation(object):
                                             str(self.upload_id))
         self.df[exc.event_name] = (self.df[exc.event_date].astype('U') +
                                    self.df[exc.full_placement_name])
-        for col in [exc.plan_name, exc.event_steam_name, exc.event_conv_name]:
+        for col in [exc.plan_name, exc.event_steam_name, exc.event_conv_name,
+                    exc.event_plan_name]:
             self.df[col] = self.df[exc.event_name]
 
     def slice_for_upload(self, columns):
