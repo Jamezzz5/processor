@@ -1012,7 +1012,7 @@ def df_single_transform(df, transform):
     if transform_type == 'PercentDecode':
         cols = transform[1:]
         for col in cols:
-            df = df[col].map(
+            df[col] = df[col].map(
                 lambda x: urllib.parse.unquote(
                     x, encoding='utf-8', errors='replace'))
     return df
