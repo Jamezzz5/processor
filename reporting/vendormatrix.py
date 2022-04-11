@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import yaml
+import urllib
 import shutil
 import logging
 import numpy as np
@@ -1008,6 +1009,12 @@ def df_single_transform(df, transform):
         cols = transform[1:]
         replace_dict = {x.split('|')[0]: x.split('|')[1] for x in cols}
         df = df.rename(columns=replace_dict)
+    if transform_type == 'PercentDecode':
+        cols = transform[1:]
+        for col in cols:
+            df = df[col].map(
+                lambda x: urllib.parse.unquote(
+                    x, encoding='utf-8', errors='replace'))
     return df
 
 
