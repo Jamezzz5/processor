@@ -230,7 +230,7 @@ class RedApi(object):
     def click_grouped_metrics(self):
         for metric in ['Conversion', 'Video', 'App Install',
                        'Settings']:
-            metric_xpath = '//label[text()="{}"]'.format(metric)
+            metric_xpath = '//div[text()="{}"]'.format(metric)
             self.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
