@@ -224,12 +224,14 @@ api_qt_key = 'Quantcast'
 api_rawx_key = 'RawfileXbox'
 api_yv_key = 'YahooVerizon'
 api_amd_key = 'AmazonDsp'
+api_mp_key = 'MediaPlan'
 api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
             api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
             api_red_key, api_dv_key, api_raw_key, api_adk_key, api_inn_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
-            api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key]
+            api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
+            api_mp_key]
 
 api_translation = {
     api_aw_key: 'aw',
@@ -260,4 +262,35 @@ api_translation = {
     api_qt_key: 'qt',
     api_yv_key: 'yv',
     api_amd_key: 'amd'
+}
+
+api_partner_name_translation = {
+    api_aw_key: ['Google SEM', 'YouTube'],
+    api_fb_key: ['Facebook', 'Instagram', 'Facebook/Instagram', 'FBIG'],
+    api_tw_key: ['Twitter'],
+    api_ttd_key: ['The Trade Desk'],
+    api_ga_key: ['Google Analytics'],
+    api_nb_key: ['NetBase'],
+    api_af_key: ['Appsflyer'],
+    api_sc_key: ['Snapchat'],
+    api_aj_key: ['Adjust'],
+    api_dc_key: ['DCM'],
+    api_rs_key: ['Redshell'],
+    api_db_key: ['DBM', 'DV360'],
+    api_vk_key: ['VK'],
+    api_rc_key: ['Revcontent'],
+    api_szk_key: ['Sizmek'],
+    api_red_key: ['Reddit'],
+    api_dv_key: ['Doubleverify'],
+    api_adk_key: ['Adikteev'],
+    api_inn_key: ['Innovid'],
+    api_tik_key: ['TikTok'],
+    api_amz_key: ['Amazon'],
+    api_cri_key: ['Criteo'],
+    api_pm_key: ['Pathmatics'],
+    api_sam_key: ['Samsung'],
+    api_gs_key: ['Googlesheets'],
+    api_qt_key: ['Quantcast'],
+    api_yv_key: ['Yahoo', 'Verizon'],
+    api_amd_key: ['Amazon DSP']
 }
