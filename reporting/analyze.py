@@ -33,6 +33,7 @@ class Analyze(object):
     raw_columns = 'raw_file_columns'
     vk_metrics = 'vendor_key_metrics'
     vendor_metrics = 'vendor_metrics'
+    pacing_metrics = 'pacing_metrics'
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
     placement_col = 'placement_col'
@@ -542,6 +543,29 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.vk_metrics,
                                   message=update_msg, data=df.to_dict())
 
+    def get_pacing_metrics(self):
+        groups = [dctc.VEN, dctc.CAM, vmc.date]
+        df = self.generate_df_table(groups, [cal.NCF], sort=None,
+                                    data_filter=None)
+        pnc_df = self.generate_df_table(groups[:-1], [dctc.PNC], sort=None,
+                                        data_filter=None)
+        df.reset_index(inplace=True)
+        pnc_df.reset_index(inplace=True)
+        df = df[df[vmc.date] < dt.datetime.today()]
+        start_dates = df.copy()
+        start_dates = start_dates.drop(cal.NCF, axis=1) \
+            .groupby([dctc.VEN, dctc.CAM]).min().reset_index()
+        start_dates[vmc.date] = start_dates[vmc.date].dt.strftime('%Y-%m-%d')
+        cumulative_spend = df.copy()
+        cumulative_spend = cumulative_spend.drop(vmc.date, axis=1) \
+            .groupby([dctc.VEN, dctc.CAM]).sum().reset_index()
+        df = start_dates.merge(pnc_df, how='left', on=[dctc.VEN, dctc.CAM]) \
+            .merge(cumulative_spend, how='left', on=[dctc.VEN, dctc.CAM])
+        msg = 'Pacing Table:'
+        self.add_to_analysis_dict(
+            key_col=self.pacing_metrics,
+            message=msg, data=df.to_dict())
+
     def find_missing_metrics(self):
         df = self.get_table_without_format(group=dctc.VEN)
         format_df = self.give_df_default_format(df.copy())
@@ -980,6 +1004,7 @@ class Analyze(object):
         self.evaluate_on_kpis()
         self.get_column_names_from_raw_files()
         self.get_metrics_by_vendor_key()
+        self.get_pacing_metrics()
         self.find_missing_metrics()
         self.flag_errant_metrics()
         self.find_placement_name_column()
