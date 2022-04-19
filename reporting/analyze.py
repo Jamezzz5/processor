@@ -553,14 +553,16 @@ class Analyze(object):
         pnc_df.reset_index(inplace=True)
         df = df[df[vmc.date] < dt.datetime.today()]
         start_dates = df.copy()
-        start_dates = start_dates.drop(cal.NCF, axis=1) \
-            .groupby([dctc.VEN, dctc.CAM]).min().reset_index()
+        start_dates = start_dates.drop(cal.NCF, axis=1)
+        start_dates = start_dates.groupby(
+            [dctc.VEN, dctc.CAM]).min().reset_index()
         start_dates[vmc.date] = start_dates[vmc.date].dt.strftime('%Y-%m-%d')
         cumulative_spend = df.copy()
-        cumulative_spend = cumulative_spend.drop(vmc.date, axis=1) \
-            .groupby([dctc.VEN, dctc.CAM]).sum().reset_index()
-        df = start_dates.merge(pnc_df, how='left', on=[dctc.VEN, dctc.CAM]) \
-            .merge(cumulative_spend, how='left', on=[dctc.VEN, dctc.CAM])
+        cumulative_spend = cumulative_spend.drop(vmc.date, axis=1)
+        cumulative_spend = cumulative_spend.groupby(
+            [dctc.VEN, dctc.CAM]).sum().reset_index()
+        df = start_dates.merge(pnc_df, how='left', on=[dctc.VEN, dctc.CAM])
+        df = df.merge(cumulative_spend, how='left', on=[dctc.VEN, dctc.CAM])
         msg = 'Pacing Table:'
         self.add_to_analysis_dict(
             key_col=self.pacing_metrics,
