@@ -901,7 +901,7 @@ class Analyze(object):
                                     data_filter=None)
         df.reset_index(inplace=True)
         df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
-        if not df.empty:
+        try:
             tdf = df[df[vmc.clicks] > 0]
             tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
             tdf.reset_index(inplace=True)
@@ -922,7 +922,7 @@ class Analyze(object):
             cdf = cdf.iloc[:, :-1]
             ndf = df[df['_merge'] == 'left_only']
             ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
-        else:
+        except:
             cdf = pd.DataFrame()
             ndf = pd.DataFrame()
         if cdf.empty:
