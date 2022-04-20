@@ -901,28 +901,30 @@ class Analyze(object):
                                     data_filter=None)
         df.reset_index(inplace=True)
         df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
-        try:
+        if not df.empty:
             tdf = df[df[vmc.clicks] > 0]
             tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
             tdf.reset_index(inplace=True)
             df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
             df.reset_index(inplace=True)
             df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
-            df = df.merge(tdf.drop_duplicates(),
-                          on=[dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, cal.NCF],
-                          how='left', indicator=True)
-            df = df.drop(columns=['Clicks_y'])
-            df = df.rename(columns={'Date': 'First Click Date',
-                                    'Clicks_x': 'Clicks'})
-            df = df.astype({"Clicks": str})
-            df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
-            df['First Click Date'] = df[
-                'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            cdf = df[df['_merge'] == 'both']
-            cdf = cdf.iloc[:, :-1]
-            ndf = df[df['_merge'] == 'left_only']
-            ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
-        except:
+            if not df.empty:
+                df = df.merge(tdf.drop_duplicates(),
+                              on=[dctc.VEN, dctc.PKD,
+                                  dctc.PD, dctc.BM, cal.NCF],
+                              how='left', indicator=True)
+                df = df.drop(columns=['Clicks_y'])
+                df = df.rename(columns={'Date': 'First Click Date',
+                                        'Clicks_x': 'Clicks'})
+                df = df.astype({"Clicks": str})
+                df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
+                df['First Click Date'] = df[
+                    'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                cdf = df[df['_merge'] == 'both']
+                cdf = cdf.iloc[:, :-1]
+                ndf = df[df['_merge'] == 'left_only']
+                ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
+        if df.empty:
             cdf = pd.DataFrame()
             ndf = pd.DataFrame()
         if cdf.empty:
