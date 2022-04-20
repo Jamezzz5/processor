@@ -228,9 +228,9 @@ class RedApi(object):
             self.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
-        for metric in ['Conversion', 'Video', 'App Install',
-                       'Settings']:
-            metric_xpath = '//div[text()="{}"]'.format(metric)
+        for x in range(2, 6):
+            metric_xpath = ('/html/body/div[4]/div/div/div/div/div[2]/div[2]/'
+                            'div/ul/li[{}]/div/div/label/i'.format(x))
             self.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
