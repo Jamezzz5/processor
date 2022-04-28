@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import json
 import logging
 import requests
@@ -91,6 +92,7 @@ class RsApi(object):
                         'Accept': 'application/json',
                         'Content-Type': 'application/json',
                         'X-Api-Version': version}
+        return self.headers
 
     def get_id(self):
         r = requests.get(self.games_url, headers=self.headers)
@@ -148,12 +150,53 @@ class RsApi(object):
         self.df = self.df[self.df['campaign'].fillna('0').str.contains(
             self.campaign_filter)].reset_index(drop=True)
 
+    def request_error(self):
+        logging.warning('Unknown error: {}'.format(self.r.text))
+        sys.exit(0)
+
+    def raw_request(self, url, method, body=None, params=None, headers=None):
+        kwargs = {}
+        for kwarg in [(body, 'json'), (params, 'params'), (headers, 'headers')]:
+            if kwarg[0]:
+                kwargs[kwarg[1]] = kwarg[0]
+        if method == 'POST':
+            request_method = requests.post
+        else:
+            request_method = requests.get
+        self.r = request_method(url, **kwargs)
+        return self.r
+
+    def make_request(self, url, method, body=None, params=None,
+                     attempt=1, json_response=True):
+        headers = self.set_headers(self.stats_version)
+        try:
+            self.r = self.raw_request(url, method, body=body, params=params,
+                                      headers=headers)
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+            self.r = self.make_request(url=url, method=method, body=body,
+                                       params=params, attempt=attempt,
+                                       json_response=json_response)
+        if json_response:
+            try:
+                self.r.json()
+            except ValueError:
+                logging.warning(
+                    'Request error.  Retrying {}'.format(self.r.text))
+                time.sleep(30)
+                attempt += 1
+                if attempt > 10:
+                    self.request_error()
+                self.r = self.make_request(url=url, method=method, body=body,
+                                           params=params, attempt=attempt,
+                                           json_response=json_response)
+        return self.r
+
     def get_raw_data(self, sd, ed, fields):
         logging.info('Getting data from {} to ed {}'.format(sd, ed))
         r_data = self.get_request_data(sd, ed, fields)
-        self.set_headers(self.stats_version)
-        self.r = requests.post(
-            self.stats_url, headers=self.headers, json=r_data)
+        self.r = self.make_request(self.stats_url, method='POST', body=r_data)
         self.df = self.data_to_df(fields)
         if self.campaign_filter:
             self.filter_df_on_campaign()
