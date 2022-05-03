@@ -965,6 +965,9 @@ def df_single_transform(df, transform):
     if transform_type == 'Melt':
         header_col_name = transform[1]
         variable_cols = transform[2].split('|')
+        missing_cols = [x for x in variable_cols if x not in df.columns]
+        for col in missing_cols:
+            df[col] = 0
         df = df.melt(id_vars=[x for x in df.columns if x not in variable_cols],
                      value_vars=[x for x in variable_cols if x in df.columns],
                      var_name='{}-variable'.format(header_col_name),
