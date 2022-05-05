@@ -41,6 +41,7 @@ class Analyze(object):
     double_counting_partial = 'double_counting_partial'
     missing_flat_costs = 'missing_flat_costs'
     missing_flat_clicks = 'missing_flat_clicks'
+    missing_serving = 'missing_serving'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -948,6 +949,28 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.missing_flat_clicks,
                                   message=nmsg, data=ndf.to_dict())
 
+    def find_missing_serving(self):
+        groups = [vmc.vendorkey, dctc.SRV, dctc.PN]
+        metrics = []
+        df = self.generate_df_table(groups, metrics, sort=None,
+                                    data_filter=None)
+        df = df.reset_index()
+        df = df[(df[vmc.vendorkey].str.contains('API_DCM')) |
+                (df[vmc.vendorkey].str.contains('API_Sizmek'))]
+        df = df[(df[dctc.SRV] == 0) | (df[dctc.SRV].isnull()) |
+                (df[dctc.SRV] == str(0))]
+        df = df.astype({dctc.SRV: str})
+        if not df.empty:
+            msg = ('The following placements are under an adserver w/o '
+                   'a serving model:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        else:
+            msg = ('All placements under an adserver have an associated '
+                   'serving model.')
+            logging.info('{}'.format(msg))
+        self.add_to_analysis_dict(key_col=self.missing_serving,
+                                  message=msg, data=df.to_dict())
+
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
         item = [x for x in self.analysis_dict
@@ -987,6 +1010,7 @@ class Analyze(object):
         self.find_placement_name_column()
         self.find_metric_double_counting()
         self.find_missing_flat_spend()
+        self.find_missing_serving()
         self.check_api_date_length()
         self.write_analysis_dict()
 
