@@ -950,13 +950,17 @@ class Analyze(object):
                                   message=nmsg, data=ndf.to_dict())
 
     def find_missing_ad_rate(self):
-        groups = [dctc.SRV, dctc.AM, dctc.AR]
+        groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.AR]
         metrics = []
         df = self.generate_df_table(groups, metrics, sort=None,
                                     data_filter=None)
         df = df.reset_index()
+        df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
+                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull())]
         df = df.astype({dctc.SRV: str, dctc.AM: str, dctc.AR: str})
+        df = df.drop(columns=vmc.vendorkey)
         if not df.empty:
             msg = ('The following Adserving Models are missing associated '
                    'rates. Add via Edit Processor Files -> Edit Relation '
