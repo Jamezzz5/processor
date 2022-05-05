@@ -956,12 +956,12 @@ class Analyze(object):
                                     data_filter=None)
         df = df.reset_index()
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull())]
-        df = df.astype({dctc.AR: str})
+        df = df.astype({dctc.SRV: str, dctc.AM: str, dctc.AR: str})
         if not df.empty:
             msg = ('The following Adserving Models are missing associated '
                    'rates. Add via Edit Processor Files -> Edit Relation '
                    'Dictionaries -> Relation - Serving:')
-            logging.info(msg, df.to_string())
+            logging.info('{}\n{}'.format(msg, df.to_string()))
         else:
             msg = ('All placements w/ Adserving Models have associated '
                    'adserving rates.')
