@@ -846,7 +846,7 @@ class Analyze(object):
         sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
         sdf = sdf.astype({'Total Num Placements': str})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
-        df = df[df.duplicated(subset=dctc.PN, keep=False)]
+        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN], keep=False)]
         if not df.empty:
             for metric in metrics:
                 tdf = df[df[metric] > 0]
@@ -894,6 +894,8 @@ class Analyze(object):
                                   message=pmsg, data=pdf.to_dict())
 
     def find_missing_flat_spend(self):
+        cdf = pd.DataFrame()
+        ndf = pd.DataFrame()
         groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, vmc.date]
         metrics = [cal.NCF, vmc.clicks]
         metrics = [metric for metric in metrics if metric in self.df.columns]
