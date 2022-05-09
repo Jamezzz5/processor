@@ -27,6 +27,7 @@ class AjApi(object):
         self.config_list = None
         self.df = pd.DataFrame()
         self.r = None
+        self.attribution_type = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -76,7 +77,7 @@ class AjApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         return sd, ed
 
-    def create_url(self, sd, ed):
+    def create_url(self, sd, ed, fields):
         full_url = '{}{}'.format(self.base_url, self.app_token)
         params = {'user_token': self.api_token,
                   'kpis': ','.join(self.def_fields),
@@ -84,18 +85,28 @@ class AjApi(object):
                   'grouping': ','.join(self.def_groupings)}
         if self.tracker_token:
             params['tracker_filter'] = self.tracker_token
+        if fields:
+            for field in fields:
+                if 'attribution' in field:
+                    if 'impression' in field:
+                        val = 'impression'
+                    elif 'all' in field:
+                        val = 'all'
+                    else:
+                        val = 'click'
+                    params['attribution_type'] = val
         return full_url, params
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.df = pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         sd, ed = self.date_check(sd, ed)
-        self.get_raw_data(sd, ed)
+        self.get_raw_data(sd, ed, fields)
         return self.df
 
-    def get_raw_data(self, sd, ed):
+    def get_raw_data(self, sd, ed, fields):
         logging.info('Getting data from {} to {}'.format(sd, ed))
-        full_url, params = self.create_url(sd, ed)
+        full_url, params = self.create_url(sd, ed, fields)
         headers = {'Accept': 'text/csv'}
         self.r = requests.get(full_url, headers=headers, params=params)
         if self.r.status_code == 200:
