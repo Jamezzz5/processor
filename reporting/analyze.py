@@ -963,7 +963,7 @@ class Analyze(object):
         df = df.reset_index()
         df = df[(df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key))]
-        df = df[(df[dctc.AM] == 'nan') | (df[dctc.SRV] == 0) |
+        df = df[(df[dctc.AM] == 'nan') | (df[dctc.AM] == 0) |
                 (df[dctc.AM].isnull())]
         df = df[~df[dctc.SRV].isin(serving_vals)]
         df = df.astype({dctc.SRV: str, dctc.AM: str})
