@@ -41,6 +41,7 @@ class Analyze(object):
     double_counting_partial = 'double_counting_partial'
     missing_flat_costs = 'missing_flat_costs'
     missing_flat_clicks = 'missing_flat_clicks'
+    missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
@@ -951,6 +952,33 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.missing_flat_clicks,
                                   message=nmsg, data=ndf.to_dict())
 
+    def find_missing_serving(self):
+        groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.PN]
+        metrics = []
+        serving_vals = ['1x1 Click & Imp', '1x1 Click Only', 'In-Banner',
+                        'In-Stream Video', 'No Tracking', 'Rich Media',
+                        'Standard', 'VAST', 'VPAID']
+        df = self.generate_df_table(groups, metrics, sort=None,
+                                    data_filter=None)
+        df = df.reset_index()
+        df = df[(df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
+                (df[vmc.vendorkey].str.contains(vmc.api_szk_key))]
+        df = df[(df[dctc.AM] == 'nan') | (df[dctc.AM] == 0) |
+                (df[dctc.AM].isnull())]
+        df = df[~df[dctc.SRV].isin(serving_vals)]
+        df = df.astype({dctc.SRV: str, dctc.AM: str})
+        if not df.empty:
+            msg = ('The following placements are under an adserver w/o '
+                   'a recognized serving model. Add via Edit Processor Files'
+                   'Translate or in platform:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        else:
+            msg = ('All placements under an adserver have an associated '
+                   'serving model.')
+            logging.info('{}'.format(msg))
+        self.add_to_analysis_dict(key_col=self.missing_serving,
+                                  message=msg, data=df.to_dict())
+
     def find_missing_ad_rate(self):
         groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.AR]
         metrics = []
@@ -960,7 +988,8 @@ class Analyze(object):
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
-        df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull())]
+        df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
+                (df[dctc.AR] == 'nan')]
         df = df.astype({dctc.SRV: str, dctc.AM: str, dctc.AR: str})
         df = df.drop(columns=vmc.vendorkey)
         if not df.empty:
@@ -1014,6 +1043,7 @@ class Analyze(object):
         self.find_placement_name_column()
         self.find_metric_double_counting()
         self.find_missing_flat_spend()
+        self.find_missing_serving()
         self.find_missing_ad_rate()
         self.check_api_date_length()
         self.write_analysis_dict()
