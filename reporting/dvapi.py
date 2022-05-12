@@ -101,9 +101,9 @@ class DvApi(object):
                     self.metrics = self.fb_metrics
                     self.report_type = field
                     self.dim_end = 22
-                    self.metric_start = 23
-                    self.metric_end = 109
-                    self.metric_tab = 3
+                    self.metric_start = 63
+                    self.metric_end = 448
+                    self.metric_tab = 5
                     self.path_to_report = ('Social Platforms', 'Facebook',
                                            'Custom Report')
                     self.advertiser_name = 'FB Account ID'
@@ -112,9 +112,9 @@ class DvApi(object):
             self.dimensions = self.def_dimensions
             self.metrics = self.def_metrics
             self.dim_end = 53
-            self.metric_start = 54
-            self.metric_end = 328
-            self.metric_tab = 5
+            self.metric_start = 63
+            self.metric_end = 310
+            self.metric_tab = 2
             self.path_to_report = ('Standard', 'Viewability', 'All (template)')
             self.campaign_name = 'Campaign'
             self.advertiser_name = 'Advertiser Name'
@@ -174,9 +174,9 @@ class DvApi(object):
         time.sleep(sleep)
 
     def get_cal_month(self, lr=2, desired_date=None):
-        month_xpath = '//*[@id="mat-datepicker-0"]/div[1]/div/button[2]' \
+        month_xpath = '//*[@id="mat-datepicker-0"]/mat-calendar-header/div/div/button[2]' \
                       ''.format(lr)
-        cal_date_xpath = '//*[@id="mat-datepicker-0"]/div[1]/div/button[1]'
+        cal_date_xpath = '//*[@id="mat-datepicker-0"]/mat-calendar-header/div/div/button[1]'
         for x in range(12):
             cur_month = self.browser.find_element_by_xpath(cal_date_xpath).text
             cur_month_dt = dt.datetime.strptime(cur_month, '%b %Y')
@@ -192,7 +192,7 @@ class DvApi(object):
         self.get_cal_month(lr=2, desired_date=date)
         for row in range(1, 7):
             for col in range(1, 8):
-                xpath = '//*[@id="mat-datepicker-0"]/div[2]/mat-month-view/' \
+                xpath = '//*[@id="mat-datepicker-0"]/div/mat-month-view/' \
                         'table/tbody/tr[{}]/td[{}]'.format(row, col)
                 try:
                     value = self.browser.find_element_by_xpath(xpath).text
@@ -205,10 +205,10 @@ class DvApi(object):
     def set_dates(self, sd, ed):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
         xpaths = ['//*[@id="reportBuilderForm"]/mat-card/rc-date-range/'
-                  'mat-card/div[1]/dv-date-range-picker/div/div/span',
+                  'mat-card/div[1]/dvl-date-range-picker/div/div/span',
                   '//span[normalize-space(text())="Custom Range"]',
                   '//*[@id="reportBuilderForm"]/mat-card/rc-date-range/mat-card'
-                  '/div[1]/dv-date-range-picker/div/div[2]/form/'
+                  '/div[1]/dvl-date-range-picker/div/div[2]/form/'
                   'mat-form-field[1]/div/div[1]/div[1]/div/span/'
                   'mat-datepicker-toggle/button/span/mat-icon']
         for xpath in xpaths:
@@ -222,7 +222,7 @@ class DvApi(object):
 
     def get_name_of_report(self, row_num, attempt=0):
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
-                 'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
+                 'div[2]/dvl-table-rb/dvl-data-table-rb/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[2]/a').format(row_num)
         try:
             value = self.browser.find_element_by_xpath(xpath).text
@@ -259,7 +259,7 @@ class DvApi(object):
         if not row:
             return None
         xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
-                 'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
+                 'div[2]/dvl-table-rb/dvl-data-table-rb/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a').format(row)
         try:
             elem = self.browser.find_element_by_xpath(xpath)
@@ -367,10 +367,11 @@ class DvApi(object):
     def click_on_filters(self, value):
         logging.info('Setting filters for {}'.format(value))
         campaigns = value.split(',')
-        xpath = '(//input[@placeholder="Search"])[3]'
+        xpath = '(//input[@data-placeholder="Search"])[3]'
         elem = self.browser.find_element_by_xpath(xpath)
         for c in campaigns:
             elem.send_keys(c)
+            time.sleep(5)
             xpath = '//span[text()="Select/Deselect all"]'
             self.click_on_xpath(xpath, sleep=5)
             elem.clear()
@@ -380,7 +381,7 @@ class DvApi(object):
     def click_on_dimensions(self, start_check=1, end_check=40):
         logging.info('Setting dimensions for report.')
         for x in range(start_check, end_check):
-            xpath = '//*[@id="mat-checkbox-{}"]/label/span'.format(x)
+            xpath = '//*[@id="mat-checkbox-{}"]/label/span[2]'.format(x)
             try:
                 value = self.browser.find_element_by_xpath(xpath).text
             except:
@@ -416,11 +417,11 @@ class DvApi(object):
             time.sleep(1)
             self.click_on_metric(xpath, attempt)
 
-    def click_on_metrics(self, start_check=41, end_check=300, last_tab=5):
+    def click_on_metrics(self, start_check=63, end_check=310, last_tab=5):
         logging.info('Setting metrics for report.')
         tab = 0
         for x in range(start_check, end_check):
-            xpath = '//*[@id="mat-checkbox-{}"]/label/span'.format(x)
+            xpath = '//*[@id="mat-checkbox-{}"]/label/span[2]'.format(x)
             try:
                 value = self.browser.find_element_by_xpath(xpath).text
             except:
@@ -436,7 +437,7 @@ class DvApi(object):
 
     def give_report_name(self, sd):
         xpath = ('//*[@id="reportBuilderForm"]/mat-card/rc-title-bar/div[1]/'
-                 'dv-header/div[2]/div[1]/input')
+                 'dvl-header/div[2]/div[1]/input')
         report = self.browser.find_element_by_xpath(xpath)
         today = dt.datetime.today().strftime('%Y%m%d')
         sd = sd.strftime('%Y%m%d')
