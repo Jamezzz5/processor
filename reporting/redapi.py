@@ -197,7 +197,7 @@ class RedApi(object):
         self.click_on_date(date)
 
     def set_date(self, date, cal_xpath=None):
-        cal_xpath = cal_xpath + '[1]/td[1]/div/div/div/div'
+        cal_xpath = cal_xpath + '[1]/td[1]/div/div/div'
         left_month = self.get_cal_month(lr=1, cal_xpath=cal_xpath)
         right_month = self.get_cal_month(lr=2, cal_xpath=cal_xpath)
         self.find_and_click_date(date, left_month, right_month, cal_xpath)
