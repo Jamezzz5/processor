@@ -41,6 +41,7 @@ class Analyze(object):
     double_counting_partial = 'double_counting_partial'
     missing_flat_costs = 'missing_flat_costs'
     missing_flat_clicks = 'missing_flat_clicks'
+    missing_ad_rate = 'missing_ad_rate'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -846,7 +847,7 @@ class Analyze(object):
         sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
         sdf = sdf.astype({'Total Num Placements': str})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
-        df = df[df.duplicated(subset=dctc.PN, keep=False)]
+        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN], keep=False)]
         if not df.empty:
             for metric in metrics:
                 tdf = df[df[metric] > 0]
@@ -894,6 +895,8 @@ class Analyze(object):
                                   message=pmsg, data=pdf.to_dict())
 
     def find_missing_flat_spend(self):
+        cdf = pd.DataFrame()
+        ndf = pd.DataFrame()
         groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, vmc.date]
         metrics = [cal.NCF, vmc.clicks]
         metrics = [metric for metric in metrics if metric in self.df.columns]
@@ -901,28 +904,30 @@ class Analyze(object):
                                     data_filter=None)
         df.reset_index(inplace=True)
         df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
-        try:
+        if not df.empty:
             tdf = df[df[vmc.clicks] > 0]
             tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
             tdf.reset_index(inplace=True)
             df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
             df.reset_index(inplace=True)
             df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
-            df = df.merge(tdf.drop_duplicates(),
-                          on=[dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, cal.NCF],
-                          how='left', indicator=True)
-            df = df.drop(columns=['Clicks_y'])
-            df = df.rename(columns={'Date': 'First Click Date',
-                                    'Clicks_x': 'Clicks'})
-            df = df.astype({"Clicks": str})
-            df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
-            df['First Click Date'] = df[
-                'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            cdf = df[df['_merge'] == 'both']
-            cdf = cdf.iloc[:, :-1]
-            ndf = df[df['_merge'] == 'left_only']
-            ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
-        except:
+            if not df.empty:
+                df = df.merge(tdf.drop_duplicates(),
+                              on=[dctc.VEN, dctc.PKD,
+                                  dctc.PD, dctc.BM, cal.NCF],
+                              how='left', indicator=True)
+                df = df.drop(columns=['Clicks_y'])
+                df = df.rename(columns={'Date': 'First Click Date',
+                                        'Clicks_x': 'Clicks'})
+                df = df.astype({"Clicks": str})
+                df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
+                df['First Click Date'] = df[
+                    'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                cdf = df[df['_merge'] == 'both']
+                cdf = cdf.iloc[:, :-1]
+                ndf = df[df['_merge'] == 'left_only']
+                ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
+        if df.empty:
             cdf = pd.DataFrame()
             ndf = pd.DataFrame()
         if cdf.empty:
@@ -945,6 +950,30 @@ class Analyze(object):
             logging.info('{}\n{}'.format(nmsg, ndf.to_string()))
         self.add_to_analysis_dict(key_col=self.missing_flat_clicks,
                                   message=nmsg, data=ndf.to_dict())
+
+    def find_missing_ad_rate(self):
+        groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.AR]
+        metrics = []
+        df = self.generate_df_table(groups, metrics, sort=None,
+                                    data_filter=None)
+        df = df.reset_index()
+        df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
+                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                & (df[dctc.SRV] != 'No Tracking')]
+        df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull())]
+        df = df.astype({dctc.SRV: str, dctc.AM: str, dctc.AR: str})
+        df = df.drop(columns=vmc.vendorkey)
+        if not df.empty:
+            msg = ('The following Adserving Models are missing associated '
+                   'rates. Add via Edit Processor Files -> Edit Relation '
+                   'Dictionaries -> Relation - Serving:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        else:
+            msg = ('All placements w/ Adserving Models have associated '
+                   'adserving rates.')
+            logging.info('{}'.format(msg))
+        self.add_to_analysis_dict(key_col=self.missing_ad_rate,
+                                  message=msg, data=df.to_dict())
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
@@ -985,6 +1014,7 @@ class Analyze(object):
         self.find_placement_name_column()
         self.find_metric_double_counting()
         self.find_missing_flat_spend()
+        self.find_missing_ad_rate()
         self.check_api_date_length()
         self.write_analysis_dict()
 
