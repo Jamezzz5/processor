@@ -1,4 +1,5 @@
 import os
+import re
 import io
 import sys
 import json
@@ -54,6 +55,19 @@ class ExportHandler(object):
                          self.config[exc.schema_file][exp_key],
                          self.config[exc.translation_file][exp_key],
                          self.config[exc.output_file][exp_key])
+        if exp_key == exc.default_export_db_key:
+            sb = ScriptBuilder()
+            filter_val = dbu.dft.df[exc.product_name].drop_duplicates()[0]
+            view_name = re.sub(r'\W+', '', filter_val).lower()
+            logging.info('Creating view {}'.format(view_name))
+            view_script = sb.get_view_script(
+                exc.product_name, filter_val, exc.product_table,
+                view_name)
+            dbu.db.connect()
+            dbu.db.cursor.execute(view_script)
+            dbu.db.execute(view_script)
+            logging.info('View created.')
+            return view_name
 
     def export_ftp(self, exp_key):
         ftp_class = ftp.FTP()
@@ -725,7 +739,7 @@ class ScriptBuilder(object):
         return dimensions, metrics
 
     def append_plan_join(self, original_from_script):
-        table = self.tables[-1]
+        table = [x for x in self.tables if x.name == 'plan'][0]
         fcs = [x for x in table.columns if x.foreign_keys]
         table_name = '"{}"."{}"'.format(table.schema, table.name)
         fc = fcs[0]
@@ -808,7 +822,7 @@ class ScriptBuilder(object):
         return from_script
 
     def get_full_script(self, filter_col, filter_val, filter_table):
-        base_table = self.tables[-2]
+        base_table = [x for x in self.tables if x.name == 'event'][0]
         from_script = self.get_from_script(table=base_table)
         from_script = self.append_plan_join(from_script)
         from_script = self.optimize_from_script(filter_table, from_script)
@@ -820,3 +834,9 @@ class ScriptBuilder(object):
                 ','.join(column_names), ','.join(sum_columns),
                 from_script, where_clause, ','.join(column_names))
         return sel_script
+
+    def get_view_script(self, filter_col, filter_val, filter_table, view_name):
+        sel_script = self.get_full_script(filter_col, filter_val, filter_table)
+        view_script = 'CREATE OR REPLACE VIEW lqadb.auto_{} AS \n {}'.format(
+            view_name, sel_script)
+        return view_script

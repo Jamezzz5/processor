@@ -28,8 +28,13 @@ upload_data_sd = 'datastartdate'
 upload_cols = [upload_data_ed, upload_last_upload_date,
                upload_name, upload_data_sd]
 
+product_table = 'product'
+agency_name = 'agencyname'
+client_name = 'clientname'
+product_name = 'productname'
+campaign_name = 'campaignname'
 event_date = 'eventdate'
-upload_name_param = ['agencyname', 'clientname', 'productname', 'campaignname']
+upload_name_param = [agency_name, client_name, product_name, campaign_name]
 
 event_name = 'eventname'
 event_steam_name = 'eventsteamname'
@@ -37,3 +42,5 @@ event_conv_name = 'eventconvname'
 event_plan_name = 'eventplanname'
 plan_name = 'planname'
 full_placement_name = 'fullplacementname'
+
+default_export_db_key = 'DB_Export'
