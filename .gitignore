@@ -45,6 +45,8 @@ Thumbs.db
 *.docx
 *.pslock
 *.json
+*.hyper
+*.twbx
 
 Config/
 Raw Data/

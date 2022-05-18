@@ -154,3 +154,19 @@ class TabApi(object):
             self.check_job_until_complete(job_id)
         else:
             logging.warning('Tableau api not configured, it was not refreshed.')
+
+    @staticmethod
+    def create_hyper(db):
+        import reporting.hyper.postgres_extractor as pge
+        db_conn_dict = dict(
+            host=db.config['HOST'],
+            dbname=db.config['DATABASE'],
+            user=db.config['USER'],
+            password=db.config['PASS'],
+            port=db.config['PORT'])
+        db_conn_dict = dict(connection=db_conn_dict)
+        pg = pge.PostgresExtractor(db_conn_dict, '', '')
+        hyper_paths = pg.query_to_hyper_files(
+            source_table="lqadb.auto_processor")
+        for x in hyper_paths:
+            logging.info('Hyper created at {}'.format(x))
