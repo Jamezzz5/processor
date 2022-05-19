@@ -69,7 +69,7 @@ class ExportHandler(object):
                 and table_schema = '{}'
             """.format('auto_{}'.format(view_name), 'lqadb')
             dbu.db.cursor.execute(exist_script)
-            dbu.db.commit()
+            dbu.db.connection.commit()
             data = dbu.db.cursor.fetchall()
             if data[0][0] == 0:
                 logging.info('Creating view {}'.format(view_name))
