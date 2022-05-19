@@ -59,14 +59,27 @@ class ExportHandler(object):
             sb = ScriptBuilder()
             filter_val = dbu.dft.df[exc.product_name].drop_duplicates()[0]
             view_name = re.sub(r'\W+', '', filter_val).lower()
-            logging.info('Creating view {}'.format(view_name))
-            view_script = sb.get_view_script(
-                exc.product_name, filter_val, exc.product_table,
-                view_name)
-            dbu.db.connect()
-            dbu.db.cursor.execute(view_script)
-            dbu.db.connection.commit()
-            logging.info('View created.')
+            exist_script = """
+            select
+                count(*)
+            from
+                INFORMATION_SCHEMA.VIEWS
+            where
+                table_name = '{}'
+                and table_schema = '{}'
+            """.format('auto_{}'.format(view_name), 'lqadb')
+            dbu.db.cursor.execute(exist_script)
+            dbu.db.commit()
+            data = dbu.db.cursor.fetchall()
+            if data[0][0] == 0:
+                logging.info('Creating view {}'.format(view_name))
+                view_script = sb.get_view_script(
+                    exc.product_name, filter_val, exc.product_table,
+                    view_name)
+                dbu.db.connect()
+                dbu.db.cursor.execute(view_script)
+                dbu.db.connection.commit()
+                logging.info('View created.')
             return view_name
 
     def export_ftp(self, exp_key):
