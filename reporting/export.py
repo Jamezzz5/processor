@@ -65,7 +65,7 @@ class ExportHandler(object):
                 view_name)
             dbu.db.connect()
             dbu.db.cursor.execute(view_script)
-            dbu.db.execute(view_script)
+            dbu.db.connection.commit()
             logging.info('View created.')
             return view_name
 
