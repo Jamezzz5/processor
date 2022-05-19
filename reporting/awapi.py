@@ -245,7 +245,7 @@ class AwApi(object):
             logging.info('Attempting customer id: {}'.format(customer_id))
             self.login_customer_id = customer_id
             r = self.request_report(report)
-            if 'results' in r.json()[0]:
+            if r.json() == [] or 'results' in r.json()[0]:
                 self.config['login_customer_id'] = self.login_customer_id
                 with open(self.configfile, 'w') as f:
                     yaml.dump({'adwords': self.config}, f)
@@ -336,7 +336,7 @@ class AwApi(object):
         return r
 
     def check_report(self, r, report):
-        if 'results' not in r.json()[0]:
+        if r.json() != [] and 'results' not in r.json()[0]:
             if r.json()[0]['error']['status'] == 'PERMISSION_DENIED':
                 logging.warning('Permission denied, trying all customers.')
                 r = self.find_correct_login_customer_id(report)
@@ -347,13 +347,17 @@ class AwApi(object):
 
     def report_to_df(self, r, fields):
         logging.info('Response received converting to df.')
-        results = r.json()[0]['results']
-        df = pd.io.json.json_normalize(results)
-        replace_dict = {x.return_name: x.display_name for x in fields}
-        df = df.rename(columns=replace_dict)
-        df = self.filter_on_campaign(df)
-        df = self.clean_up_columns(df)
-        logging.info('Returning data as df.')
+        if not r.json():
+            logging.warning('No results in response returning blank df.')
+            df = pd.DataFrame()
+        else:
+            results = r.json()[0]['results']
+            df = pd.io.json.json_normalize(results)
+            replace_dict = {x.return_name: x.display_name for x in fields}
+            df = df.rename(columns=replace_dict)
+            df = self.filter_on_campaign(df)
+            df = self.clean_up_columns(df)
+            logging.info('Returning data as df.')
         return df
 
     def filter_on_campaign(self, df):
