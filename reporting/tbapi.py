@@ -5,6 +5,7 @@ import json
 import logging
 import requests
 import reporting.utils as utl
+import tableauserverclient as TSC
 
 config_path = utl.config_path
 
@@ -170,3 +171,23 @@ class TabApi(object):
             source_table="lqadb.auto_processor")
         for x in hyper_paths:
             logging.info('Hyper created at {}'.format(x))
+
+    def publish_hyper(self, db):
+        tableau_auth = TSC.TableauAuth(self.username, self.password, self.site)
+        server = TSC.Server('https://us-east-1.online.tableau.com',
+                            use_server_version=True)
+        server.auth.sign_in(tableau_auth)
+        with server.auth.sign_in(tableau_auth):
+            publish_mode = TSC.Server.PublishMode.Overwrite
+            for project in TSC.Pager(server.projects):
+                if project.name == self.datasource:
+                    project_id = project.id
+                    break
+            datasource = TSC.DatasourceItem(project_id)
+            conn_cred = TSC.ConnectionCredentials(
+                name=db.config['USER'], password=db.config['PASS'], embed=True)
+            datasource = server.datasources.publish(
+                datasource, 'TrivialExample.hyper',
+                mode=publish_mode, connection_credentials=conn_cred)
+            logging.info('Datasource published with name: {}'.format(
+                datasource.name))
