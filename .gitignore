@@ -47,6 +47,8 @@ Thumbs.db
 *.json
 *.hyper
 *.twbx
+*.twb
+*.twbr
 
 Config/
 Raw Data/

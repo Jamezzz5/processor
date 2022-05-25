@@ -5,7 +5,9 @@ import json
 import logging
 import requests
 import reporting.utils as utl
-import tableauserverclient as TSC
+import tableaudocumentapi as tda
+import tableauserverclient as tsc
+import reporting.hyper.postgres_extractor as pge
 
 config_path = utl.config_path
 
@@ -156,9 +158,14 @@ class TabApi(object):
         else:
             logging.warning('Tableau api not configured, it was not refreshed.')
 
+    def get_tsc_auth(self):
+        tableau_auth = tsc.TableauAuth(self.username, self.password, self.site)
+        server = tsc.Server('https://us-east-1.online.tableau.com',
+                            use_server_version=True)
+        return tableau_auth, server
+
     @staticmethod
-    def create_hyper(db):
-        import reporting.hyper.postgres_extractor as pge
+    def create_hyper(db, table_name='auto_processor'):
         db_conn_dict = dict(
             host=db.config['HOST'],
             dbname=db.config['DATABASE'],
@@ -168,26 +175,66 @@ class TabApi(object):
         db_conn_dict = dict(connection=db_conn_dict)
         pg = pge.PostgresExtractor(db_conn_dict, '', '')
         hyper_paths = pg.query_to_hyper_files(
-            source_table="lqadb.auto_processor")
+            source_table="lqadb.{}".format(table_name),
+            hyper_table_name="{}.hyper".format(table_name))
         for x in hyper_paths:
             logging.info('Hyper created at {}'.format(x))
 
-    def publish_hyper(self, db):
-        tableau_auth = TSC.TableauAuth(self.username, self.password, self.site)
-        server = TSC.Server('https://us-east-1.online.tableau.com',
-                            use_server_version=True)
-        server.auth.sign_in(tableau_auth)
+    def publish_object(self, db, object_name='auto_processor',
+                       object_type='datasource'):
+        tableau_auth, server = self.get_tsc_auth()
         with server.auth.sign_in(tableau_auth):
-            publish_mode = TSC.Server.PublishMode.Overwrite
-            for project in TSC.Pager(server.projects):
-                if project.name == self.datasource:
+            publish_mode = tsc.Server.PublishMode.Overwrite
+            for project in tsc.Pager(server.projects):
+                if project.name == 'dev-test':
                     project_id = project.id
                     break
-            datasource = TSC.DatasourceItem(project_id)
-            conn_cred = TSC.ConnectionCredentials(
+            if object_type == 'datasource':
+                tsc_object = tsc.DatasourceItem
+                ser_object = server.datasources
+                ext_object = '.hyper'
+            elif object_type == 'workbook':
+                tsc_object = tsc.WorkbookItem
+                ser_object = server.workbooks
+                ext_object = '.twb'
+            pub_obj = tsc_object(project_id)
+            connection = tsc.ConnectionItem()
+            connection.server_address = db.config['HOST']
+            connection.server_port = db.config['PORT']
+            conn_cred = tsc.ConnectionCredentials(
                 name=db.config['USER'], password=db.config['PASS'], embed=True)
-            datasource = server.datasources.publish(
-                datasource, 'TrivialExample.hyper',
+            connection.connection_credentials = conn_cred
+            published_obj = ser_object.publish(
+                pub_obj, '{}{}'.format(object_name, ext_object),
                 mode=publish_mode, connection_credentials=conn_cred)
-            logging.info('Datasource published with name: {}'.format(
-                datasource.name))
+            logging.info('Object published with name: {}'.format(
+                published_obj.name))
+
+    def create_publish_hyper(self, db, table_name='auto_processor'):
+        self.create_hyper(db, table_name)
+        self.publish_object(
+            db, object_name=table_name, object_type='datasource')
+
+    def download_workbook(self, workbook_name='auto_template'):
+        tableau_auth, server = self.get_tsc_auth()
+        with server.auth.sign_in(tableau_auth):
+            for wb in tsc.Pager(server.workbooks):
+                if wb.name == workbook_name:
+                    wb_id = wb.id
+                    file_path = server.workbooks.download(wb_id)
+                    logging.info('workbook downloaded to {}'.format(file_path))
+                    return file_path
+
+    @staticmethod
+    def change_workbook_datasource(
+            workbook_name='auto_template', table_name='auto_processor'):
+        source_wb = tda.Workbook('{}.twb'.format(workbook_name))
+        source_wb.datasources[0].connections[0].dbname = table_name
+        source_wb.save()
+
+    def create_publish_workbook_hyper(self, db, table_name='auto_processor',
+                                      wb_name='auto_template'):
+        self.create_publish_hyper(db, table_name)
+        file_path = self.download_workbook(wb_name)
+        self.change_workbook_datasource(file_path, table_name)
+        self.publish_object(db, wb_name, object_type='workbook')

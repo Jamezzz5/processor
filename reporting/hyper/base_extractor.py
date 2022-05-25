@@ -583,7 +583,7 @@ class BaseExtractor(ABC):
         self,
         sql_query: Optional[str] = None,
         source_table: Optional[str] = None,
-        hyper_table_name: str = "Extract",
+        hyper_table_name: str = "Extract.hyper",
     ) -> Generator[Path, None, None]:
         """
         Execute sql_query or export rows from source_table and write output to one or more hyper files.
