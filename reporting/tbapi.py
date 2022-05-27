@@ -228,13 +228,13 @@ class TabApi(object):
     @staticmethod
     def change_workbook_datasource(
             workbook_name='auto_template', table_name='auto_processor'):
-        source_wb = tda.Workbook('{}.twb'.format(workbook_name))
+        source_wb = tda.Workbook('{}'.format(workbook_name))
         source_wb.datasources[0].connections[0].dbname = table_name
         source_wb.save()
 
     def create_publish_workbook_hyper(self, db, table_name='auto_processor',
-                                      wb_name='auto_template'):
+                                      wb_name='auto_template', new_wb_name=''):
         self.create_publish_hyper(db, table_name)
         file_path = self.download_workbook(wb_name)
         self.change_workbook_datasource(file_path, table_name)
-        self.publish_object(db, wb_name, object_type='workbook')
+        self.publish_object(db, new_wb_name, object_type='workbook')
