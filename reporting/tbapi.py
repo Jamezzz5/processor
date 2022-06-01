@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import shutil
 import logging
 import requests
 import reporting.utils as utl
@@ -196,7 +197,7 @@ class TabApi(object):
             elif object_type == 'workbook':
                 tsc_object = tsc.WorkbookItem
                 ser_object = server.workbooks
-                ext_object = '.twb'
+                ext_object = '.twbx'
             pub_obj = tsc_object(project_id)
             connection = tsc.ConnectionItem()
             connection.server_address = db.config['HOST']
@@ -229,7 +230,7 @@ class TabApi(object):
     def change_workbook_datasource(
             workbook_name='auto_template', table_name='auto_processor'):
         source_wb = tda.Workbook('{}'.format(workbook_name))
-        source_wb.datasources[0].connections[0].dbname = table_name
+        source_wb.datasources[-1].connections[0].dbname = table_name
         source_wb.save()
 
     def create_publish_workbook_hyper(self, db, table_name='auto_processor',
@@ -237,4 +238,6 @@ class TabApi(object):
         self.create_publish_hyper(db, table_name)
         file_path = self.download_workbook(wb_name)
         self.change_workbook_datasource(file_path, table_name)
+        new_path = file_path.replace(wb_name, new_wb_name)
+        shutil.copy(file_path, new_path)
         self.publish_object(db, new_wb_name, object_type='workbook')
