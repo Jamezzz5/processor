@@ -14,6 +14,7 @@ import reporting.ftp as ftp
 import reporting.utils as utl
 import reporting.models as mdl
 import reporting.awss3 as awss3
+import reporting.tbapi as tbapi
 import reporting.expcolumns as exc
 
 log = logging.getLogger()
@@ -56,31 +57,41 @@ class ExportHandler(object):
                          self.config[exc.translation_file][exp_key],
                          self.config[exc.output_file][exp_key])
         if exp_key == exc.default_export_db_key:
-            sb = ScriptBuilder()
             filter_val = dbu.dft.df[exc.product_name].drop_duplicates()[0]
-            view_name = re.sub(r'\W+', '', filter_val).lower()
-            exist_script = """
-            select
-                count(*)
-            from
-                INFORMATION_SCHEMA.VIEWS
-            where
-                table_name = '{}'
-                and table_schema = '{}'
-            """.format('auto_{}'.format(view_name), 'lqadb')
-            dbu.db.cursor.execute(exist_script)
+            view_name = 'auto_{}'.format(re.sub(r'\W+', '', filter_val).lower())
+            self.create_view(dbu, filter_val, view_name)
+            self.update_tableau(dbu.db, view_name)
+
+    @staticmethod
+    def create_view(dbu, filter_val, view_name):
+        sb = ScriptBuilder()
+        exist_script = """
+        select
+            count(*)
+        from
+            INFORMATION_SCHEMA.VIEWS
+        where
+            table_name = '{}'
+            and table_schema = '{}'
+        """.format('auto_{}'.format(view_name), 'lqadb')
+        dbu.db.cursor.execute(exist_script)
+        dbu.db.connection.commit()
+        data = dbu.db.cursor.fetchall()
+        if data[0][0] == 0:
+            logging.info('Creating view {}'.format(view_name))
+            view_script = sb.get_view_script(
+                exc.product_name, filter_val, exc.product_table,
+                view_name)
+            dbu.db.connect()
+            dbu.db.cursor.execute(view_script)
             dbu.db.connection.commit()
-            data = dbu.db.cursor.fetchall()
-            if data[0][0] == 0:
-                logging.info('Creating view {}'.format(view_name))
-                view_script = sb.get_view_script(
-                    exc.product_name, filter_val, exc.product_table,
-                    view_name)
-                dbu.db.connect()
-                dbu.db.cursor.execute(view_script)
-                dbu.db.connection.commit()
-                logging.info('View created.')
-            return view_name
+            logging.info('View created.')
+
+    @staticmethod
+    def update_tableau(db, view_name):
+        tb = tbapi.TabApi()
+        tb.create_publish_workbook_hyper(
+            db, table_name=view_name, new_wb_name=view_name)
 
     def export_ftp(self, exp_key):
         ftp_class = ftp.FTP()
@@ -850,6 +861,6 @@ class ScriptBuilder(object):
 
     def get_view_script(self, filter_col, filter_val, filter_table, view_name):
         sel_script = self.get_full_script(filter_col, filter_val, filter_table)
-        view_script = 'CREATE OR REPLACE VIEW lqadb.auto_{} AS \n {}'.format(
+        view_script = 'CREATE OR REPLACE VIEW lqadb.{} AS \n {}'.format(
             view_name, sel_script)
         return view_script
