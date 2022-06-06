@@ -73,7 +73,7 @@ class ExportHandler(object):
         where
             table_name = '{}'
             and table_schema = '{}'
-        """.format('auto_{}'.format(view_name), 'lqadb')
+        """.format('{}'.format(view_name), 'lqadb')
         dbu.db.cursor.execute(exist_script)
         dbu.db.connection.commit()
         data = dbu.db.cursor.fetchall()
