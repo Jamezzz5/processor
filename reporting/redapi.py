@@ -72,7 +72,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -206,7 +206,7 @@ class RedApi(object):
         cal_button_xpath = '/div/div/div'
         cal_xpath = base_xpath + cal_button_xpath
         self.click_on_xpath(cal_xpath)
-        cal_table_xpath = '/html/body/div[7]/div/table/tbody/tr'
+        cal_table_xpath = '/html/body/div[8]/div/table/tbody/tr'
         return cal_table_xpath
 
     def set_dates(self, sd, ed, base_xpath=None):
