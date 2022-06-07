@@ -739,13 +739,13 @@ class DataSource(object):
             self.df = self.get_raw_df()
         return self.df.columns
 
-    def get_dict_order_df(self):
+    def get_dict_order_df(self, include_index=True):
         self.df = self.get_raw_df()
         dic = dct.Dict()
         err = er.ErrorReport(self.df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         error = dic.split_error_df(err, self.p[vmc.autodicord],
-                                   self.p[vmc.autodicplace], include_index=True)
+                                   self.p[vmc.autodicplace], include_index=include_index)
         return error
 
     def get_and_merge_dictionary(self, df):
