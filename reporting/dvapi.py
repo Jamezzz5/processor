@@ -491,6 +491,13 @@ class DvApi(object):
         shutil.rmtree(temp_path)
         return df
 
+    def reject_cookies(self):
+        xpath = '//*[@id="onetrust-reject-all-handler"]'
+        try:
+            self.click_on_xpath(xpath)
+        except (ex.ElementNotInteractableException, ex.NoSuchElementException):
+            return None
+
     def get_data(self, sd=None, ed=None, fields=None):
         self.browser = self.init_browser()
         self.base_window = self.browser.window_handles[0]
@@ -498,6 +505,7 @@ class DvApi(object):
         self.go_to_url(self.base_url)
         self.sign_in()
         self.go_to_url(self.report_url)
+        self.reject_cookies()
         report_created = self.create_report(sd, ed)
         if not report_created:
             return pd.DataFrame()
