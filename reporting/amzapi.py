@@ -263,8 +263,12 @@ class AmzApi(object):
                     report_url = r.json()['location']
                     r = requests.get(report_url)
                     df = pd.DataFrame(r.json())
-                    df['date'] = df['date'].apply(
-                        lambda x: dt.datetime.fromtimestamp(x / 1000).date())
+                    if df.empty:
+                        logging.warning('Dataframe empty, likely no data  - '
+                                        'returning empty dataframe')
+                    else:
+                        df['date'] = df['date'].apply(
+                            lambda x: dt.datetime.fromtimestamp(x / 1000).date())
                     self.df = df
                     break
                 else:
