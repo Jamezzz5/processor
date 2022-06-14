@@ -2,6 +2,7 @@ import os
 import ast
 import sys
 import yaml
+import time
 import logging
 import requests
 import numpy as np
@@ -339,6 +340,10 @@ class AwApi(object):
         if r.json() != [] and 'results' not in r.json()[0]:
             if r.json()[0]['error']['status'] == 'PERMISSION_DENIED':
                 logging.warning('Permission denied, trying all customers.')
+                r = self.find_correct_login_customer_id(report)
+            elif r.json()[0]['error']['status'] == 'INTERNAL':
+                logging.warning('Google internal error - retrying.')
+                time.sleep(30)
                 r = self.find_correct_login_customer_id(report)
             else:
                 logging.warning('Unknown response: {}'.format(r.json()))
