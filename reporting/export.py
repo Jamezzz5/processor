@@ -77,15 +77,19 @@ class ExportHandler(object):
         dbu.db.cursor.execute(exist_script)
         dbu.db.connection.commit()
         data = dbu.db.cursor.fetchall()
-        if data[0][0] == 0:
-            logging.info('Creating view {}'.format(view_name))
-            view_script = sb.get_view_script(
-                exc.product_name, filter_val, exc.product_table,
-                view_name)
-            dbu.db.connect()
-            dbu.db.cursor.execute(view_script)
+        if data[0][0] == 1:
+            logging.info('Dropping view: {}'.format(view_name))
+            drop_script = """drop view {}.{};""".format('lqadb', view_name)
+            dbu.db.cursor.execute(drop_script)
             dbu.db.connection.commit()
-            logging.info('View created.')
+        logging.info('Creating view {}'.format(view_name))
+        view_script = sb.get_view_script(
+            exc.product_name, filter_val, exc.product_table,
+            view_name)
+        dbu.db.connect()
+        dbu.db.cursor.execute(view_script)
+        dbu.db.connection.commit()
+        logging.info('View created.')
 
     @staticmethod
     def update_tableau(db, view_name):
@@ -789,8 +793,12 @@ class ScriptBuilder(object):
                 fk.column.table.schema, fk.column.table.name)
             table_relation = '{}."{}"'.format(table_name, fc.name)
             foreign_relation = '{}."{}"'.format(join_table, fk.column.name)
-            join_script = """\nLEFT JOIN {} ON ({} = {})""".format(
-                join_table, table_relation, foreign_relation)
+            if fc.table.name == 'event' and fc.name == 'fullplacementid':
+                join_type = 'FULL'
+            else:
+                join_type = 'LEFT'
+            join_script = """\n{} JOIN {} ON ({} = {})""".format(
+                join_type, join_table, table_relation, foreign_relation)
             full_join_script.append(join_script)
             self.completed_tables.append(fk.column.table.name)
         if not original_from_script:
