@@ -221,7 +221,8 @@ class DvApi(object):
         self.set_date(sd)
 
     def get_name_of_report(self, row_num, attempt=0):
-        xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
+        time.sleep(2)
+        xpath = ('/html/body/div[2]/rc-root/div/div/rc-my-reports/mat-card/'
                  'div[2]/dvl-table-rb/dvl-data-table-rb/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[2]/a').format(row_num)
         try:
@@ -249,8 +250,8 @@ class DvApi(object):
                 return None
 
     def click_on_report(self, row):
-        xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
-                 'div[2]/dv-table/dv-data-table/div/div[2]/mat-table/'
+        xpath = ('/html/body/div[2]/rc-root/div/div/rc-my-reports/mat-card/'
+                 'div[2]/dvl-table-rb/dvl-data-table-rb/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a/i').format(row)
         self.click_on_xpath(xpath, sleep=5)
 
@@ -258,7 +259,7 @@ class DvApi(object):
         row = self.find_report_in_table()
         if not row:
             return None
-        xpath = ('/html/body/div[4]/rc-root/div/div/rc-my-reports/mat-card/'
+        xpath = ('/html/body/div[2]/rc-root/div/div/rc-my-reports/mat-card/'
                  'div[2]/dvl-table-rb/dvl-data-table-rb/div/div[2]/mat-table/'
                  'mat-row[{}]/mat-cell[8]/div/span[6]/a').format(row)
         try:
