@@ -72,7 +72,7 @@ class RedApi(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        # co.headless = True
+        co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -110,7 +110,12 @@ class RedApi(object):
             self.click_on_xpath('//*[@id="Content"]/h2/a')
         except ex.NoSuchElementException as e:
             logging.warning('No logo, attempting footer.  Error: {}'.format(e))
-            self.click_on_xpath('//*[@id="Footer"]/p[2]/a')
+            try:
+                self.click_on_xpath('//*[@id="Footer"]/p[2]/a')
+            except ex.NoSuchElementException as e:
+                logging.warning(
+                    'No footer, attempting log in link.  Error: {}'.format(e))
+                self.click_on_xpath("//a[text()='Log In']")
         user_pass = [(self.username, '//*[@id="loginUsername"]'),
                      (self.password, '//*[@id="loginPassword"]')]
         for item in user_pass:
