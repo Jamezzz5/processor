@@ -183,7 +183,8 @@ class Analyze(object):
             tdf = tdf.merge(average_df, on=plan_names)
             tdf['days'] = (tdf[dctc.PNC] - tdf[vmc.cost]) / tdf[
                 '{} rolling {}'.format(vmc.cost, 3)]
-            tdf['days'] = tdf['days'].replace([np.inf, -np.inf], np.nan).fillna(10000)
+            tdf['days'] = tdf['days'].replace(
+                [np.inf, -np.inf], np.nan).fillna(10000)
             tdf['days'] = np.where(tdf['days'] > 10000, 10000, tdf['days'])
             tdf['Projected Full Delivery'] = pd.to_datetime(
                 tdf[vmc.date]) + pd.to_timedelta(
