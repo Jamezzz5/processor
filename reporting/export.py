@@ -87,7 +87,7 @@ class ExportHandler(object):
             exc.product_name, filter_val, exc.product_table,
             view_name)
         dbu.db.connect()
-        dbu.db.cursor.execute(view_script)
+        dbu.db.cursor.execute(view_script, [filter_val])
         dbu.db.connection.commit()
         logging.info('View created.')
 
@@ -860,7 +860,7 @@ class ScriptBuilder(object):
         from_script = self.optimize_from_script(filter_table, from_script)
         column_names, sum_columns = self.get_column_names(base_table)
         column_names = ['{}'.format(x) for x in set(column_names)]
-        where_clause = "({} = '{}'::text)".format(filter_col, filter_val)
+        where_clause = "({} = {}::text)".format(filter_col, '%s')
         sel_script = \
             """SELECT {},\n{} \n{} \nWHERE {} \nGROUP BY {}""".format(
                 ','.join(column_names), ','.join(sum_columns),
