@@ -160,35 +160,66 @@ class Analyze(object):
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         average_df = average_df[average_df[vmc.date] == last_date]
         average_df = average_df.drop(columns=[vmc.cost])
+        start_dates = df.copy()
+        start_dates = start_dates[plan_names + [vmc.date]]
+        start_dates = start_dates.groupby(plan_names).min()
+        start_dates = start_dates.reset_index()
+        start_dates = start_dates.rename(columns={vmc.date: 'Start Date'})
+        matrix = vm.VendorMatrix().vm_df
+        end_dates = df[plan_names + [vmc.vendorkey]]
+        end_dates = end_dates.groupby(plan_names + [vmc.vendorkey]).min()
+        end_dates = end_dates.reset_index()
+        end_dates[vmc.enddate] = [
+            matrix[matrix[vmc.vendorkey] == x][vmc.enddate].values[0]
+            for x in end_dates[vmc.vendorkey]]
+        end_dates = end_dates[plan_names + [vmc.enddate]]
+        end_dates = end_dates.rename(columns={vmc.enddate: 'End Date'})
         df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
-        df = df[df[dctc.PNC] - df[vmc.cost] > 0]
         df = df.reset_index()
-        if df.empty:
-            delivery_msg = ('Dataframe empty, likely no planned net costs.  '
-                            'Could not project delivery completion.')
-            logging.warning(delivery_msg)
-            self.add_to_analysis_dict(key_col=self.delivery_comp_col,
-                                      message=delivery_msg)
-            return False
-        df = df.merge(average_df, on=plan_names)
-        df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
-            '{} rolling {}'.format(vmc.cost, 3)]
-        df['days'] = df['days'].replace([np.inf, -np.inf], np.nan).fillna(10000)
-        df['days'] = np.where(df['days'] > 10000, 10000, df['days'])
-        df['completed_date'] = pd.to_datetime(df[vmc.date]) + pd.to_timedelta(
-            np.ceil(df['days']).astype(int), unit='D')
-        no_date_map = ((df['completed_date'] >
-                        dt.datetime.today() + dt.timedelta(days=365)) |
-                       (df['completed_date'] <
-                        dt.datetime.today() - dt.timedelta(days=365)))
-        df['completed_date'] = df['completed_date'].dt.strftime('%Y-%m-%d')
-        df.loc[no_date_map, 'completed_date'] = 'Greater than 1 Year'
-        df = df[plan_names + ['completed_date']]
+        tdf = df[df[dctc.PNC] - df[vmc.cost] > 0]
+        final_cols = (plan_names + [dctc.PNC] +
+                      [vmc.cost] + ['Projected Full Delivery'])
+        if not tdf.empty:
+            tdf = tdf.merge(average_df, on=plan_names)
+            tdf['days'] = (tdf[dctc.PNC] - tdf[vmc.cost]) / tdf[
+                '{} rolling {}'.format(vmc.cost, 3)]
+            tdf['days'] = tdf['days'].replace([np.inf, -np.inf], np.nan).fillna(10000)
+            tdf['days'] = np.where(tdf['days'] > 10000, 10000, tdf['days'])
+            tdf['Projected Full Delivery'] = pd.to_datetime(
+                tdf[vmc.date]) + pd.to_timedelta(
+                np.ceil(tdf['days']).astype(int), unit='D')
+            no_date_map = ((tdf['Projected Full Delivery'] >
+                            dt.datetime.today() + dt.timedelta(days=365)) |
+                           (tdf['Projected Full Delivery'] <
+                            dt.datetime.today() - dt.timedelta(days=365)))
+            tdf['Projected Full Delivery'] = tdf[
+                'Projected Full Delivery'].dt.strftime('%Y-%m-%d')
+            tdf.loc[
+                no_date_map, 'Projected Full Delivery'] = 'Greater than 1 Year'
+            tdf = tdf[final_cols]
+        df = df[df[dctc.PNC] - df[vmc.cost] <= 0]
+        if not df.empty:
+            df['Projected Full Delivery'] = [
+                'No Planned' if x == 0 else 'Delivered' for x in df[dctc.PNC]]
+            df = df[final_cols]
+            if not tdf.empty:
+                tdf = tdf.merge(
+                    df, how='outer', on=final_cols)
+            else:
+                tdf = df
+        tdf = tdf.merge(start_dates, how='outer', on=plan_names)
+        tdf = tdf.merge(end_dates, how='outer', on=plan_names)
+        tdf['Delivery'] = (tdf[vmc.cost] / tdf[dctc.PNC]
+                           * 100).round(2).astype(str) + '%'
+        df[vmc.cost] = df[vmc.cost].round(decimals=2)
+        final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
+                      [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
+        tdf = tdf[final_cols]
         delivery_msg = 'Projected delivery completion dates are as follows:'
-        logging.info('{}\n{}'.format(delivery_msg, df.to_string()))
+        logging.info('{}\n{}'.format(delivery_msg, tdf.to_string()))
         self.add_to_analysis_dict(key_col=self.delivery_comp_col,
                                   message=delivery_msg,
-                                  data=df.to_dict())
+                                  data=tdf.to_dict())
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
