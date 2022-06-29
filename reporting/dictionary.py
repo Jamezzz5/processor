@@ -62,7 +62,7 @@ class Dict(object):
             max_placement_name_length = max(map(len, error[placement].str.split('_')))
             if len(autodicord) < max_placement_name_length:
                 length_diff = max_placement_name_length - len(autodicord)
-                autodicord.extend(['mpMisc'] * length_diff)
+                autodicord.extend([dctc.MIS] * length_diff)
         for i, value in enumerate(autodicord):
             if include_index:
                 col_name = '{}-{}'.format(i, value)
