@@ -210,8 +210,10 @@ class Analyze(object):
                 tdf = df
         tdf = tdf.merge(start_dates, how='outer', on=plan_names)
         tdf = tdf.merge(end_dates, how='outer', on=plan_names)
-        tdf['Delivery'] = (tdf[vmc.cost] / tdf[dctc.PNC]
-                           * 100).round(2).astype(str) + '%'
+        tdf['Delivery'] = (tdf[vmc.cost] / tdf[dctc.PNC] * 100).round(2)
+        tdf['Delivery'] = tdf['Delivery'].astype(str) + '%'
+        tdf['Start Date'] = tdf['Start Date'].astype(str)
+        tdf['End Date'] = tdf['End Date'].astype(str)
         df[vmc.cost] = df[vmc.cost].round(decimals=2)
         final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
                       [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
