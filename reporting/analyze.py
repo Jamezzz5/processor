@@ -538,17 +538,15 @@ class Analyze(object):
             file_name = source.p[vmc.filename]
             first_row = source.p[vmc.firstrow]
             missing_cols = []
-            if os.path.exists(file_name):
-                tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
+            tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
+            if not tdf.empty:
                 tdf = utl.first_last_adj(tdf, first_row, 0)
-                cols = list(tdf.columns)
-                active_metrics = source.get_active_metrics()
-                for k, v in active_metrics.items():
-                    for c in v:
-                        if c not in cols:
-                            missing_cols.append({k: c})
-            else:
-                cols = []
+            cols = list(tdf.columns)
+            active_metrics = source.get_active_metrics()
+            for k, v in active_metrics.items():
+                for c in v:
+                    if c not in cols:
+                        missing_cols.append({k: c})
             data_dict = {vmc.vendorkey: [source.key], self.raw_columns: [cols],
                          'missing': [missing_cols]}
             df = df.append(pd.DataFrame(data_dict),
