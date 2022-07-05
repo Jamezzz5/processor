@@ -1100,12 +1100,13 @@ class ValueCalc(object):
     @staticmethod
     def get_default_metrics():
         metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
-                        'CPCV', 'CPLPV', 'CPP', 'CPM']
+                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'CPV']
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
                    'Net Cost Final/Video Views', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Purchase', 'Net Cost Final/Impressions']
+                   'Net Cost Final/Purchase', 'Net Cost Final/Impressions',
+                   'Video Views 100/Video Views', 'Net Cost Final/Video Views']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
