@@ -150,7 +150,7 @@ class RedApi(object):
 
     def set_breakdowns(self):
         logging.info('Setting breakdowns.')
-        bd_xpath = '//div[text()="Breakdown"]'
+        bd_xpath = '//button[contains(normalize-space(),"Breakdown")]'
         self.click_on_xpath(bd_xpath)
         bd_date_xpath = '//button[contains(normalize-space(),"Date")]'
         self.click_on_xpath(bd_date_xpath)
@@ -250,9 +250,10 @@ class RedApi(object):
     def export_to_csv(self):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
-        export_xpath = '//div[normalize-space(text())="Export report"]'
+        export_xpath = '//button[contains(normalize-space(), "Export report")]'
         self.click_on_xpath(export_xpath)
-        download_xpath = '//button[normalize-space(text())="Download .csv"]'
+        download_xpath = (
+            '//button[contains(normalize-space(), "Download .csv")]')
         self.click_on_xpath(download_xpath)
 
     def get_base_xpath(self):
