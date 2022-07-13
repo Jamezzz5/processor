@@ -218,6 +218,7 @@ class Analyze(object):
         final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
                       [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
         tdf = tdf[final_cols]
+        tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         delivery_msg = 'Projected delivery completion dates are as follows:'
         logging.info('{}\n{}'.format(delivery_msg, tdf.to_string()))
         self.add_to_analysis_dict(key_col=self.delivery_comp_col,
