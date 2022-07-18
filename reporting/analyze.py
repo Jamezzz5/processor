@@ -166,8 +166,11 @@ class Analyze(object):
         start_dates = start_dates.reset_index()
         start_dates = start_dates.rename(columns={vmc.date: 'Start Date'})
         matrix = vm.VendorMatrix().vm_df
-        end_dates = df[plan_names + [vmc.vendorkey]]
-        end_dates = end_dates.groupby(plan_names + [vmc.vendorkey]).min()
+        end_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
+        end_dates = end_dates.groupby(plan_names + [vmc.vendorkey]).sum()
+        end_dates = end_dates.reset_index()
+        end_dates = end_dates.sort_values(vmc.cost, ascending=False)
+        end_dates = end_dates.drop_duplicates(plan_names)
         end_dates = end_dates.reset_index()
         end_dates[vmc.enddate] = [
             matrix[matrix[vmc.vendorkey] == x][vmc.enddate].values[0]
@@ -176,6 +179,7 @@ class Analyze(object):
         end_dates = end_dates.rename(columns={vmc.enddate: 'End Date'})
         df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
         df = df.reset_index()
+        df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
         tdf = df[df[dctc.PNC] - df[vmc.cost] > 0]
         final_cols = (plan_names + [dctc.PNC] +
                       [vmc.cost] + ['Projected Full Delivery'])
@@ -208,9 +212,10 @@ class Analyze(object):
                     df, how='outer', on=final_cols)
             else:
                 tdf = df
-        tdf = tdf.merge(start_dates, how='outer', on=plan_names)
-        tdf = tdf.merge(end_dates, how='outer', on=plan_names)
+        tdf = tdf.merge(start_dates, how='left', on=plan_names)
+        tdf = tdf.merge(end_dates, how='left', on=plan_names)
         tdf['Delivery'] = (tdf[vmc.cost] / tdf[dctc.PNC] * 100).round(2)
+        tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         tdf['Delivery'] = tdf['Delivery'].astype(str) + '%'
         tdf['Start Date'] = tdf['Start Date'].astype(str)
         tdf['End Date'] = tdf['End Date'].astype(str)
@@ -274,7 +279,7 @@ class Analyze(object):
         df = df.dropna()
         df_dict = '\n'.join(['{}{}'.format(k, v)
                              for k, v in df.to_dict(orient='index').items()])
-        undefined_msg = 'Undefined placements have the following keys:'
+        undefined_msg = 'Missing planned spends have the following keys:'
         logging.info('{}\n{}'.format(undefined_msg, df_dict))
         self.add_to_analysis_dict(key_col=self.unknown_col,
                                   message=undefined_msg,
@@ -882,7 +887,6 @@ class Analyze(object):
         df.reset_index(inplace=True)
         sdf = df.groupby([dctc.VEN, vmc.vendorkey]).size()
         sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
-        sdf = sdf.astype({'Total Num Placements': str})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
         df = df[df.duplicated(subset=[dctc.VEN, dctc.PN], keep=False)]
         if not df.empty:
@@ -893,7 +897,6 @@ class Analyze(object):
                     tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
                     tdf = tdf.reset_index().rename(
                         columns={0: 'Num Duplicates'})
-                    tdf = tdf.astype({'Num Duplicates': str})
                     tdf['Metric'] = metric
                     rdf = pd.concat([rdf, tdf], ignore_index=True)
         if not rdf.empty:
@@ -914,6 +917,8 @@ class Analyze(object):
                     'for any one metric.')
             logging.info('{}'.format(amsg))
         else:
+            adf = adf.astype({'Total Num Placements': str})
+            adf = adf.astype({'Num Duplicates': str})
             amsg = ('The following vendors are double counting metrics on all '
                     'placements from the following sources:')
             logging.info('{}\n{}'.format(amsg, adf.to_string()))
@@ -924,6 +929,8 @@ class Analyze(object):
                     'for any one metric.')
             logging.info('{}'.format(pmsg))
         else:
+            pdf = pdf.astype({'Total Num Placements': str})
+            pdf = pdf.astype({'Num Duplicates': str})
             pmsg = ('The following vendors are double counting metrics on some'
                     ' placements from the following sources. Check only'
                     ' untracked placements are being uploaded in rawfiles:')
