@@ -745,7 +745,8 @@ class DataSource(object):
         err = er.ErrorReport(self.df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         error = dic.split_error_df(err, self.p[vmc.autodicord],
-                                   self.p[vmc.autodicplace], include_index=include_index,
+                                   self.p[vmc.autodicplace],
+                                   include_index=include_index,
                                    include_full_name=include_full_name)
         return error
 

@@ -13,6 +13,7 @@ import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.expcolumns as exc
+import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 
@@ -44,6 +45,7 @@ class Analyze(object):
     missing_flat_clicks = 'missing_flat_clicks'
     missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
+    change_auto_order = 'change_auto_order'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -229,6 +231,44 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.delivery_comp_col,
                                   message=delivery_msg,
                                   data=tdf.to_dict())
+
+    def check_auto_dict_order(self):
+        data_sources = self.matrix.get_all_data_sources()
+        tc = dct.DictTranslationConfig()
+        tc.read(dctc.filename_tran_config)
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
+        ven_list = []
+        df = pd.DataFrame()
+        for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
+            new_ven_list = tdf[col].unique().tolist()
+            ven_list = list(set(ven_list + new_ven_list))
+            ven_list = [x for x in ven_list if x not in ['nan', '0']]
+        for ds in data_sources:
+            tdf = ds.get_raw_df()
+            if dctc.FPN not in tdf.columns:
+                continue
+            tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
+            ven_col_counts = [tdf[col].isin(ven_list).sum()
+                              for col in tdf.columns]
+            max_idx = ven_col_counts.index(max(ven_col_counts))
+            auto_dict_idx = ds.p[vmc.autodicord].index(dctc.VEN)
+            if max_idx != auto_dict_idx and ven_col_counts[max_idx] > 0:
+                diff = auto_dict_idx - max_idx
+                if diff > 0:
+                    new_order = ds.p[vmc.autodicord][diff:]
+                else:
+                    new_order = (diff * -1) * [dctc.MIS] + ds.p[vmc.autodicord]
+                data_dict = {vmc.vendorkey: [ds.key],
+                             self.change_auto_order: [new_order]}
+                df = df.append(pd.DataFrame(data_dict),
+                               ignore_index=True, sort=False)
+        if df.empty:
+            msg = 'No new proposed order.'
+        else:
+            msg = 'Proposed new order by key as follows:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.change_auto_order,
+                                  message=msg, data=df.to_dict())
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1087,6 +1127,7 @@ class Analyze(object):
         self.find_missing_serving()
         self.find_missing_ad_rate()
         self.check_api_date_length()
+        self.check_auto_dict_order()
         self.write_analysis_dict()
 
 
