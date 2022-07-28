@@ -59,6 +59,7 @@ class Analyze(object):
     analysis_dict_small_param_2 = 'Smallest'
     analysis_dict_large_param_2 = 'Largest'
     analysis_dict_only_param_2 = 'Only'
+    fixes_to_run = False
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.analysis_dict = []
@@ -66,6 +67,7 @@ class Analyze(object):
         self.file_name = file_name
         self.matrix = matrix
         self.vc = ValueCalc()
+        self.class_list = [CheckAutoDictOrder]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -1089,16 +1091,20 @@ class Analyze(object):
         self.find_missing_serving()
         self.find_missing_ad_rate()
         self.check_api_date_length()
-        for analysis_class in [CheckAutoDictOrder]:
+        for analysis_class in self.class_list:
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
     def do_analysis_and_fix_processor(self):
-        pass
+        for analysis_class in self.class_list:
+            if analysis_class.fix:
+                analysis_class(self).do_and_fix_analysis()
+        return self.fixes_to_run
 
 
 class AnalyzeBase(object):
     name = ''
+    fix = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -1107,16 +1113,24 @@ class AnalyzeBase(object):
     def do_analysis(self):
         self.not_implemented_warning('do_analysis')
 
-    def fix_analysis(self):
+    def fix_analysis(self, aly_dict):
         self.not_implemented_warning('fix_analysis')
 
     def not_implemented_warning(self, func_name):
         logging.warning('{} function not implemented for: {}'.format(
             func_name, self.name))
 
+    def do_and_fix_analysis(self):
+        self.do_analysis()
+        aly_dict = self.aly.find_in_analysis_dict(self.name)
+        if len(aly_dict) > 0 and 'data' in aly_dict[0]:
+            self.aly.fixes_to_run = True
+            self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
+
 
 class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
+    fix = True
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1155,6 +1169,14 @@ class CheckAutoDictOrder(AnalyzeBase):
         logging.info('{}\n{}'.format(msg, df.to_string()))
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
+
+    def fix_analysis(self, aly_dict):
+        aly_dict = aly_dict.to_dict(orient='index')
+        for vk_idx, vk_dict in aly_dict.items():
+            vk = vk_dict[vmc.vendorkey]
+            new_order = '|'.join(vk_dict[self.name])
+            self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
+            self.aly.matrix.write()
 
 
 class ValueCalc(object):

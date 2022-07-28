@@ -1,11 +1,13 @@
+import os
 import sys
 import logging
 import argparse
 import pandas as pd
-import reporting.calc as cal
+import reporting.utils as utl
 import reporting.export as exp
 import reporting.analyze as az
 import reporting.tbapi as tbapi
+import reporting.expcolumns as exc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.importhandler as ih
@@ -89,15 +91,16 @@ def main(arguments=None):
         s3 = ih.ImportHandler(args.s3, matrix)
         s3.s3_loop()
     if not args.noprocess:
-        df = matrix.vm_loop()
-        df = cal.calculate_cost(df)
-        try:
-            logging.info('Writing to: {}'.format(OUTPUT_FILE))
-            df.to_csv(OUTPUT_FILE, index=False, encoding='utf-8')
-            logging.info('Final Output Successfully generated')
-        except IOError:
-            logging.warning('{} could not be opened.  '
-                            'Final Output not updated.'.format(OUTPUT_FILE))
+        df = matrix.vm_loop_with_costs(OUTPUT_FILE)
+        if args.analyze and not os.path.isfile(
+                os.path.join(utl.config_path, exc.upload_id_file)):
+            logging.info('First run - analyzing data.')
+            aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
+            fixes_to_run = aly.do_analysis_and_fix_processor()
+            if fixes_to_run:
+                logging.info('Fixes applied, rerunning processor.')
+                matrix = vm.VendorMatrix()
+                df = matrix.vm_loop_with_costs(OUTPUT_FILE)
     if args.exp:
         exp_class = exp.ExportHandler()
         exp_class.export_loop(args.exp)

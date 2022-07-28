@@ -310,6 +310,22 @@ class VendorMatrix(object):
         self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
 
+    @staticmethod
+    def write_output_data(df, output_file):
+        try:
+            logging.info('Writing to: {}'.format(output_file))
+            df.to_csv(output_file, index=False, encoding='utf-8')
+            logging.info('Final Output Successfully generated')
+        except IOError:
+            logging.warning('{} could not be opened.  '
+                            'Final Output not updated.'.format(output_file))
+
+    def vm_loop_with_costs(self, output_file):
+        df = self.vm_loop()
+        df = cal.calculate_cost(df)
+        self.write_output_data(df, output_file)
+        return df
+
 
 class ImportConfig(object):
     key = 'Key'
