@@ -368,7 +368,7 @@ class ImportConfig(object):
         if len(params) > 0:
             params = params[0]
         elif not default_param:
-            logging.warning('Param not in vm, using default values.')
+            logging.debug('Param not in vm, using default values.')
             params = self.get_default_params(import_key, default_param=True)
         return params
 

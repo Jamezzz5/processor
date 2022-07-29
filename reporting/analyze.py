@@ -67,7 +67,7 @@ class Analyze(object):
         self.file_name = file_name
         self.matrix = matrix
         self.vc = ValueCalc()
-        self.class_list = [CheckAutoDictOrder]
+        self.class_list = [CheckAutoDictOrder, FindPlacementNameCol]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -842,42 +842,6 @@ class Analyze(object):
             cds.df = df
         self.write_raw_file_dict(vk, cd)
 
-    def find_placement_name_column(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            file_name = source.p[vmc.filename]
-            first_row = source.p[vmc.firstrow]
-            p_col = source.p[vmc.placement]
-            if os.path.exists(file_name):
-                tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
-                tdf = utl.first_last_adj(tdf, first_row, 0)
-                tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
-                if tdf.empty:
-                    continue
-                tdf = tdf.applymap(
-                    lambda x: str(x).count('_')).apply(lambda x: sum(x))
-                r_col = tdf.idxmax(axis=1)
-                if (r_col in tdf and p_col in tdf
-                        and tdf[r_col] >= (tdf[p_col] + 9)
-                        and 75 <= tdf[r_col] <= 105):
-                    data_dict = {vmc.vendorkey: [source.key],
-                                 'Current Placement Col': p_col,
-                                 'Suggested Col': r_col}
-                    df = df.append(pd.DataFrame(data_dict),
-                                   ignore_index=True, sort=False)
-        if df.empty:
-            msg = ('Placement Name columns look correct. '
-                   'No columns w/ more breakouts.')
-            logging.info('{}'.format(msg))
-        else:
-            msg = ('The following data sources have more breakouts in '
-                   'another column. Consider changing placement name '
-                   'source:')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
-        self.add_to_analysis_dict(key_col=self.placement_col,
-                                  message=msg, data=df.to_dict())
-
     def find_metric_double_counting(self):
         rdf = pd.DataFrame()
         groups = [dctc.VEN, vmc.vendorkey, dctc.PN]
@@ -1085,7 +1049,6 @@ class Analyze(object):
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
-        self.find_placement_name_column()
         self.find_metric_double_counting()
         self.find_missing_flat_spend()
         self.find_missing_serving()
@@ -1113,8 +1076,9 @@ class AnalyzeBase(object):
     def do_analysis(self):
         self.not_implemented_warning('do_analysis')
 
-    def fix_analysis(self, aly_dict):
+    def fix_analysis(self, aly_dict, write=True):
         self.not_implemented_warning('fix_analysis')
+        return None
 
     def not_implemented_warning(self, func_name):
         logging.warning('{} function not implemented for: {}'.format(
@@ -1123,7 +1087,8 @@ class AnalyzeBase(object):
     def do_and_fix_analysis(self):
         self.do_analysis()
         aly_dict = self.aly.find_in_analysis_dict(self.name)
-        if len(aly_dict) > 0 and 'data' in aly_dict[0]:
+        if (len(aly_dict) > 0 and 'data' in aly_dict[0]
+                and len(aly_dict[0]['data']) > 0):
             self.aly.fixes_to_run = True
             self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
 
@@ -1170,13 +1135,66 @@ class CheckAutoDictOrder(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    def fix_analysis(self, aly_dict):
+    def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='index')
         for vk_idx, vk_dict in aly_dict.items():
             vk = vk_dict[vmc.vendorkey]
             new_order = '|'.join(vk_dict[self.name])
             self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
+        if write:
             self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
+class FindPlacementNameCol(AnalyzeBase):
+    name = Analyze.placement_col
+    fix = True
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            file_name = source.p[vmc.filename]
+            first_row = source.p[vmc.firstrow]
+            p_col = source.p[vmc.placement]
+            if os.path.exists(file_name):
+                tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
+                tdf = utl.first_last_adj(tdf, first_row, 0)
+                tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
+                if tdf.empty:
+                    continue
+                tdf = tdf.applymap(
+                    lambda x: str(x).count('_')).apply(lambda x: sum(x))
+                r_col = tdf.idxmax(axis=1)
+                if (r_col in tdf and p_col in tdf
+                        and tdf[r_col] >= (tdf[p_col] + 9)
+                        and 75 <= tdf[r_col] <= 105):
+                    data_dict = {vmc.vendorkey: [source.key],
+                                 'Current Placement Col': p_col,
+                                 'Suggested Col': r_col}
+                    df = df.append(pd.DataFrame(data_dict),
+                                   ignore_index=True, sort=False)
+        if df.empty:
+            msg = ('Placement Name columns look correct. '
+                   'No columns w/ more breakouts.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following data sources have more breakouts in '
+                   'another column. Consider changing placement name '
+                   'source:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            vk = x[vmc.vendorkey]
+            self.aly.matrix.vm_change_on_key(
+                vk, vmc.placement, x['Suggested Col'])
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
 
 
 class ValueCalc(object):
