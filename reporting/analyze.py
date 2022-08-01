@@ -67,7 +67,8 @@ class Analyze(object):
         self.file_name = file_name
         self.matrix = matrix
         self.vc = ValueCalc()
-        self.class_list = [CheckAutoDictOrder, FindPlacementNameCol]
+        self.class_list = [
+            CheckAutoDictOrder, FindPlacementNameCol, CheckApiDateLength]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -634,34 +635,6 @@ class Analyze(object):
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
 
-    def check_api_date_length(self):
-        vk_list = []
-        data_sources = self.matrix.get_all_data_sources()
-        max_date_dict = {
-            vmc.api_amz_key: 60, vmc.api_szk_key: 60, vmc.api_db_key: 60,
-            vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30}
-        data_sources = [x for x in data_sources if 'API_' in x.key]
-        for ds in data_sources:
-            if 'API_' in ds.key:
-                key = ds.key.split('_')[1]
-                if key in max_date_dict.keys():
-                    max_date = max_date_dict[key]
-                    date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
-                    if date_range > (max_date - 3):
-                        vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
-        mdf[self.max_api_length] = ''
-        if vk_list:
-            msg = 'The following APIs are within 3 days of their max length:'
-            logging.info('{}\n{}'.format(msg, vk_list))
-            mdf[self.max_api_length] = mdf[vmc.vendorkey].str.split(
-                '_').str[1].replace(max_date_dict)
-        else:
-            msg = 'No APIs within 3 days of max length.'
-            logging.info('{}'.format(msg))
-        self.add_to_analysis_dict(key_col=self.max_api_length,
-                                  message=msg, data=mdf.to_dict())
-
     @staticmethod
     def processor_clean_functions(df, cd, cds_name, clean_functions):
         success = True
@@ -1053,21 +1026,22 @@ class Analyze(object):
         self.find_missing_flat_spend()
         self.find_missing_serving()
         self.find_missing_ad_rate()
-        self.check_api_date_length()
         for analysis_class in self.class_list:
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
-    def do_analysis_and_fix_processor(self):
+    def do_analysis_and_fix_processor(self, pre_run=False):
         for analysis_class in self.class_list:
             if analysis_class.fix:
-                analysis_class(self).do_and_fix_analysis()
+                if (pre_run and analysis_class.pre_run) or not pre_run:
+                    analysis_class(self).do_and_fix_analysis()
         return self.fixes_to_run
 
 
 class AnalyzeBase(object):
     name = ''
     fix = False
+    pre_run = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -1091,6 +1065,10 @@ class AnalyzeBase(object):
                 and len(aly_dict[0]['data']) > 0):
             self.aly.fixes_to_run = True
             self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
+
+    def add_to_analysis_dict(self, df, msg):
+        self.aly.add_to_analysis_dict(
+            key_col=self.name, message=msg, data=df.to_dict())
 
 
 class CheckAutoDictOrder(AnalyzeBase):
@@ -1192,6 +1170,84 @@ class FindPlacementNameCol(AnalyzeBase):
             vk = x[vmc.vendorkey]
             self.aly.matrix.vm_change_on_key(
                 vk, vmc.placement, x['Suggested Col'])
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
+class CheckApiDateLength(AnalyzeBase):
+    """Checks APIs for max date length and splits data sources if necessary."""
+    name = Analyze.max_api_length
+    fix = True
+    pre_run = True
+
+    def do_analysis(self):
+        """
+        Loops through all data sources checking and flagging through those that
+        are too long.  Those sources are added to a df and the analysis dict
+        """
+        vk_list = []
+        data_sources = self.matrix.get_all_data_sources()
+        max_date_dict = {
+            vmc.api_amz_key: 60, vmc.api_szk_key: 60, vmc.api_db_key: 60,
+            vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30}
+        data_sources = [x for x in data_sources if 'API_' in x.key]
+        for ds in data_sources:
+            if 'API_' in ds.key:
+                key = ds.key.split('_')[1]
+                if key in max_date_dict.keys():
+                    max_date = max_date_dict[key]
+                    date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
+                    if date_range > (max_date - 3):
+                        vk_list.append(ds.key)
+        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        mdf[self.name] = ''
+        if vk_list:
+            msg = 'The following APIs are within 3 days of their max length:'
+            logging.info('{}\n{}'.format(msg, vk_list))
+            mdf[self.name] = mdf[vmc.vendorkey].str.split(
+                '_').str[1].replace(max_date_dict)
+        else:
+            msg = 'No APIs within 3 days of max length.'
+            logging.info('{}'.format(msg))
+        self.add_to_analysis_dict(df=mdf, msg=msg)
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Takes data sources that are too long and splits them based on date.
+
+        :param aly_dict: a df containing items to fix
+        :param write: boolean will write the vm as csv when true
+        :returns: the vm as a df
+        """
+        tdf = aly_dict.to_dict(orient='records')
+        df = self.aly.matrix.vm_df
+        for x in tdf:
+            vk = x[vmc.vendorkey]
+            logging.info('Duplicating vendor key {}'.format(vk))
+            max_date_length = x[self.name]
+            ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
+            ndf = utl.data_to_type(ndf, date_col=[vmc.startdate])
+            new_sd = ndf[vmc.startdate][0] + dt.timedelta(
+                days=max_date_length - 3)
+            if new_sd.date() >= dt.datetime.today().date():
+                new_sd = dt.datetime.today() - dt.timedelta(days=3)
+            new_str_sd = new_sd.strftime('%Y-%m-%d')
+            ndf.loc[0, vmc.startdate] = new_str_sd
+            ndf.loc[0, vmc.enddate] = ''
+            new_vk = '{}_{}'.format('_'.join(vk.split('_')[:2]), new_str_sd)
+            ndf.loc[0, vmc.vendorkey] = new_vk
+            file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
+            new_fn = '{}{}'.format(new_vk.replace('API_', '').lower(),
+                                   file_type)
+            ndf.loc[0, vmc.filename] = new_fn
+            idx = df[df[vmc.vendorkey] == vk].index
+            df.loc[idx, vmc.vendorkey] = df.loc[
+                idx, vmc.vendorkey][idx[0]].replace('API_', '')
+            old_ed = new_sd - dt.timedelta(days=1)
+            df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
+            df = df.append(ndf).reset_index(drop=True)
+        self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df

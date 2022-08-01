@@ -78,6 +78,10 @@ def main(arguments=None):
         dct.dict_update()
     df = pd.DataFrame()
     matrix = vm.VendorMatrix()
+    if args.analyze:
+        aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
+        aly.do_analysis_and_fix_processor(pre_run=True)
+        matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)
         api.api_loop()
