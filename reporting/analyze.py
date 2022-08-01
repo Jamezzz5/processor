@@ -1012,6 +1012,65 @@ class Analyze(object):
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(key_col=self.missing_ad_rate,
                                   message=msg, data=df.to_dict())
+        
+    def check_package_cap(self, df):
+        '''
+        This function checks if a package used for capping has reached its cap
+        Prints to logfile
+
+        Make sure cap file exists, set as pdf and attach/append to our dataframe
+        temp_package_cap -> column name we are capping on from rawfile
+        'Planned Net Cost - TEMP' -> how much we are capping, taken from rawfile
+        '''
+        if cal.MetricCap().config:
+            for cfg in cal.MetricCap().config:
+                c = cal.MetricCap().config[cfg]
+            pdf = cal.MetricCap().get_cap_file(c)
+            df = df.append(pdf)
+            temp_package_cap = pdf.columns.tolist()
+            temp_package_cap = temp_package_cap[0]
+
+            df = df[[temp_package_cap, 'Planned Net Cost - TEMP', vmc.cost]]
+            df = df.groupby([temp_package_cap])
+            df = df.apply(lambda x: 0 if x['Planned Net Cost - TEMP'].sum() == 0 else x[vmc.cost].sum() / x['Planned Net Cost - TEMP'].sum())
+            f_df = df[df >= 1]
+
+            if f_df.empty:
+                delivery_msg = 'No Packages have exceeded their cap'
+                logging.info(delivery_msg)
+            else:
+                del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
+                delivery_msg = 'The following packages have delivered in full: '
+                logging.info('{}\n{}'.format(delivery_msg, del_p))
+
+    def check_package_vendor(self, df):
+        '''
+        Warns if the package capfile will affect multiple vendors
+        creates dataframe grouped by cap and vendor
+        counts unique members, if there are more vendors than there are caps, raise a warning
+        '''
+        if cal.MetricCap().config:
+            for cfg in cal.MetricCap().config:
+                c = cal.MetricCap().config[cfg]
+            pdf = cal.MetricCap().get_cap_file(c)
+            df = df.append(pdf)
+            temp_package_cap = pdf.columns.tolist()
+            temp_package_cap = temp_package_cap[0]
+
+            df = df[[dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap, 'Planned Net Cost - TEMP', vmc.cost]]
+            df = df.groupby([temp_package_cap, dctc.VEN])
+            df = df.size().reset_index(name='count')
+            df = df[[temp_package_cap, dctc.VEN]]
+
+            unique_caps = len(pd.unique(df[temp_package_cap]))
+            unique_vendors = len(pd.unique(df[dctc.VEN]))
+            if unique_caps < unique_vendors:
+                delivery_msg = 'WARNING: The package you are capping on may have multiple vendors associated: '
+                caps_msg = 'Number of unique packages:  '
+                vend_msg = 'Number of unique vendors:   '
+                logging.info('{}\n{}'.format(delivery_msg, df))
+                logging.info('{}{}'.format(caps_msg, unique_caps))
+                logging.info('{}{}'.format(vend_msg, unique_vendors))
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
@@ -1053,6 +1112,8 @@ class Analyze(object):
         self.find_missing_flat_spend()
         self.find_missing_serving()
         self.find_missing_ad_rate()
+        self.check_package_cap(self.df)
+        self.check_package_vendor(self.df)
         self.check_api_date_length()
         for analysis_class in self.class_list:
             analysis_class(self).do_analysis()
