@@ -229,8 +229,9 @@ class RedApi(object):
 
     def click_grouped_metrics(self):
         for x in range(2, 6):
-            metric_xpath = ('/html/body/div[4]/div/div/div/div/div[2]/div[2]/'
-                            'div/ul/li[{}]/div/div/label/i'.format(x))
+            metric_xpath = (
+                '/html/body/div[5]/div/div/div/div/div[2]/div[2]/'
+                'div/ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
             try:
                 self.click_on_xpath(metric_xpath, sleep=1)
             except ex.NoSuchElementException as e:
