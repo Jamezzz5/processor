@@ -1094,8 +1094,10 @@ class CheckAutoDictOrder(AnalyzeBase):
             ven_col_counts = [tdf[col].isin(ven_list).sum()
                               for col in tdf.columns]
             max_idx = ven_col_counts.index(max(ven_col_counts))
-            auto_dict_idx = ds.p[vmc.autodicord].index(dctc.VEN)
-            if max_idx != auto_dict_idx and ven_col_counts[max_idx] > 0:
+            auto_dict_idx = (ds.p[vmc.autodicord].index(dctc.VEN)
+                             if dctc.VEN in ds.p[vmc.autodicord] else None)
+            if (auto_dict_idx and max_idx != auto_dict_idx and
+                    ven_col_counts[max_idx] > 0):
                 diff = auto_dict_idx - max_idx
                 if diff > 0:
                     new_order = ds.p[vmc.autodicord][diff:]
