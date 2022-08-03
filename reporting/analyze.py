@@ -817,22 +817,27 @@ class Analyze(object):
 
     def find_metric_double_counting(self):
         rdf = pd.DataFrame()
-        groups = [dctc.VEN, vmc.vendorkey, dctc.PN]
+        groups = [dctc.VEN, vmc.vendorkey, dctc.PN, vmc.date]
         metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.views,
                    vmc.views25, vmc.views50, vmc.views75, vmc.views100]
         metrics = [metric for metric in metrics if metric in self.df.columns]
         df = self.generate_df_table(groups, metrics, sort=None,
                                     data_filter=None)
         df.reset_index(inplace=True)
-        sdf = df.groupby([dctc.VEN, vmc.vendorkey]).size()
+        sdf = df.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
+        sdf = sdf.reset_index().rename(columns={0: 'temp'})
+        sdf = sdf.groupby([dctc.VEN, vmc.vendorkey]).size()
         sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
-        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN], keep=False)]
+        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
         if not df.empty:
             for metric in metrics:
                 tdf = df[df[metric] > 0]
-                tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
+                tdf = tdf[tdf.duplicated(subset=[dctc.PN, vmc.date], keep=False)]
                 if not tdf.empty:
+                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
+                    tdf = tdf.reset_index().rename(
+                        columns={0: 'temp'})
                     tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
                     tdf = tdf.reset_index().rename(
                         columns={0: 'Num Duplicates'})
