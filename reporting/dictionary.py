@@ -95,16 +95,38 @@ class Dict(object):
         comb_key = ':::'
         comb_cols = [x for x in error.columns if comb_key in x]
         final_cols = set(x.split(comb_key)[0] for x in comb_cols)
+        rc = RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
+                      for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
         for col in final_cols:
             ind = [int(x.split(comb_key)[1]) for x in comb_cols if col in x]
-            ind = [x for x in range(max(ind) + 1) if x not in ind]
-            if ind:
-                delimit_str = [x for x in comb_cols if col in x][0]
-                delimit_str = delimit_str.split(comb_key)[2]
-                ind = ['{}:::{}:::{}'.format(col, x, delimit_str) for x in ind]
-                comb_cols += ind
-                for i in ind:
-                    error[i] = 0
+            i_min = 0
+            if col in error.columns:
+                i_min = -1
+            delim_idx = 0
+            for i in range(max(ind) + 1):
+                cur_col = [x for x in comb_cols
+                           if comb_key.join([col, str(i)]) in x]
+                if cur_col:
+                    if col in rc_delimit:
+                        cur_delimit = cur_col[0].split(comb_key)[2]
+                        if (cur_delimit == rc_delimit[col][delim_idx]
+                                and i > i_min):
+                            delim_idx += 1
+                else:
+                    try:
+                        delimit_str = rc_delimit[col][delim_idx]
+                    except KeyError:
+                        delimit_str = [x for x in comb_cols if col in x][0]
+                        delimit_str = delimit_str.split(comb_key)[2]
+                    fill_col = '{}:::{}:::{}'.format(col, i, delimit_str)
+                    print(fill_col)
+                    comb_cols += [fill_col]
+                    error[fill_col] = 0
+                    if i > i_min:
+                        delim_idx += 1
+        print(comb_cols)
         for col in sorted(comb_cols, key=lambda x: int(x.split(comb_key)[1])):
             final_col = col.split(comb_key)[0]
             delimit_str = col.split(comb_key)[2]
