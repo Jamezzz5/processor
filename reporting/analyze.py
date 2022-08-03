@@ -27,6 +27,7 @@ class Analyze(object):
     over_delivery_col = 'over-delivery'
     unknown_col = 'unknown'
     delivery_comp_col = 'delivery_completion'
+    daily_delivery_col = 'daily_delivery'
     raw_file_update_col = 'raw_file_update'
     topline_col = 'topline_metrics'
     lw_topline_col = 'last_week_topline_metrics'
@@ -234,6 +235,18 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.delivery_comp_col,
                                   message=delivery_msg,
                                   data=tdf.to_dict())
+
+    def get_daily_delivery(self, df):
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        groups = plan_names + [vmc.date]
+        metrics = [cal.NCF]
+        df = df.groupby(groups)[metrics].sum()
+        df = df.reset_index()
+        df[vmc.date] = df[vmc.date].astype(str)
+        daily_delivery_msg = 'Daily delivery is as follows:'
+        self.add_to_analysis_dict(key_col=self.daily_delivery_col,
+                                  message=daily_delivery_msg,
+                                  data=df.to_dict())
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1020,6 +1033,7 @@ class Analyze(object):
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
         self.project_delivery_completion(self.df)
+        self.get_daily_delivery(self.df)
         self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
