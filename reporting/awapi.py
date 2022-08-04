@@ -155,9 +155,8 @@ class AwApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix. '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix. '
+                     'Aborting.')
         logging.info('Loading Adwords config file: {}'.format(config))
         self.configfile = os.path.join(config_path, config)
         self.load_config()
@@ -168,8 +167,7 @@ class AwApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = yaml.safe_load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.configfile))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.configfile))
         self.config = self.config['adwords']
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
@@ -187,9 +185,8 @@ class AwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in AW config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in AW config file.  '
+                         'Aborting.'.format(item))
 
     def refresh_client_token(self, extra, attempt=1):
         try:
@@ -251,8 +248,7 @@ class AwApi(object):
                 with open(self.configfile, 'w') as f:
                     yaml.dump({'adwords': self.config}, f)
                 return r
-        logging.warning('Could not find customer ID exiting.')
-        sys.exit(0)
+        sys.exit('Could not find customer ID exiting.')
 
     @staticmethod
     def get_data_default_check(sd, ed):
@@ -346,8 +342,7 @@ class AwApi(object):
                 time.sleep(30)
                 r = self.find_correct_login_customer_id(report)
             else:
-                logging.warning('Unknown response: {}'.format(r.json()))
-                sys.exit(0)
+                sys.exit('Unknown response: {}'.format(r.json()))
         return r
 
     def report_to_df(self, r, fields):

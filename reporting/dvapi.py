@@ -72,8 +72,7 @@ class DvApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.username = self.config['username']
         self.password = self.config['password']
         self.advertiser = self.config['advertiser']
@@ -85,9 +84,8 @@ class DvApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in config file. '
-                                ' Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in config file. '
+                         ' Aborting.'.format(item))
 
     def get_data_default_check(self, sd, ed, fields=None):
         if sd is None:

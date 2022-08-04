@@ -40,8 +40,7 @@ class PmApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.username = self.config['username']
         self.password = self.config['password']
         self.pm_title = self.config['account_filter']
@@ -52,9 +51,8 @@ class PmApi(object):
 
     def check_config(self):
         if self.config['account_filter'] == '':
-            logging.warning('{} not in config file. '
-                            ' Aborting.'.format(self.config['account_filter']))
-            sys.exit(0)
+            sys.exit('{} not in config file. '
+                     ' Aborting.'.format(self.config['account_filter']))
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -170,8 +168,7 @@ class PmApi(object):
         try:
             self.click_on_xpath(export_xpath)
         except ex.NoSuchElementException:
-            logging.error('No data for title. Aborting.')
-            sys.exit(0)
+            sys.exit('No data for title. Aborting.')
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
         self.click_on_xpath(xlsx_path)
         download_xpath = '//*[@id="pick-export-options"]'

@@ -28,9 +28,8 @@ class GsApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading GS config file:{}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -41,8 +40,7 @@ class GsApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
         self.access_token = self.config['access_token']
@@ -55,9 +53,8 @@ class GsApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in GS config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in GS config file.  '
+                         'Aborting.'.format(item))
 
     def get_client(self):
         token = {'access_token': self.access_token,

@@ -101,8 +101,7 @@ class FbApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.configfile))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.configfile))
         self.app_id = self.config['app_id']
         self.app_secret = self.config['app_secret']
         self.access_token = self.config['access_token']
@@ -115,9 +114,8 @@ class FbApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in FB config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in FB config file.  '
+                         'Aborting.'.format(item))
 
     @staticmethod
     def parse_fields(items):
@@ -352,8 +350,7 @@ class FbApi(object):
 
     def request_error(self, e, date_list=None, field_list=None):
         if e._api_error_code == 190:
-            logging.error('Facebook Access Token invalid.  Aborting.')
-            sys.exit(0)
+            sys.exit('Facebook Access Token invalid.  Aborting.')
         elif e._api_error_code == 2 or e._api_error_code == 100:
             logging.warning('An unexpected error occurred.  '
                             'Retrying request later. {}'.format(e))
@@ -389,7 +386,8 @@ class FbApi(object):
                           'in the following error: {}'.format(e))
             if e._api_error_code:
                 logging.error('Api error subcode: {}'.format(e._api_error_code))
-            sys.exit(0)
+            sys.exit('Aborting as the Facebook API call resulted '
+                     'in the following error: {}'.format(e))
 
     @staticmethod
     def split_list(x):

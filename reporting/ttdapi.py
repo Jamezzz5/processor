@@ -36,8 +36,7 @@ class TtdApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.configfile))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.configfile))
         self.login = self.config['LOGIN']
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
@@ -47,9 +46,8 @@ class TtdApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in TTD config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in TTD config file.  '
+                         'Aborting.'.format(item))
 
     def authenticate(self):
         auth_url = "{0}/authentication".format(url)
@@ -57,9 +55,8 @@ class TtdApi(object):
         self.headers = {'Content-Type': 'application/json'}
         r = requests.post(auth_url, headers=self.headers, json=userpass)
         if r.status_code != 200:
-            logging.error('Failed to authenticate with error code: {} '
-                          'Error: {}'.format(r.status_code, r.content))
-            sys.exit(0)
+            sys.exit('Failed to authenticate with error code: {} '
+                     'Error: {}'.format(r.status_code, r.content))
         auth_token = json.loads(r.text)['Token']
         return auth_token
 
@@ -106,8 +103,7 @@ class TtdApi(object):
     def response_error(error_response_count):
         error_response_count += 1
         if error_response_count >= 100:
-            logging.error('Error count exceeded 100.  Aborting.')
-            sys.exit(0)
+            sys.exit('Error count exceeded 100.  Aborting.')
         return error_response_count
 
     def get_df_from_response(self, r):

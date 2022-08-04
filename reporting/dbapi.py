@@ -55,9 +55,8 @@ class DbApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading DB config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -68,8 +67,7 @@ class DbApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
         self.access_token = self.config['access_token']
@@ -86,9 +84,8 @@ class DbApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in DB config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in DB config file.'
+                         'Aborting.'.format(item))
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -216,8 +213,7 @@ class DbApi(object):
             self.df = utl.import_read_csv(report_url, file_check=False,
                                           error_bad=False)
         else:
-            logging.warning('Report does not exist.  Create it.')
-            sys.exit(0)
+            sys.exit('Report does not exist.  Create it.')
 
     def create_report_params(self):
         params = {

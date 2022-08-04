@@ -117,8 +117,7 @@ class TwApi(object):
             with open(self.configfile, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.configfile))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.configfile))
         self.consumer_key = self.config['CONSUMER_KEY']
         self.consumer_secret = self.config['CONSUMER_SECRET']
         self.access_token = self.config['ACCESS_TOKEN']
@@ -133,9 +132,8 @@ class TwApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in config file. '
-                                ' Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in config file. '
+                         ' Aborting.'.format(item))
 
     def get_client(self):
         self.client = OAuth1Session(self.consumer_key, self.consumer_secret,

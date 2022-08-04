@@ -30,9 +30,8 @@ class AfApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading AF config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -43,8 +42,7 @@ class AfApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.api_token = self.config['api_token']
         self.app_id = self.config['app_id']
         self.config_list = [self.config, self.api_token, self.app_id]
@@ -52,9 +50,8 @@ class AfApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in AF config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in AF config file.  '
+                         'Aborting.'.format(item))
 
     @staticmethod
     def parse_fields(items):
@@ -138,8 +135,7 @@ class AfApi(object):
         wrong_error = 'Something went wrong.'
         attempts += 1
         if attempts > 10:
-            logging.warning('Max attempts exceeded: {}'.format(self.r.text))
-            sys.exit(0)
+            sys.exit('Max attempts exceeded: {}'.format(self.r.text))
         if not self.r:
             pass
         if self.r.status_code == 403 and self.r.text[:17] == limit_error:

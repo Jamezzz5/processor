@@ -34,9 +34,8 @@ class QtApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading Quantcast config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -47,8 +46,7 @@ class QtApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.username = self.config['username']
         self.password = self.config['password']
         self.advertiser = self.config['advertiser']
@@ -59,9 +57,8 @@ class QtApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in Quantcast config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in Quantcast config file.  '
+                         'Aborting.'.format(item))
 
     def set_header(self):
         token = self.get_token()

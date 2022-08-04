@@ -45,9 +45,8 @@ class YvApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info(
             'Loading Yahoo DSP - Verizon config file: {}'.format(config))
         self.config_file = os.path.join(utl.config_path, config)
@@ -59,8 +58,7 @@ class YvApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.client_id = self.config["client_id"]
         self.client_secret = self.config["client_secret"]
         self.advertiser = int(self.config["advertiser"])
@@ -72,9 +70,8 @@ class YvApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in Yahoo DSP - Verizon config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in Yahoo DSP - Verizon config file.  '
+                         'Aborting.'.format(item))
 
     def set_header(self):
         token = self.get_token()
@@ -113,10 +110,8 @@ class YvApi(object):
         try:
             token = r.json()
         except json.decoder.JSONDecodeError as e:
-            logging.warning(
-                'Response not json, exiting. \nError: {}\n Response'.format(
-                    e, r.text))
-            sys.exit(0)
+            sys.exit('Response not json, exiting. \nError: {}\n Response'
+                     .format(e, r.text))
         logging.info('Access token retrieved')
         self.access_token = token
         return token

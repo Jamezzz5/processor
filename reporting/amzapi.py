@@ -47,9 +47,8 @@ class AmzApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading AMZ config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -60,8 +59,7 @@ class AmzApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
         self.access_token = self.config['access_token']
@@ -75,9 +73,8 @@ class AmzApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in AMZ config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in AMZ config file.'
+                         'Aborting.'.format(item))
 
     def refresh_client_token(self, extra, attempt=1):
         try:
@@ -106,8 +103,7 @@ class AmzApi(object):
             time.sleep(30)
             errors += 1
             if errors > 10:
-                logging.warning('Could not get token exiting.')
-                sys.exit(0)
+                sys.exit('Could not get token exiting.')
             self.get_client(errors=errors + 1)
         self.client = OAuth2Session(self.client_id, token=token)
 
@@ -143,10 +139,9 @@ class AmzApi(object):
                     self.base_url = endpoint
                     self.amazon_dsp = True
                     return True
-        logging.warning('Could not find the specified profile, check that'
-                        'the provided account ID {} is correct and API has '
-                        'access.'.format(self.advertiser_id))
-        sys.exit(0)
+        sys.exit('Could not find the specified profile, check that'
+                 'the provided account ID {} is correct and API has '
+                 'access.'.format(self.advertiser_id))
 
     @staticmethod
     def date_check(sd, ed):
@@ -243,11 +238,9 @@ class AmzApi(object):
                     'Response: {}'.format((x + 1), r.json()))
                 time.sleep(30)
             else:
-                logging.warning('Error in request as follows: '
-                                '{}'.format(r.json()))
-                sys.exit(0)
-        logging.warning('Could not generate report, exiting')
-        sys.exit(0)
+                sys.exit('Error in request as follows: '
+                         '{}'.format(r.json()))
+        sys.exit('Could not generate report, exiting')
 
     def get_dsp_report(self, report_id):
         self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
@@ -274,9 +267,8 @@ class AmzApi(object):
                 else:
                     time.sleep(15)
             else:
-                logging.warning(
-                    'No status in response as follows: {}'.format(r.json()))
-                sys.exit(0)
+                sys.exit('No status in response as follows: {}'
+                         .format(r.json()))
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
@@ -306,8 +298,7 @@ class AmzApi(object):
         if 'reportId' not in r.json():
             logging.warning('reportId not in json: {}'.format(r.json()))
             if 'code' in r.json() and r.json()['code'] == '406':
-                logging.warning('Could not request date range is too long.')
-                sys.exit(0)
+                sys.exit('Could not request date range is too long.')
             else:
                 time.sleep(30)
                 self.make_report_request(report_date, report_type, vid)
@@ -392,8 +383,7 @@ class AmzApi(object):
         return self.r
 
     def request_error(self):
-        logging.warning('Unknown error: {}'.format(self.r.text))
-        sys.exit(0)
+        sys.exit('Unknown error: {}'.format(self.r.text))
 
     @staticmethod
     def list_dates(sd, ed):

@@ -40,9 +40,8 @@ class NbApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  ' +
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  ' +
+                     'Aborting.')
         logging.info('Loading NB config file: ' + str(config))
         self.config_file = config_path + config
         self.load_config()
@@ -54,8 +53,7 @@ class NbApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error(self.config_file + ' not found.  Aborting.')
-            sys.exit(0)
+            sys.exit(self.config_file + ' not found.  Aborting.')
         self.client_id = self.config['client_id']
         self.client_secret = self.config['client_secret']
         self.access_token = self.config['access_token']
@@ -69,8 +67,7 @@ class NbApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning(item + 'not in NB config file.  Aborting.')
-                sys.exit(0)
+                sys.exit(item + 'not in NB config file.  Aborting.')
 
     def get_client(self):
         token = {'access_token': self.access_token,
@@ -127,8 +124,7 @@ class NbApi(object):
             time.sleep(120)
             return True
         else:
-            logging.warning('Unkown error occured: ' + str(self.r.json()))
-            sys.exit(0)
+            sys.exit('Unknown error occurred: ' + str(self.r.json()))
 
     def get_raw_data(self):
         self.df = pd.DataFrame()

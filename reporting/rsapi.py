@@ -56,9 +56,8 @@ class RsApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading RS config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -70,8 +69,7 @@ class RsApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.api_key = self.config['api_key']
         self.game_name = self.config['game_name']
         self.config_list = [self.api_key, self.game_name]
@@ -83,9 +81,8 @@ class RsApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in RS config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in RS config file.  '
+                         'Aborting.'.format(item))
 
     def set_headers(self, version):
         self.headers = {'Authorization': self.api_key,
@@ -151,8 +148,7 @@ class RsApi(object):
             self.campaign_filter)].reset_index(drop=True)
 
     def request_error(self):
-        logging.warning('Unknown error: {}'.format(self.r.text))
-        sys.exit(0)
+        sys.exit('Unknown error: {}'.format(self.r.text))
 
     def raw_request(self, url, method, body=None, params=None, headers=None):
         kwargs = {}
@@ -206,9 +202,8 @@ class RsApi(object):
         try:
             json_data = self.r.json()['results']
         except ValueError:
-            logging.warning('Could not load as json.  '
-                            'Response: {}'.format(self.r.text))
-            sys.exit(0)
+            sys.exit('Could not load as json.  '
+                     'Response: {}'.format(self.r.text))
         df = pd.DataFrame(json_data)
         if fields:
             for field in fields:

@@ -37,9 +37,8 @@ class SamApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+            sys.exit('Config file name not in vendor matrix.  '
+                     'Aborting.')
         logging.info('Loading Sam config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
@@ -50,8 +49,7 @@ class SamApi(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            sys.exit('{} not found.  Aborting.'.format(self.config_file))
         self.author_id = self.config['author_id']
         self.author_name = self.config['author_name']
         self.access_token = self.config['access_token']
@@ -62,9 +60,8 @@ class SamApi(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in Sam config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+                sys.exit('{} not in Sam config file.'
+                         'Aborting.'.format(item))
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
@@ -144,8 +141,7 @@ class SamApi(object):
             self.df = utl.import_read_csv(report_url[0], file_check=False,
                                           error_bad=False)
         else:
-            logging.warning('Report does not exist.  Create it.')
-            sys.exit(0)
+            sys.exit('Report does not exist.  Create it.')
 
     def create_report_query(self, sd, ed):
         query = {
