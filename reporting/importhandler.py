@@ -120,27 +120,37 @@ class ImportHandler(object):
         return sd
 
     def api_calls(self, key_list, api_class):
+        import_errors = {}
+        call_success = True
         for vk in key_list:
-            params = self.matrix.vendor_set(vk)
-            api_class.input_config(params[vmc.apifile])
-            start_check = self.date_check(params[vmc.startdate])
-            end_check = self.date_check(params[vmc.enddate])
-            if params[vmc.apifields] == ['nan']:
-                params[vmc.apifields] = None
-            if start_check:
-                params[vmc.startdate] = None
-            if end_check:
-                params[vmc.enddate] = None
-            params[vmc.startdate] = self.set_start(params[vmc.startdate],
-                                                   params[vmc.enddate],
-                                                   params[vmc.apimerge])
-            df = api_class.get_data(sd=params[vmc.startdate],
-                                    ed=params[vmc.enddate],
-                                    fields=params[vmc.apifields])
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
+            try:
+                params = self.matrix.vendor_set(vk)
+                api_class.input_config(params[vmc.apifile])
+                start_check = self.date_check(params[vmc.startdate])
+                end_check = self.date_check(params[vmc.enddate])
+                if params[vmc.apifields] == ['nan']:
+                    params[vmc.apifields] = None
+                if start_check:
+                    params[vmc.startdate] = None
+                if end_check:
+                    params[vmc.enddate] = None
+                params[vmc.startdate] = self.set_start(params[vmc.startdate],
+                                                       params[vmc.enddate],
+                                                       params[vmc.apimerge])
+                df = api_class.get_data(sd=params[vmc.startdate],
+                                        ed=params[vmc.enddate],
+                                        fields=params[vmc.apifields])
+                self.output(df, params[vmc.filename], params[vmc.apimerge],
+                            params[vmc.firstrow], params[vmc.lastrow],
+                            params[vmc.date], params[vmc.startdate],
+                            params[vmc.enddate])
+            except (Exception, BaseException) as err:
+                logging.exception('{} failed with the following error: {}'
+                                  .format(vk, repr(err)))
+                import_errors[vk] = err
+                call_success = False
+            if not call_success:
+                raise Exception(import_errors)
 
     def api_loop(self):
         apis = [('fb', self.matrix.api_fb_key, fbapi.FbApi),
@@ -171,9 +181,20 @@ class ImportHandler(object):
                 ('qt', self.matrix.api_qt_key, qtapi.QtApi),
                 ('yv', self.matrix.api_yv_key, yvapi.YvApi),
                 ('amd', self.matrix.api_amd_key, amzapi.AmzApi)]
+        import_errors = []
+        run_success = True
         for api in apis:
             if self.arg_check(api[0]) and api[1]:
-                self.api_calls(api[1], api[2]())
+                try:
+                    self.api_calls(api[1], api[2]())
+                except Exception as err:
+                    import_errors.append(str(err))
+                    run_success = False
+        if not run_success:
+            import_errors = pd.Series(import_errors)
+            logging.error('One or more API calls failed:\n{}'
+                          .format(import_errors.values))
+            raise Exception('One or more imports failed')
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
