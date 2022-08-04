@@ -145,8 +145,12 @@ class ImportHandler(object):
                             params[vmc.date], params[vmc.startdate],
                             params[vmc.enddate])
             except (Exception, BaseException) as err:
-                logging.exception('{} failed with the following error: {}'
-                                  .format(vk, repr(err)))
+                if isinstance(err, SystemExit):
+                    logging.error('{} failed with the following error: {}'
+                                  .format(vk, err))
+                else:
+                    logging.exception('{} failed with the following error: {}'
+                                      .format(vk, repr(err)))
                 import_errors[vk] = err
                 call_success = False
             if not call_success:
