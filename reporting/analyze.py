@@ -13,6 +13,7 @@ import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.expcolumns as exc
+import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 
@@ -44,6 +45,7 @@ class Analyze(object):
     missing_flat_clicks = 'missing_flat_clicks'
     missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
+    change_auto_order = 'change_auto_order'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -57,6 +59,7 @@ class Analyze(object):
     analysis_dict_small_param_2 = 'Smallest'
     analysis_dict_large_param_2 = 'Largest'
     analysis_dict_only_param_2 = 'Only'
+    fixes_to_run = False
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.analysis_dict = []
@@ -64,6 +67,8 @@ class Analyze(object):
         self.file_name = file_name
         self.matrix = matrix
         self.vc = ValueCalc()
+        self.class_list = [
+            CheckAutoDictOrder, FindPlacementNameCol, CheckApiDateLength]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -630,34 +635,6 @@ class Analyze(object):
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
 
-    def check_api_date_length(self):
-        vk_list = []
-        data_sources = self.matrix.get_all_data_sources()
-        max_date_dict = {
-            vmc.api_amz_key: 60, vmc.api_szk_key: 60, vmc.api_db_key: 60,
-            vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30}
-        data_sources = [x for x in data_sources if 'API_' in x.key]
-        for ds in data_sources:
-            if 'API_' in ds.key:
-                key = ds.key.split('_')[1]
-                if key in max_date_dict.keys():
-                    max_date = max_date_dict[key]
-                    date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
-                    if date_range > (max_date - 3):
-                        vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
-        mdf[self.max_api_length] = ''
-        if vk_list:
-            msg = 'The following APIs are within 3 days of their max length:'
-            logging.info('{}\n{}'.format(msg, vk_list))
-            mdf[self.max_api_length] = mdf[vmc.vendorkey].str.split(
-                '_').str[1].replace(max_date_dict)
-        else:
-            msg = 'No APIs within 3 days of max length.'
-            logging.info('{}'.format(msg))
-        self.add_to_analysis_dict(key_col=self.max_api_length,
-                                  message=msg, data=mdf.to_dict())
-
     @staticmethod
     def processor_clean_functions(df, cd, cds_name, clean_functions):
         success = True
@@ -838,60 +815,29 @@ class Analyze(object):
             cds.df = df
         self.write_raw_file_dict(vk, cd)
 
-    def find_placement_name_column(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            file_name = source.p[vmc.filename]
-            first_row = source.p[vmc.firstrow]
-            p_col = source.p[vmc.placement]
-            if os.path.exists(file_name):
-                tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
-                tdf = utl.first_last_adj(tdf, first_row, 0)
-                tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
-                if tdf.empty:
-                    continue
-                tdf = tdf.applymap(
-                    lambda x: str(x).count('_')).apply(lambda x: sum(x))
-                r_col = tdf.idxmax(axis=1)
-                if (r_col in tdf and p_col in tdf
-                        and tdf[r_col] >= (tdf[p_col] + 9)
-                        and 75 <= tdf[r_col] <= 105):
-                    data_dict = {vmc.vendorkey: [source.key],
-                                 'Current Placement Col': p_col,
-                                 'Suggested Col': r_col}
-                    df = df.append(pd.DataFrame(data_dict),
-                                   ignore_index=True, sort=False)
-        if df.empty:
-            msg = ('Placement Name columns look correct. '
-                   'No columns w/ more breakouts.')
-            logging.info('{}'.format(msg))
-        else:
-            msg = ('The following data sources have more breakouts in '
-                   'another column. Consider changing placement name '
-                   'source:')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
-        self.add_to_analysis_dict(key_col=self.placement_col,
-                                  message=msg, data=df.to_dict())
-
     def find_metric_double_counting(self):
         rdf = pd.DataFrame()
-        groups = [dctc.VEN, vmc.vendorkey, dctc.PN]
+        groups = [dctc.VEN, vmc.vendorkey, dctc.PN, vmc.date]
         metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.views,
                    vmc.views25, vmc.views50, vmc.views75, vmc.views100]
         metrics = [metric for metric in metrics if metric in self.df.columns]
         df = self.generate_df_table(groups, metrics, sort=None,
                                     data_filter=None)
         df.reset_index(inplace=True)
-        sdf = df.groupby([dctc.VEN, vmc.vendorkey]).size()
+        sdf = df.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
+        sdf = sdf.reset_index().rename(columns={0: 'temp'})
+        sdf = sdf.groupby([dctc.VEN, vmc.vendorkey]).size()
         sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
-        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN], keep=False)]
+        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
         if not df.empty:
             for metric in metrics:
                 tdf = df[df[metric] > 0]
-                tdf = tdf[tdf.duplicated(subset=dctc.PN, keep=False)]
+                tdf = tdf[tdf.duplicated(subset=[dctc.PN, vmc.date], keep=False)]
                 if not tdf.empty:
+                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
+                    tdf = tdf.reset_index().rename(
+                        columns={0: 'temp'})
                     tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
                     tdf = tdf.reset_index().rename(
                         columns={0: 'Num Duplicates'})
@@ -1081,13 +1027,237 @@ class Analyze(object):
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
-        self.find_placement_name_column()
         self.find_metric_double_counting()
         self.find_missing_flat_spend()
         self.find_missing_serving()
         self.find_missing_ad_rate()
-        self.check_api_date_length()
+        for analysis_class in self.class_list:
+            analysis_class(self).do_analysis()
         self.write_analysis_dict()
+
+    def do_analysis_and_fix_processor(self, pre_run=False):
+        for analysis_class in self.class_list:
+            if analysis_class.fix:
+                if (pre_run and analysis_class.pre_run) or not pre_run:
+                    analysis_class(self).do_and_fix_analysis()
+        return self.fixes_to_run
+
+
+class AnalyzeBase(object):
+    name = ''
+    fix = False
+    pre_run = False
+
+    def __init__(self, analyze_class=None):
+        self.aly = analyze_class
+        self.matrix = self.aly.matrix
+
+    def do_analysis(self):
+        self.not_implemented_warning('do_analysis')
+
+    def fix_analysis(self, aly_dict, write=True):
+        self.not_implemented_warning('fix_analysis')
+        return None
+
+    def not_implemented_warning(self, func_name):
+        logging.warning('{} function not implemented for: {}'.format(
+            func_name, self.name))
+
+    def do_and_fix_analysis(self):
+        self.do_analysis()
+        aly_dict = self.aly.find_in_analysis_dict(self.name)
+        if (len(aly_dict) > 0 and 'data' in aly_dict[0]
+                and len(aly_dict[0]['data']) > 0):
+            self.aly.fixes_to_run = True
+            self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
+
+    def add_to_analysis_dict(self, df, msg):
+        self.aly.add_to_analysis_dict(
+            key_col=self.name, message=msg, data=df.to_dict())
+
+
+class CheckAutoDictOrder(AnalyzeBase):
+    name = Analyze.change_auto_order
+    fix = True
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        tc = dct.DictTranslationConfig()
+        tc.read(dctc.filename_tran_config)
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
+        ven_list = []
+        df = pd.DataFrame()
+        for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
+            new_ven_list = tdf[col].unique().tolist()
+            ven_list = list(set(ven_list + new_ven_list))
+            ven_list = [x for x in ven_list if x not in ['nan', '0']]
+        for ds in data_sources:
+            tdf = ds.get_raw_df()
+            if dctc.FPN not in tdf.columns:
+                continue
+            tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
+            ven_col_counts = [tdf[col].isin(ven_list).sum()
+                              for col in tdf.columns]
+            max_idx = ven_col_counts.index(max(ven_col_counts))
+            auto_dict_idx = (ds.p[vmc.autodicord].index(dctc.VEN)
+                             if dctc.VEN in ds.p[vmc.autodicord] else None)
+            if (auto_dict_idx and max_idx != auto_dict_idx and
+                    ven_col_counts[max_idx] > 0):
+                diff = auto_dict_idx - max_idx
+                if diff > 0:
+                    new_order = ds.p[vmc.autodicord][diff:]
+                else:
+                    new_order = (diff * -1) * [dctc.MIS] + ds.p[vmc.autodicord]
+                data_dict = {vmc.vendorkey: [ds.key],
+                             self.name: [new_order]}
+                df = df.append(pd.DataFrame(data_dict),
+                               ignore_index=True, sort=False)
+        if df.empty:
+            msg = 'No new proposed order.'
+        else:
+            msg = 'Proposed new order by key as follows:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='index')
+        for vk_idx, vk_dict in aly_dict.items():
+            vk = vk_dict[vmc.vendorkey]
+            new_order = '|'.join(vk_dict[self.name])
+            self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
+class FindPlacementNameCol(AnalyzeBase):
+    name = Analyze.placement_col
+    fix = True
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            file_name = source.p[vmc.filename]
+            first_row = source.p[vmc.firstrow]
+            p_col = source.p[vmc.placement]
+            if os.path.exists(file_name):
+                tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
+                tdf = utl.first_last_adj(tdf, first_row, 0)
+                tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
+                if tdf.empty:
+                    continue
+                tdf = tdf.applymap(
+                    lambda x: str(x).count('_')).apply(lambda x: sum(x))
+                r_col = tdf.idxmax(axis=1)
+                if (r_col in tdf and p_col in tdf
+                        and tdf[r_col] >= (tdf[p_col] + 9)
+                        and 75 <= tdf[r_col] <= 105):
+                    data_dict = {vmc.vendorkey: [source.key],
+                                 'Current Placement Col': p_col,
+                                 'Suggested Col': r_col}
+                    df = df.append(pd.DataFrame(data_dict),
+                                   ignore_index=True, sort=False)
+        if df.empty:
+            msg = ('Placement Name columns look correct. '
+                   'No columns w/ more breakouts.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following data sources have more breakouts in '
+                   'another column. Consider changing placement name '
+                   'source:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            vk = x[vmc.vendorkey]
+            self.aly.matrix.vm_change_on_key(
+                vk, vmc.placement, x['Suggested Col'])
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
+class CheckApiDateLength(AnalyzeBase):
+    """Checks APIs for max date length and splits data sources if necessary."""
+    name = Analyze.max_api_length
+    fix = True
+    pre_run = True
+
+    def do_analysis(self):
+        """
+        Loops through all data sources checking and flagging through those that
+        are too long.  Those sources are added to a df and the analysis dict
+        """
+        vk_list = []
+        data_sources = self.matrix.get_all_data_sources()
+        max_date_dict = {
+            vmc.api_amz_key: 60, vmc.api_szk_key: 60, vmc.api_db_key: 60,
+            vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30}
+        data_sources = [x for x in data_sources if 'API_' in x.key]
+        for ds in data_sources:
+            if 'API_' in ds.key:
+                key = ds.key.split('_')[1]
+                if key in max_date_dict.keys():
+                    max_date = max_date_dict[key]
+                    date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
+                    if date_range > (max_date - 3):
+                        vk_list.append(ds.key)
+        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        mdf[self.name] = ''
+        if vk_list:
+            msg = 'The following APIs are within 3 days of their max length:'
+            logging.info('{}\n{}'.format(msg, vk_list))
+            mdf[self.name] = mdf[vmc.vendorkey].str.split(
+                '_').str[1].replace(max_date_dict)
+        else:
+            msg = 'No APIs within 3 days of max length.'
+            logging.info('{}'.format(msg))
+        self.add_to_analysis_dict(df=mdf, msg=msg)
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Takes data sources that are too long and splits them based on date.
+
+        :param aly_dict: a df containing items to fix
+        :param write: boolean will write the vm as csv when true
+        :returns: the vm as a df
+        """
+        tdf = aly_dict.to_dict(orient='records')
+        df = self.aly.matrix.vm_df
+        for x in tdf:
+            vk = x[vmc.vendorkey]
+            logging.info('Duplicating vendor key {}'.format(vk))
+            max_date_length = x[self.name]
+            ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
+            ndf = utl.data_to_type(ndf, date_col=[vmc.startdate])
+            new_sd = ndf[vmc.startdate][0] + dt.timedelta(
+                days=max_date_length - 3)
+            if new_sd.date() >= dt.datetime.today().date():
+                new_sd = dt.datetime.today() - dt.timedelta(days=3)
+            new_str_sd = new_sd.strftime('%Y-%m-%d')
+            ndf.loc[0, vmc.startdate] = new_str_sd
+            ndf.loc[0, vmc.enddate] = ''
+            new_vk = '{}_{}'.format('_'.join(vk.split('_')[:2]), new_str_sd)
+            ndf.loc[0, vmc.vendorkey] = new_vk
+            file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
+            new_fn = '{}{}'.format(new_vk.replace('API_', '').lower(),
+                                   file_type)
+            ndf.loc[0, vmc.filename] = new_fn
+            idx = df[df[vmc.vendorkey] == vk].index
+            df.loc[idx, vmc.vendorkey] = df.loc[
+                idx, vmc.vendorkey][idx[0]].replace('API_', '')
+            old_ed = new_sd - dt.timedelta(days=1)
+            df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
+            df = df.append(ndf).reset_index(drop=True)
+        self.aly.matrix.vm_df = df
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
 
 
 class ValueCalc(object):

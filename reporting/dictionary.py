@@ -55,11 +55,13 @@ class Dict(object):
         self.apply_functions()
 
     @staticmethod
-    def split_error_df(err, autodicord, placement, include_index=False, include_full_name=False):
+    def split_error_df(err, autodicord, placement, include_index=False,
+                       include_full_name=False):
         error = err.get()
         error.columns = [dctc.FPN, dctc.PN]
         if include_full_name:
-            max_placement_name_length = max(map(len, error[placement].str.split('_')))
+            max_placement_name_length = max(
+                map(len, error[placement].str.split('_')))
             if len(autodicord) < max_placement_name_length:
                 length_diff = max_placement_name_length - len(autodicord)
                 autodicord.extend([dctc.MIS] * length_diff)

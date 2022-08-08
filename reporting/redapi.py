@@ -158,13 +158,7 @@ class RedApi(object):
     def get_cal_month(self, lr=1, cal_xpath=None):
         month_xpath = '[2]/div[{}]/div[1]/div'.format(lr)
         cal_month_xpath = cal_xpath + month_xpath
-        try:
-            month = self.browser.find_element_by_xpath(cal_month_xpath).text
-        except ex.NoSuchElementException as e:
-            logging.warning('Could not click update trying another selector.'
-                            '  Error: {}'.format(e))
-            cal_month_xpath = cal_month_xpath.replace('7', '8')
-            month = self.browser.find_element_by_xpath(cal_month_xpath).text
+        month = self.browser.find_element_by_xpath(cal_month_xpath).text
         month = dt.datetime.strptime(month, '%B %Y')
         if lr == 2:
             last_day = calendar.monthrange(month.year, month.month)[1]
@@ -217,6 +211,7 @@ class RedApi(object):
     def set_dates(self, sd, ed, base_xpath=None):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
         cal_xpath = self.open_calendar(base_xpath)
+        cal_xpath = cal_xpath.replace('body/div[8]', 'body/div[9]')
         self.set_date(sd, cal_xpath=cal_xpath)
         self.set_date(ed, cal_xpath=cal_xpath)
         try:
@@ -234,9 +229,17 @@ class RedApi(object):
 
     def click_grouped_metrics(self):
         for x in range(2, 6):
-            metric_xpath = ('/html/body/div[4]/div/div/div/div/div[2]/div[2]/'
-                            'div/ul/li[{}]/div/div/label/i'.format(x))
-            self.click_on_xpath(metric_xpath, sleep=1)
+            metric_xpath = (
+                '/html/body/div[5]/div/div/div/div/div[2]/div[2]/'
+                'div/ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
+            try:
+                self.click_on_xpath(metric_xpath, sleep=1)
+            except ex.NoSuchElementException as e:
+                logging.warning(
+                    'Could not click update trying another selector.'
+                    '  Error: {}'.format(e))
+                metric_xpath = metric_xpath.replace('body/div[4', 'body/div[5')
+                self.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
         logging.info('Setting metrics.')
