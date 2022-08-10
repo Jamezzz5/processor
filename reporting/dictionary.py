@@ -149,9 +149,9 @@ class Dict(object):
                       for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
         for col in final_cols:
             ind = [int(x.split(comb_key)[1]) for x in comb_cols if col in x]
-            i_min = 0
+            i_delimit_min = 0
             if col in error.columns:
-                i_min = -1
+                i_delimit_min = -1
             delimit_idx = 0
             for i in range(max(ind) + 1):
                 cur_col = [x for x in comb_cols
@@ -160,7 +160,7 @@ class Dict(object):
                     if col in rc_delimit:
                         cur_delimit = cur_col[0].split(comb_key)[2]
                         if (cur_delimit == rc_delimit[col][delimit_idx]
-                                and i > i_min):
+                                and i > i_delimit_min):
                             delimit_idx += 1
                 else:
                     try:
@@ -171,7 +171,7 @@ class Dict(object):
                     fill_col = '{}:::{}:::{}'.format(col, i, delimit_str)
                     comb_cols += [fill_col]
                     error[fill_col] = 0
-                    if i > i_min:
+                    if i > i_delimit_min:
                         delimit_idx += 1
         for col in sorted(comb_cols, key=lambda x: int(x.split(comb_key)[1])):
             final_col = col.split(comb_key)[0]
