@@ -82,19 +82,13 @@ class Dict(object):
                    for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
         rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
                       for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        mixed_formats = False
         for rc_key in rc_auto:
-            mixed_format = [x for x in error.columns if rc_key+comb_key in x]
-            if mixed_format:
-                logging.warning('Mixed relational column format detected. '
-                                'Output may not be as expected. Please use '
-                                'EITHER "mpSize" OR "mpCreative:::0:::_" '
-                                'style column naming conventions, not both.')
+            trad_format = [x for x in error.columns if rc_key+comb_key in x]
             idx_modifier = 0
             for idx, rc_component in enumerate(rc_auto[rc_key]):
                 component_cols = [x for x in error.columns if rc_component in
                                   x]
-                if not component_cols:
-                    continue
                 bald_component = False
                 for col in component_cols:
                     split_col = col.split(comb_key)
@@ -115,7 +109,15 @@ class Dict(object):
                         )
                     error[translated_col] = error[col].astype('U')
                     error.drop([col], axis=1, inplace=True)
-                idx_modifier += len(component_cols) - 1
+                if component_cols:
+                    idx_modifier += len(component_cols) - 1
+                    if trad_format:
+                        mixed_formats = True
+        if mixed_formats:
+            logging.warning('Mixed relational column format detected. '
+                            'Output may not be as expected. Please '
+                            'use EITHER "mpSize" OR "mpCreative:::0:::_" '
+                            'style column naming conventions, not both.')
         return error
 
     def auto(self, err, autodicord, placement):
