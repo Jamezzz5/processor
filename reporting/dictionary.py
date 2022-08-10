@@ -73,6 +73,51 @@ class Dict(object):
             error[col_name] = error[placement].str.split('_').str[i]
         return error
 
+    @staticmethod
+    def translate_relational_components(error):
+        comb_key = ':::'
+        rc = RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto = {rc.rc[dctc.KEY][k]: v.split('::')[::2]
+                   for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
+                      for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        for rc_key in rc_auto:
+            mixed_format = [x for x in error.columns if rc_key+comb_key in x]
+            if mixed_format:
+                logging.warning('Mixed relational column format detected. '
+                                'Output may not be as expected. Please use '
+                                'EITHER "mpSize" OR "mpCreative:::0:::_" '
+                                'style column naming conventions, not both.')
+            idx_modifier = 0
+            for idx, rc_component in enumerate(rc_auto[rc_key]):
+                component_cols = [x for x in error.columns if rc_component in
+                                  x]
+                if not component_cols:
+                    continue
+                bald_component = False
+                for col in component_cols:
+                    split_col = col.split(comb_key)
+                    if len(split_col) < 3:
+                        translated_col = comb_key.join(
+                            [rc_key, str(idx+idx_modifier),
+                             rc_delimit[rc_key][idx-1]]
+                        )
+                        bald_component = True
+                    else:
+                        tmp_idx_modifier = idx_modifier
+                        if int(split_col[1]) == 0 and bald_component:
+                            tmp_idx_modifier += 1
+                        translated_col = comb_key.join(
+                            [rc_key,
+                             str(idx+tmp_idx_modifier+int(split_col[1])),
+                             split_col[2]]
+                        )
+                    error[translated_col] = error[col].astype('U')
+                    error.drop([col], axis=1, inplace=True)
+                idx_modifier += len(component_cols) - 1
+        return error
+
     def auto(self, err, autodicord, placement):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
@@ -84,6 +129,7 @@ class Dict(object):
                 return True
             logging.info('Populating {}'.format(self.filename))
             error = self.split_error_df(err, autodicord, placement)
+            error = self.translate_relational_components(error)
             error = self.auto_combine(error)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
