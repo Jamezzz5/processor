@@ -1320,7 +1320,8 @@ class CheckColumnNames(AnalyzeBase):
         for aly_dict in aly_dicts:
             vk = aly_dict[vmc.vendorkey]
             source = self.matrix.get_data_source(vk)
-            placement_missing = vmc.placement in aly_dict['missing'][0].keys()
+            placement_missing = [x for x in aly_dict['missing'] if
+                                 vmc.placement in x.keys()]
             if placement_missing:
                 logging.info('Placement name missing for {}.  '
                              'Attempting to find.'.format(vk))
@@ -1338,6 +1339,23 @@ class CheckColumnNames(AnalyzeBase):
                         tdf = tdf.to_dict(orient='records')[0]
                         cad.fix_analysis_for_data_source(tdf, True)
                         self.matrix = vm.VendorMatrix(display_log=False)
+            date_missing = [x for x in aly_dict['missing'] if
+                            vmc.date in x.keys()]
+            if date_missing:
+                logging.info('Date col missing for {}.  '
+                             'Attempting to find.'.format(vk))
+                tdf = source.get_raw_df()
+                for col in tdf.columns:
+                    try:
+                        tdf[col] = utl.data_to_type(tdf[col].reset_index(),
+                                                    date_col=[col])[col]
+                    except:
+                        tdf[col] = pd.NaT
+                date_col = (tdf.isnull().sum() * 100 / len(tdf)).idxmin()
+                logging.info('Changing {} date col to {} '.format(vk, date_col))
+                self.aly.matrix.vm_change_on_key(vk, vmc.date, date_col)
+                self.aly.matrix.write()
+                self.matrix = vm.VendorMatrix(display_log=False)
         self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
