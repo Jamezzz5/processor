@@ -69,8 +69,7 @@ class Analyze(object):
         self.matrix = matrix
         self.vc = ValueCalc()
         self.class_list = [
-            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength]
+            CheckAutoDictOrder, FindPlacementNameCol, CheckApiDateLength]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -244,19 +243,10 @@ class Analyze(object):
         df = df.groupby(groups)[metrics].sum()
         df = df.reset_index()
         df[vmc.date] = df[vmc.date].astype(str)
-        unique_breakouts = df.groupby(plan_names).first()
-        unique_breakouts = unique_breakouts.reset_index()
-        unique_breakouts = unique_breakouts[plan_names]
-        daily_dfs = []
-        for index, row in unique_breakouts.iterrows():
-            tdf = df
-            for x in plan_names:
-                tdf = tdf[tdf[x] == row[x]]
-            daily_dfs.append(tdf.to_dict())
         daily_delivery_msg = 'Daily delivery is as follows:'
         self.add_to_analysis_dict(key_col=self.daily_delivery_col,
                                   message=daily_delivery_msg,
-                                  data=daily_dfs)
+                                  data=df.to_dict())
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -565,6 +555,31 @@ class Analyze(object):
                                       param=val[0])
         return df, tdf, twdf
 
+    def get_column_names_from_raw_files(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            file_name = source.p[vmc.filename]
+            first_row = source.p[vmc.firstrow]
+            missing_cols = []
+            tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
+            if not tdf.empty:
+                tdf = utl.first_last_adj(tdf, first_row, 0)
+            cols = list(tdf.columns)
+            active_metrics = source.get_active_metrics()
+            for k, v in active_metrics.items():
+                for c in v:
+                    if c not in cols:
+                        missing_cols.append({k: c})
+            data_dict = {vmc.vendorkey: [source.key], self.raw_columns: [cols],
+                         'missing': [missing_cols]}
+            df = df.append(pd.DataFrame(data_dict),
+                           ignore_index=True, sort=False)
+        update_msg = 'Columns and missing columns by key as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.add_to_analysis_dict(key_col=self.raw_columns,
+                                  message=update_msg, data=df.to_dict())
+
     def get_metrics_by_vendor_key(self):
         data_sources = self.matrix.get_all_data_sources()
         df = self.df.copy()
@@ -831,8 +846,7 @@ class Analyze(object):
         if not df.empty:
             for metric in metrics:
                 tdf = df[df[metric] > 0]
-                tdf = tdf[tdf.duplicated(
-                    subset=[dctc.PN, vmc.date], keep=False)]
+                tdf = tdf[tdf.duplicated(subset=[dctc.PN, vmc.date], keep=False)]
                 if not tdf.empty:
                     tdf = tdf.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
                     tdf = tdf.reset_index().rename(
@@ -1023,6 +1037,7 @@ class Analyze(object):
         self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
+        self.get_column_names_from_raw_files()
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
@@ -1079,49 +1094,38 @@ class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
     fix = True
 
-    @staticmethod
-    def get_vendor_list():
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         ven_list = []
+        df = pd.DataFrame()
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
             ven_list = [x for x in ven_list if x not in ['nan', '0']]
-        return ven_list
-
-    def do_analysis_on_data_source(self, source, df, ven_list=None):
-        if not ven_list:
-            ven_list = self.get_vendor_list()
-        tdf = source.get_raw_df()
-        if dctc.FPN not in tdf.columns:
-            return df
-        tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
-        ven_col_counts = [tdf[col].isin(ven_list).sum()
-                          for col in tdf.columns]
-        max_idx = ven_col_counts.index(max(ven_col_counts))
-        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                         if dctc.VEN in source.p[vmc.autodicord] else None)
-        if (auto_dict_idx and max_idx != auto_dict_idx and
-                ven_col_counts[max_idx] > 0):
-            diff = auto_dict_idx - max_idx
-            if diff > 0:
-                new_order = source.p[vmc.autodicord][diff:]
-            else:
-                new_order = (diff * -1) * [dctc.MIS] + source.p[vmc.autodicord]
-            data_dict = {vmc.vendorkey: [source.key],
-                         self.name: [new_order]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
-        return df
-
-    def do_analysis(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        ven_list = self.get_vendor_list()
         for ds in data_sources:
-            df = self.do_analysis_on_data_source(ds, df, ven_list)
+            tdf = ds.get_raw_df()
+            if dctc.FPN not in tdf.columns:
+                continue
+            tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
+            ven_col_counts = [tdf[col].isin(ven_list).sum()
+                              for col in tdf.columns]
+            max_idx = ven_col_counts.index(max(ven_col_counts))
+            auto_dict_idx = (ds.p[vmc.autodicord].index(dctc.VEN)
+                             if dctc.VEN in ds.p[vmc.autodicord] else None)
+            if (auto_dict_idx and max_idx != auto_dict_idx and
+                    ven_col_counts[max_idx] > 0):
+                diff = auto_dict_idx - max_idx
+                if diff > 0:
+                    new_order = ds.p[vmc.autodicord][diff:]
+                else:
+                    new_order = (diff * -1) * [dctc.MIS] + ds.p[vmc.autodicord]
+                data_dict = {vmc.vendorkey: [ds.key],
+                             self.name: [new_order]}
+                df = df.append(pd.DataFrame(data_dict),
+                               ignore_index=True, sort=False)
         if df.empty:
             msg = 'No new proposed order.'
         else:
@@ -1130,18 +1134,12 @@ class CheckAutoDictOrder(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    def fix_analysis_for_data_source(self, source_aly_dict, write=True):
-        vk = source_aly_dict[vmc.vendorkey]
-        new_order = '|'.join(source_aly_dict[self.name])
-        logging.info('Changing order for {} to {}'.format(vk, new_order))
-        self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
-        if write:
-            self.aly.matrix.write()
-
     def fix_analysis(self, aly_dict, write=True):
-        aly_dict = aly_dict.to_dict(orient='records')
-        for x in aly_dict:
-            self.fix_analysis_for_data_source(x, write=write)
+        aly_dict = aly_dict.to_dict(orient='index')
+        for vk_idx, vk_dict in aly_dict.items():
+            vk = vk_dict[vmc.vendorkey]
+            new_order = '|'.join(vk_dict[self.name])
+            self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
@@ -1151,39 +1149,30 @@ class FindPlacementNameCol(AnalyzeBase):
     name = Analyze.placement_col
     fix = True
 
-    @staticmethod
-    def do_analysis_on_data_source(source, df):
-        file_name = source.p[vmc.filename]
-        first_row = source.p[vmc.firstrow]
-        p_col = source.p[vmc.placement]
-        if os.path.exists(file_name):
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
-            tdf = utl.first_last_adj(tdf, first_row, 0)
-            tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
-            if tdf.empty:
-                return df
-            tdf = tdf.applymap(
-                lambda x: str(x).count('_')).apply(lambda x: sum(x))
-            max_col = tdf.idxmax(axis=1)
-            max_exists = max_col in tdf
-            p_exists = p_col in tdf
-            no_p_check = (not p_exists and max_exists)
-            p_check = (max_exists and p_exists and
-                       tdf[max_col] >= (tdf[p_col] + 9)
-                       and 75 <= tdf[max_col] <= 105)
-            if no_p_check or p_check:
-                data_dict = {vmc.vendorkey: [source.key],
-                             'Current Placement Col': p_col,
-                             'Suggested Col': max_col}
-                df = df.append(pd.DataFrame(data_dict),
-                               ignore_index=True, sort=False)
-        return df
-
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
-            df = self.do_analysis_on_data_source(source, df)
+            file_name = source.p[vmc.filename]
+            first_row = source.p[vmc.firstrow]
+            p_col = source.p[vmc.placement]
+            if os.path.exists(file_name):
+                tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
+                tdf = utl.first_last_adj(tdf, first_row, 0)
+                tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
+                if tdf.empty:
+                    continue
+                tdf = tdf.applymap(
+                    lambda x: str(x).count('_')).apply(lambda x: sum(x))
+                r_col = tdf.idxmax(axis=1)
+                if (r_col in tdf and p_col in tdf
+                        and tdf[r_col] >= (tdf[p_col] + 9)
+                        and 75 <= tdf[r_col] <= 105):
+                    data_dict = {vmc.vendorkey: [source.key],
+                                 'Current Placement Col': p_col,
+                                 'Suggested Col': r_col}
+                    df = df.append(pd.DataFrame(data_dict),
+                                   ignore_index=True, sort=False)
         if df.empty:
             msg = ('Placement Name columns look correct. '
                    'No columns w/ more breakouts.')
@@ -1196,19 +1185,12 @@ class FindPlacementNameCol(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    def fix_analysis_for_data_source(self, source_aly_dict, write=True,
-                                     col=vmc.placement):
-        vk = source_aly_dict[vmc.vendorkey]
-        new_col = source_aly_dict['Suggested Col']
-        logging.info('Changing {} {} to {}'.format(vk, col, new_col))
-        self.aly.matrix.vm_change_on_key(vk, col, new_col)
-        if write:
-            self.aly.matrix.write()
-
     def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
-            self.fix_analysis_for_data_source(x, False)
+            vk = x[vmc.vendorkey]
+            self.aly.matrix.vm_change_on_key(
+                vk, vmc.placement, x['Suggested Col'])
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
@@ -1286,99 +1268,6 @@ class CheckApiDateLength(AnalyzeBase):
             old_ed = new_sd - dt.timedelta(days=1)
             df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
             df = df.append(ndf).reset_index(drop=True)
-        self.aly.matrix.vm_df = df
-        if write:
-            self.aly.matrix.write()
-        return self.aly.matrix.vm_df
-
-
-class CheckColumnNames(AnalyzeBase):
-    """Checks raw data for column names and reassigns if necessary."""
-    name = Analyze.raw_columns
-    fix = True
-    pre_run = True
-
-    def do_analysis(self):
-        """
-        Loops through all data sources adds column names and flags if
-        missing active metrics.
-        """
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            file_name = source.p[vmc.filename]
-            first_row = source.p[vmc.firstrow]
-            missing_cols = []
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
-            if not tdf.empty:
-                tdf = utl.first_last_adj(tdf, first_row, 0)
-            cols = list(tdf.columns)
-            active_metrics = source.get_active_metrics()
-            active_metrics[vmc.placement] = [source.p[vmc.placement]]
-            for k, v in active_metrics.items():
-                for c in v:
-                    if c not in cols:
-                        missing_cols.append({k: c})
-            data_dict = {vmc.vendorkey: [source.key], self.name: [cols],
-                         'missing': [missing_cols]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
-        update_msg = 'Columns and missing columns by key as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
-        self.add_to_analysis_dict(df=df, msg=update_msg)
-
-    def fix_analysis(self, aly_dict, write=True):
-        """
-        Adjusts placement name and auto dict order of data sources when those
-        values are missing.
-
-        :param aly_dict: a df containing items to fix
-        :param write: boolean will write the vm as csv when true
-        :returns: the vm as a df
-        """
-        aly_dicts = aly_dict.to_dict(orient='records')
-        df = self.aly.matrix.vm_df
-        aly_dicts = [x for x in aly_dicts
-                     if x['missing'] and x['raw_file_columns']]
-        for aly_dict in aly_dicts:
-            vk = aly_dict[vmc.vendorkey]
-            source = self.matrix.get_data_source(vk)
-            placement_missing = [x for x in aly_dict['missing'] if
-                                 vmc.placement in x.keys()]
-            if placement_missing:
-                logging.info('Placement name missing for {}.  '
-                             'Attempting to find.'.format(vk))
-                fnc = FindPlacementNameCol(self.aly)
-                tdf = fnc.do_analysis_on_data_source(source, pd.DataFrame())
-                if not tdf.empty:
-                    tdf = tdf.to_dict(orient='records')[0]
-                    for col in [vmc.placement, vmc.fullplacename]:
-                        fnc.fix_analysis_for_data_source(tdf, True, col)
-                    self.matrix = vm.VendorMatrix(display_log=False)
-                    source = self.matrix.get_data_source(vk)
-                    cad = CheckAutoDictOrder(self.aly)
-                    tdf = cad.do_analysis_on_data_source(source, pd.DataFrame())
-                    if not tdf.empty:
-                        tdf = tdf.to_dict(orient='records')[0]
-                        cad.fix_analysis_for_data_source(tdf, True)
-                        self.matrix = vm.VendorMatrix(display_log=False)
-            date_missing = [x for x in aly_dict['missing'] if
-                            vmc.date in x.keys()]
-            if date_missing:
-                logging.info('Date col missing for {}.  '
-                             'Attempting to find.'.format(vk))
-                tdf = source.get_raw_df()
-                for col in tdf.columns:
-                    try:
-                        tdf[col] = utl.data_to_type(tdf[col].reset_index(),
-                                                    date_col=[col])[col]
-                    except:
-                        tdf[col] = pd.NaT
-                date_col = (tdf.isnull().sum() * 100 / len(tdf)).idxmin()
-                logging.info('Changing {} date col to {} '.format(vk, date_col))
-                self.aly.matrix.vm_change_on_key(vk, vmc.date, date_col)
-                self.aly.matrix.write()
-                self.matrix = vm.VendorMatrix(display_log=False)
         self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
