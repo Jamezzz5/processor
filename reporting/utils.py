@@ -281,3 +281,18 @@ def give_df_default_format(df, columns=None):
             format_map = '{:,.0f}'.format
         df[col] = df[col].map(format_map)
     return df
+
+
+def rename_duplicates(old):
+    seen = {}
+    for x in old:
+        if x in seen:
+            seen[x] += 1
+            new_val = '{} {}'.format(x, seen[x])
+            if new_val in old:
+                yield '{}-{}'.format(new_val, 1)
+            else:
+                yield new_val
+        else:
+            seen[x] = 0
+            yield x
