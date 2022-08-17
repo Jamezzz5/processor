@@ -1111,6 +1111,12 @@ class CheckAutoDictOrder(AnalyzeBase):
         vk = source_aly_dict[vmc.vendorkey]
         new_order = '|'.join(source_aly_dict[self.name])
         logging.info('Changing order for {} to {}'.format(vk, new_order))
+        data_source = self.aly.matrix.get_data_source(vk)
+        try:
+            os.remove(os.path.join(utl.dict_path,
+                                   data_source.p[vmc.filenamedict]))
+        except FileNotFoundError as e:
+            logging.warning('File not found error: {}'.format(e))
         self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
         if write:
             self.aly.matrix.write()
