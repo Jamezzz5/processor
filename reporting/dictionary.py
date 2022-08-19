@@ -65,7 +65,7 @@ class Dict(object):
             if len(autodicord) < max_placement_name_length:
                 length_diff = max_placement_name_length - len(autodicord)
                 autodicord.extend([dctc.MIS] * length_diff)
-                autodicord = list(utl.rename_duplicates(autodicord))
+            autodicord = list(utl.rename_duplicates(autodicord))
         for i, value in enumerate(autodicord):
             if include_index:
                 col_name = '{}-{}'.format(i, value)

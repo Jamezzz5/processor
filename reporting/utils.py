@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import logging
 import pandas as pd
@@ -284,15 +285,22 @@ def give_df_default_format(df, columns=None):
 
 
 def rename_duplicates(old):
-    seen = {}
+    seen = []
+    root_dict = {}
     for x in old:
         if x in seen:
-            seen[x] += 1
-            new_val = '{} {}'.format(x, seen[x])
-            if new_val in old:
-                yield '{}-{}'.format(new_val, 1)
+            if re.search(r' (\d+-)*\d+$', x):
+                split_x = x.split()
+                root = ' '.join(split_x[:-1])
             else:
-                yield new_val
+                root = x
+            if root not in root_dict:
+                root_dict[root] = 1
+            new_val = x
+            while new_val in old:
+                new_val = '{} {}'.format(root, root_dict[root])
+                root_dict[root] += 1
+            yield new_val
         else:
-            seen[x] = 0
+            seen.append(x)
             yield x
