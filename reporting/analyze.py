@@ -1075,7 +1075,7 @@ class CheckAutoDictOrder(AnalyzeBase):
         if not ven_list:
             ven_list = self.get_vendor_list()
         tdf = source.get_raw_df()
-        if dctc.FPN not in tdf.columns:
+        if dctc.FPN not in tdf.columns or tdf.empty:
             return df
         tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
         ven_col_counts = [tdf[col].isin(ven_list).sum()
