@@ -702,7 +702,10 @@ class Analyze(object):
                 else:
                     msg = (True, int(total))
                 if cds_name == 'New':
-                    old_total = cd[col]['Old'][1]
+                    if 'Old' not in cd[col]:
+                        old_total = 0
+                    else:
+                        old_total = cd[col]['Old'][1]
                     if (not isinstance(old_total, str) and
                             not isinstance(total, str) and old_total > total):
                         msg = (
@@ -1444,5 +1447,7 @@ class ValueCalc(object):
             elif item in self.operations:
                 current_op = item
             else:
+                if item not in df.columns:
+                    df[item] = 0
                 df[col] = df[item]
         return df
