@@ -4,6 +4,7 @@ import sys
 import json
 import time
 import logging
+import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -275,6 +276,10 @@ class FbApi(object):
         except FacebookRequestError as e:
             self.request_error(e)
             report = self.get_report(ar)
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+            report = self.get_report(ar)
         return report
 
     def reset_report_request(self, fb_request):
@@ -352,6 +357,7 @@ class FbApi(object):
 
     def request_error(self, e, date_list=None, field_list=None):
         if e._api_error_code == 190:
+            logging.info(e)
             logging.error('Facebook Access Token invalid.  Aborting.')
             sys.exit(0)
         elif e._api_error_code == 2 or e._api_error_code == 100:

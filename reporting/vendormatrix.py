@@ -302,11 +302,11 @@ class VendorMatrix(object):
             self.df = self.df.append(self.tdf, ignore_index=True, sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
-        if not os.listdir(er.csvpath):
-            if os.path.isdir(er.csvpath):
+        if not os.listdir(er.csv_path):
+            if os.path.isdir(er.csv_path):
                 logging.info('All placements defined.  Deleting Error report'
                              ' directory.')
-                os.rmdir(er.csvpath)
+                os.rmdir(er.csv_path)
         self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
 
