@@ -5,12 +5,12 @@ import pandas as pd
 import reporting.utils as utl
 import reporting.dictcolumns as dctc
 
-csvpath = utl.error_path
+csv_path = utl.error_path
 
 
 class ErrorReport(object):
     def __init__(self, df, dic, pn, filename, merge_col=dctc.FPN):
-        utl.dir_check(csvpath)
+        utl.dir_check(csv_path)
         if str(filename) == 'nan':
             logging.error('No error report file provided.  Aborting.')
             sys.exit(0)
@@ -57,7 +57,8 @@ class ErrorReport(object):
                                                      [self.merge_col, dctc.PN])
         return data_err
 
-    def drop_error_df_duplicates(self, data_err, merge_col):
+    @staticmethod
+    def drop_error_df_duplicates(data_err, merge_col):
         data_err = data_err[merge_col].drop_duplicates()
         data_err.columns = [merge_col]
         return data_err
@@ -66,17 +67,17 @@ class ErrorReport(object):
         return self.data_err
 
     def write(self, filename):
-        errfile = os.path.join(csvpath, filename)
+        error_file = os.path.join(csv_path, filename)
         if self.data_err.empty:
             try:
-                os.remove(errfile)
-                logging.info('All placements defined!'
+                os.remove(error_file)
+                logging.info('All placements defined!  '
                              '{} was deleted.'.format(filename))
             except OSError:
                 logging.info('All placements defined!')
         else:
             try:
-                self.data_err.to_csv(errfile, index=False, encoding='utf-8')
+                self.data_err.to_csv(error_file, index=False, encoding='utf-8')
                 logging.warning('Not all placements defined.  {}'
                                 ' was generated'.format(filename))
             except IOError:

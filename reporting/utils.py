@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import logging
 import pandas as pd
@@ -281,3 +282,25 @@ def give_df_default_format(df, columns=None):
             format_map = '{:,.0f}'.format
         df[col] = df[col].map(format_map)
     return df
+
+
+def rename_duplicates(old):
+    seen = []
+    root_dict = {}
+    for x in old:
+        if x in seen:
+            if re.search(r' (\d+-)*\d+$', x):
+                split_x = x.split()
+                root = ' '.join(split_x[:-1])
+            else:
+                root = x
+            if root not in root_dict:
+                root_dict[root] = 1
+            new_val = x
+            while new_val in old:
+                new_val = '{} {}'.format(root, root_dict[root])
+                root_dict[root] += 1
+            yield new_val
+        else:
+            seen.append(x)
+            yield x

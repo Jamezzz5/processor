@@ -702,7 +702,10 @@ class Analyze(object):
                 else:
                     msg = (True, int(total))
                 if cds_name == 'New':
-                    old_total = cd[col]['Old'][1]
+                    if 'Old' not in cd[col]:
+                        old_total = 0
+                    else:
+                        old_total = cd[col]['Old'][1]
                     if (not isinstance(old_total, str) and
                             not isinstance(total, str) and old_total > total):
                         msg = (
@@ -1072,7 +1075,7 @@ class CheckAutoDictOrder(AnalyzeBase):
         if not ven_list:
             ven_list = self.get_vendor_list()
         tdf = source.get_raw_df()
-        if dctc.FPN not in tdf.columns:
+        if dctc.FPN not in tdf.columns or tdf.empty:
             return df
         tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
         ven_col_counts = [tdf[col].isin(ven_list).sum()
@@ -1111,6 +1114,12 @@ class CheckAutoDictOrder(AnalyzeBase):
         vk = source_aly_dict[vmc.vendorkey]
         new_order = '|'.join(source_aly_dict[self.name])
         logging.info('Changing order for {} to {}'.format(vk, new_order))
+        data_source = self.aly.matrix.get_data_source(vk)
+        try:
+            os.remove(os.path.join(utl.dict_path,
+                                   data_source.p[vmc.filenamedict]))
+        except FileNotFoundError as e:
+            logging.warning('File not found error: {}'.format(e))
         self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
         if write:
             self.aly.matrix.write()
@@ -1438,5 +1447,7 @@ class ValueCalc(object):
             elif item in self.operations:
                 current_op = item
             else:
+                if item not in df.columns:
+                    df[item] = 0
                 df[col] = df[item]
         return df
