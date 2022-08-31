@@ -121,6 +121,67 @@ class Dict(object):
                             'style column naming conventions, not both.')
         return error
 
+    @staticmethod
+    def get_rc_index(columns, delimiters, comb_key=':::'):
+        indexed_cols = []
+        columns = sorted(columns)
+        rc_key = columns[0].split(comb_key)[0]
+        inds = [col.split(comb_key)[1] for col in columns if col != rc_key]
+        rc_index = 0
+        if rc_key in columns:
+            indexed_cols.append((rc_key, rc_index))
+            columns.remove(rc_key)
+            if columns:
+                cur_col = [col for col in columns
+                           if col.split(comb_key)[1] == str(0)]
+                if (len(cur_col) > 0
+                        and cur_col[0].split(comb_key)[2] == delimiters[0]):
+                    rc_index += 1
+            else:
+                return indexed_cols
+        for i in range(int(max(inds)) + 1):
+            if str(i) in inds:
+                cur_col = [col for col in columns
+                           if col.split(comb_key)[1] == str(i)][0]
+                cur_delim = cur_col.split(comb_key)[2]
+                if cur_delim == delimiters[rc_index] and i > 0:
+                    rc_index += 1
+                indexed_cols.append((cur_col, rc_index))
+            else:
+                rc_index += 1
+        return indexed_cols
+
+    def translate_relation_to_component(self, error):
+        comb_key = ':::'
+        rc = RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto = {rc.rc[dctc.KEY][k]: v.split('::')[::2]
+                   for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
+                      for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        for rc_key in rc_auto:
+            rel_cols = [col for col in error.columns
+                        if col.split(comb_key)[0] == rc_key]
+            if not rel_cols:
+                continue
+            indexed_cols = self.get_rc_index(rel_cols, rc_delimit[rc_key],
+                                             comb_key)
+            for col_idx in indexed_cols:
+                col = col_idx[0]
+                rc_index = col_idx[1]
+                component = rc_auto[rc_key][rc_index]
+                if len(col.split(comb_key)) < 3:
+                    delimit = rc_delimit[rc_key][0]
+                    index = 0
+                else:
+                    delimit = col.split(comb_key)[2]
+                    index = int(col.split(comb_key)[1]) - rc_index
+                    if rc_key in rel_cols:
+                        index += 1
+                trans_col = comb_key.join([component, str(index), delimit])
+                error.rename(columns={col: trans_col}, inplace=True)
+        return error
+
     def auto(self, err, autodicord, placement):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
