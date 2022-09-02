@@ -228,6 +228,7 @@ class Analyze(object):
         df[vmc.cost] = df[vmc.cost].round(decimals=2)
         final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
                       [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
+        final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         delivery_msg = 'Projected delivery completion dates are as follows:'
