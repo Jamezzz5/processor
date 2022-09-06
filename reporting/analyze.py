@@ -1141,11 +1141,9 @@ class FindPlacementNameCol(AnalyzeBase):
     @staticmethod
     def do_analysis_on_data_source(source, df):
         file_name = source.p[vmc.filename]
-        first_row = source.p[vmc.firstrow]
         p_col = source.p[vmc.placement]
         if os.path.exists(file_name):
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
-            tdf = utl.first_last_adj(tdf, first_row, 0)
+            tdf = source.get_raw_df()
             tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
             if tdf.empty:
                 return df
@@ -1296,9 +1294,7 @@ class CheckColumnNames(AnalyzeBase):
             file_name = source.p[vmc.filename]
             first_row = source.p[vmc.firstrow]
             missing_cols = []
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
-            if not tdf.empty:
-                tdf = utl.first_last_adj(tdf, first_row, 0)
+            tdf = source.get_raw_df()
             cols = list(tdf.columns)
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
