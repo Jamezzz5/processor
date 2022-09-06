@@ -733,16 +733,16 @@ class DataSource(object):
             self.set_in_vendormatrix(vm_rule[col], new_rule[col], matrix)
         return matrix
 
-    def get_raw_df_before_transform(self):
-        df = utl.import_read_csv(self.p[vmc.filename])
+    def get_raw_df_before_transform(self, nrows=None):
+        df = utl.import_read_csv(self.p[vmc.filename], nrows=nrows)
         if df is None or df.empty:
             return df
         df = utl.add_header(df, self.p[vmc.header], self.p[vmc.firstrow])
         df = utl.first_last_adj(df, self.p[vmc.firstrow], self.p[vmc.lastrow])
         return df
 
-    def get_raw_df(self):
-        df = self.get_raw_df_before_transform()
+    def get_raw_df(self, nrows=None):
+        df = self.get_raw_df_before_transform(nrows=nrows)
         if df is None or df.empty:
             return df
         df = df_transform(df, self.p[vmc.transform])
@@ -1021,9 +1021,9 @@ def df_single_transform(df, transform):
             if transform[3] == 'Exclude':
                 exclude_toggle = True
         if exclude_toggle:
-            df = df[~df[col_name].str.contains(col_val)]
+            df = df[~df[col_name].astype('U').str.contains(col_val)]
         else:
-            df = df[df[col_name].str.contains(col_val)]
+            df = df[df[col_name].astype('U').str.contains(col_val)]
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
         df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
