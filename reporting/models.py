@@ -660,6 +660,8 @@ class Fullplacement(Base):
         'lqadb.buymodel.buymodelid', ondelete='CASCADE'))
     buyrate = Column(Text)
     placementdate = Column(Date)
+    startdate = Column(Date)
+    enddate = Column(Date)
     servingid = Column(ForeignKey(
         'lqadb.serving.servingid', ondelete='CASCADE'))
     retailerid = Column(ForeignKey(

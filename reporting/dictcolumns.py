@@ -69,6 +69,8 @@ DL2 = 'mpDescription Line 2'
 HL1 = 'mpHeadline 1'
 HL2 = 'mpHeadline 2'
 DUL = 'mpDisplay URL'
+SD = 'mpStart Date'
+ED = 'mpEnd Date'
 BR2 = 'mpBuy Rate 2'
 BR3 = 'mpBuy Rate 3'
 BR4 = 'mpBuy Rate 4'
@@ -86,11 +88,11 @@ COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
         VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, PLD, PKD, AM, AR,
         RFT, RFM, RFR, VFM, VFR, AGF, AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR,
         ENV, DT1, DT2, TB, GT, GTF, KPI, FAC, PLA, TP, TPB, TPF, AT, AF, CD, CH,
-        CM, LI, LEN, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, BR2, BR3, BR4, BR5,
-        PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        CM, LI, LEN, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, SD, ED, BR2, BR3, BR4,
+        BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, RFR, VFR, BR2, BR3, BR4, BR5, AGF]
-datecol = [PD, PD2, PD3, PD4, PD5]
+datecol = [PD, SD, ED, PD2, PD3, PD4, PD5]
 strcol = [BM, AM, RFM, VFM]
 
 PFN = 'plannet_dictionary.csv'

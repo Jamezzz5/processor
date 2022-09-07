@@ -6,17 +6,17 @@ import pandas as pd
 import reporting.utils as utl
 import reporting.dictcolumns as dctc
 
-csvpath = utl.dict_path
+csv_path = utl.dict_path
 
 
 class Dict(object):
     def __init__(self, filename=None):
-        utl.dir_check(csvpath)
+        utl.dir_check(csv_path)
         if str(filename) == 'nan':
             logging.error('No dictionary file provided.  Aborting.')
             sys.exit(0)
         self.filename = filename
-        self.dict_path = csvpath
+        self.dict_path = csv_path
         self.data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
         if filename:
             self.dict_path_filename = os.path.join(self.dict_path,
@@ -65,6 +65,7 @@ class Dict(object):
             if len(autodicord) < max_placement_name_length:
                 length_diff = max_placement_name_length - len(autodicord)
                 autodicord.extend([dctc.MIS] * length_diff)
+            autodicord = list(utl.rename_duplicates(autodicord))
         for i, value in enumerate(autodicord):
             if include_index:
                 col_name = '{}-{}'.format(i, value)
@@ -181,7 +182,7 @@ class Dict(object):
 
 class RelationalConfig(object):
     def __init__(self):
-        self.csvpath = utl.config_path
+        self.csv_path = utl.config_path
         utl.dir_check(utl.config_path)
         self.df = pd.DataFrame()
         self.rc = None
@@ -191,14 +192,14 @@ class RelationalConfig(object):
     def write(self, df, configfile):
         logging.debug('Writing {}'.format(configfile))
         try:
-            df.to_csv(os.path.join(self.csvpath, configfile), index=False,
+            df.to_csv(os.path.join(self.csv_path, configfile), index=False,
                       encoding='utf-8')
         except IOError:
             logging.warning('{} could not be opened.  This dictionary'
                             'was not saved.'.format(configfile))
 
     def read(self, configfile):
-        self.df = utl.import_read_csv(configfile, self.csvpath)
+        self.df = utl.import_read_csv(configfile, self.csv_path)
         if self.df.empty:
             logging.debug('No Relational Dictionary config')
             return None
@@ -224,12 +225,12 @@ class RelationalConfig(object):
 
 class DictRelational(object):
     def __init__(self, **kwargs):
-        self.csvpath = os.path.join(csvpath, 'Relational/')
-        utl.dir_check(self.csvpath)
+        self.csv_path = os.path.join(csv_path, 'Relational/')
+        utl.dir_check(self.csv_path)
         self.df = pd.DataFrame()
         self.params = kwargs
         self.filename = self.params[dctc.FN]
-        self.full_file_path = os.path.join(self.csvpath, self.filename)
+        self.full_file_path = os.path.join(self.csv_path, self.filename)
         self.key = self.params[dctc.KEY]
         self.dependents = self.params[dctc.DEP]
         self.columns = [self.key] + self.dependents
@@ -239,7 +240,7 @@ class DictRelational(object):
             logging.info('Creating {}'.format(self.filename))
             df = pd.DataFrame(columns=self.columns, index=None)
             df.to_csv(self.full_file_path, index=False, encoding='utf-8')
-        self.df = utl.import_read_csv(self.filename, self.csvpath,
+        self.df = utl.import_read_csv(self.filename, self.csv_path,
                                       empty_df=True)
         if self.df.empty:
             self.df = pd.DataFrame(columns=self.columns)
@@ -322,7 +323,7 @@ class DictRelational(object):
 class DictConstantConfig(object):
     def __init__(self, parent_dict):
         self.parent_dict = parent_dict
-        self.csvpath = utl.config_path
+        self.csv_path = utl.config_path
         utl.dir_check(utl.config_path)
         self.df = pd.DataFrame()
         self.dict_col_names = None
@@ -331,7 +332,7 @@ class DictConstantConfig(object):
 
     def read_raw_df(self, configfile):
         try:
-            self.df = utl.import_read_csv(configfile, self.csvpath)
+            self.df = utl.import_read_csv(configfile, self.csv_path)
         except IOError:
             logging.debug('No Constant Dictionary config')
             return None
@@ -351,7 +352,7 @@ class DictConstantConfig(object):
     def write(self, df, configfile):
         logging.debug('Writing {}'.format(configfile))
         try:
-            df.to_csv(os.path.join(self.csvpath, configfile), index=False,
+            df.to_csv(os.path.join(self.csv_path, configfile), index=False,
                       encoding='utf-8')
         except IOError:
             logging.warning('{} could not be opened.  This dictionary'
@@ -377,13 +378,13 @@ class DictConstantConfig(object):
 
 class DictTranslationConfig(object):
     def __init__(self):
-        self.csvpath = os.path.join(csvpath, 'Translational/')
-        utl.dir_check(self.csvpath)
+        self.csv_path = os.path.join(csv_path, 'Translational/')
+        utl.dir_check(self.csv_path)
         self.df = pd.DataFrame()
 
     def read(self, configfile):
         try:
-            self.df = utl.import_read_csv(configfile, self.csvpath)
+            self.df = utl.import_read_csv(configfile, self.csv_path)
         except IOError:
             logging.debug('No Translational Dictionary config')
             return None
@@ -397,7 +398,7 @@ class DictTranslationConfig(object):
     def write(self, df, configfile):
         logging.debug('Writing {}'.format(configfile))
         try:
-            df.to_csv(os.path.join(self.csvpath, configfile), index=False,
+            df.to_csv(os.path.join(self.csv_path, configfile), index=False,
                       encoding='utf-8')
         except IOError:
             logging.warning('{} could not be opened.  This dictionary '
@@ -469,7 +470,7 @@ class DictTranslationConfig(object):
 
 
 def dict_update():
-    for filename in os.listdir(csvpath):
+    for filename in os.listdir(csv_path):
         logging.info('Attempting to update {}'.format(filename))
         if filename[-4:] != '.csv':
             continue

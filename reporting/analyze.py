@@ -229,6 +229,7 @@ class Analyze(object):
         df[vmc.cost] = df[vmc.cost].round(decimals=2)
         final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
                       [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
+        final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         delivery_msg = 'Projected delivery completion dates are as follows:'
@@ -724,7 +725,10 @@ class Analyze(object):
                 else:
                     msg = (True, int(total))
                 if cds_name == 'New':
-                    old_total = cd[col]['Old'][1]
+                    if 'Old' not in cd[col]:
+                        old_total = 0
+                    else:
+                        old_total = cd[col]['Old'][1]
                     if (not isinstance(old_total, str) and
                             not isinstance(total, str) and old_total > total):
                         msg = (
@@ -1095,7 +1099,7 @@ class CheckAutoDictOrder(AnalyzeBase):
         if not ven_list:
             ven_list = self.get_vendor_list()
         tdf = source.get_raw_df()
-        if dctc.FPN not in tdf.columns:
+        if dctc.FPN not in tdf.columns or tdf.empty:
             return df
         tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
         ven_col_counts = [tdf[col].isin(ven_list).sum()
@@ -1134,6 +1138,12 @@ class CheckAutoDictOrder(AnalyzeBase):
         vk = source_aly_dict[vmc.vendorkey]
         new_order = '|'.join(source_aly_dict[self.name])
         logging.info('Changing order for {} to {}'.format(vk, new_order))
+        data_source = self.aly.matrix.get_data_source(vk)
+        try:
+            os.remove(os.path.join(utl.dict_path,
+                                   data_source.p[vmc.filenamedict]))
+        except FileNotFoundError as e:
+            logging.warning('File not found error: {}'.format(e))
         self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
         if write:
             self.aly.matrix.write()
@@ -1155,10 +1165,14 @@ class FindPlacementNameCol(AnalyzeBase):
     def do_analysis_on_data_source(source, df):
         file_name = source.p[vmc.filename]
         first_row = source.p[vmc.firstrow]
+        transforms = str(source.p[vmc.transform]).split(':::')
+        transforms = [x for x in transforms if x.split('::')[0]
+                      in ['FilterCol', 'MergeReplaceExclude']]
         p_col = source.p[vmc.placement]
         if os.path.exists(file_name):
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
-            tdf = utl.first_last_adj(tdf, first_row, 0)
+            tdf = source.get_raw_df(nrows=first_row + 3)
+            if tdf.empty and transforms:
+                tdf = source.get_raw_df()
             tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
             if tdf.empty:
                 return df
@@ -1306,12 +1320,14 @@ class CheckColumnNames(AnalyzeBase):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
-            file_name = source.p[vmc.filename]
             first_row = source.p[vmc.firstrow]
+            transforms = str(source.p[vmc.transform]).split(':::')
+            transforms = [x for x in transforms if x.split('::')[0]
+                          in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
-            if not tdf.empty:
-                tdf = utl.first_last_adj(tdf, first_row, 0)
+            tdf = source.get_raw_df(nrows=first_row+5)
+            if tdf.empty and transforms:
+                tdf = source.get_raw_df()
             cols = list(tdf.columns)
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
@@ -1461,5 +1477,7 @@ class ValueCalc(object):
             elif item in self.operations:
                 current_op = item
             else:
+                if item not in df.columns:
+                    df[item] = 0
                 df[col] = df[item]
         return df

@@ -292,7 +292,7 @@ class MetricCap(object):
         logging.info('Calculating metric cap from: '
                      '{}'.format(c[self.file_name]))
         pdf = self.get_cap_file(c)
-        df = df.append(pdf)
+        df = df.append(pdf, sort=True)
         df = net_cost_final_calculation(df, p_col=c[self.proc_dim],
                                         p_cost=self.temp_metric)
         df = df[~df[dctc.FPN].isnull()]

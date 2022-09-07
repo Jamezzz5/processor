@@ -302,11 +302,11 @@ class VendorMatrix(object):
             self.df = self.df.append(self.tdf, ignore_index=True, sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
-        if not os.listdir(er.csvpath):
-            if os.path.isdir(er.csvpath):
+        if not os.listdir(er.csv_path):
+            if os.path.isdir(er.csv_path):
                 logging.info('All placements defined.  Deleting Error report'
                              ' directory.')
-                os.rmdir(er.csvpath)
+                os.rmdir(er.csv_path)
         self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
 
@@ -733,16 +733,16 @@ class DataSource(object):
             self.set_in_vendormatrix(vm_rule[col], new_rule[col], matrix)
         return matrix
 
-    def get_raw_df_before_transform(self):
-        df = utl.import_read_csv(self.p[vmc.filename])
+    def get_raw_df_before_transform(self, nrows=None):
+        df = utl.import_read_csv(self.p[vmc.filename], nrows=nrows)
         if df is None or df.empty:
             return df
         df = utl.add_header(df, self.p[vmc.header], self.p[vmc.firstrow])
         df = utl.first_last_adj(df, self.p[vmc.firstrow], self.p[vmc.lastrow])
         return df
 
-    def get_raw_df(self):
-        df = self.get_raw_df_before_transform()
+    def get_raw_df(self, nrows=None):
+        df = self.get_raw_df_before_transform(nrows=nrows)
         if df is None or df.empty:
             return df
         df = df_transform(df, self.p[vmc.transform])
@@ -864,12 +864,13 @@ def vm_update_rule_check(vm, vm_col):
     return vm
 
 
-def df_transform(df, transform):
+def df_transform(df, transform, skip_transforms=[]):
     if str(transform) == 'nan':
         return df
     split_transform = transform.split(':::')
     for t in split_transform:
-        df = df_single_transform(df, t)
+        if t.split('::')[0] not in skip_transforms:
+            df = df_single_transform(df, t)
     return df
 
 
@@ -910,6 +911,17 @@ def df_single_transform(df, transform):
             ven_param = matrix.vendor_set(merge_file)
             ds = DataSource(merge_file, matrix.vm_rules_dict, **ven_param)
             merge_df = ds.get_raw_df_before_transform()
+            if not merge_df.empty and merge_df is not None:
+                merge_df = df_transform(merge_df, ds.p[vmc.transform],
+                                        skip_transforms=['Merge',
+                                                         'MergeReplace',
+                                                         'MergeReplaceExclude']
+                                        )
+        if merge_df is None or merge_df.empty:
+            logging.error('Unable to execute merge transform. Requested merge '
+                          'source {} returned empty dataframe.'
+                          .format(merge_file))
+            return df
         merge_cols = transform[2:]
         left_merge = merge_cols[::2]
         right_merge_full = merge_cols[1::2]
@@ -1009,9 +1021,9 @@ def df_single_transform(df, transform):
             if transform[3] == 'Exclude':
                 exclude_toggle = True
         if exclude_toggle:
-            df = df[~df[col_name].str.contains(col_val)]
+            df = df[~df[col_name].astype('U').str.contains(col_val)]
         else:
-            df = df[df[col_name].str.contains(col_val)]
+            df = df[df[col_name].astype('U').str.contains(col_val)]
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
         df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])

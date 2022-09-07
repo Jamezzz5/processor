@@ -208,7 +208,7 @@ class AmzApi(object):
         return self.df
 
     def filter_df_on_campaign(self, df):
-        if self.campaign_id:
+        if self.campaign_id and 'campaignName' in df.columns:
             df = df[df['campaignName'].str.contains(self.campaign_id)]
         return df
 
