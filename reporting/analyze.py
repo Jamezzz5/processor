@@ -152,6 +152,47 @@ class Analyze(object):
             df = df.merge(ndf, on=group_cols + [vmc.date])
         return df
 
+    @staticmethod
+    def get_start_end_dates(df, plan_names):
+        matrix = vm.VendorMatrix().vm_df
+        vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
+        vm_dates = vm_dates.groupby(plan_names + [vmc.vendorkey]).sum()
+        vm_dates = vm_dates.reset_index()
+        vm_dates = vm_dates.sort_values(vmc.cost, ascending=False)
+        vm_dates = vm_dates.drop_duplicates(plan_names)
+        vm_dates = vm_dates.reset_index()
+        vm_dates[dctc.SD] = [
+            matrix[matrix[vmc.vendorkey] == x][vmc.startdate].values[0]
+            for x in vm_dates[vmc.vendorkey]]
+        vm_dates[dctc.ED] = [
+            matrix[matrix[vmc.vendorkey] == x][vmc.enddate].values[0]
+            for x in vm_dates[vmc.vendorkey]]
+        if dctc.SD in df.columns:
+            start_dates = df[plan_names + [dctc.SD]]
+            start_dates = start_dates.groupby(plan_names).min()
+        else:
+            start_dates = vm_dates[plan_names + [vmc.startdate]]
+            start_dates = start_dates.rename(columns={vmc.date: dctc.SD})
+        if dctc.ED in df.columns:
+            end_dates = df[plan_names + [dctc.ED]]
+            end_dates = end_dates.groupby(plan_names).max()
+        else:
+            end_dates = vm_dates[plan_names + [vmc.enddate]]
+            end_dates = end_dates.rename(columns={vmc.date: dctc.ED})
+        empty_starts = start_dates[dctc.SD == dt.datetime.today()]
+        if not empty_starts.empty():
+            start_dates = start_dates[dctc.SD != dt.datetime.today()]
+            start_dates = start_dates.merge(
+                vm_dates, how='left', on=plan_names)
+        empty_ends = end_dates[dctc.ED == dt.datetime.today()]
+        if not empty_ends.empty():
+            end_dates = end_dates[dctc.ED != dt.datetime.today()]
+            end_dates = end_dates.merge(
+                vm_dates, how='left', on=plan_names)
+        start_dates = start_dates[plan_names + [dctc.ED]]
+        end_dates = end_dates[plan_names + [dctc.ED]]
+        return start_dates, end_dates
+
     def project_delivery_completion(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         average_df = self.get_rolling_mean_df(
@@ -167,31 +208,19 @@ class Analyze(object):
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         average_df = average_df[average_df[vmc.date] == last_date]
         average_df = average_df.drop(columns=[vmc.cost])
-        start_dates = df.copy()
-        start_dates = start_dates[plan_names + [vmc.date]]
-        start_dates = start_dates.groupby(plan_names).min()
-        start_dates = start_dates.reset_index()
-        start_dates = start_dates.rename(columns={vmc.date: 'Start Date'})
-        matrix = vm.VendorMatrix().vm_df
-        end_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
-        end_dates = end_dates.groupby(plan_names + [vmc.vendorkey]).sum()
-        end_dates = end_dates.reset_index()
-        end_dates = end_dates.sort_values(vmc.cost, ascending=False)
-        end_dates = end_dates.drop_duplicates(plan_names)
-        end_dates = end_dates.reset_index()
-        end_dates[vmc.enddate] = [
-            matrix[matrix[vmc.vendorkey] == x][vmc.enddate].values[0]
-            for x in end_dates[vmc.vendorkey]]
-        end_dates = end_dates[plan_names + [vmc.enddate]]
-        end_dates = end_dates.rename(columns={vmc.enddate: 'End Date'})
+        ad_serving = df.copy()
+        ad_serving = ad_serving[plan_names + [vmc.AD_COST]]
+        ad_serving = ad_serving.groupby(plan_names).sum()
+        ad_serving = ad_serving.reset_index()
+        start_dates, end_dates = self.get_start_end_dates(df, plan_names)
         df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
         df = df.reset_index()
         df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
-        tdf = df[df[dctc.PNC] - df[vmc.cost] > 0]
-        final_cols = (plan_names + [dctc.PNC] +
-                      [vmc.cost] + ['Projected Full Delivery'])
+        tdf = df[df[dctc.PNC] > df[vmc.cost]]
+        final_cols = (plan_names + [dctc.PNC] + [vmc.cost] +
+                      ['Projected Full Delivery'])
         if not tdf.empty:
-            tdf = tdf.merge(average_df, on=plan_names)
+            tdf = tdf.merge(average_df, how='left', on=plan_names)
             tdf['days'] = (tdf[dctc.PNC] - tdf[vmc.cost]) / tdf[
                 '{} rolling {}'.format(vmc.cost, 3)]
             tdf['days'] = tdf['days'].replace(
@@ -209,7 +238,7 @@ class Analyze(object):
             tdf.loc[
                 no_date_map, 'Projected Full Delivery'] = 'Greater than 1 Year'
             tdf = tdf[final_cols]
-        df = df[df[dctc.PNC] - df[vmc.cost] <= 0]
+        df = df[df[dctc.PNC] <= df[vmc.cost]]
         if not df.empty:
             df['Projected Full Delivery'] = [
                 'No Planned' if x == 0 else 'Delivered' for x in df[dctc.PNC]]
@@ -221,14 +250,20 @@ class Analyze(object):
                 tdf = df
         tdf = tdf.merge(start_dates, how='left', on=plan_names)
         tdf = tdf.merge(end_dates, how='left', on=plan_names)
+        tdf = tdf.merge(ad_serving, how='left', on=plan_names)
         tdf['Delivery'] = (tdf[vmc.cost] / tdf[dctc.PNC] * 100).round(2)
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         tdf['Delivery'] = tdf['Delivery'].astype(str) + '%'
+        tdf['Projected Full Delivery'] = tdf[
+            'Projected Full Delivery'].replace(
+            [np.inf, -np.inf, np.datetime64('NaT'), 'NaT'], np.nan
+        ).fillna('Greater than 1 Year')
         tdf['Start Date'] = tdf['Start Date'].astype(str)
         tdf['End Date'] = tdf['End Date'].astype(str)
         df[vmc.cost] = df[vmc.cost].round(decimals=2)
         final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
-                      [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
+                      [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'] +
+                      [vmc.AD_COST])
         final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
