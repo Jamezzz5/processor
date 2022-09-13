@@ -228,6 +228,7 @@ class Analyze(object):
         df[vmc.cost] = df[vmc.cost].round(decimals=2)
         final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
                       [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'])
+        final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         delivery_msg = 'Projected delivery completion dates are as follows:'
@@ -1141,10 +1142,14 @@ class FindPlacementNameCol(AnalyzeBase):
     def do_analysis_on_data_source(source, df):
         file_name = source.p[vmc.filename]
         first_row = source.p[vmc.firstrow]
+        transforms = str(source.p[vmc.transform]).split(':::')
+        transforms = [x for x in transforms if x.split('::')[0]
+                      in ['FilterCol', 'MergeReplaceExclude']]
         p_col = source.p[vmc.placement]
         if os.path.exists(file_name):
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 3)
-            tdf = utl.first_last_adj(tdf, first_row, 0)
+            tdf = source.get_raw_df(nrows=first_row + 3)
+            if tdf.empty and transforms:
+                tdf = source.get_raw_df()
             tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
             if tdf.empty:
                 return df
@@ -1292,12 +1297,14 @@ class CheckColumnNames(AnalyzeBase):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
-            file_name = source.p[vmc.filename]
             first_row = source.p[vmc.firstrow]
+            transforms = str(source.p[vmc.transform]).split(':::')
+            transforms = [x for x in transforms if x.split('::')[0]
+                          in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = utl.import_read_csv(file_name, nrows=first_row + 5)
-            if not tdf.empty:
-                tdf = utl.first_last_adj(tdf, first_row, 0)
+            tdf = source.get_raw_df(nrows=first_row+5)
+            if tdf.empty and transforms:
+                tdf = source.get_raw_df()
             cols = list(tdf.columns)
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
