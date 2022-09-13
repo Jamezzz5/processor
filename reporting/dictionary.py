@@ -85,7 +85,7 @@ class Dict(object):
                       for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
         mixed_formats = False
         for rc_key in rc_auto:
-            trad_format = [x for x in error.columns if rc_key+comb_key in x]
+            trad_format = [x for x in error.columns if rc_key + comb_key in x]
             idx_modifier = 0
             for idx, rc_component in enumerate(rc_auto[rc_key]):
                 component_cols = [x for x in error.columns if rc_component in
@@ -95,8 +95,8 @@ class Dict(object):
                     split_col = col.split(comb_key)
                     if len(split_col) < 3:
                         translated_col = comb_key.join(
-                            [rc_key, str(idx+idx_modifier),
-                             rc_delimit[rc_key][idx-1]]
+                            [rc_key, str(idx + idx_modifier),
+                             rc_delimit[rc_key][idx - 1]]
                         )
                         bald_component = True
                     else:
@@ -105,7 +105,7 @@ class Dict(object):
                             tmp_idx_modifier += 1
                         translated_col = comb_key.join(
                             [rc_key,
-                             str(idx+tmp_idx_modifier+int(split_col[1])),
+                             str(idx + tmp_idx_modifier + int(split_col[1])),
                              split_col[2]]
                         )
                     error[translated_col] = error[col].astype('U')
@@ -122,7 +122,8 @@ class Dict(object):
         return error
 
     @staticmethod
-    def get_rc_index(columns, delimiters, comb_key=':::'):
+    def get_rc_index(columns, delimiters, comb_key=':::',
+                     return_missing=False):
         indexed_cols = []
         columns = sorted(columns)
         rc_key = columns[0].split(comb_key)[0]
@@ -139,16 +140,27 @@ class Dict(object):
                     rc_index += 1
             else:
                 return indexed_cols
-        for i in range(int(max(inds)) + 1):
+        for i in range(max(map(int, inds)) + 1):
             if str(i) in inds:
                 cur_col = [col for col in columns
                            if col.split(comb_key)[1] == str(i)][0]
                 cur_delim = cur_col.split(comb_key)[2]
-                if cur_delim == delimiters[rc_index] and i > 0:
+                try:
+                    if cur_delim == delimiters[rc_index] and i > 0:
+                        rc_index += 1
+                except IndexError:
                     rc_index += 1
                 indexed_cols.append((cur_col, rc_index))
             else:
                 rc_index += 1
+                if return_missing:
+                    try:
+                        missing_col = comb_key.join([rc_key, str(i),
+                                                     delimiters[rc_index-1]])
+                    except IndexError:
+                        missing_col = comb_key.join([rc_key, str(i),
+                                                     delimiters[0]])
+                    indexed_cols.append((missing_col, rc_index))
         return indexed_cols
 
     def translate_relation_to_component(self, error):
@@ -169,7 +181,10 @@ class Dict(object):
             for col_idx in indexed_cols:
                 col = col_idx[0]
                 rc_index = col_idx[1]
-                component = rc_auto[rc_key][rc_index]
+                try:
+                    component = rc_auto[rc_key][rc_index]
+                except IndexError:
+                    continue
                 if len(col.split(comb_key)) < 3:
                     delimit = rc_delimit[rc_key][0]
                     index = 0
@@ -193,7 +208,6 @@ class Dict(object):
                 return True
             logging.info('Populating {}'.format(self.filename))
             error = self.split_error_df(err, autodicord, placement)
-            error = self.translate_relational_components(error)
             error = self.auto_combine(error)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
@@ -202,8 +216,7 @@ class Dict(object):
             err.dic = self
             err.reset()
 
-    @staticmethod
-    def auto_combine(error=pd.DataFrame()):
+    def auto_combine(self, error=pd.DataFrame()):
         comb_key = ':::'
         comb_cols = [x for x in error.columns if comb_key in x]
         final_cols = set(x.split(comb_key)[0] for x in comb_cols)
@@ -212,31 +225,18 @@ class Dict(object):
         rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
                       for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
         for col in final_cols:
-            ind = [int(x.split(comb_key)[1]) for x in comb_cols if col in x]
-            i_delimit_min = 0
-            if col in error.columns:
-                i_delimit_min = -1
-            delimit_idx = 0
-            for i in range(max(ind) + 1):
-                cur_col = [x for x in comb_cols
-                           if comb_key.join([col, str(i)]) in x]
-                if cur_col:
-                    if col in rc_delimit:
-                        cur_delimit = cur_col[0].split(comb_key)[2]
-                        if (cur_delimit == rc_delimit[col][delimit_idx]
-                                and i > i_delimit_min):
-                            delimit_idx += 1
-                else:
-                    try:
-                        delimit_str = rc_delimit[col][delimit_idx]
-                    except (KeyError, IndexError):
-                        delimit_str = [x for x in comb_cols if col in x][0]
-                        delimit_str = delimit_str.split(comb_key)[2]
-                    fill_col = '{}:::{}:::{}'.format(col, i, delimit_str)
-                    comb_cols += [fill_col]
-                    error[fill_col] = 0
-                    if i > i_delimit_min:
-                        delimit_idx += 1
+            cur_cols = [x for x in comb_cols if x.split(comb_key)[0] == col]
+            if col in rc_delimit:
+                cur_delims = rc_delimit[col]
+            else:
+                cur_delims = [cur_cols[0].split(comb_key)[2]]
+            indexed_cols = self.get_rc_index(cur_cols, cur_delims,
+                                             comb_key=comb_key,
+                                             return_missing=True)
+            for col_idx in indexed_cols:
+                if col_idx[0] not in error.columns:
+                    error[col_idx[0]] = 0
+                    comb_cols += [col_idx[0]]
         for col in sorted(comb_cols, key=lambda x: int(x.split(comb_key)[1])):
             final_col = col.split(comb_key)[0]
             delimit_str = col.split(comb_key)[2]
