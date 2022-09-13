@@ -136,6 +136,7 @@ class Analyze(object):
                                           message=delivery_msg,
                                           data=data.to_dict())
 
+
     @staticmethod
     def get_rolling_mean_df(df, value_col, group_cols):
         pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
@@ -153,7 +154,11 @@ class Analyze(object):
         return df
 
     @staticmethod
-    def get_start_end_dates(df, plan_names):
+    def get_start_end_adserving(df, plan_names):
+        ad_serving = df.copy()
+        ad_serving = ad_serving[plan_names + [vmc.AD_COST]]
+        ad_serving = ad_serving.groupby(plan_names).sum()
+        ad_serving = ad_serving.reset_index()
         matrix = vm.VendorMatrix().vm_df
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
         vm_dates = vm_dates.groupby(plan_names + [vmc.vendorkey]).sum()
@@ -167,31 +172,78 @@ class Analyze(object):
         vm_dates[dctc.ED] = [
             matrix[matrix[vmc.vendorkey] == x][vmc.enddate].values[0]
             for x in vm_dates[vmc.vendorkey]]
-        if dctc.SD in df.columns:
-            start_dates = df[plan_names + [dctc.SD]]
-            start_dates = start_dates.groupby(plan_names).min()
+        if dctc.SD in df.columns and dctc.ED in df.columns:
+            start_end_dates = df[plan_names + [dctc.SD, dctc.ED]]
+            start_end_dates = start_end_dates.groupby(plan_names).agg(
+                {dctc.SD: 'min', dctc.ED: 'max'})
+            start_end_dates = start_end_dates.reset_index()
+            start_end_dates[dctc.SD] = utl.data_to_type(
+                start_end_dates[dctc.SD].reset_index(),
+                date_col=[dctc.SD])[dctc.SD]
+            start_end_dates[dctc.ED] = utl.data_to_type(
+                start_end_dates[dctc.ED].reset_index(),
+                date_col=[dctc.ED])[dctc.ED]
         else:
-            start_dates = vm_dates[plan_names + [vmc.startdate]]
-            start_dates = start_dates.rename(columns={vmc.date: dctc.SD})
-        if dctc.ED in df.columns:
-            end_dates = df[plan_names + [dctc.ED]]
-            end_dates = end_dates.groupby(plan_names).max()
-        else:
-            end_dates = vm_dates[plan_names + [vmc.enddate]]
-            end_dates = end_dates.rename(columns={vmc.date: dctc.ED})
-        empty_starts = start_dates[dctc.SD == dt.datetime.today()]
-        if not empty_starts.empty():
-            start_dates = start_dates[dctc.SD != dt.datetime.today()]
-            start_dates = start_dates.merge(
-                vm_dates, how='left', on=plan_names)
-        empty_ends = end_dates[dctc.ED == dt.datetime.today()]
-        if not empty_ends.empty():
-            end_dates = end_dates[dctc.ED != dt.datetime.today()]
-            end_dates = end_dates.merge(
-                vm_dates, how='left', on=plan_names)
-        start_dates = start_dates[plan_names + [dctc.ED]]
-        end_dates = end_dates[plan_names + [dctc.ED]]
-        return start_dates, end_dates
+            start_end_dates = vm_dates[plan_names + [dctc.SD, dctc.ED]]
+        start_end_dates = start_end_dates[start_end_dates.apply(
+            lambda x: (x[dctc.SD] != x[dctc.ED]
+                       and not pd.isnull(x[dctc.SD])
+                       and not pd.isnull(x[dctc.ED])), axis=1)]
+        vm_dates = vm_dates.merge(
+            start_end_dates, how='left', on=plan_names, indicator=True)
+        vm_dates = vm_dates[vm_dates['_merge'] == 'left_only']
+        vm_dates = vm_dates.drop(
+            columns=['_merge', 'mpStart Date_y', 'mpEnd Date_y'])
+        vm_dates = vm_dates.rename(columns={'mpStart Date_x': dctc.SD,
+                                            'mpEnd Date_x': dctc.ED})
+        start_end_dates = pd.concat([start_end_dates, vm_dates])
+        start_end_dates = utl.data_to_type( start_end_dates,
+            date_col=[dctc.SD, dctc.ED])
+        start_dates = start_end_dates[plan_names + [dctc.SD]]
+        end_dates = start_end_dates[plan_names + [dctc.ED]]
+        return start_dates, end_dates, ad_serving
+
+    @staticmethod
+    def get_projected_full_delivery(df, average_df, plan_names, final_cols):
+        df = df.merge(average_df, how='left', on=plan_names)
+        df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
+            '{} rolling {}'.format(vmc.cost, 3)]
+        df['days'] = df['days'].replace(
+            [np.inf, -np.inf], np.nan).fillna(10000)
+        df['days'] = np.where(df['days'] > 10000, 10000, df['days'])
+        df['Projected Full Delivery'] = pd.to_datetime(
+            df[vmc.date]) + pd.to_timedelta(
+            np.ceil(df['days']).astype(int), unit='D')
+        no_date_map = ((df['Projected Full Delivery'] >
+                        dt.datetime.today() + dt.timedelta(days=365)) |
+                       (df['Projected Full Delivery'] <
+                        dt.datetime.today() - dt.timedelta(days=365)))
+        df['Projected Full Delivery'] = df[
+            'Projected Full Delivery'].dt.strftime('%Y-%m-%d')
+        df.loc[
+            no_date_map, 'Projected Full Delivery'] = 'Greater than 1 Year'
+        df['Projected Full Delivery'] = df[
+            'Projected Full Delivery'].replace(
+            [np.inf, -np.inf, np.datetime64('NaT'), 'NaT'], np.nan
+        ).fillna('Greater than 1 Year')
+        df = df[final_cols]
+        return df
+
+    @staticmethod
+    def get_actual_delivery(df):
+        df['Delivery'] = (df[vmc.cost] / df[dctc.PNC] * 100).round(2)
+        df['Delivery'] = df['Delivery'].replace(
+            [np.inf, -np.inf], np.nan).fillna(0)
+        df['Delivery'] = df['Delivery'].astype(str) + '%'
+        df['% Through Campaign'] = ((pd.Timestamp.today() - df[dctc.SD]
+                                     ) / (df[dctc.ED] - df[dctc.SD])
+                                    * 100).round(2)
+        df['% Through Campaign'] = np.where(
+            df['% Through Campaign'] > 100, 100, df['% Through Campaign'])
+        df['% Through Campaign'] = df['% Through Campaign'].replace(
+            [np.inf, -np.inf], np.nan).fillna(0)
+        df['% Through Campaign'] = df['% Through Campaign'].astype(str) + '%'
+        return df
 
     def project_delivery_completion(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
@@ -208,37 +260,18 @@ class Analyze(object):
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         average_df = average_df[average_df[vmc.date] == last_date]
         average_df = average_df.drop(columns=[vmc.cost])
-        ad_serving = df.copy()
-        ad_serving = ad_serving[plan_names + [vmc.AD_COST]]
-        ad_serving = ad_serving.groupby(plan_names).sum()
-        ad_serving = ad_serving.reset_index()
-        start_dates, end_dates = self.get_start_end_dates(df, plan_names)
+        start_dates, end_dates, ad_serving = self.get_start_end_adserving(
+            self.df, plan_names)
         df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
         df = df.reset_index()
         df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
         tdf = df[df[dctc.PNC] > df[vmc.cost]]
+        df = df[df[dctc.PNC] <= df[vmc.cost]]
         final_cols = (plan_names + [dctc.PNC] + [vmc.cost] +
                       ['Projected Full Delivery'])
         if not tdf.empty:
-            tdf = tdf.merge(average_df, how='left', on=plan_names)
-            tdf['days'] = (tdf[dctc.PNC] - tdf[vmc.cost]) / tdf[
-                '{} rolling {}'.format(vmc.cost, 3)]
-            tdf['days'] = tdf['days'].replace(
-                [np.inf, -np.inf], np.nan).fillna(10000)
-            tdf['days'] = np.where(tdf['days'] > 10000, 10000, tdf['days'])
-            tdf['Projected Full Delivery'] = pd.to_datetime(
-                tdf[vmc.date]) + pd.to_timedelta(
-                np.ceil(tdf['days']).astype(int), unit='D')
-            no_date_map = ((tdf['Projected Full Delivery'] >
-                            dt.datetime.today() + dt.timedelta(days=365)) |
-                           (tdf['Projected Full Delivery'] <
-                            dt.datetime.today() - dt.timedelta(days=365)))
-            tdf['Projected Full Delivery'] = tdf[
-                'Projected Full Delivery'].dt.strftime('%Y-%m-%d')
-            tdf.loc[
-                no_date_map, 'Projected Full Delivery'] = 'Greater than 1 Year'
-            tdf = tdf[final_cols]
-        df = df[df[dctc.PNC] <= df[vmc.cost]]
+            tdf = self.get_projected_full_delivery(
+                tdf, average_df, plan_names, final_cols)
         if not df.empty:
             df['Projected Full Delivery'] = [
                 'No Planned' if x == 0 else 'Delivered' for x in df[dctc.PNC]]
@@ -251,22 +284,32 @@ class Analyze(object):
         tdf = tdf.merge(start_dates, how='left', on=plan_names)
         tdf = tdf.merge(end_dates, how='left', on=plan_names)
         tdf = tdf.merge(ad_serving, how='left', on=plan_names)
-        tdf['Delivery'] = (tdf[vmc.cost] / tdf[dctc.PNC] * 100).round(2)
-        tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
-        tdf['Delivery'] = tdf['Delivery'].astype(str) + '%'
-        tdf['Projected Full Delivery'] = tdf[
-            'Projected Full Delivery'].replace(
-            [np.inf, -np.inf, np.datetime64('NaT'), 'NaT'], np.nan
-        ).fillna('Greater than 1 Year')
-        tdf['Start Date'] = tdf['Start Date'].astype(str)
-        tdf['End Date'] = tdf['End Date'].astype(str)
-        df[vmc.cost] = df[vmc.cost].round(decimals=2)
-        final_cols = (plan_names + ['Start Date'] + ['End Date'] + [vmc.cost] +
+        tdf = self.get_actual_delivery(tdf)
+        tdf[dctc.SD] = tdf[dctc.SD].astype(str)
+        tdf[dctc.ED] = tdf[dctc.ED].astype(str)
+        tdf[vmc.cost] = tdf[vmc.cost].round(decimals=2)
+        final_cols = (plan_names + [dctc.SD] + [dctc.ED] + [vmc.cost] +
                       [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'] +
-                      [vmc.AD_COST])
+                      ['% Through Campaign'] + [vmc.AD_COST])
         final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
+        tdf[dctc.PNC] = tdf[dctc.PNC].replace(
+            [np.inf, -np.inf], np.nan).fillna(0.0)
+        tdf[vmc.cost] = tdf[vmc.cost].replace(
+            [np.inf, -np.inf], np.nan).fillna(0.0)
+        tdf[vmc.AD_COST] = tdf[vmc.AD_COST].replace(
+            [np.inf, -np.inf], np.nan).fillna(0.0)
+        tdf[dctc.PNC] = utl.data_to_type(
+            pd.DataFrame(tdf[dctc.PNC]), float_col=[dctc.PNC])[dctc.PNC]
+        tdf[vmc.cost] = utl.data_to_type(
+            pd.DataFrame(tdf[vmc.cost]), float_col=[vmc.cost])[vmc.cost]
+        tdf[dctc.PNC] = tdf[dctc.PNC].round(2)
+        tdf[vmc.cost] = tdf[vmc.cost].round(2)
+        tdf[vmc.AD_COST] = tdf[vmc.AD_COST].round(2)
+        tdf[dctc.PNC] = '$' + tdf[dctc.PNC].astype(str)
+        tdf[vmc.cost] = '$' + tdf[vmc.cost].astype(str)
+        tdf[vmc.AD_COST] = '$' + tdf[vmc.AD_COST].astype(str)
         delivery_msg = 'Projected delivery completion dates are as follows:'
         logging.info('{}\n{}'.format(delivery_msg, tdf.to_string()))
         self.add_to_analysis_dict(key_col=self.delivery_comp_col,
