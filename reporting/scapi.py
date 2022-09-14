@@ -36,6 +36,7 @@ class ScApi(object):
         self.client = None
         self.granularity = None
         self.breakdown = 'ad'
+        self.report_dimension = []
         self.df = pd.DataFrame()
         self.r = None
 
@@ -202,7 +203,8 @@ class ScApi(object):
 
     def remove_timezone_from_date(self):
         for col in ['end_time', 'start_time']:
-            self.df[col] = self.df[col].astype('U').str[:-6]
+            if col in self.df.columns:
+                self.df[col] = self.df[col].astype('U').str[:-6]
         return self.df
 
     def get_raw_data(self, sd, ed, cid, fields):
@@ -243,8 +245,6 @@ class ScApi(object):
                 tdf = pd.io.json.json_normalize(ad_data['timeseries'],
                                                 'dimension_stats',
                                                 other_keys)
-                ##TODO: Check that this works with Age, too. See if it'll work with country, decide if you want to include that as an option.
-                ##TODO: Make sure we're not colliding with the breakdown, granularity, etc. functionality
             elif self.granularity:
                 tdf = pd.DataFrame(ad_data['stats'], index=[0])
             else:
