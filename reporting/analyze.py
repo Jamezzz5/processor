@@ -136,7 +136,6 @@ class Analyze(object):
                                           message=delivery_msg,
                                           data=data.to_dict())
 
-
     @staticmethod
     def get_rolling_mean_df(df, value_col, group_cols):
         pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
@@ -154,11 +153,7 @@ class Analyze(object):
         return df
 
     @staticmethod
-    def get_start_end_adserving(df, plan_names):
-        ad_serving = df.copy()
-        ad_serving = ad_serving[plan_names + [vmc.AD_COST]]
-        ad_serving = ad_serving.groupby(plan_names).sum()
-        ad_serving = ad_serving.reset_index()
+    def get_start_end_dates(df, plan_names):
         matrix = vm.VendorMatrix().vm_df
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
         vm_dates = vm_dates.groupby(plan_names + [vmc.vendorkey]).sum()
@@ -197,11 +192,11 @@ class Analyze(object):
         vm_dates = vm_dates.rename(columns={'mpStart Date_x': dctc.SD,
                                             'mpEnd Date_x': dctc.ED})
         start_end_dates = pd.concat([start_end_dates, vm_dates])
-        start_end_dates = utl.data_to_type( start_end_dates,
-            date_col=[dctc.SD, dctc.ED])
+        start_end_dates = utl.data_to_type(start_end_dates,
+                                           date_col=[dctc.SD, dctc.ED])
         start_dates = start_end_dates[plan_names + [dctc.SD]]
         end_dates = start_end_dates[plan_names + [dctc.ED]]
-        return start_dates, end_dates, ad_serving
+        return start_dates, end_dates
 
     @staticmethod
     def get_projected_full_delivery(df, average_df, plan_names, final_cols):
@@ -247,6 +242,10 @@ class Analyze(object):
 
     def project_delivery_completion(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        ad_serving = df.copy()
+        ad_serving = ad_serving[plan_names + [vmc.AD_COST]]
+        ad_serving = ad_serving.groupby(plan_names).sum()
+        ad_serving = ad_serving.reset_index()
         average_df = self.get_rolling_mean_df(
             df=df, value_col=vmc.cost, group_cols=plan_names)
         if average_df.empty:
@@ -260,7 +259,7 @@ class Analyze(object):
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         average_df = average_df[average_df[vmc.date] == last_date]
         average_df = average_df.drop(columns=[vmc.cost])
-        start_dates, end_dates, ad_serving = self.get_start_end_adserving(
+        start_dates, end_dates = self.get_start_end_dates(
             self.df, plan_names)
         df = df.groupby(plan_names)[vmc.cost, dctc.PNC].sum()
         df = df.reset_index()
@@ -318,19 +317,58 @@ class Analyze(object):
 
     def get_daily_delivery(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        start_dates, end_dates = self.get_start_end_dates(df, plan_names)
+        pdf = self.matrix.vendor_get(vm.plan_key)
+        pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
         groups = plan_names + [vmc.date]
         metrics = [cal.NCF]
         df = df.groupby(groups)[metrics].sum()
         df = df.reset_index()
-        df[vmc.date] = df[vmc.date].astype(str)
+        df = utl.data_to_type(df, date_col=[vmc.date])
         unique_breakouts = df.groupby(plan_names).first()
         unique_breakouts = unique_breakouts.reset_index()
         unique_breakouts = unique_breakouts[plan_names]
         daily_dfs = []
+        sort_ascending = [True for x in plan_names]
+        sort_ascending.append(False)
         for index, row in unique_breakouts.iterrows():
             tdf = df
             for x in plan_names:
                 tdf = tdf[tdf[x] == row[x]]
+            tdf = tdf.merge(start_dates, how='left', on=plan_names)
+            tdf = tdf.merge(end_dates, how='left', on=plan_names)
+            tdf = tdf.merge(pdf[pdf_cols], how='left', on=plan_names)
+            tdf[dctc.PNC] = tdf[dctc.PNC].replace(
+                [np.inf, -np.inf], np.nan).fillna("0")
+            tdf = utl.data_to_type(tdf, float_col=[dctc.PNC])
+            tdf['Num Days'] = (tdf[dctc.ED] - tdf[dctc.SD]).dt.days
+            tdf['Num Days'] = tdf['Num Days'].replace(
+                [np.inf, -np.inf], np.nan).fillna("0")
+            try:
+                daily_spend_goal = (tdf[dctc.PNC][0] / tdf['Num Days'][0])
+            except TypeError:
+                daily_spend_goal = 0
+            stop_date = (tdf[dctc.SD][0] +
+                         dt.timedelta(days=int(tdf['Num Days'][0])))
+            tdf['Daily Spend Goal'] = [daily_spend_goal if
+                                       (tdf[dctc.SD][0] <= x <= stop_date)
+                                       else 0 for x in tdf[vmc.date]]
+            tdf['Day Pacing'] = (
+                    ((tdf[cal.NCF] / tdf['Daily Spend Goal']) - 1) * 100)
+            tdf['Day Pacing'] = tdf['Day Pacing'].replace(
+                [np.inf, -np.inf], np.nan).fillna("0")
+            tdf['Day Pacing'] = utl.data_to_type(
+                pd.DataFrame(tdf['Day Pacing']),
+                float_col=['Day Pacing'])['Day Pacing']
+            tdf['Day Pacing'] = tdf['Day Pacing'].round(2)
+            tdf['Day Pacing'] = tdf['Day Pacing'].astype(str) + '%'
+            tdf = tdf.fillna("")
+            tdf = tdf.sort_values(
+                plan_names + [vmc.date], ascending=sort_ascending)
+            tdf[vmc.date] = tdf[vmc.date].astype(str)
+            tdf[dctc.SD] = tdf[dctc.SD].astype(str)
+            tdf[dctc.ED] = tdf[dctc.ED].astype(str)
+            tdf = tdf.reset_index(drop=True)
             daily_dfs.append(tdf.to_dict())
         daily_delivery_msg = 'Daily delivery is as follows:'
         self.add_to_analysis_dict(key_col=self.daily_delivery_col,
