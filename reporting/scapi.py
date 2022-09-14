@@ -105,6 +105,8 @@ class ScApi(object):
                 elif field == 'Unique':
                     fields = unique_fields
                     self.granularity = 'LIFETIME'
+                elif field in ['Age', 'Gender', 'Country']:
+                    self.report_dimension.append(field.lower())
         return fields
 
     def get_data_default_check(self, sd, ed, fields):
@@ -128,6 +130,10 @@ class ScApi(object):
         if self.breakdown:
             break_url = '&breakdown={}'.format(self.breakdown)
             full_url += break_url
+        if self.report_dimension:
+            repdim_url = '&report_dimension={}'.format(
+                ','.join(self.report_dimension))
+            full_url += repdim_url
         full_url += gran_url
         return full_url, params
 
@@ -232,7 +238,14 @@ class ScApi(object):
         else:
             data = [data]
         for ad_data in data:
-            if self.granularity:
+            if self.report_dimension:
+                other_keys = ['start_time', 'end_time']
+                tdf = pd.io.json.json_normalize(ad_data['timeseries'],
+                                                'dimension_stats',
+                                                other_keys)
+                ##TODO: Check that this works with Age, too. See if it'll work with country, decide if you want to include that as an option.
+                ##TODO: Make sure we're not colliding with the breakdown, granularity, etc. functionality
+            elif self.granularity:
                 tdf = pd.DataFrame(ad_data['stats'], index=[0])
             else:
                 tdf = pd.DataFrame(ad_data['timeseries'])  # type: pd.DataFrame
