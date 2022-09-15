@@ -6,6 +6,7 @@ import json
 import math
 import time
 import logging
+import psycopg2
 import numpy as np
 import pandas as pd
 import datetime as dt
@@ -80,7 +81,12 @@ class ExportHandler(object):
         if data[0][0] == 1:
             logging.info('Dropping view: {}'.format(view_name))
             drop_script = """drop view {}.{};""".format('lqadb', view_name)
-            dbu.db.cursor.execute(drop_script)
+            try:
+                dbu.db.cursor.execute(drop_script)
+            except psycopg2.errors.UndefinedTable as e:
+                logging.warning('Could not find table error: {}'.format(e))
+                dbu.db.connection.rollback()
+                return None
             dbu.db.connection.commit()
         logging.info('Creating view {}'.format(view_name))
         view_script = sb.get_view_script(

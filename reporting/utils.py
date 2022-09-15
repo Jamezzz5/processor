@@ -67,6 +67,7 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
             df = pd.DataFrame()
         else:
             df = None
+            return df
     if sheet_names:
         df = pd.concat(df, ignore_index=True, sort=True)
     df = df.rename(columns=lambda x: x.strip())
