@@ -36,6 +36,7 @@ class ScApi(object):
         self.client = None
         self.granularity = None
         self.breakdown = 'ad'
+        self.report_dimension = []
         self.df = pd.DataFrame()
         self.r = None
 
@@ -105,6 +106,8 @@ class ScApi(object):
                 elif field == 'Unique':
                     fields = unique_fields
                     self.granularity = 'LIFETIME'
+                elif field in ['Age', 'Gender', 'Country']:
+                    self.report_dimension.append(field.lower())
         return fields
 
     def get_data_default_check(self, sd, ed, fields):
@@ -128,6 +131,10 @@ class ScApi(object):
         if self.breakdown:
             break_url = '&breakdown={}'.format(self.breakdown)
             full_url += break_url
+        if self.report_dimension:
+            repdim_url = '&report_dimension={}'.format(
+                ','.join(self.report_dimension))
+            full_url += repdim_url
         full_url += gran_url
         return full_url, params
 
@@ -196,7 +203,8 @@ class ScApi(object):
 
     def remove_timezone_from_date(self):
         for col in ['end_time', 'start_time']:
-            self.df[col] = self.df[col].astype('U').str[:-6]
+            if col in self.df.columns:
+                self.df[col] = self.df[col].astype('U').str[:-6]
         return self.df
 
     def get_raw_data(self, sd, ed, cid, fields):
@@ -232,7 +240,12 @@ class ScApi(object):
         else:
             data = [data]
         for ad_data in data:
-            if self.granularity:
+            if self.report_dimension:
+                other_keys = ['start_time', 'end_time']
+                tdf = pd.io.json.json_normalize(ad_data['timeseries'],
+                                                'dimension_stats',
+                                                other_keys)
+            elif self.granularity:
                 tdf = pd.DataFrame(ad_data['stats'], index=[0])
             else:
                 tdf = pd.DataFrame(ad_data['timeseries'])  # type: pd.DataFrame
