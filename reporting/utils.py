@@ -116,7 +116,8 @@ def string_to_date(my_string):
         return my_string
 
 
-def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
+def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
+                 fill_empty=True):
     if float_col is None:
         float_col = []
     if date_col is None:
@@ -138,7 +139,10 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
         if col not in df:
             continue
         df[col] = df[col].replace(['1/0/1900', '1/1/1970'], '0')
-        df[col] = df[col].fillna(dt.datetime.today())
+        if fill_empty:
+            df[col] = df[col].fillna(dt.datetime.today())
+        else:
+            df[col] = df[col].fillna(pd.Timestamp('nat'))
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: string_to_date(x))
         df[col] = pd.to_datetime(df[col], errors='coerce').dt.normalize()
