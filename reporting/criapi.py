@@ -12,8 +12,9 @@ config_path = utl.config_path
 
 
 class CriApi(object):
-    base_url = 'https://rm-api.criteo.com'
+    base_url = 'https://api.criteo.com'
     auth_url = '{}/oauth2/token'.format(base_url)
+    version_url = '/2022-07/retail-media'
 
     def __init__(self):
         self.config = None
@@ -67,7 +68,8 @@ class CriApi(object):
                 'grant_type': 'client_credentials'}
         r = self.make_request(self.auth_url, method='POST', data=data)
         token = r.json()['access_token']
-        self.headers = {'Authorization': 'Bearer {}'.format(token)}
+        self.headers = {'Authorization': 'Bearer {}'.format(token),
+                        'Content-Type': 'application/json'}
 
     def make_request(self, url, method, headers=None, json_body=None, data=None,
                      params=None, attempt=1):
@@ -126,16 +128,53 @@ class CriApi(object):
     def request_and_get_data(self, sd, ed):
         logging.info('Getting data form {} to {}'.format(sd, ed))
         self.set_headers()
-        url = '{}/v1/account/{}/campaign-activity-by-day'.format(
-            self.base_url, self.advertiser_id)
-        params = {'dateFrom': sd, 'dateTo': ed, 'timezone': 'EDT'}
-        r = self.make_request(url, method='GET', headers=self.headers,
-                              params=params)
+        base_url = '{}{}'.format(self.base_url, self.version_url)
+        url = '{}/reports/campaigns'.format(base_url)
+        params = {'startDate': sd, 'endDate': ed,
+                  'timezone': 'America/New_York', 'id': self.advertiser_id,
+                  'reportType': 'summary'}
+        params = {'type': 'RetailMediaReportRequest', 'attributes': params}
+        params = {'data': params}
+        r = self.make_request(url, method='POST', headers=self.headers,
+                              json_body=params)
         if 'data' not in r.json():
             logging.warning('data was not in response returning blank df: '
                             '{}'.format(r.json()))
             df = pd.DataFrame()
         else:
-            df = pd.DataFrame(r.json()['data'], columns=r.json()['columns'])
-            logging.info('Data successfully retrieved returning df.')
+            report_id = r.json()['data']['id']
+            df = self.check_and_get_report(report_id, base_url)
+        return df
+
+    def check_and_get_report(self, report_id, base_url):
+        url = '{}/reports/{}/status'.format(base_url, report_id)
+        error_count = 0
+        df = pd.DataFrame()
+        for x in range(100):
+            logging.info('Checking report attempt {}'.format(x + 1))
+            r = self.make_request(url, method='GET', headers=self.headers)
+            if ('data' in r.json() and 'attributes' in r.json()['data'] and
+                    'status' in r.json()['data']['attributes']):
+                status = r.json()['data']['attributes']['status']
+                if status == 'success':
+                    df = self.download_report(url)
+                    break
+                elif status == 'failure' or status == 'expired':
+                    logging.warning('Report failed returning blank df')
+                    break
+            else:
+                logging.warning('Unexpected response: {}'.format(r.json()))
+                error_count += 1
+                if error_count > 10:
+                    logging.warning('Too many errors returning blank df.')
+                    break
+        return df
+
+    def download_report(self, url):
+        logging.info('Report available downloading.')
+        self.set_headers()
+        url = url.replace('status', 'output')
+        r = self.make_request(url, method='GET', headers=self.headers)
+        df = pd.DataFrame(r.json()['data'], columns=r.json()['columns'])
+        logging.info('Report downloaded returning df.')
         return df
