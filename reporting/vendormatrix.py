@@ -823,18 +823,7 @@ class DataSource(object):
                 return self.ic_params
 
     def write(self, df=None):
-        logging.debug('Writing {}'.format(self.p[vmc.filename]))
-        file_type = os.path.splitext(self.p[vmc.filename_true])[1].lower()
-        if file_type == '.xlsx':
-            write_func = df.to_excel
-        else:
-            write_func = df.to_csv
-        try:
-            write_func(self.p[vmc.filename_true], index=False,
-                       encoding='utf-8')
-        except IOError:
-            logging.warning('{} could not be opened.  This file was not saved.'
-                            ''.format(self.p[vmc.filename]))
+        utl.write_file(df, self.p[vmc.filename_true])
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
