@@ -275,6 +275,16 @@ class Analyze(object):
                     df, how='outer', on=final_cols)
             else:
                 tdf = df
+        over_delv = self.find_in_analysis_dict(self.delivery_col,
+                                               param=self.over_delivery_col)
+        if over_delv:
+            df = pd.DataFrame(over_delv[0]['data'])
+            tdf = tdf.merge(
+                df[plan_names], on=plan_names, how='left', indicator=True)
+            tdf['Projected Full Delivery'] = [
+                'Over Delivered' if tdf['_merge'][x] == 'both'
+                else tdf['Projected Full Delivery'][x] for x in tdf.index]
+            tdf = tdf.drop(columns=['_merge'])
         tdf = tdf.merge(start_dates, how='left', on=plan_names)
         tdf = tdf.merge(end_dates, how='left', on=plan_names)
         tdf = self.get_actual_delivery(tdf)
@@ -305,7 +315,7 @@ class Analyze(object):
         tdf[vmc.AD_COST] = '$' + tdf[vmc.AD_COST].astype(str)
         tdf[dctc.SD] = tdf[dctc.SD].astype(str)
         tdf[dctc.ED] = tdf[dctc.ED].astype(str)
-        delivery_msg = ('Projected delivery completion and pacing completion '
+        delivery_msg = ('Projected delivery completion and current pacing '
                         'is as follows:')
         logging.info('{}\n{}'.format(delivery_msg, tdf.to_string()))
         self.add_to_analysis_dict(key_col=self.delivery_comp_col,
@@ -375,6 +385,8 @@ class Analyze(object):
     def get_serving_alerts(self):
         pacing_analysis = self.find_in_analysis_dict(self.delivery_comp_col)[0]
         df = pd.DataFrame(pacing_analysis['data'])
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        final_cols = plan_names + [vmc.cost, vmc.AD_COST, 'Adserving %']
         if not df.empty:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
             df['Adserving %'] = df.apply(lambda row: 0 if row[vmc.cost] == 0
@@ -388,11 +400,18 @@ class Analyze(object):
                 df['Adserving %'] = df['Adserving %'].astype(str) + "%"
                 df[vmc.cost] = '$' + df[vmc.cost].astype(str)
                 df[vmc.AD_COST] = '$' + df[vmc.AD_COST].astype(str)
+                df = df[final_cols]
                 msg = 'Adserving cost significantly OVER for the following: '
                 logging.info('{}\n{}'.format(msg, df))
                 self.add_to_analysis_dict(key_col=self.adserving_alert,
                                           message=msg,
                                           data=df.to_dict())
+            else:
+                msg = 'No significant adserving overages.'
+                logging.info('{}\n{}'.format(msg, df))
+                self.add_to_analysis_dict(key_col=self.adserving_alert,
+                                          message=msg,
+                                          data=[])
 
     def get_daily_pacing_alerts(self):
         dfs_dict = self.find_in_analysis_dict(
@@ -400,7 +419,7 @@ class Analyze(object):
         yesterday = dt.datetime.strftime(
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         over_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
-        under_df = pd.DataFrame( columns=pd.DataFrame(dfs_dict[0]).columns)
+        under_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
         for dict in dfs_dict:
             df = pd.DataFrame(dict)
             if not df.empty:
@@ -415,15 +434,29 @@ class Analyze(object):
         if not over_df.empty:
             msg = ('Yesterday\'s spend for the following exceeded '
                    'daily pacing goal by:')
+            logging.info('{}\n{}'.format(msg, over_df))
             self.add_to_analysis_dict(
                 key_col=self.daily_pacing_alert, message=msg,
                 param=self.over_daily_pace, data=over_df.to_dict())
+        else:
+            msg = 'No significant daily pacing overages.'
+            logging.info('{}\n{}'.format(msg, over_df))
+            self.add_to_analysis_dict(
+                key_col=self.daily_pacing_alert, message=msg,
+                param=self.over_daily_pace, data=[])
         if not under_df.empty:
             msg = ('Yesterday\'s spend for the following under paced the'
                    'daily goal by:')
+            logging.info('{}\n{}'.format(msg, under_df))
             self.add_to_analysis_dict(
                 key_col=self.daily_pacing_alert, message=msg,
                 param=self.under_daily_pace, data=under_df.to_dict())
+        else:
+            msg = 'No significant daily under pacing.'
+            logging.info('{}\n{}'.format(msg, under_df))
+            self.add_to_analysis_dict(
+                key_col=self.daily_pacing_alert, message=msg,
+                param=self.under_daily_pace, data=[])
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
