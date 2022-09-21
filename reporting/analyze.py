@@ -737,11 +737,15 @@ class Analyze(object):
     def compare_raw_files(self, vk):
         ds = self.matrix.get_data_source(vk)
         tds = self.matrix.get_data_source(vk)
+        sheet_info = ''
+        if ':::' in ds.p[vmc.filename]:
+            sheet_info = ':::'.join(ds.p[vmc.filename].split(':::')[1:])
+            sheet_info = ':::' + sheet_info
         file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
         tmp_file = ds.p[vmc.filename_true].replace(
             file_type, '{}{}'.format(utl.tmp_file_suffix, file_type))
         tds.p[vmc.filename_true] = tmp_file
-        tds.p[vmc.filename] = tmp_file
+        tds.p[vmc.filename] = tmp_file + sheet_info
         cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
