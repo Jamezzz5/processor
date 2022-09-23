@@ -142,6 +142,14 @@ class Analyze(object):
 
     @staticmethod
     def get_rolling_mean_df(df, value_col, group_cols):
+        """
+        Gets rolling means to project delivery from
+
+        :param df: a df containing dates and desired values/groups
+        :param value_cols: values to calculate rolling means of
+        :param group_cols: column breakouts to base rolling means on
+        :returns: df w/ groups cols, value_cols, and 3,7,30 day rolling means
+        """
         pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
                              values=value_col, aggfunc=np.sum)
         if len(pdf.columns) > 10000:
@@ -158,6 +166,15 @@ class Analyze(object):
 
     @staticmethod
     def get_start_end_dates(df, plan_names):
+        """
+        Gets start and end dates at the level of the planned net full placement
+        name. Dates taken from mediaplan where available, else from
+        vendormatrix based on which vendorkey has more spend.
+
+        :param df: full output df
+        :param plan_names: planned net full placement columns
+        :returns: two dfs w/ start and end dates for each unique breakout
+        """
         matrix = vm.VendorMatrix().vm_df
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
         vm_dates = vm_dates.groupby(
@@ -198,6 +215,15 @@ class Analyze(object):
 
     @staticmethod
     def project_delivery_completion(df, average_df, plan_names, final_cols):
+        """
+        Use rolling means to project delivery completion date.
+
+        :param df: df where planned costs greater than net
+        :param average_df: return df from get_rolling_mean_df
+        :param plan_names: planned net full placement columns
+        :param final_cols: desired columns in final df
+        :returns: original df w/ added projected completion column
+        """
         df = df.merge(average_df, how='left', on=plan_names)
         df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
             '{} rolling {}'.format(vmc.cost, 3)]
@@ -224,6 +250,12 @@ class Analyze(object):
 
     @staticmethod
     def get_actual_delivery(df):
+        """
+        Calculate delivery metrics
+
+        :param df: df w/ topline planned and actual spend metrics
+        :returns: original df w/ delivery and pacing metrics
+        """
         df['Delivery'] = (df[vmc.cost] / df[dctc.PNC] * 100).round(2)
         df['Delivery'] = df['Delivery'].replace(
             [np.inf, -np.inf], np.nan).fillna(0)
@@ -239,6 +271,11 @@ class Analyze(object):
         return df
 
     def get_pacing_analysis(self, df):
+        """
+        Calculate topline level pacing data for use in pacing table and alerts.
+
+        :param df: full output df
+        """
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         average_df = self.get_rolling_mean_df(
             df=df, value_col=vmc.cost, group_cols=plan_names)
@@ -308,6 +345,11 @@ class Analyze(object):
                                   data=tdf.to_dict())
 
     def get_daily_delivery(self, df):
+        """
+        Get daily delivery data for each unique planned net level breakout
+
+        :param df: full output df
+        """
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.get_start_end_dates(df, plan_names)
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
@@ -359,6 +401,10 @@ class Analyze(object):
                                   data=daily_dfs)
 
     def get_serving_alerts(self):
+        """
+        Check for adserving overages -- over 5.5% of net cost
+
+        """
         pacing_analysis = self.find_in_analysis_dict(self.delivery_comp_col)[0]
         df = pd.DataFrame(pacing_analysis['data'])
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
@@ -387,6 +433,10 @@ class Analyze(object):
                                           data=[])
 
     def get_daily_pacing_alerts(self):
+        """
+        Check daily pacing issues -- +/- 20% of daily pacing goal
+
+        """
         dfs_dict = self.find_in_analysis_dict(
             self.daily_delivery_col)[0]['data']
         yesterday = dt.datetime.strftime(
