@@ -160,11 +160,10 @@ class Analyze(object):
     def get_start_end_dates(df, plan_names):
         matrix = vm.VendorMatrix().vm_df
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
-        vm_dates = vm_dates.groupby(plan_names + [vmc.vendorkey]).sum()
-        vm_dates = vm_dates.reset_index()
+        vm_dates = vm_dates.groupby(
+            plan_names + [vmc.vendorkey]).sum().reset_index()
         vm_dates = vm_dates.sort_values(vmc.cost, ascending=False)
         vm_dates = vm_dates.drop_duplicates(plan_names)
-        vm_dates = vm_dates.reset_index()
         vm_dates[dctc.SD] = [
             matrix[matrix[vmc.vendorkey] == x][vmc.startdate].values[0]
             for x in vm_dates[vmc.vendorkey]]
@@ -294,27 +293,13 @@ class Analyze(object):
         final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
         tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
-        tdf[dctc.PNC] = tdf[dctc.PNC].replace(
-            [np.inf, -np.inf], np.nan).fillna(0.0)
-        tdf[vmc.cost] = tdf[vmc.cost].replace(
-            [np.inf, -np.inf], np.nan).fillna(0.0)
-        tdf[vmc.AD_COST] = tdf[vmc.AD_COST].replace(
-            [np.inf, -np.inf], np.nan).fillna(0.0)
-        tdf[dctc.PNC] = utl.data_to_type(
-            pd.DataFrame(tdf[dctc.PNC]), float_col=[dctc.PNC])[dctc.PNC]
-        tdf[vmc.cost] = utl.data_to_type(
-            pd.DataFrame(tdf[vmc.cost]), float_col=[vmc.cost])[vmc.cost]
-        tdf[vmc.AD_COST] = utl.data_to_type(
-            pd.DataFrame(tdf[vmc.AD_COST]),
-            float_col=[vmc.AD_COST])[vmc.AD_COST]
-        tdf[dctc.PNC] = tdf[dctc.PNC].round(2)
-        tdf[vmc.cost] = tdf[vmc.cost].round(2)
-        tdf[vmc.AD_COST] = tdf[vmc.AD_COST].round(2)
-        tdf[dctc.PNC] = '$' + tdf[dctc.PNC].astype(str)
-        tdf[vmc.cost] = '$' + tdf[vmc.cost].astype(str)
-        tdf[vmc.AD_COST] = '$' + tdf[vmc.AD_COST].astype(str)
-        tdf[dctc.SD] = tdf[dctc.SD].astype(str)
-        tdf[dctc.ED] = tdf[dctc.ED].astype(str)
+        tdf = utl.data_to_type(
+            tdf, float_col=[vmc.cost, dctc.PNC, vmc.AD_COST])
+        for col in [dctc.PNC, vmc.cost, vmc.AD_COST]:
+            tdf[col] = '$' + tdf[col].round(2).astype(str)
+        for col in [dctc.SD, dctc.ED]:
+            tdf[col] = [str(0) if x == 0
+                        else str(pd.to_datetime(x).date()) for x in tdf[col]]
         delivery_msg = ('Projected delivery completion and current pacing '
                         'is as follows:')
         logging.info('{}\n{}'.format(delivery_msg, tdf.to_string()))
@@ -325,15 +310,14 @@ class Analyze(object):
     def get_daily_delivery(self, df):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.get_start_end_dates(df, plan_names)
-        pdf = self.matrix.vendor_get(vm.plan_key)
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
+        pdf = self.matrix.vendor_get(vm.plan_key)
+        pdf = pdf[pdf_cols]
         groups = plan_names + [vmc.date]
         metrics = [cal.NCF]
-        df = df.groupby(groups)[metrics].sum()
-        df = df.reset_index()
+        df = df.groupby(groups)[metrics].sum().reset_index()
         df = utl.data_to_type(df, date_col=[vmc.date])
-        unique_breakouts = df.groupby(plan_names).first()
-        unique_breakouts = unique_breakouts.reset_index()
+        unique_breakouts = df.groupby(plan_names).first().reset_index()
         unique_breakouts = unique_breakouts[plan_names]
         daily_dfs = []
         sort_ascending = [True for x in plan_names]
@@ -344,37 +328,29 @@ class Analyze(object):
                 tdf = tdf[tdf[x] == row[x]]
             tdf = tdf.merge(start_dates, how='left', on=plan_names)
             tdf = tdf.merge(end_dates, how='left', on=plan_names)
-            tdf = tdf.merge(pdf[pdf_cols], how='left', on=plan_names)
-            tdf[dctc.PNC] = tdf[dctc.PNC].replace(
-                [np.inf, -np.inf], np.nan).fillna("0")
+            tdf = tdf.merge(pdf, how='left', on=plan_names)
             tdf = utl.data_to_type(tdf, float_col=[dctc.PNC])
             tdf['Num Days'] = (tdf[dctc.ED] - tdf[dctc.SD]).dt.days
-            tdf['Num Days'] = tdf['Num Days'].replace(
-                [np.inf, -np.inf], np.nan).fillna("0")
+            tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
             try:
                 daily_spend_goal = (tdf[dctc.PNC][0] / tdf['Num Days'][0])
+                stop_date = (tdf[dctc.SD][0] +
+                             dt.timedelta(days=int(tdf['Num Days'][0])))
+                tdf['Daily Spend Goal'] = [daily_spend_goal if
+                                           (tdf[dctc.SD][0] <= x <= stop_date)
+                                           else 0 for x in tdf[vmc.date]]
+                tdf['Day Pacing'] = (
+                        ((tdf[cal.NCF] / tdf['Daily Spend Goal']) - 1) * 100)
+                tdf['Day Pacing'] = tdf['Day Pacing'].replace(
+                    [np.inf, -np.inf], np.nan).fillna(0.0)
+                tdf['Day Pacing'] = tdf['Day Pacing'].round(2).astype(str) + '%'
             except TypeError:
-                daily_spend_goal = 0
-            stop_date = (tdf[dctc.SD][0] +
-                         dt.timedelta(days=int(tdf['Num Days'][0])))
-            tdf['Daily Spend Goal'] = [daily_spend_goal if
-                                       (tdf[dctc.SD][0] <= x <= stop_date)
-                                       else 0 for x in tdf[vmc.date]]
-            tdf['Day Pacing'] = (
-                    ((tdf[cal.NCF] / tdf['Daily Spend Goal']) - 1) * 100)
-            tdf['Day Pacing'] = tdf['Day Pacing'].replace(
-                [np.inf, -np.inf], np.nan).fillna("0")
-            tdf['Day Pacing'] = utl.data_to_type(
-                pd.DataFrame(tdf['Day Pacing']),
-                float_col=['Day Pacing'])['Day Pacing']
-            tdf['Day Pacing'] = tdf['Day Pacing'].round(2)
-            tdf['Day Pacing'] = tdf['Day Pacing'].astype(str) + '%'
-            tdf = tdf.fillna("")
+                tdf['Daily Spend Goal'] = 0
+                tdf['Day Pacing'] = '0%'
             tdf = tdf.sort_values(
                 plan_names + [vmc.date], ascending=sort_ascending)
-            tdf[vmc.date] = tdf[vmc.date].astype(str)
-            tdf[dctc.SD] = tdf[dctc.SD].astype(str)
-            tdf[dctc.ED] = tdf[dctc.ED].astype(str)
+            tdf[[dctc.SD, dctc.ED, vmc.date]] = tdf[
+                [dctc.SD, dctc.ED, vmc.date]].astype(str)
             tdf = tdf.reset_index(drop=True)
             daily_dfs.append(tdf.to_dict())
         daily_delivery_msg = 'Daily delivery is as follows:'
@@ -394,12 +370,9 @@ class Analyze(object):
                                          * 100, axis=1)
             df = df[df['Adserving %'] > 5.5]
             if not df.empty:
-                df['Adserving %'] = df['Adserving %'].round(2)
-                df[vmc.cost] = df[vmc.cost].round(2)
-                df[vmc.AD_COST] = df[vmc.AD_COST].round(2)
-                df['Adserving %'] = df['Adserving %'].astype(str) + "%"
-                df[vmc.cost] = '$' + df[vmc.cost].astype(str)
-                df[vmc.AD_COST] = '$' + df[vmc.AD_COST].astype(str)
+                for col in ['Adserving %', vmc.cost, vmc.AD_COST]:
+                    df[col] = '$' + df[col].round(2).astype(str)
+                df['Adserving %'] = df['Adserving %'] + "%"
                 df = df[final_cols]
                 msg = 'Adserving cost significantly OVER for the following: '
                 logging.info('{}\n{}'.format(msg, df))
