@@ -74,7 +74,8 @@ class Analyze(object):
         self.vc = ValueCalc()
         self.class_list = [
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength]
+            CheckApiDateLength, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -141,30 +142,6 @@ class Analyze(object):
                                           data=data.to_dict())
 
     @staticmethod
-    def get_rolling_mean_df(df, value_col, group_cols):
-        """
-        Gets rolling means to project delivery from
-
-        :param df: a df containing dates and desired values/groups
-        :param value_cols: values to calculate rolling means of
-        :param group_cols: column breakouts to base rolling means on
-        :returns: df w/ groups cols, value_cols, and 3,7,30 day rolling means
-        """
-        pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
-                             values=value_col, aggfunc=np.sum)
-        if len(pdf.columns) > 10000:
-            logging.warning('Maximum 10K combos for calculation, data set '
-                            'has {}'.format(len(pdf.columns)))
-            return pd.DataFrame()
-        df = pdf.unstack().reset_index().rename(columns={0: value_col})
-        for x in [3, 7, 30]:
-            ndf = pdf.rolling(
-                window=x, min_periods=1).mean().unstack().reset_index().rename(
-                columns={0: '{} rolling {}'.format(value_col, x)})
-            df = df.merge(ndf, on=group_cols + [vmc.date])
-        return df
-
-    @staticmethod
     def get_start_end_dates(df, plan_names):
         """
         Gets start and end dates at the level of the planned net full placement
@@ -212,274 +189,6 @@ class Analyze(object):
         start_dates = start_end_dates[plan_names + [dctc.SD]]
         end_dates = start_end_dates[plan_names + [dctc.ED]]
         return start_dates, end_dates
-
-    @staticmethod
-    def project_delivery_completion(df, average_df, plan_names, final_cols):
-        """
-        Use rolling means to project delivery completion date.
-
-        :param df: df where planned costs greater than net
-        :param average_df: return df from get_rolling_mean_df
-        :param plan_names: planned net full placement columns
-        :param final_cols: desired columns in final df
-        :returns: original df w/ added projected completion column
-        """
-        df = df.merge(average_df, how='left', on=plan_names)
-        df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
-            '{} rolling {}'.format(vmc.cost, 3)]
-        df['days'] = df['days'].replace(
-            [np.inf, -np.inf], np.nan).fillna(10000)
-        df['days'] = np.where(df['days'] > 10000, 10000, df['days'])
-        df['Projected Full Delivery'] = pd.to_datetime(
-            df[vmc.date]) + pd.to_timedelta(
-            np.ceil(df['days']).astype(int), unit='D')
-        no_date_map = ((df['Projected Full Delivery'] >
-                        dt.datetime.today() + dt.timedelta(days=365)) |
-                       (df['Projected Full Delivery'] <
-                        dt.datetime.today() - dt.timedelta(days=365)))
-        df['Projected Full Delivery'] = df[
-            'Projected Full Delivery'].dt.strftime('%Y-%m-%d')
-        df.loc[
-            no_date_map, 'Projected Full Delivery'] = 'Greater than 1 Year'
-        df['Projected Full Delivery'] = df[
-            'Projected Full Delivery'].replace(
-            [np.inf, -np.inf, np.datetime64('NaT'), 'NaT'], np.nan
-        ).fillna('Greater than 1 Year')
-        df = df[final_cols]
-        return df
-
-    @staticmethod
-    def get_actual_delivery(df):
-        """
-        Calculate delivery metrics
-
-        :param df: df w/ topline planned and actual spend metrics
-        :returns: original df w/ delivery and pacing metrics
-        """
-        df['Delivery'] = (df[vmc.cost] / df[dctc.PNC] * 100).round(2)
-        df['Delivery'] = df['Delivery'].replace(
-            [np.inf, -np.inf], np.nan).fillna(0)
-        df['Delivery'] = df['Delivery'].astype(str) + '%'
-        df['% Through Campaign'] = ((pd.Timestamp.today() - df[dctc.SD]
-                                     ) / (df[dctc.ED] - df[dctc.SD])
-                                    * 100).round(2)
-        df['% Through Campaign'] = np.where(
-            df['% Through Campaign'] > 100, 100, df['% Through Campaign'])
-        df['% Through Campaign'] = df['% Through Campaign'].replace(
-            [np.inf, -np.inf], np.nan).fillna(0)
-        df['% Through Campaign'] = df['% Through Campaign'].astype(str) + '%'
-        return df
-
-    def get_pacing_analysis(self, df):
-        """
-        Calculate topline level pacing data for use in pacing table and alerts.
-
-        :param df: full output df
-        """
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
-        average_df = self.get_rolling_mean_df(
-            df=df, value_col=vmc.cost, group_cols=plan_names)
-        if average_df.empty:
-            delivery_msg = ('Average df empty, maybe too large.  '
-                            'Could not project delivery completion.')
-            logging.warning(delivery_msg)
-            self.add_to_analysis_dict(key_col=self.delivery_comp_col,
-                                      message=delivery_msg)
-            return False
-        last_date = dt.datetime.strftime(
-            dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
-        average_df = average_df[average_df[vmc.date] == last_date]
-        average_df = average_df.drop(columns=[vmc.cost])
-        start_dates, end_dates = self.get_start_end_dates(
-            self.df, plan_names)
-        df = df.groupby(plan_names)[vmc.cost, dctc.PNC, vmc.AD_COST].sum()
-        df = df.reset_index()
-        df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
-        tdf = df[df[dctc.PNC] > df[vmc.cost]]
-        df = df[df[dctc.PNC] <= df[vmc.cost]]
-        final_cols = (plan_names + [dctc.PNC] + [vmc.cost] + [vmc.AD_COST] +
-                      ['Projected Full Delivery'])
-        if not tdf.empty:
-            tdf = self.project_delivery_completion(
-                tdf, average_df, plan_names, final_cols)
-        if not df.empty:
-            df['Projected Full Delivery'] = [
-                'No Planned' if x == 0 else 'Delivered' for x in df[dctc.PNC]]
-            df = df[final_cols]
-            if not tdf.empty:
-                tdf = tdf.merge(
-                    df, how='outer', on=final_cols)
-            else:
-                tdf = df
-        over_delv = self.find_in_analysis_dict(self.delivery_col,
-                                               param=self.over_delivery_col)
-        if over_delv:
-            df = pd.DataFrame(over_delv[0]['data'])
-            tdf = tdf.merge(
-                df[plan_names], on=plan_names, how='left', indicator=True)
-            tdf['Projected Full Delivery'] = [
-                'Over Delivered' if tdf['_merge'][x] == 'both'
-                else tdf['Projected Full Delivery'][x] for x in tdf.index]
-            tdf = tdf.drop(columns=['_merge'])
-        tdf = tdf.merge(start_dates, how='left', on=plan_names)
-        tdf = tdf.merge(end_dates, how='left', on=plan_names)
-        tdf = self.get_actual_delivery(tdf)
-        final_cols = (plan_names + [dctc.SD] + [dctc.ED] + [vmc.cost] +
-                      [dctc.PNC] + ['Delivery'] + ['Projected Full Delivery'] +
-                      ['% Through Campaign'] + [vmc.AD_COST])
-        final_cols = [x for x in final_cols if x in tdf.columns]
-        tdf = tdf[final_cols]
-        tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
-        tdf = utl.data_to_type(
-            tdf, float_col=[vmc.cost, dctc.PNC, vmc.AD_COST])
-        for col in [dctc.PNC, vmc.cost, vmc.AD_COST]:
-            tdf[col] = '$' + tdf[col].round(2).astype(str)
-        for col in [dctc.SD, dctc.ED]:
-            tdf[col] = [str(0) if x == 0
-                        else str(pd.to_datetime(x).date()) for x in tdf[col]]
-        delivery_msg = ('Projected delivery completion and current pacing '
-                        'is as follows:')
-        logging.info('{}\n{}'.format(delivery_msg, tdf.to_string()))
-        self.add_to_analysis_dict(key_col=self.delivery_comp_col,
-                                  message=delivery_msg,
-                                  data=tdf.to_dict())
-
-    def get_daily_delivery(self, df):
-        """
-        Get daily delivery data for each unique planned net level breakout
-
-        :param df: full output df
-        """
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
-        start_dates, end_dates = self.get_start_end_dates(df, plan_names)
-        pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
-        pdf = self.matrix.vendor_get(vm.plan_key)
-        pdf = pdf[pdf_cols]
-        groups = plan_names + [vmc.date]
-        metrics = [cal.NCF]
-        df = df.groupby(groups)[metrics].sum().reset_index()
-        df = utl.data_to_type(df, date_col=[vmc.date])
-        unique_breakouts = df.groupby(plan_names).first().reset_index()
-        unique_breakouts = unique_breakouts[plan_names]
-        daily_dfs = []
-        sort_ascending = [True for x in plan_names]
-        sort_ascending.append(False)
-        for index, row in unique_breakouts.iterrows():
-            tdf = df
-            for x in plan_names:
-                tdf = tdf[tdf[x] == row[x]]
-            tdf = tdf.merge(start_dates, how='left', on=plan_names)
-            tdf = tdf.merge(end_dates, how='left', on=plan_names)
-            tdf = tdf.merge(pdf, how='left', on=plan_names)
-            tdf = utl.data_to_type(tdf, float_col=[dctc.PNC])
-            tdf['Num Days'] = (tdf[dctc.ED] - tdf[dctc.SD]).dt.days
-            tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
-            try:
-                daily_spend_goal = (tdf[dctc.PNC][0] / tdf['Num Days'][0])
-                stop_date = (tdf[dctc.SD][0] +
-                             dt.timedelta(days=int(tdf['Num Days'][0])))
-                tdf['Daily Spend Goal'] = [daily_spend_goal if
-                                           (tdf[dctc.SD][0] <= x <= stop_date)
-                                           else 0 for x in tdf[vmc.date]]
-                tdf['Day Pacing'] = (
-                        ((tdf[cal.NCF] / tdf['Daily Spend Goal']) - 1) * 100)
-                tdf['Day Pacing'] = tdf['Day Pacing'].replace(
-                    [np.inf, -np.inf], np.nan).fillna(0.0)
-                tdf['Day Pacing'] = tdf['Day Pacing'].round(2).astype(str) + '%'
-            except TypeError:
-                tdf['Daily Spend Goal'] = 0
-                tdf['Day Pacing'] = '0%'
-            tdf = tdf.sort_values(
-                plan_names + [vmc.date], ascending=sort_ascending)
-            tdf[[dctc.SD, dctc.ED, vmc.date]] = tdf[
-                [dctc.SD, dctc.ED, vmc.date]].astype(str)
-            tdf = tdf.reset_index(drop=True)
-            daily_dfs.append(tdf.to_dict())
-        daily_delivery_msg = 'Daily delivery is as follows:'
-        self.add_to_analysis_dict(key_col=self.daily_delivery_col,
-                                  message=daily_delivery_msg,
-                                  data=daily_dfs)
-
-    def get_serving_alerts(self):
-        """
-        Check for adserving overages -- over 5.5% of net cost
-
-        """
-        pacing_analysis = self.find_in_analysis_dict(self.delivery_comp_col)[0]
-        df = pd.DataFrame(pacing_analysis['data'])
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
-        final_cols = plan_names + [vmc.cost, vmc.AD_COST, 'Adserving %']
-        if not df.empty:
-            df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
-            df['Adserving %'] = df.apply(lambda row: 0 if row[vmc.cost] == 0
-                                         else (row[vmc.AD_COST] / row[vmc.cost])
-                                         * 100, axis=1)
-            df = df[df['Adserving %'] > 5.5]
-            if not df.empty:
-                for col in ['Adserving %', vmc.cost, vmc.AD_COST]:
-                    df[col] = '$' + df[col].round(2).astype(str)
-                df['Adserving %'] = df['Adserving %'] + "%"
-                df = df[final_cols]
-                msg = 'Adserving cost significantly OVER for the following: '
-                logging.info('{}\n{}'.format(msg, df))
-                self.add_to_analysis_dict(key_col=self.adserving_alert,
-                                          message=msg,
-                                          data=df.to_dict())
-            else:
-                msg = 'No significant adserving overages.'
-                logging.info('{}\n{}'.format(msg, df))
-                self.add_to_analysis_dict(key_col=self.adserving_alert,
-                                          message=msg,
-                                          data=[])
-
-    def get_daily_pacing_alerts(self):
-        """
-        Check daily pacing issues -- +/- 20% of daily pacing goal
-
-        """
-        dfs_dict = self.find_in_analysis_dict(
-            self.daily_delivery_col)[0]['data']
-        yesterday = dt.datetime.strftime(
-            dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
-        over_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
-        under_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
-        for dict in dfs_dict:
-            df = pd.DataFrame(dict)
-            if not df.empty:
-                df = df[df[vmc.date] == yesterday]
-                if not df.empty:
-                    val = df['Day Pacing'][0]
-                    val = float(val.replace("%", ""))
-                    if val >= 20:
-                        over_df = pd.concat([over_df, df], ignore_index=True)
-                    if val <= -20:
-                        under_df = pd.concat([under_df, df], ignore_index=True)
-        if not over_df.empty:
-            msg = ('Yesterday\'s spend for the following exceeded '
-                   'daily pacing goal by:')
-            logging.info('{}\n{}'.format(msg, over_df))
-            self.add_to_analysis_dict(
-                key_col=self.daily_pacing_alert, message=msg,
-                param=self.over_daily_pace, data=over_df.to_dict())
-        else:
-            msg = 'No significant daily pacing overages.'
-            logging.info('{}\n{}'.format(msg, over_df))
-            self.add_to_analysis_dict(
-                key_col=self.daily_pacing_alert, message=msg,
-                param=self.over_daily_pace, data=[])
-        if not under_df.empty:
-            msg = ('Yesterday\'s spend for the following under paced the'
-                   'daily goal by:')
-            logging.info('{}\n{}'.format(msg, under_df))
-            self.add_to_analysis_dict(
-                key_col=self.daily_pacing_alert, message=msg,
-                param=self.under_daily_pace, data=under_df.to_dict())
-        else:
-            msg = 'No significant daily under pacing.'
-            logging.info('{}\n{}'.format(msg, under_df))
-            self.add_to_analysis_dict(
-                key_col=self.daily_pacing_alert, message=msg,
-                param=self.under_daily_pace, data=[])
 
     def check_raw_file_update_time(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1248,10 +957,6 @@ class Analyze(object):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
-        self.get_pacing_analysis(self.df)
-        self.get_daily_delivery(self.df)
-        self.get_serving_alerts()
-        self.get_daily_pacing_alerts()
         self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
@@ -1628,6 +1333,343 @@ class CheckColumnNames(AnalyzeBase):
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
+
+
+class GetPacingAnalysis(AnalyzeBase):
+    name = Analyze.delivery_comp_col
+    fix = False
+    pre_run = False
+    delivery_col = 'Delivery'
+    proj_completion_col = 'Projected Full Delivery'
+    pacing_goal_col = '% Through Campaign'
+
+    def get_rolling_mean_df(self, df, value_col, group_cols):
+        """
+        Gets rolling means to project delivery from
+
+        :param df: a df containing dates and desired values/groups
+        :param value_cols: values to calculate rolling means of
+        :param group_cols: column breakouts to base rolling means on
+        :returns: df w/ groups cols, value_cols, and 3,7,30 day rolling means
+        """
+        pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
+                             values=value_col, aggfunc=np.sum)
+        if len(pdf.columns) > 10000:
+            logging.warning('Maximum 10K combos for calculation, data set '
+                            'has {}'.format(len(pdf.columns)))
+            return pd.DataFrame()
+        df = pdf.unstack().reset_index().rename(columns={0: value_col})
+        for x in [3, 7, 30]:
+            ndf = pdf.rolling(
+                window=x, min_periods=1).mean().unstack().reset_index().rename(
+                columns={0: '{} rolling {}'.format(value_col, x)})
+            df = df.merge(ndf, on=group_cols + [vmc.date])
+        return df
+
+    def project_delivery_completion(self, df, average_df, plan_names,
+                                    final_cols):
+        """
+        Use rolling means to project delivery completion date.
+
+        :param df: df where planned costs greater than net
+        :param average_df: return df from get_rolling_mean_df
+        :param plan_names: planned net full placement columns
+        :param final_cols: desired columns in final df
+        :returns: original df w/ added projected completion column
+        """
+        df = df.merge(average_df, how='left', on=plan_names)
+        df['days'] = (df[dctc.PNC] - df[vmc.cost]) / df[
+            '{} rolling {}'.format(vmc.cost, 3)]
+        df['days'] = df['days'].replace(
+            [np.inf, -np.inf], np.nan).fillna(10000)
+        df['days'] = np.where(df['days'] > 10000, 10000, df['days'])
+        df[self.proj_completion_col] = pd.to_datetime(
+            df[vmc.date]) + pd.to_timedelta(
+            np.ceil(df['days']).astype(int), unit='D')
+        no_date_map = ((df[self.proj_completion_col] >
+                        dt.datetime.today() + dt.timedelta(days=365)) |
+                       (df[self.proj_completion_col] <
+                        dt.datetime.today() - dt.timedelta(days=365)))
+        df[self.proj_completion_col] = df[
+            self.proj_completion_col].dt.strftime('%Y-%m-%d')
+        df.loc[
+            no_date_map, self.proj_completion_col] = 'Greater than 1 Year'
+        df[self.proj_completion_col] = df[
+            self.proj_completion_col].replace(
+            [np.inf, -np.inf, np.datetime64('NaT'), 'NaT'], np.nan
+        ).fillna('Greater than 1 Year')
+        df = df[final_cols]
+        return df
+
+    def get_actual_delivery(self, df):
+        """
+        Calculate delivery metrics
+
+        :param df: df w/ topline planned and actual spend metrics
+        :returns: original df w/ delivery and pacing metrics
+        """
+        df[self.delivery_col] = (df[vmc.cost] / df[dctc.PNC] * 100).round(2)
+        df[self.delivery_col] = df[self.delivery_col].replace(
+            [np.inf, -np.inf], np.nan).fillna(0)
+        df[self.delivery_col] = df[self.delivery_col].astype(str) + '%'
+        df[self.pacing_goal_col] = ((pd.Timestamp.today() - df[dctc.SD]
+                                     ) / (df[dctc.ED] - df[dctc.SD])
+                                    * 100).round(2)
+        df[self.pacing_goal_col] = np.where(
+            df[self.pacing_goal_col] > 100, 100, df[self.pacing_goal_col])
+        df[self.pacing_goal_col] = df[self.pacing_goal_col].replace(
+            [np.inf, -np.inf], np.nan).fillna(0)
+        df[self.pacing_goal_col] = df[self.pacing_goal_col].astype(str) + '%'
+        return df
+
+    def get_pacing_anlysis(self, df):
+        """
+        Calculate topline level pacing data for use in pacing table and alerts.
+
+        :param df: full output df
+        """
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        average_df = self.get_rolling_mean_df(
+            df=df, value_col=vmc.cost, group_cols=plan_names)
+        if average_df.empty:
+            msg = ('Average df empty, maybe too large.  '
+                   'Could not project delivery completion.')
+            logging.warning(msg)
+            self.aly.add_to_analysis_dict(key_col=self.aly.delivery_comp_col,
+                                          message=msg)
+            return False
+        last_date = dt.datetime.strftime(
+            dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
+        average_df = average_df[average_df[vmc.date] == last_date]
+        average_df = average_df.drop(columns=[vmc.cost])
+        start_dates, end_dates = self.aly.get_start_end_dates(
+            df, plan_names)
+        df = df.groupby(plan_names)[vmc.cost, dctc.PNC, vmc.AD_COST].sum()
+        df = df.reset_index()
+        df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
+        tdf = df[df[dctc.PNC] > df[vmc.cost]]
+        df = df[df[dctc.PNC] <= df[vmc.cost]]
+        final_cols = (plan_names + [dctc.PNC] + [vmc.cost] + [vmc.AD_COST] +
+                      [self.proj_completion_col])
+        if not tdf.empty:
+            tdf = self.project_delivery_completion(
+                tdf, average_df, plan_names, final_cols)
+        if not df.empty:
+            df[self.proj_completion_col] = [
+                'No Planned' if x == 0 else 'Delivered' for x in df[dctc.PNC]]
+            df = df[final_cols]
+            if not tdf.empty:
+                tdf = tdf.merge(
+                    df, how='outer', on=final_cols)
+            else:
+                tdf = df
+        over_delv = self.aly.find_in_analysis_dict(
+            self.delivery_col, param=self.aly.over_delivery_col)
+        if over_delv:
+            df = pd.DataFrame(over_delv[0]['data'])
+            tdf = tdf.merge(
+                df[plan_names], on=plan_names, how='left', indicator=True)
+            tdf[self.proj_completion_col] = [
+                'Over Delivered' if tdf['_merge'][x] == 'both'
+                else tdf[self.proj_completion_col][x] for x in tdf.index]
+            tdf = tdf.drop(columns=['_merge'])
+        tdf = tdf.merge(start_dates, how='left', on=plan_names)
+        tdf = tdf.merge(end_dates, how='left', on=plan_names)
+        tdf = self.get_actual_delivery(tdf)
+        final_cols = (plan_names + [dctc.SD] + [dctc.ED] + [vmc.cost] +
+                      [dctc.PNC] + [self.delivery_col] +
+                      [self.proj_completion_col] + [self.pacing_goal_col] +
+                      [vmc.AD_COST])
+        final_cols = [x for x in final_cols if x in tdf.columns]
+        tdf = tdf[final_cols]
+        tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
+        tdf = utl.data_to_type(
+            tdf, float_col=[vmc.cost, dctc.PNC, vmc.AD_COST])
+        for col in [dctc.PNC, vmc.cost, vmc.AD_COST]:
+            tdf[col] = '$' + tdf[col].round(2).astype(str)
+        for col in [dctc.SD, dctc.ED]:
+            tdf[col] = [str(0) if x == 0
+                        else str(pd.to_datetime(x).date()) for x in tdf[col]]
+        return tdf
+
+    def do_analysis(self):
+        df = self.aly.df
+        df = self.get_pacing_anlysis(df)
+        if df.empty:
+            msg = ('Could not calculate pacing data.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('Projected delivery completion and current pacing '
+                   'is as follows:')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.aly.delivery_comp_col,
+                                      message=msg, data=df.to_dict())
+
+
+class GetDailyDelivery(AnalyzeBase):
+    name = Analyze.placement_col
+    fix = False
+    pre_run = False
+    num_days = 'Num Days'
+    daily_spend_goal = 'Daily Spend Goal'
+    day_pacing = 'Day Pacing'
+
+    def get_daily_delivery(self, df):
+        """
+        Get daily delivery data for each unique planned net level breakout
+
+        :param df: full output df
+        """
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        start_dates, end_dates = self.aly.get_start_end_dates(df, plan_names)
+        pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
+        pdf = self.matrix.vendor_get(vm.plan_key)
+        pdf = pdf[pdf_cols]
+        groups = plan_names + [vmc.date]
+        metrics = [cal.NCF]
+        df = df.groupby(groups)[metrics].sum().reset_index()
+        df = utl.data_to_type(df, date_col=[vmc.date])
+        unique_breakouts = df.groupby(plan_names).first().reset_index()
+        unique_breakouts = unique_breakouts[plan_names]
+        daily_dfs = []
+        sort_ascending = [True for x in plan_names]
+        sort_ascending.append(False)
+        for index, row in unique_breakouts.iterrows():
+            tdf = df
+            for x in plan_names:
+                tdf = tdf[tdf[x] == row[x]]
+            tdf = tdf.merge(start_dates, how='left', on=plan_names)
+            tdf = tdf.merge(end_dates, how='left', on=plan_names)
+            tdf = tdf.merge(pdf, how='left', on=plan_names)
+            tdf = utl.data_to_type(tdf, float_col=[dctc.PNC])
+            tdf[self.num_days] = (tdf[dctc.ED] - tdf[dctc.SD]).dt.days
+            tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
+            if tdf[self.num_days][0] == 0 or tdf[dctc.PNC][0] == 0:
+                tdf[self.daily_spend_goal] = 0
+                tdf[self.day_pacing] = '0%'
+            else:
+                daily_spend_goal = (tdf[dctc.PNC][0] / tdf[self.num_days][0])
+                stop_date = (tdf[dctc.SD][0] +
+                             dt.timedelta(days=int(tdf[self.num_days][0])))
+                tdf[self.daily_spend_goal] = [daily_spend_goal if
+                                              (tdf[dctc.SD][0] <= x <= stop_date
+                                               ) else 0 for x in tdf[vmc.date]]
+                tdf[self.day_pacing] = (
+                        ((tdf[cal.NCF] / tdf[self.daily_spend_goal]) - 1) * 100)
+                tdf[self.day_pacing] = tdf[self.day_pacing].replace(
+                    [np.inf, -np.inf], np.nan).fillna(0.0)
+                tdf[self.day_pacing] = (
+                        tdf[self.day_pacing].round(2).astype(str) + '%')
+            tdf = tdf.sort_values(
+                plan_names + [vmc.date], ascending=sort_ascending)
+            tdf[[dctc.SD, dctc.ED, vmc.date]] = tdf[
+                [dctc.SD, dctc.ED, vmc.date]].astype(str)
+            tdf = tdf.reset_index(drop=True)
+            daily_dfs.append(tdf.to_dict())
+        return daily_dfs
+
+    def do_analysis(self):
+        df = self.aly.df
+        dfs = self.get_daily_delivery(df)
+        msg = 'Daily delivery is as follows:'
+        self.aly.add_to_analysis_dict(key_col=self.aly.daily_delivery_col,
+                                      message=msg, data=dfs)
+
+
+class GetServingAlerts(AnalyzeBase):
+    name = Analyze.placement_col
+    fix = False
+    pre_run = False
+    adserving_ratio = 'Adserving %'
+
+    def get_serving_alerts(self):
+        """
+        Check for adserving overages -- over 5.5% of net cost
+
+        """
+        pacing_analysis = self.aly.find_in_analysis_dict(
+            self.aly.delivery_comp_col)[0]
+        df = pd.DataFrame(pacing_analysis['data'])
+        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
+        if not df.empty:
+            df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
+            df[self.adserving_ratio] = df.apply(
+                lambda row: 0 if row[vmc.cost] == 0
+                else (row[vmc.AD_COST] / row[vmc.cost]) * 100, axis=1)
+            df = df[df[self.adserving_ratio] > 5.5]
+            if not df.empty:
+                df[[vmc.cost, vmc.AD_COST]] = (
+                        '$' + df[[vmc.cost, vmc.AD_COST]].round(2).astype(str))
+                df[self.adserving_ratio] = df[
+                                               self.adserving_ratio].round(2).astype(str) + "%"
+                df = df[final_cols]
+        return df
+
+    def do_analysis(self):
+        df = self.get_serving_alerts()
+        if df.empty:
+            msg = 'No significant adserving overages.'
+            logging.info('{}\n{}'.format(msg, df))
+        else:
+            msg = 'Adserving cost significantly OVER for the following: '
+            logging.info('{}\n{}'.format(msg, df))
+        self.aly.add_to_analysis_dict(key_col=self.aly.adserving_alert,
+                                      message=msg, data=df.to_dict())
+
+
+class GetDailyPacingAlerts(AnalyzeBase):
+    name = Analyze.placement_col
+    fix = False
+    pre_run = False
+    day_pacing = 'Day Pacing'
+
+    def get_daily_pacing_alerts(self):
+        """
+        Check daily pacing issues -- +/- 20% of daily pacing goal
+
+        """
+        dfs_dict = self.aly.find_in_analysis_dict(
+            self.aly.daily_delivery_col)[0]['data']
+        yesterday = dt.datetime.strftime(
+            dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
+        over_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
+        under_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
+        for dict in dfs_dict:
+            df = pd.DataFrame(dict)
+            if not df.empty:
+                df = df[df[vmc.date] == yesterday]
+                if not df.empty:
+                    val = df[self.day_pacing].iloc[0]
+                    val = float(val.replace("%", ""))
+                    if val >= 20:
+                        over_df = pd.concat([over_df, df], ignore_index=True)
+                    if val <= -20:
+                        under_df = pd.concat([under_df, df], ignore_index=True)
+        return over_df, under_df
+
+    def do_analysis(self):
+        over_df, under_df = self.get_daily_pacing_alerts()
+        if over_df.empty:
+            msg = 'No significant daily pacing overages.'
+            logging.info('{}\n{}'.format(msg, over_df))
+        else:
+            msg = ('Yesterday\'s spend for the following exceeded '
+                   'daily pacing goal by:')
+            logging.info('{}\n{}'.format(msg, over_df))
+        self.aly.add_to_analysis_dict(
+            key_col=self.aly.daily_pacing_alert, message=msg,
+            param=self.aly.over_daily_pace, data=over_df.to_dict())
+        if under_df.empty:
+            msg = 'No significant daily under pacing.'
+            logging.info('{}\n{}'.format(msg, under_df))
+        else:
+            msg = ('Yesterday\'s spend for the following under paced the'
+                   'daily goal by:')
+            logging.info('{}\n{}'.format(msg, under_df))
+        self.aly.add_to_analysis_dict(
+            key_col=self.aly.daily_pacing_alert, message=msg,
+            param=self.aly.under_daily_pace, data=under_df.to_dict())
 
 
 class ValueCalc(object):
