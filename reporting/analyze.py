@@ -153,17 +153,17 @@ class Analyze(object):
         :returns: two dfs w/ start and end dates for each unique breakout
         """
         matrix = vm.VendorMatrix().vm_df
+        matrix = matrix[[vmc.vendorkey, vmc.startdate, vmc.enddate]]
+        matrix = matrix.rename(columns={vmc.startdate: dctc.SD,
+                                        vmc.enddate: dctc.ED})
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
+        vm_dates = vm_dates.merge(matrix, how='left', on=vmc.vendorkey)
         vm_dates = vm_dates.groupby(
-            plan_names + [vmc.vendorkey]).sum().reset_index()
-        vm_dates = vm_dates.sort_values(vmc.cost, ascending=False)
-        vm_dates = vm_dates.drop_duplicates(plan_names)
-        vm_dates[dctc.SD] = [
-            matrix[matrix[vmc.vendorkey] == x][vmc.startdate].values[0]
-            for x in vm_dates[vmc.vendorkey]]
-        vm_dates[dctc.ED] = [
-            matrix[matrix[vmc.vendorkey] == x][vmc.enddate].values[0]
-            for x in vm_dates[vmc.vendorkey]]
+            plan_names + [vmc.vendorkey]).agg(
+            {vmc.cost: 'sum', dctc.SD: 'min', dctc.ED: 'max'}).reset_index()
+        vm_dates = vm_dates[vm_dates[vmc.cost] > 0]
+        vm_dates = vm_dates.groupby(plan_names).agg(
+            {dctc.SD: 'min', dctc.ED: 'max'}).reset_index()
         if dctc.SD in df.columns and dctc.ED in df.columns:
             start_end_dates = df[plan_names + [dctc.SD, dctc.ED]]
             start_end_dates = start_end_dates.groupby(plan_names).agg(
@@ -1645,6 +1645,8 @@ class GetDailyPacingAlerts(AnalyzeBase):
                     if val >= 20:
                         over_df = pd.concat([over_df, df], ignore_index=True)
                     if val <= -20:
+                        df[self.day_pacing].iloc[0] = abs(
+                            df[self.day_pacing].iloc[0])
                         under_df = pd.concat([under_df, df], ignore_index=True)
         return over_df, under_df
 
