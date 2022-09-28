@@ -824,18 +824,7 @@ class DataSource(object):
                 return self.ic_params
 
     def write(self, df=None):
-        logging.debug('Writing {}'.format(self.p[vmc.filename]))
-        file_type = os.path.splitext(self.p[vmc.filename_true])[1].lower()
-        if file_type == '.xlsx':
-            write_func = df.to_excel
-        else:
-            write_func = df.to_csv
-        try:
-            write_func(self.p[vmc.filename_true], index=False,
-                       encoding='utf-8')
-        except IOError:
-            logging.warning('{} could not be opened.  This file was not saved.'
-                            ''.format(self.p[vmc.filename]))
+        utl.write_file(df, self.p[vmc.filename_true])
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
@@ -883,6 +872,10 @@ def df_single_transform(df, transform):
     if transform_type == 'MixedDateColumn':
         mixed_col = transform[1]
         date_col = transform[2]
+        if mixed_col not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" not '
+                        'in datasource.'.format(transform_type, mixed_col))
+            return df
         df[date_col] = df[mixed_col]
         df = utl.data_to_type(df, date_col=[date_col])
         df['temp'] = df[date_col]
@@ -892,6 +885,10 @@ def df_single_transform(df, transform):
     if transform_type == 'Pivot':
         pivot_col = transform[1]
         val_col = transform[2].split('|')
+        if pivot_col not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" '
+                        'not in datasource.'.format(transform_type, pivot_col))
+            return df
         df = df.fillna(0)
         index_cols = [x for x in df.columns if x not in val_col + [pivot_col]]
         df = pd.pivot_table(df, index=index_cols, columns=[pivot_col],
@@ -981,6 +978,11 @@ def df_single_transform(df, transform):
     if transform_type == 'Stack':
         header_col_name = transform[1]
         hold_col_name = transform[2]
+        if hold_col_name not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" '
+                        'not in datasource.'.format(transform_type,
+                                                    hold_col_name))
+            return df
         df.columns = [df.columns[idx - 1] if 'Unnamed' in x else x
                       for idx, x in enumerate(df.columns)]
         hdf = pd.DataFrame(df[hold_col_name])
@@ -1015,6 +1017,10 @@ def df_single_transform(df, transform):
     if transform_type == 'FilterCol':
         col_name = transform[1]
         col_val = transform[2]
+        if col_name not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" '
+                        'not in datasource.'.format(transform_type, col_name))
+            return df
         df = df.dropna(subset=[col_name])
         df = df.reset_index(drop=True)
         exclude_toggle = False
@@ -1027,6 +1033,11 @@ def df_single_transform(df, transform):
             df = df[df[col_name].astype('U').str.contains(col_val)]
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
+        if cols[0] not in df.columns or cols[1] not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" or "{}" '
+                        'not in datasource.'.format(transform_type, cols[0],
+                                                    cols[1]))
+            return df
         df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
         df.drop(cols[1], axis=1, inplace=True)
     if transform_type == 'EqualReplace':
@@ -1036,6 +1047,11 @@ def df_single_transform(df, transform):
         comp_col = comp_cols[0]
         delimiter = comp_cols[1]
         idx = comp_cols[2]
+        if col not in df.columns or comp_col not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" or "{}" '
+                        'not in datasource.'.format(transform_type, col,
+                                                    comp_col))
+            return df
         comp = df[col].str.split(delimiter).str[int(idx)] == df[
             comp_col].astype('U')
         df[col] = np.where(comp, replace_val, df[col])

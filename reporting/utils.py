@@ -67,10 +67,33 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
             df = pd.DataFrame()
         else:
             df = None
+            return df
     if sheet_names:
         df = pd.concat(df, ignore_index=True, sort=True)
     df = df.rename(columns=lambda x: x.strip())
     return df
+
+
+def write_file(df, file_name):
+    """Writes a df to disk as csv or xlsx parsing file type from name
+
+    Keyword arguments:
+    df -- the dataframe to be written
+    file_name -- the name of the file to write to on disk
+    """
+    logging.debug('Writing {}'.format(file_name))
+    file_type = os.path.splitext(file_name)[1].lower()
+    if file_type == '.xlsx':
+        write_func = df.to_excel
+    else:
+        write_func = df.to_csv
+    try:
+        write_func(file_name, index=False, encoding='utf-8')
+        return True
+    except IOError:
+        logging.warning('{} could not be opened.  This file was not saved.'
+                        ''.format(file_name))
+        return False
 
 
 def exceldate_to_datetime(excel_date):

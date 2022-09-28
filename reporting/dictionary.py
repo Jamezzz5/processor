@@ -608,7 +608,11 @@ def dict_update():
         else:
             cols = dctc.COLS
         ndic = pd.DataFrame(columns=cols, index=None)
-        dic = Dict(filename)
+        try:
+            dic = Dict(filename)
+        except Exception as e:
+            logging.warning('Could not load dict continuing: {}'.format(e))
+            continue
         if dctc.FPN not in dic.data_dict.columns:
             continue
         odic = dic.get()

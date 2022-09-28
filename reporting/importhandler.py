@@ -44,6 +44,12 @@ class ImportHandler(object):
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
                last_row=None, date_col=None, start_date=None, end_date=None):
+        """Writes a df to disk from an API
+
+        Keyword arguments:
+        api_df -- the dataframe to be written
+        filename -- the name of the file to write to on disk
+        """
         utl.dir_check(utl.raw_path)
         if str(api_merge) != 'nan':
             api_df = self.merge_df(api_df, filename, date_col, start_date,
@@ -56,9 +62,8 @@ class ImportHandler(object):
 
     def write_df(self, api_df, full_file, attempt=0):
         if not api_df.empty:
-            try:
-                api_df.to_csv(full_file, index=False, encoding='utf-8')
-            except IOError:
+            file_written = utl.write_file(api_df, full_file)
+            if not file_written:
                 logging.warning('{} could not be opened.  API data was '
                                 'not saved will attempt {} '
                                 'more times.'.format(full_file, 4 - attempt))
@@ -120,6 +125,12 @@ class ImportHandler(object):
         return sd
 
     def api_calls(self, key_list, api_class):
+        """Makes an API Call
+
+        Keyword arguments:
+        key_list -- list of Vendormatrix keys for a given API
+        api_class -- The class of API to call
+        """
         for vk in key_list:
             params = self.matrix.vendor_set(vk)
             api_class.input_config(params[vmc.apifile])
@@ -143,6 +154,9 @@ class ImportHandler(object):
                         params[vmc.enddate])
 
     def api_loop(self):
+        """Loops through all APIs and makes function call to retrieve data.
+
+        """
         apis = [('fb', self.matrix.api_fb_key, fbapi.FbApi),
                 ('aw', self.matrix.api_aw_key, awapi.AwApi),
                 ('tw', self.matrix.api_tw_key, twapi.TwApi),

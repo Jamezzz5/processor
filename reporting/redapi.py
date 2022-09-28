@@ -211,7 +211,6 @@ class RedApi(object):
     def set_dates(self, sd, ed, base_xpath=None):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
         cal_xpath = self.open_calendar(base_xpath)
-        cal_xpath = cal_xpath.replace('body/div[8]', 'body/div[9]')
         self.set_date(sd, cal_xpath=cal_xpath)
         self.set_date(ed, cal_xpath=cal_xpath)
         try:
@@ -230,8 +229,8 @@ class RedApi(object):
     def click_grouped_metrics(self):
         for x in range(2, 6):
             metric_xpath = (
-                '/html/body/div[5]/div/div/div/div/div[2]/div[2]/'
-                'div/ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
+                '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
+                'ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
             try:
                 self.click_on_xpath(metric_xpath, sleep=1)
             except ex.NoSuchElementException as e:

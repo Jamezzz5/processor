@@ -162,10 +162,12 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
 def net_cost_calculation(df):
     logging.info('Calculating Net Cost')
     df = clicks_by_place_date(df)
-    for col in [(BM_CPA, vmc.conv1), (BM_CPE, vmc.engagements)]:
+    for col in [(BM_CPA, vmc.conv1), (BM_CPE, vmc.engagements),
+                (BM_CPVM, vmc.view_imps)]:
         if col[0] in df[dctc.BM].unique() and col[1] not in df.columns:
             logging.warning('{} buy model specified '
                             'without conversion {}.'.format(col[0], col[1]))
+            df[col[1]] = 0
     calc_ser = df[df[dctc.BM].isin(BUY_MODELS)].apply(net_cost, axis=1)
     if not calc_ser.empty:
         df[vmc.cost].update(calc_ser)
@@ -219,7 +221,7 @@ def net_cost_final(df, p_col=dctc.PFPN, n_cost=vmc.cost):
     else:
         df[NC_CUM_SUM_MIN_DATE] = 0
         df[NCF] = df[n_cost]
-    df = utl.col_removal(df, 'Raw Data', DROP_COL)
+    df = utl.col_removal(df, 'Raw Data', DROP_COL, warn=False)
     return df
 
 
