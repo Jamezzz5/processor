@@ -156,6 +156,11 @@ class Analyze(object):
         matrix = matrix[[vmc.vendorkey, vmc.startdate, vmc.enddate]]
         matrix = matrix.rename(columns={vmc.startdate: dctc.SD,
                                         vmc.enddate: dctc.ED})
+        matrix = utl.data_to_type(matrix, date_col=[dctc.SD, dctc.ED],
+                                  fill_empty=False)
+        matrix[[dctc.SD, dctc.ED]] = matrix[[dctc.SD, dctc.ED]].fillna(pd.NaT)
+        matrix[[dctc.SD, dctc.ED]] = matrix[
+            [dctc.SD, dctc.ED]].replace([""], pd.NaT)
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
         vm_dates = vm_dates.merge(matrix, how='left', on=vmc.vendorkey)
         vm_dates = vm_dates.groupby(
@@ -1348,7 +1353,7 @@ class GetPacingAnalysis(AnalyzeBase):
         Gets rolling means to project delivery from
 
         :param df: a df containing dates and desired values/groups
-        :param value_cols: values to calculate rolling means of
+        :param value_col: values to calculate rolling means of
         :param group_cols: column breakouts to base rolling means on
         :returns: df w/ groups cols, value_cols, and 3,7,30 day rolling means
         """
@@ -1412,7 +1417,7 @@ class GetPacingAnalysis(AnalyzeBase):
         df[self.delivery_col] = df[self.delivery_col].replace(
             [np.inf, -np.inf], np.nan).fillna(0)
         df[self.delivery_col] = df[self.delivery_col].astype(str) + '%'
-        df[self.pacing_goal_col] = ((pd.Timestamp.today() - df[dctc.SD]
+        df[self.pacing_goal_col] = ((pd.Timestamp.today(None) - df[dctc.SD]
                                      ) / (df[dctc.ED] - df[dctc.SD])
                                     * 100).round(2)
         df[self.pacing_goal_col] = np.where(
@@ -1422,7 +1427,7 @@ class GetPacingAnalysis(AnalyzeBase):
         df[self.pacing_goal_col] = df[self.pacing_goal_col].astype(str) + '%'
         return df
 
-    def get_pacing_anlysis(self, df):
+    def get_pacing_analysis(self, df):
         """
         Calculate topline level pacing data for use in pacing table and alerts.
 
@@ -1494,9 +1499,9 @@ class GetPacingAnalysis(AnalyzeBase):
 
     def do_analysis(self):
         df = self.aly.df
-        df = self.get_pacing_anlysis(df)
+        df = self.get_pacing_analysis(df)
         if df.empty:
-            msg = ('Could not calculate pacing data.')
+            msg = 'Could not calculate pacing data.'
             logging.info('{}'.format(msg))
         else:
             msg = ('Projected delivery completion and current pacing '
@@ -1532,7 +1537,7 @@ class GetDailyDelivery(AnalyzeBase):
         unique_breakouts = df.groupby(plan_names).first().reset_index()
         unique_breakouts = unique_breakouts[plan_names]
         daily_dfs = []
-        sort_ascending = [True for x in plan_names]
+        sort_ascending = [True for _ in plan_names]
         sort_ascending.append(False)
         for index, row in unique_breakouts.iterrows():
             tdf = df
@@ -1601,8 +1606,8 @@ class GetServingAlerts(AnalyzeBase):
             if not df.empty:
                 df[[vmc.cost, vmc.AD_COST]] = (
                         '$' + df[[vmc.cost, vmc.AD_COST]].round(2).astype(str))
-                df[self.adserving_ratio] = df[
-                                               self.adserving_ratio].round(2).astype(str) + "%"
+                df[self.adserving_ratio] = (
+                        df[self.adserving_ratio].round(2).astype(str) + "%")
                 df = df[final_cols]
         return df
 
@@ -1635,8 +1640,8 @@ class GetDailyPacingAlerts(AnalyzeBase):
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         over_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
         under_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
-        for dict in dfs_dict:
-            df = pd.DataFrame(dict)
+        for data in dfs_dict:
+            df = pd.DataFrame(data)
             if not df.empty:
                 df = df[df[vmc.date] == yesterday]
                 if not df.empty:
