@@ -243,6 +243,10 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         if metrics[0] != pre_or_post:
             continue
         if len(metrics) == 3:
+            if metrics[1] not in df.columns:
+                logging.warning(
+                    '{} not in columns setting to 0.'.format(metrics[1]))
+                df[metrics[1]] = 0
             df[metrics[2]] = df[metrics[1]]
             metrics[1] = metrics[2]
         tdf = df
@@ -331,3 +335,13 @@ def rename_duplicates(old):
         else:
             seen.append(x)
             yield x
+
+
+def date_check(sd, ed):
+    sd = sd.date()
+    ed = ed.date()
+    if sd > ed:
+        logging.warning('Start date greater than end date.  Start date '
+                        'was set to end date.')
+        sd = ed
+    return sd, ed
