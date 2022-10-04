@@ -180,6 +180,7 @@ class Analyze(object):
             lambda x: (x[dctc.SD] != x[dctc.ED]
                        and not pd.isnull(x[dctc.SD])
                        and not pd.isnull(x[dctc.ED])), axis=1)]
+        vm_dates[plan_names] = vm_dates[plan_names].astype(object)
         vm_dates = vm_dates.merge(
             start_end_dates, how='left', on=plan_names, indicator=True)
         vm_dates = vm_dates[vm_dates['_merge'] == 'left_only']
