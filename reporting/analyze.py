@@ -180,6 +180,7 @@ class Analyze(object):
             lambda x: (x[dctc.SD] != x[dctc.ED]
                        and not pd.isnull(x[dctc.SD])
                        and not pd.isnull(x[dctc.ED])), axis=1)]
+        vm_dates[plan_names] = vm_dates[plan_names].astype(object)
         vm_dates = vm_dates.merge(
             start_end_dates, how='left', on=plan_names, indicator=True)
         vm_dates = vm_dates[vm_dates['_merge'] == 'left_only']
@@ -1650,8 +1651,8 @@ class GetDailyPacingAlerts(AnalyzeBase):
                     if val >= 20:
                         over_df = pd.concat([over_df, df], ignore_index=True)
                     if val <= -20:
-                        df[self.day_pacing].iloc[0] = abs(
-                            df[self.day_pacing].iloc[0])
+                        df[self.day_pacing].iloc[0] = (
+                            df[self.day_pacing].iloc[0].replace("-", ""))
                         under_df = pd.concat([under_df, df], ignore_index=True)
         return over_df, under_df
 
@@ -1671,7 +1672,7 @@ class GetDailyPacingAlerts(AnalyzeBase):
             msg = 'No significant daily under pacing.'
             logging.info('{}\n{}'.format(msg, under_df))
         else:
-            msg = ('Yesterday\'s spend for the following under paced the'
+            msg = ('Yesterday\'s spend for the following under paced the '
                    'daily goal by:')
             logging.info('{}\n{}'.format(msg, under_df))
         self.aly.add_to_analysis_dict(
