@@ -271,6 +271,7 @@ class Analyze(object):
             shutil.copy(file_name, new_file_name)
         logging.info('Successfully backed up files to {}'.format(bu))
 
+    # noinspection PyUnresolvedReferences
     @staticmethod
     def make_heat_map(df, cost_cols=None, percent_cols=None):
         fig, axs = sns.plt.subplots(ncols=len(df.columns),
@@ -475,8 +476,9 @@ class Analyze(object):
         self.calculate_kpi_trend(kpi, group, metrics)
 
     def evaluate_on_kpis(self):
-        for kpi in self.df[dctc.KPI].unique():
-            self.evaluate_on_kpi(kpi)
+        if dctc.KPI in self.df.columns:
+            for kpi in self.df[dctc.KPI].unique():
+                self.evaluate_on_kpi(kpi)
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -506,6 +508,9 @@ class Analyze(object):
     def get_metrics_by_vendor_key(self):
         data_sources = self.matrix.get_all_data_sources()
         df = self.df.copy()
+        if df.empty:
+            logging.warning('Dataframe empty could not get metrics.')
+            return False
         metrics = []
         for source in data_sources:
             metrics.extend(source.get_active_metrics())
@@ -523,6 +528,7 @@ class Analyze(object):
         logging.info('{}\n{}'.format(update_msg, df.to_string()))
         self.add_to_analysis_dict(key_col=self.vk_metrics,
                                   message=update_msg, data=df.to_dict())
+        return True
 
     def find_missing_metrics(self):
         df = self.get_table_without_format(group=dctc.VEN)
@@ -552,6 +558,9 @@ class Analyze(object):
 
     def flag_errant_metrics(self):
         df = self.get_table_without_format(group=dctc.VEN)
+        if df.empty:
+            logging.warning('Dataframe empty, could not determine flags.')
+            return False
         all_threshold = 'All'
         threshold_col = 'threshold'
         thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
@@ -570,6 +579,7 @@ class Analyze(object):
                 self.add_to_analysis_dict(
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
+        return True
 
     @staticmethod
     def processor_clean_functions(df, cd, cds_name, clean_functions):
@@ -892,6 +902,10 @@ class Analyze(object):
         df = self.generate_df_table(groups, metrics, sort=None,
                                     data_filter=None)
         df = df.reset_index()
+        if df.empty:
+            logging.warning('Dataframe empty, '
+                            'could not determine missing serving.')
+            return False
         df = df[(df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key))]
         df = df[(df[dctc.AM] == 'nan') | (df[dctc.AM] == 0) |
@@ -909,6 +923,7 @@ class Analyze(object):
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(key_col=self.missing_serving,
                                   message=msg, data=df.to_dict())
+        return True
 
     def find_missing_ad_rate(self):
         groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.AR]
@@ -916,6 +931,10 @@ class Analyze(object):
         df = self.generate_df_table(groups, metrics, sort=None,
                                     data_filter=None)
         df = df.reset_index()
+        if df.empty:
+            logging.warning(
+                'Dataframe empty, could not determine missing ad rate.')
+            return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
@@ -934,6 +953,7 @@ class Analyze(object):
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(key_col=self.missing_ad_rate,
                                   message=msg, data=df.to_dict())
+        return True
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
                               split_col=None, filter_col=None, filter_val=None):
@@ -1043,7 +1063,9 @@ class CheckAutoDictOrder(AnalyzeBase):
         tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
         ven_col_counts = [tdf[col].isin(ven_list).sum()
                           for col in tdf.columns]
-        max_idx = ven_col_counts.index(max(ven_col_counts))
+        max_val = max(ven_col_counts)
+        max_idx = min(
+            [idx for idx, val in enumerate(ven_col_counts) if val == max_val])
         auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
                          if dctc.VEN in source.p[vmc.autodicord] else None)
         if (auto_dict_idx and max_idx != auto_dict_idx and
@@ -1349,7 +1371,8 @@ class GetPacingAnalysis(AnalyzeBase):
     proj_completion_col = 'Projected Full Delivery'
     pacing_goal_col = '% Through Campaign'
 
-    def get_rolling_mean_df(self, df, value_col, group_cols):
+    @staticmethod
+    def get_rolling_mean_df(df, value_col, group_cols):
         """
         Gets rolling means to project delivery from
 
@@ -1358,6 +1381,9 @@ class GetPacingAnalysis(AnalyzeBase):
         :param group_cols: column breakouts to base rolling means on
         :returns: df w/ groups cols, value_cols, and 3,7,30 day rolling means
         """
+        if df.empty:
+            logging.warning('Dataframe empty, could not get rolling mean.')
+            return df
         pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
                              values=value_col, aggfunc=np.sum)
         if len(pdf.columns) > 10000:
@@ -1434,6 +1460,9 @@ class GetPacingAnalysis(AnalyzeBase):
 
         :param df: full output df
         """
+        if df.empty:
+            logging.warning('Dataframe empty could not get pacing analysis.')
+            return pd.DataFrame()
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         average_df = self.get_rolling_mean_df(
             df=df, value_col=vmc.cost, group_cols=plan_names)
@@ -1443,7 +1472,7 @@ class GetPacingAnalysis(AnalyzeBase):
             logging.warning(msg)
             self.aly.add_to_analysis_dict(key_col=self.aly.delivery_comp_col,
                                           message=msg)
-            return False
+            return pd.DataFrame()
         last_date = dt.datetime.strftime(
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         average_df = average_df[average_df[vmc.date] == last_date]
@@ -1526,6 +1555,10 @@ class GetDailyDelivery(AnalyzeBase):
 
         :param df: full output df
         """
+        daily_dfs = []
+        if df.empty:
+            logging.warning('Dataframe empty cannot get daily delivery')
+            return daily_dfs
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.aly.get_start_end_dates(df, plan_names)
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
@@ -1537,7 +1570,6 @@ class GetDailyDelivery(AnalyzeBase):
         df = utl.data_to_type(df, date_col=[vmc.date])
         unique_breakouts = df.groupby(plan_names).first().reset_index()
         unique_breakouts = unique_breakouts[plan_names]
-        daily_dfs = []
         sort_ascending = [True for _ in plan_names]
         sort_ascending.append(False)
         for index, row in unique_breakouts.iterrows():
@@ -1637,6 +1669,9 @@ class GetDailyPacingAlerts(AnalyzeBase):
         """
         dfs_dict = self.aly.find_in_analysis_dict(
             self.aly.daily_delivery_col)[0]['data']
+        if not dfs_dict:
+            logging.warning('Dataframes empty could not get alerts')
+            return pd.DataFrame(), pd.DataFrame()
         yesterday = dt.datetime.strftime(
             dt.datetime.today() - dt.timedelta(days=1), '%Y-%m-%d')
         over_df = pd.DataFrame(columns=pd.DataFrame(dfs_dict[0]).columns)
