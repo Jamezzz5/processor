@@ -242,7 +242,9 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
             continue
+        set_column_to_value = False
         if len(metrics) == 3:
+            set_column_to_value = True
             if metrics[1] not in df.columns:
                 logging.warning(
                     '{} not in columns setting to 0.'.format(metrics[1]))
@@ -282,6 +284,9 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
             df = data_to_type(df, float_col=[metric])
             df.loc[q_idx, metric] = (df.loc[q_idx, metric].astype(float) *
                                      float(factor))
+            if set_column_to_value:
+                df.loc[~df.index.isin(q_idx), metric] = (
+                    df.loc[~df.index.isin(q_idx), metric].astype(float) * 0)
     return df
 
 
