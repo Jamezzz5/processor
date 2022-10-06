@@ -53,15 +53,19 @@ class ExportHandler(object):
 
     def export_db(self, exp_key):
         dbu = DBUpload()
-        dbu.upload_to_db(self.config[exc.config_file][exp_key],
-                         self.config[exc.schema_file][exp_key],
-                         self.config[exc.translation_file][exp_key],
-                         self.config[exc.output_file][exp_key])
+        upload_success = dbu.upload_to_db(
+            db_file=self.config[exc.config_file][exp_key],
+            schema_file=self.config[exc.schema_file][exp_key],
+            translation_file=self.config[exc.translation_file][exp_key],
+            data_file=self.config[exc.output_file][exp_key])
+        if not upload_success:
+            return False
         if exp_key == exc.default_export_db_key:
             filter_val = dbu.dft.df[exc.product_name].drop_duplicates()[0]
             view_name = 'auto_{}'.format(re.sub(r'\W+', '', filter_val).lower())
             self.create_view(dbu, filter_val, view_name)
             self.update_tableau(dbu.db, view_name)
+        return True
 
     @staticmethod
     def create_view(dbu, filter_val, view_name):
@@ -141,9 +145,12 @@ class DBUpload(object):
         logging.info('Uploading ' + data_file + ' to ' + self.db.db)
         self.dbs = DBSchema(schema_file)
         self.dft = DFTranslation(translation_file, data_file, self.db)
+        if self.dft.df.empty:
+            return False
         for table in self.dbs.table_list:
             self.upload_table_to_db(table)
         logging.info(data_file + ' successfully upload to ' + self.db.db)
+        return True
 
     def upload_table_to_db(self, table):
         logging.info('Uploading table ' + table + ' to ' + self.db.db)
@@ -624,6 +631,9 @@ class DFTranslation(object):
             self.df = pd.read_csv(datafile, encoding='utf-8')
         except UnicodeDecodeError:
             self.df = pd.read_csv(datafile, encoding='iso-8859-1')
+        if self.df.empty:
+            logging.warning('Dataframe empty, stopping upload.')
+            return False
         self.df_columns = [x for x in self.df_columns
                            if x in list(self.df.columns)]
         self.df = self.df[self.df_columns]
@@ -639,6 +649,7 @@ class DFTranslation(object):
         self.df = self.df.reset_index(drop=True)
         replace_dict = {'"': '', "\\\\": '/', '\r': '', '\n': '', '\t': ''}
         self.df.replace(replace_dict, regex=True, inplace=True)
+        return True
 
     def get_upload_id(self):
         self.add_upload_cols()
