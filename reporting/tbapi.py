@@ -117,7 +117,11 @@ class TabApi(object):
         r = self.make_request(er_url, resp_key='tasks')
         er_id = [x['extractRefresh']['id'] for x in r.json()['tasks']['task']
                  if 'datasource' in x['extractRefresh'] and
-                 x['extractRefresh']['datasource']['id'] == ds_id][0]
+                 x['extractRefresh']['datasource']['id'] == ds_id]
+        if er_id:
+            er_id = er_id[0]
+        else:
+            er_id = None
         return er_id
 
     def send_refresh_request(self, er_id):
@@ -154,8 +158,11 @@ class TabApi(object):
             self.set_headers()
             ds_id = self.find_datasource()
             er_id = self.find_extract_refreshes(ds_id)
-            job_id = self.send_refresh_request(er_id)
-            self.check_job_until_complete(job_id)
+            if er_id:
+                job_id = self.send_refresh_request(er_id)
+                self.check_job_until_complete(job_id)
+            else:
+                logging.warning('No extract to refresh configure one.')
         else:
             logging.warning('Tableau api not configured, it was not refreshed.')
 
