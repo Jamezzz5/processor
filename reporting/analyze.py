@@ -703,18 +703,30 @@ class Analyze(object):
             cd[x] = {}
         return cd, clean_functions, c_cols
 
+    @staticmethod
+    def check_sheet_names(tds, sheet_names):
+        missing_sheets = []
+        xl = pd.read_excel(tds.p[vmc.filename], None)
+        sheet_lists = list(xl.keys())
+        for sheet_name in sheet_names:
+            if sheet_name not in sheet_lists:
+                missing_sheets.append(sheet_name)
+        return missing_sheets
+
     def compare_raw_files(self, vk):
         ds = self.matrix.get_data_source(vk)
         tds = self.matrix.get_data_source(vk)
-        sheet_info = ''
-        if ':::' in ds.p[vmc.filename]:
-            sheet_info = ':::'.join(ds.p[vmc.filename].split(':::')[1:])
-            sheet_info = ':::' + sheet_info
         file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
         tmp_file = ds.p[vmc.filename_true].replace(
             file_type, '{}{}'.format(utl.tmp_file_suffix, file_type))
         tds.p[vmc.filename_true] = tmp_file
-        tds.p[vmc.filename] = tmp_file + sheet_info
+        tds.p[vmc.filename] = tmp_file
+        missing_sheets = []
+        if ':::' in ds.p[vmc.filename]:
+            sheet_names = ds.p[vmc.filename].split(':::')[1:]
+            sheet_info = ':::' + ':::'.join(sheet_names)
+            missing_sheets = self.check_sheet_names(tds, sheet_names)
+            tds.p[vmc.filename] += sheet_info
         cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
@@ -722,9 +734,16 @@ class Analyze(object):
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
                 if cds_name == 'New':
-                    msg = 'Please open the file in excel, select all columns, '
-                    'select General in the Number format dropdown, '
-                    'save as a csv and retry.'
+                    if missing_sheets:
+                        missing_sheets = ', '.join(missing_sheets).upper()
+                        msg = ('Xlsx file is missing the following sheets: '
+                               '{}. Rename sheets if naming is wrong. Else, '
+                               'check w/ vendor to get all needed sheets.'
+                               ).format(missing_sheets)
+                    else:
+                        msg = 'Please open the file in excel, select all '
+                        'columns, select General in the Number format '
+                        'dropdown, save as a csv and retry.'
                 else:
                     msg = ('The old file may not exist.  '
                            'Please save the new file.')
