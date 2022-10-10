@@ -133,7 +133,10 @@ class DbApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.create_report(sd, ed, fields)
+        report_created = self.create_report(sd, ed, fields)
+        if not report_created:
+            logging.warning('Report was not created, check for errors.')
+            return pd.DataFrame()
         self.get_raw_data()
         self.check_empty_df()
         self.remove_footer()
@@ -149,7 +152,7 @@ class DbApi(object):
 
     def create_report(self, sd, ed, fields):
         if self.report_id:
-            return
+            return True
         logging.info('No report specified, creating.')
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         self.parse_fields(sd, ed, fields)
@@ -169,11 +172,14 @@ class DbApi(object):
         self.r = self.make_request(query_url, method='post', body=body)
         if 'queryId' not in self.r.json():
             logging.warning('queryId not in response:{}'.format(self.r.json()))
+            return False
         self.report_id = self.r.json()['queryId']
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
-        logging.info('Report created -- ID: {}. Pausing for 30s.'.format(self.report_id))
+        logging.info(
+            'Report created -- ID: {}. Pausing for 30s.'.format(self.report_id))
         time.sleep(30)
+        return True
 
     def make_request(self, url, method, body=None):
         self.get_client()
