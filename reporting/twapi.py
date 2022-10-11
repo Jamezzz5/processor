@@ -578,7 +578,11 @@ class TwApi(object):
         return df
 
     def add_cards(self, df):
-        card_uris = df['Card name'].unique()
+        card_col = 'Card name'
+        if card_col not in df.columns:
+            logging.warning('{} not in df.'.format(card_col))
+            return df
+        card_uris = df[card_col].unique()
         card_uris = [x for x in card_uris if x is not None and str(x) != 'nan'
                      and x[:4] == 'card']
         card_uris = [card_uris[x:x + 100]
@@ -596,7 +600,7 @@ class TwApi(object):
                 else:
                     for x in d['data']:
                         uri_dict[x['card_uri']] = x['name']
-        df['Card name'] = df['Card name'].map(uri_dict)
+        df[card_col] = df[card_col].map(uri_dict)
         return df
 
     @staticmethod
