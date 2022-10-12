@@ -138,7 +138,8 @@ def string_to_date(my_string):
         return my_string
 
 
-def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
+def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
+                 fill_empty=True):
     if float_col is None:
         float_col = []
     if date_col is None:
@@ -160,7 +161,10 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None):
         if col not in df:
             continue
         df[col] = df[col].replace(['1/0/1900', '1/1/1970'], '0')
-        df[col] = df[col].fillna(dt.datetime.today())
+        if fill_empty:
+            df[col] = df[col].fillna(dt.datetime.today())
+        else:
+            df[col] = df[col].fillna(pd.Timestamp('nat'))
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: string_to_date(x))
         df[col] = pd.to_datetime(df[col], errors='coerce').dt.normalize()
@@ -238,7 +242,13 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
             continue
+        set_column_to_value = False
         if len(metrics) == 3:
+            set_column_to_value = True
+            if metrics[1] not in df.columns:
+                logging.warning(
+                    '{} not in columns setting to 0.'.format(metrics[1]))
+                df[metrics[1]] = 0
             df[metrics[2]] = df[metrics[1]]
             metrics[1] = metrics[2]
         tdf = df
@@ -274,6 +284,9 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
             df = data_to_type(df, float_col=[metric])
             df.loc[q_idx, metric] = (df.loc[q_idx, metric].astype(float) *
                                      float(factor))
+            if set_column_to_value:
+                df.loc[~df.index.isin(q_idx), metric] = (
+                    df.loc[~df.index.isin(q_idx), metric].astype(float) * 0)
     return df
 
 
@@ -327,3 +340,13 @@ def rename_duplicates(old):
         else:
             seen.append(x)
             yield x
+
+
+def date_check(sd, ed):
+    sd = sd.date()
+    ed = ed.date()
+    if sd > ed:
+        logging.warning('Start date greater than end date.  Start date '
+                        'was set to end date.')
+        sd = ed
+    return sd, ed

@@ -321,6 +321,10 @@ class TwApi(object):
     def get_df_for_all_dates(self, sd, ed, fields, async_request=False):
         full_date_list = self.list_dates(sd, ed)
         timezone = self.get_account_timezone()
+        if not timezone:
+            timezone = self.find_account()
+            if not timezone:
+                return pd.DataFrame()
         self.get_all_id_dicts(sd)
         for entity in [('PROMOTED_TWEET', self.adid_dict),
                        ('PROMOTED_ACCOUNT', self.promoted_account_id_dict)]:
@@ -487,11 +491,41 @@ class TwApi(object):
             sd = ed - dt.timedelta(days=1)
         return sd, ed
 
+    def find_account(self):
+        """
+        Loops all available config files and attempts to determine if
+        account matches if correct by calling get_account_timezone.
+
+        :returns: account timezone if available False if failed
+        """
+        logging.warning('Incorrect account trying all config files.')
+        config_dir = os.path.join(utl.config_path, 'twitter_api_cred')
+        config_files = [x for x in os.listdir(config_dir)
+                        if x.endswith('.json')]
+        current_account = self.account_id
+        current_campaign = self.campaign_filter
+        old_config = self.configfile
+        for config_file in config_files:
+            self.configfile = os.path.join(config_dir, config_file)
+            logging.info('Attempting file {}'.format(self.configfile))
+            self.load_config()
+            self.account_id = current_account
+            self.campaign_filter = current_campaign
+            timezone = self.get_account_timezone()
+            if timezone:
+                self.config['ACCOUNT_ID'] = self.account_id
+                self.config['CAMPAIGN_FILTER'] = self.campaign_filter
+                with open(old_config, 'w') as f:
+                    json.dump(self.config, f)
+                return timezone
+        return False
+
     def get_account_timezone(self):
         url, params = self.create_base_url()
         data = self.request(url, params=params)
         if jsondata not in data:
             logging.warning('Data not in response : {}'.format(data))
+            return False
         return data[jsondata][jsontz]
 
     @staticmethod
@@ -544,7 +578,11 @@ class TwApi(object):
         return df
 
     def add_cards(self, df):
-        card_uris = df['Card name'].unique()
+        card_col = 'Card name'
+        if card_col not in df.columns:
+            logging.warning('{} not in df.'.format(card_col))
+            return df
+        card_uris = df[card_col].unique()
         card_uris = [x for x in card_uris if x is not None and str(x) != 'nan'
                      and x[:4] == 'card']
         card_uris = [card_uris[x:x + 100]
@@ -562,7 +600,7 @@ class TwApi(object):
                 else:
                     for x in d['data']:
                         uri_dict[x['card_uri']] = x['name']
-        df['Card name'] = df['Card name'].map(uri_dict)
+        df[card_col] = df[card_col].map(uri_dict)
         return df
 
     @staticmethod

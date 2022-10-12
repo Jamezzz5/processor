@@ -311,6 +311,9 @@ class MetricCap(object):
 
 
 def calculate_cost(df):
+    if df.empty:
+        logging.warning('Dataframe empty, costs not calculated.')
+        return df
     if vmc.cost not in df.columns:
         df[vmc.cost] = 0
     df = net_cost_calculation(df)

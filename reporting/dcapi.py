@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import time
@@ -83,9 +84,9 @@ class DcApi(object):
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.usr_id]
         if 'advertiser_id' in self.config:
-            self.advertiser_id = self.config['advertiser_id']
+            self.advertiser_id = self.config['advertiser_id'].replace(' ', '')
         if 'campaign_id' in self.config:
-            self.campaign_id = self.config['campaign_id']
+            self.campaign_id = self.config['campaign_id'].replace(' ', '')
 
     def check_config(self):
         for item in self.config_list:
@@ -132,6 +133,7 @@ class DcApi(object):
         return full_url
 
     def parse_fields(self, sd, ed, fields):
+        sd, ed = utl.date_check(sd, ed)
         self.date_range = {
             'startDate': sd.strftime('%Y-%m-%d'),
             'endDate': ed.strftime('%Y-%m-%d')
@@ -147,7 +149,10 @@ class DcApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.parse_fields(sd, ed, fields)
-        self.create_report()
+        report_created = self.create_report()
+        if not report_created:
+            logging.warning('Report not created returning blank df.')
+            return pd.DataFrame()
         files_url = self.get_files_url()
         self.r = self.get_report(files_url)
         if not self.r:
@@ -174,6 +179,7 @@ class DcApi(object):
         return self.df
 
     def get_report(self, files_url):
+        report_status = False
         for x in range(1, 401):
             report_status = self.check_file(files_url, attempt=x)
             if report_status:
@@ -220,6 +226,7 @@ class DcApi(object):
             attempt += 1
             if attempt > 10:
                 self.request_error()
+                return None
             self.r = self.make_request(url=url, method=method, body=body,
                                        params=params, attempt=attempt,
                                        json_response=json_response)
@@ -240,17 +247,19 @@ class DcApi(object):
 
     def request_error(self):
         logging.warning('Unknown error: {}'.format(self.r.text))
-        sys.exit(0)
 
     def create_report(self):
         if self.report_id:
-            return
+            return True
         report = self.create_report_params()
         full_url = self.create_url()
         self.r = self.make_request(full_url, method='post', body=report)
+        if not self.r:
+            return False
         self.report_id = self.r.json()['id']
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
+        return True
 
     def get_floodlight_tag_ids(self, fl_ids=None, next_page=None):
         if not fl_ids:
@@ -261,6 +270,9 @@ class DcApi(object):
         if next_page:
             params['pageToken'] = next_page
         self.r = self.make_request(fl_url, method='get', params=params)
+        if not self.r:
+            logging.warning('Could not make floodlights returning blank list.')
+            return fl_ids
         if 'floodlightActivities' not in self.r.json():
             logging.warning('floodlightActivities not in response as follows: '
                             '\n{}'.format(self.r.json()))
@@ -271,9 +283,11 @@ class DcApi(object):
         return fl_ids
 
     def create_report_params(self):
-        report_name = ('{}_{}_standard_report'
-                       ''.format(self.advertiser_id,
-                                 self.campaign_id.replace(',', '-')))
+        report_name = ''
+        for name in [self.advertiser_id, self.campaign_id]:
+            name = re.sub(r'\W+', '', name)
+            report_name += '{}_'.format(name)
+        report_name += 'standard_report'
         report = {
             'name': report_name,
             'type': 'STANDARD',

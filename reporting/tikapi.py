@@ -131,7 +131,13 @@ class TikApi(object):
             params['page'] = x
             r = self.make_request(url, method='GET', headers=self.headers,
                                   params=params)
-            ad_list = r.json()['data']['list']
+            response_data = r.json()['data']
+            if 'list' not in response_data:
+                logging.warning(
+                    'No list in response please make sure accounts '
+                    'have been given access:\n {}'.format(r.json()))
+                break
+            ad_list = response_data['list']
             self.ad_id_list.extend(ad_list)
             ad_ids.extend([x['ad_id'] for x in ad_list])
             if x >= r.json()['data']['page_info']['total_page']:
