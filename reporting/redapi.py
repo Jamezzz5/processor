@@ -144,9 +144,13 @@ class RedApi(object):
             self.click_on_xpath(logo_xpath, sleep=5)
         return True
 
-    def click_on_xpath(self, xpath, sleep=2):
-        self.browser.find_element_by_xpath(xpath).click()
+    @staticmethod
+    def click_on_elem(elem, sleep=2):
+        elem.click()
         time.sleep(sleep)
+
+    def click_on_xpath(self, xpath, sleep=2):
+        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
 
     def set_breakdowns(self):
         logging.info('Setting breakdowns.')
@@ -155,10 +159,10 @@ class RedApi(object):
         bd_date_xpath = '//button[contains(normalize-space(),"Date")]'
         self.click_on_xpath(bd_date_xpath)
 
-    def get_cal_month(self, lr=1, cal_xpath=None):
-        month_xpath = '[2]/div[{}]/div[1]/div'.format(lr)
-        cal_month_xpath = cal_xpath + month_xpath
-        month = self.browser.find_element_by_xpath(cal_month_xpath).text
+    def get_cal_month(self, lr=1):
+        cal_class = 'DayPicker-Caption'
+        month = self.browser.find_elements_by_class_name(cal_class)
+        month = month[lr - 1].text
         month = dt.datetime.strptime(month, '%B %Y')
         if lr == 2:
             last_day = calendar.monthrange(month.year, month.month)[1]
@@ -173,33 +177,33 @@ class RedApi(object):
             comp = operator.lt
         return comp
 
-    def change_month(self, date, lr, cal_xpath, month):
-        cal_sel_xpath = cal_xpath + '[1]/span[{}]'.format(lr)
+    def change_month(self, date, lr, month):
+        cal_el = self.browser.find_elements_by_class_name("DayPicker-NavButton")
+        cal_el = cal_el[lr - 1]
         month_diff = abs((((month.year - date.year) * 12) +
                           month.month - date.month))
         for x in range(month_diff):
-            self.click_on_xpath(cal_sel_xpath, sleep=1)
+            self.click_on_elem(cal_el, sleep=1)
 
-    def go_to_month(self, date, left_month, right_month, cal_xpath):
+    def go_to_month(self, date, left_month, right_month):
         if date < left_month:
-            self.change_month(date, 1, cal_xpath, left_month)
+            self.change_month(date, 1, left_month)
         if date > right_month:
-            self.change_month(date, 2, cal_xpath, right_month)
+            self.change_month(date, 2, right_month)
 
     def click_on_date(self, date):
         date = dt.datetime.strftime(date, '%a %b %d %Y')
         cal_date_xpath = "//div[@aria-label='{}']".format(date)
         self.click_on_xpath(cal_date_xpath)
 
-    def find_and_click_date(self, date, left_month, right_month, cal_xpath):
-        self.go_to_month(date, left_month, right_month, cal_xpath)
+    def find_and_click_date(self, date, left_month, right_month):
+        self.go_to_month(date, left_month, right_month)
         self.click_on_date(date)
 
-    def set_date(self, date, cal_xpath=None):
-        cal_xpath = cal_xpath + '[1]/td[1]/div/div/div'
-        left_month = self.get_cal_month(lr=1, cal_xpath=cal_xpath)
-        right_month = self.get_cal_month(lr=2, cal_xpath=cal_xpath)
-        self.find_and_click_date(date, left_month, right_month, cal_xpath)
+    def set_date(self, date):
+        left_month = self.get_cal_month(lr=1)
+        right_month = self.get_cal_month(lr=2)
+        self.find_and_click_date(date, left_month, right_month)
 
     def open_calendar(self, base_xpath):
         cal_button_xpath = '/div/div/div'
@@ -210,16 +214,12 @@ class RedApi(object):
 
     def set_dates(self, sd, ed, base_xpath=None):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
-        cal_xpath = self.open_calendar(base_xpath)
-        self.set_date(sd, cal_xpath=cal_xpath)
-        self.set_date(ed, cal_xpath=cal_xpath)
-        try:
-            self.click_on_xpath(
-                cal_xpath + '[2]/td/div/div[2]/div[2]/button[2]')
-        except ex.NoSuchElementException as e:
-            logging.warning('Could not click update trying another selector.'
-                            '  Error: {}'.format(e))
-            self.click_on_xpath(cal_xpath + '[2]/td/div/div[2]/button[2]/div')
+        self.open_calendar(base_xpath)
+        self.set_date(sd)
+        self.set_date(ed)
+        elem = self.browser.find_elements_by_xpath(
+            "//*[contains(text(), 'Update')]")[0]
+        self.click_on_elem(elem)
 
     def click_individual_metrics(self):
         for metric in self.video_metrics:
@@ -229,7 +229,7 @@ class RedApi(object):
     def click_grouped_metrics(self):
         for x in range(2, 6):
             metric_xpath = (
-                '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
+                '/html/body/div[7]/div/div/div/div/div/div[2]/div[2]/div/'
                 'ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
             try:
                 self.click_on_xpath(metric_xpath, sleep=1)
@@ -237,7 +237,7 @@ class RedApi(object):
                 logging.warning(
                     'Could not click update trying another selector.'
                     '  Error: {}'.format(e))
-                metric_xpath = metric_xpath.replace('body/div[4', 'body/div[5')
+                metric_xpath = metric_xpath.replace('body/div[7', 'body/div[8')
                 self.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
