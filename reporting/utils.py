@@ -297,6 +297,8 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 else:
                     grouped_q_idx[metric].extend(q_idx)
     for metric in grouped_q_idx:
+        if metric not in df:
+            continue
         df.loc[~df.index.isin(grouped_q_idx[metric]), metric] = (
                 df.loc[~df.index.isin(grouped_q_idx[metric]), metric]
                 .astype(float) * 0)
