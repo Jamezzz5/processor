@@ -50,6 +50,9 @@ class Analyze(object):
     missing_flat_clicks = 'missing_flat_clicks'
     missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
+    package_cap = 'package_cap'
+    package_vendor = 'package_vendor'
+    package_vendor_col = 'package_vendor'
     change_auto_order = 'change_auto_order'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
@@ -75,7 +78,7 @@ class Analyze(object):
         self.class_list = [
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
             CheckApiDateLength, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts]
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -1135,6 +1138,173 @@ class CheckAutoDictOrder(AnalyzeBase):
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
+    
+class CheckPackageCapping(AnalyzeBase):
+    name = Analyze.package_cap
+    under_delivery_col = 'Under_Delivery'
+    full_delivery_col = 'Full_Delivery'
+    over_delivery_col = 'Over_Delivery'
+    package_vendor_col = 'Package_Vendor'
+    fix = True
+
+    def check_package_cap(self):
+        """
+        Checks if a package used for capping has reached or exceeded its cap
+        Prints to logfile
+
+        Make sure cap file exists, set as pdf and append to our dataframe
+        temp_package_cap -> column name we are capping on from rawfile
+        'Planned Net Cost - TEMP' -> how much we cap,taken from rawfile
+        """
+        df = pd.read_csv('Raw Data Output.csv')
+        df = cal.net_cost_calculation(df)
+        c = None
+        if cal.MetricCap().config:
+            cap_file = cal.MetricCap()
+            for cfg in cap_file.config:
+                c = cap_file.config[cfg]
+            if c and os.path.isfile(c[cal.MetricCap().file_name]):
+                pdf = cap_file.get_cap_file(c)
+                df = df.append(pdf)
+                temp_package_cap = c[cap_file.proc_dim]
+                df = df[[temp_package_cap,
+                         'Planned Net Cost - TEMP',
+                         vmc.cost]]
+                df = df.groupby([temp_package_cap])
+                df = df.apply(lambda x:
+                              0 if x['Planned Net Cost - TEMP'].sum() == 0
+                              else x[vmc.cost].sum() / x['Planned Net Cost - '
+                                                         'TEMP'].sum())
+                f_df = df[df >= 1]
+                if f_df.empty:
+                    delivery_msg = 'No Packages have exceeded their cap'
+                    logging.info(delivery_msg)
+                    self.aly.add_to_analysis_dict(
+                        key_col=self.name,
+                        param=self.under_delivery_col,
+                        message=delivery_msg)
+                else:
+                    del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
+                    delivery_msg = 'The following packages' \
+                                   ' have delivered in full: '
+                    logging.info('{}\n{}'.format(delivery_msg, del_p))
+                    data = del_p.reset_index().rename(columns={0: 'Cap'})
+                    self.aly.add_to_analysis_dict(
+                        key_col=self.name,
+                        param=self.full_delivery_col,
+                        message=delivery_msg,
+                        data=data.to_dict())
+                    o_df = f_df[f_df > 1.5]
+                    if not o_df.empty:
+                        del_p = o_df.apply(lambda x:
+                                           "{0:.2f}%".format(x * 100))
+                        delivery_msg = 'The following packages' \
+                                       ' have over-delivered:'
+                        logging.info('{}\n{}'.format(delivery_msg, del_p))
+                        data = del_p.reset_index().rename(columns={0: 'Cap'})
+                        self.aly.add_to_analysis_dict(
+                            key_col=self.name,
+                            param=self.over_delivery_col,
+                            message=delivery_msg,
+                            data=data.to_dict())
+
+    def check_package_vendor(self, df):
+        """
+        Warns if the package capfile will affect multiple vendors
+        creates dataframe grouped by cap and vendor
+        counts unique members,
+        if there are more vendors than there are caps, raise a warning
+        return df of packages with multiple vendors associated
+        """
+        c = None
+        if cal.MetricCap().config:
+            cap_file = cal.MetricCap()
+            for cfg in cap_file.config:
+                c = cap_file.config[cfg]
+            if c and os.path.isfile(c[cal.MetricCap().file_name]):
+                pdf = cap_file.get_cap_file(c)
+                df = df.append(pdf)
+                temp_package_cap = c[cap_file.proc_dim]
+                df = df[[dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
+                         'Planned Net Cost - TEMP', vmc.cost]]
+                df = df.groupby([temp_package_cap, dctc.VEN])
+                df = df.size().reset_index(name='count')
+                df = df[[temp_package_cap, dctc.VEN]]
+                df = df[df[temp_package_cap].isin(pdf[temp_package_cap])]
+                df = df[df.duplicated(subset=temp_package_cap, keep=False)]
+
+                if not df.empty:
+                    delivery_msg = 'One or more of the packages ' \
+                                   'you are capping on is associated ' \
+                                   'with multiple vendors'
+                    logging.warning('{}\n{}'.format(delivery_msg, df))
+                    self.aly.add_to_analysis_dict(key_col=self.name,
+                                                  param=self.package_vendor_col,
+                                                  message=delivery_msg,
+                                                  data=df.to_dict())
+                    return df
+                else:
+                    delivery_msg = "All packages are capping" \
+                                   " on a single vendor"
+                    logging.info('{}\n{}'.format(delivery_msg, df))
+                    self.aly.add_to_analysis_dict(key_col=self.name,
+                                                  message=delivery_msg,
+                                                  data=df.to_dict())
+                    return df
+
+    def fix_package_vendor(self, write=True):
+        """
+        Takes in capped packages that are associated with more than one vendor
+        Changes their names to be unique
+        Translates all instances in dictionaries to match
+        """
+        df = pd.read_csv('Raw Data Output.csv')
+        c = None
+        if cal.MetricCap().config:
+            cap_file = cal.MetricCap()
+            for cfg in cap_file.config:
+                c = cap_file.config[cfg]
+            if c and os.path.isfile(c[cal.MetricCap().file_name]):
+                pdf = cap_file.get_cap_file(c)
+                temp_package_cap = c[cap_file.proc_dim]
+
+                df = self.check_package_vendor(df)
+                if not df.empty:
+                    t_df = {'Column Name', 'Value', 'New Value',
+                            'Function', 'Selection', 'index'}
+                    t_df = pd.DataFrame(t_df)
+                    t_df['Column Name'] = temp_package_cap
+                    t_df['Value'] = df[temp_package_cap]
+                    t_df['Selection'] = df[dctc.VEN]
+
+                    for temp_package_cap in df[[temp_package_cap]]:
+                        df[temp_package_cap] = \
+                            df[temp_package_cap] + '-' + df[dctc.VEN]
+                        df['Net Cost (Capped)'] = \
+                            pdf['Planned Net Cost - TEMP']
+                    df = df[[temp_package_cap, 'Net Cost (Capped)']]
+                    df.replace(to_replace=np.NaN,
+                               value=df.loc[0],
+                               inplace=True)
+                    path = c[cap_file.file_name]
+                    df.to_csv(path, index=False, encoding='utf-8')
+
+                    t_df['New Value'] = df[temp_package_cap]
+                    t_df['Function'] = 'Select::mpVendor'
+                    t_df = t_df[['Column Name', 'Value', 'New Value',
+                                 'Function', 'Selection']]
+                    if write:
+                        t_df.to_csv('dictionaries/Translational/'
+                                    'translational_dictionary_config.csv',
+                                    mode='a', index=False, header=False)
+                        fix_msg = 'Automatically changing capped package names:'
+                        logging.info('{}\n{}'.format(fix_msg, t_df))
+
+    def do_analysis(self):
+        self.check_package_cap()
+
+    def fix_analysis(self, aly_dict, write=True):
+        self.fix_package_vendor(write=write)
 
 
 class FindPlacementNameCol(AnalyzeBase):
