@@ -260,6 +260,13 @@ class FbApi(object):
         except FacebookRequestError as e:
             self.request_error(e, date_list, field_list)
             return True
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+            insights = self.account.get_insights(
+                fields=field_list,
+                params=params,
+                is_async=True)
         init_dict = {
             'sd': sd, 'ed': ed, 'date_list': date_list,
             'field_list': field_list, 'breakdowns': breakdowns,
@@ -328,6 +335,11 @@ class FbApi(object):
                     logging.warning('Facebook Bad Object Error: {}'.format(e))
                     self.async_requests.append(job)
                     complete_job = None
+                except requests.exceptions.SSLError as e:
+                    logging.warning('Warning SSLError as follows {}'.format(e))
+                    self.async_requests.append(job)
+                    complete_job = None
+                    time.sleep(30)
                 if complete_job:
                     self.df = self.df.append(complete_job, ignore_index=True)
                     fb_request.complete = True
@@ -434,8 +446,8 @@ class FbApi(object):
                                .apply(lambda x: self.convert_dictionary(x)))
         dict_df = self.df[nd_col].apply(pd.Series).fillna(0)
         column_list = dict_df.columns.values.tolist()
-        column_list = [l for l in column_list if
-                       l not in ['action_type', 'value']]
+        column_list = [x for x in column_list if
+                       x not in ['action_type', 'value']]
         clean_df = pd.DataFrame()
         if 'action_type' in dict_df.columns:
             column_list += ['action_type']
