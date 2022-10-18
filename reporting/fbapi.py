@@ -46,7 +46,7 @@ breakdown_country = ['country']
 breakdown_device = ['device_platform']
 breakdown_product = ['product_id']
 
-ad_status_enbaled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
+ad_status_enabled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
                      'PREAPPROVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED',
                      'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']
 ad_status_disabled = ['DELETED', 'ARCHIVED']
@@ -224,12 +224,33 @@ class FbApi(object):
                            action_breakdowns, attr, time_breakdown, level):
         self.field_lists = [fields]
         for field_list in self.field_lists:
-            self.make_request(sd, ed, date_list, field_list, breakdowns,
-                              action_breakdowns, attr, ad_status_enbaled,
-                              time_breakdown, level)
-            self.make_request(sd, ed, date_list, field_list, breakdowns,
-                              action_breakdowns, attr, ad_status_disabled,
-                              time_breakdown, level)
+            for ad_status in [ad_status_enabled, ad_status_disabled]:
+                for x in range(10):
+                    success = self.make_request(
+                        sd, ed, date_list, field_list, breakdowns,
+                        action_breakdowns, attr, ad_status,
+                        time_breakdown, level)
+                    if success:
+                        break
+                    else:
+                        logging.warning('Retrying, attempt #{}'.format(x))
+
+    def get_insights(self, field_list, params, date_list):
+        insights = None
+        try:
+            insights = self.account.get_insights(
+                fields=field_list,
+                params=params,
+                is_async=True)
+        except FacebookRequestError as e:
+            self.request_error(e, date_list, field_list)
+        except requests.exceptions.SSLError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+        except requests.exceptions.ConnectionError as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+        return insights
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
                      action_breakdowns, attribution_window, ad_status,
@@ -252,30 +273,26 @@ class FbApi(object):
             params['filtering'].append({'field': 'campaign.name',
                                         'operator': 'CONTAIN',
                                         'value': self.campaign_filter})
-        try:
-            insights = self.account.get_insights(
-                fields=field_list,
-                params=params,
-                is_async=True)
-        except FacebookRequestError as e:
-            self.request_error(e, date_list, field_list)
+        insights = None
+        for x in range(10):
+            insights = self.get_insights(field_list, params, date_list)
+            if insights:
+                break
+        if insights:
+            init_dict = {
+                'sd': sd, 'ed': ed, 'date_list': date_list,
+                'field_list': field_list, 'breakdowns': breakdowns,
+                'action_breakdowns': action_breakdowns,
+                'attribution_window': attribution_window,
+                'ad_status': ad_status,
+                'time_breakdown': time_breakdown, 'level': level,
+                'insights': insights, 'times_requested': times_requested}
+            fb_request = FacebookRequest(init_dict=init_dict)
+            self.async_requests.append(fb_request)
             return True
-        except requests.exceptions.SSLError as e:
-            logging.warning('Warning SSLError as follows {}'.format(e))
-            time.sleep(30)
-            insights = self.account.get_insights(
-                fields=field_list,
-                params=params,
-                is_async=True)
-        init_dict = {
-            'sd': sd, 'ed': ed, 'date_list': date_list,
-            'field_list': field_list, 'breakdowns': breakdowns,
-            'action_breakdowns': action_breakdowns,
-            'attribution_window': attribution_window, 'ad_status': ad_status,
-            'time_breakdown': time_breakdown, 'level': level,
-            'insights': insights, 'times_requested': times_requested}
-        fb_request = FacebookRequest(init_dict=init_dict)
-        self.async_requests.append(fb_request)
+        else:
+            logging.warning('Could not get insights attempting again.')
+            return False
 
     def get_report(self, ar):
         try:
