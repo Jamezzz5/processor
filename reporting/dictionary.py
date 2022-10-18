@@ -16,6 +16,7 @@ class Dict(object):
             logging.error('No dictionary file provided.  Aborting.')
             sys.exit(0)
         self.filename = filename
+        self.comb_key = ':::'
         self.dict_path = csv_path
         self.data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
         if filename:
@@ -248,6 +249,85 @@ class Dict(object):
                                     error[col].astype('U'))
             error.drop([col], axis=1, inplace=True)
         return error
+
+    def sort_relation_cols(self, columns):
+        rc = RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto = {rc.rc[dctc.KEY][k]: v.split('::')[::2]
+                   for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
+                      for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
+        component_dict = {}
+        for rc_key in rc_auto:
+            start_idx = 0
+            component_dict[rc_key] = {comp: [] for comp in rc_auto[rc_key]}
+            key_cols = [col for col in columns
+                        if col.split(self.comb_key)[0] == rc_key]
+            for idx, comp in enumerate(rc_auto[rc_key]):
+                if idx < 1 or idx > len(rc_delimit[rc_key]) - 1:
+                    lead_delim = None
+                    trail_delim = None
+                else:
+                    lead_delim = rc_delimit[rc_key][idx-1]
+                    trail_delim = rc_delimit[rc_key][idx]
+                rel_cols = [col for col in columns
+                            if col.split(self.comb_key)[0] == comp]
+                if rel_cols:
+                    first_index = 0
+                    check_cols = rel_cols
+                else:
+                    first_index = start_idx
+                    check_cols = key_cols
+                first_col = self.get_first_comp_col(first_index,
+                                                    check_cols,
+                                                    lead_delim)
+                seq_cols = self.get_sequential_comp_cols(first_index+1,
+                                                         check_cols,
+                                                         trail_delim)
+                component_dict[rc_key][comp].extend(first_col)
+                component_dict[rc_key][comp].extend(seq_cols)
+                start_idx += len(component_dict[rc_key][comp])
+                if not component_dict[rc_key][comp]:
+                    start_idx += 1
+        return component_dict
+
+    def get_first_comp_col(self, start_idx, columns, delim=None,
+                           bad_delim=False):
+        if not columns:
+            return []
+        col_name = columns[0].split(self.comb_key)[0]
+        if col_name in columns:
+            first_col = [col_name]
+            return first_col
+        if delim and not bad_delim:
+            first_col = [col for col in columns if col.split(self.comb_key)[1:]
+                         == [str(start_idx), delim]]
+        else:
+            first_col = [col for col in columns if col.split(self.comb_key)[1]
+                         == str(start_idx)]
+        if len(first_col) > 1:
+            first_col = [first_col[0]]
+        return first_col
+
+    def get_sequential_comp_cols(self, start_idx, columns, delim):
+        if not columns:
+            return []
+        col_name = columns[0].split(self.comb_key)[0]
+        if col_name in columns:
+            columns.remove(col_name)
+        sequential_cols = []
+        idx = start_idx
+        skipped_index = False
+        while not skipped_index:
+            seq_col = [col for col in columns
+                       if col.split(self.comb_key)[1] == str(idx)
+                       and col.split(self.comb_key)[2] != delim]
+            if not seq_col:
+                skipped_index = True
+            else:
+                sequential_cols.append(seq_col[0])
+            idx += 1
+        return sequential_cols
 
     @staticmethod
     def auto_split(error=pd.DataFrame()):
