@@ -250,7 +250,7 @@ class Dict(object):
             error.drop([col], axis=1, inplace=True)
         return error
 
-    def sort_relation_cols(self, columns):
+    def sort_relation_cols(self, columns, keep_bad_delim=False):
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
         rc_auto = {rc.rc[dctc.KEY][k]: v.split('::')[::2]
@@ -264,30 +264,33 @@ class Dict(object):
             key_cols = [col for col in columns
                         if col.split(self.comb_key)[0] == rc_key]
             for idx, comp in enumerate(rc_auto[rc_key]):
-                if idx < 1 or idx > len(rc_delimit[rc_key]) - 1:
-                    lead_delim = None
-                    trail_delim = None
-                else:
-                    lead_delim = rc_delimit[rc_key][idx-1]
+                lead_delim = None
+                trail_delim = None
+                if 0 < idx <= len(rc_delimit[rc_key]):
+                    lead_delim = rc_delimit[rc_key][idx - 1]
+                if idx < len(rc_delimit[rc_key]):
                     trail_delim = rc_delimit[rc_key][idx]
                 rel_cols = [col for col in columns
                             if col.split(self.comb_key)[0] == comp]
                 if rel_cols:
                     first_index = 0
                     check_cols = rel_cols
+                    bad_delim = keep_bad_delim
                 else:
                     first_index = start_idx
                     check_cols = key_cols
+                    bad_delim = False
                 first_col = self.get_first_comp_col(first_index,
                                                     check_cols,
-                                                    lead_delim)
+                                                    lead_delim,
+                                                    bad_delim)
                 seq_cols = self.get_sequential_comp_cols(first_index+1,
                                                          check_cols,
                                                          trail_delim)
                 component_dict[rc_key][comp].extend(first_col)
                 component_dict[rc_key][comp].extend(seq_cols)
                 start_idx += len(component_dict[rc_key][comp])
-                if not component_dict[rc_key][comp]:
+                if not first_col:
                     start_idx += 1
         return component_dict
 
@@ -328,6 +331,58 @@ class Dict(object):
                 sequential_cols.append(seq_col[0])
             idx += 1
         return sequential_cols
+
+    def get_relation_translations(self, columns, fix_bad_delim=False):
+        if not columns:
+            return {}
+        rc = RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
+                      for k, v in rc.rc[dctc.AUTO].items()
+                      if str(v) != 'nan'}
+        sorted_columns = self.sort_relation_cols(columns, fix_bad_delim)
+        translation_dict = {}
+        for rc_key in sorted_columns:
+            abs_index = 0
+            for idx, comp in enumerate(sorted_columns[rc_key]):
+                if not sorted_columns[rc_key][comp]:
+                    continue
+                col_name = (sorted_columns[rc_key][comp][0]
+                            .split(self.comb_key)[0])
+                lead_delim = None
+                first_index = abs_index
+                if 0 < idx <= len(rc_delimit[rc_key]):
+                    lead_delim = rc_delimit[rc_key][idx-1]
+                if col_name == comp:
+                    first_index = 0
+                first_col = self.get_first_comp_col(
+                    first_index, sorted_columns[rc_key][comp],
+                    lead_delim, fix_bad_delim)
+                if not first_col:
+                    abs_index += 1
+                for col_idx, col in enumerate(sorted_columns[rc_key][comp]):
+                    if not first_col:
+                        col_idx += 1
+                    if len(col.split(self.comb_key)) != 3:
+                        if lead_delim:
+                            new_delim = lead_delim
+                        else:
+                            new_delim = '_'
+                    else:
+                        new_delim = col.split(self.comb_key)[2]
+                    if col_name == comp:
+                        new_name = rc_key
+                        new_index = str(abs_index)
+                        if fix_bad_delim and col_idx < 1 and lead_delim:
+                            new_delim = lead_delim
+                    else:
+                        new_name = comp
+                        new_index = str(col_idx)
+                    trans_name = self.comb_key.join(
+                        [new_name, new_index, new_delim])
+                    translation_dict[col] = trans_name
+                    abs_index += 1
+        return translation_dict
 
     @staticmethod
     def auto_split(error=pd.DataFrame()):
