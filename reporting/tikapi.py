@@ -23,7 +23,7 @@ class TikApi(object):
                'total_play', 'ad_comment', 'ad_like', 'ad_share',
                'ad_home_visited', 'show_uv', 'frequency',
                'time_attr_on_web_register', 'time_attr_shopping',
-               'time_attr_view']
+               'time_attr_view', 'time_attr_total_view_value']
 
     def __init__(self):
         self.config = None
