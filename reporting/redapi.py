@@ -218,7 +218,11 @@ class RedApi(object):
         self.set_date(sd)
         self.set_date(ed)
         elem = self.browser.find_elements_by_xpath(
-            "//*[contains(text(), 'Update')]")[0]
+            "//*[contains(text(), 'Update')]")
+        if len(elem) > 1:
+            elem = elem[1]
+        else:
+            elem = elem[0]
         self.click_on_elem(elem)
 
     def click_individual_metrics(self):
@@ -295,9 +299,9 @@ class RedApi(object):
         return df
 
     def change_account(self):
-        account_url = self.browser.current_url.replace(
-            'dashboard?entity=campaigns', 'accounts')
-        self.go_to_url(account_url)
+        drop_class = 'automation-account-name'
+        elem = self.browser.find_elements_by_class_name(drop_class)
+        elem[0].click()
         account_xpath = '//a[text()="{}"]'.format(self.account)
         self.click_on_xpath(account_xpath)
 
