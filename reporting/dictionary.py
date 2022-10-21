@@ -75,129 +75,6 @@ class Dict(object):
             error[col_name] = error[placement].str.split('_').str[i]
         return error
 
-    @staticmethod
-    def translate_relational_components(error):
-        comb_key = ':::'
-        rc = RelationalConfig()
-        rc.read(dctc.filename_rel_config)
-        rc_auto = {rc.rc[dctc.KEY][k]: v.split('::')[::2]
-                   for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
-        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
-                      for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
-        mixed_formats = False
-        for rc_key in rc_auto:
-            trad_format = [x for x in error.columns if rc_key + comb_key in x]
-            idx_modifier = 0
-            for idx, rc_component in enumerate(rc_auto[rc_key]):
-                component_cols = [x for x in error.columns if rc_component in
-                                  x]
-                bald_component = False
-                for col in component_cols:
-                    split_col = col.split(comb_key)
-                    if len(split_col) < 3:
-                        translated_col = comb_key.join(
-                            [rc_key, str(idx + idx_modifier),
-                             rc_delimit[rc_key][idx - 1]]
-                        )
-                        bald_component = True
-                    else:
-                        tmp_idx_modifier = idx_modifier
-                        if int(split_col[1]) == 0 and bald_component:
-                            tmp_idx_modifier += 1
-                        translated_col = comb_key.join(
-                            [rc_key,
-                             str(idx + tmp_idx_modifier + int(split_col[1])),
-                             split_col[2]]
-                        )
-                    error[translated_col] = error[col].astype('U')
-                    error.drop([col], axis=1, inplace=True)
-                if component_cols:
-                    idx_modifier += len(component_cols) - 1
-                    if trad_format:
-                        mixed_formats = True
-        if mixed_formats:
-            logging.warning('Mixed relational column format detected. '
-                            'Output may not be as expected. Please '
-                            'use EITHER "mpSize" OR "mpCreative:::0:::_" '
-                            'style column naming conventions, not both.')
-        return error
-
-    @staticmethod
-    def get_rc_index(columns, delimiters, comb_key=':::',
-                     return_missing=False):
-        indexed_cols = []
-        columns = sorted(columns)
-        rc_key = columns[0].split(comb_key)[0]
-        inds = [col.split(comb_key)[1] for col in columns if col != rc_key]
-        rc_index = 0
-        if rc_key in columns:
-            indexed_cols.append((rc_key, rc_index))
-            columns.remove(rc_key)
-            if columns:
-                cur_col = [col for col in columns
-                           if col.split(comb_key)[1] == str(0)]
-                if (len(cur_col) > 0
-                        and cur_col[0].split(comb_key)[2] == delimiters[0]):
-                    rc_index += 1
-            else:
-                return indexed_cols
-        for i in range(max(map(int, inds)) + 1):
-            if str(i) in inds:
-                cur_col = [col for col in columns
-                           if col.split(comb_key)[1] == str(i)][0]
-                cur_delim = cur_col.split(comb_key)[2]
-                try:
-                    if cur_delim == delimiters[rc_index] and i > 0:
-                        rc_index += 1
-                except IndexError:
-                    rc_index += 1
-                indexed_cols.append((cur_col, rc_index))
-            else:
-                rc_index += 1
-                if return_missing:
-                    try:
-                        missing_col = comb_key.join([rc_key, str(i),
-                                                     delimiters[rc_index-1]])
-                    except IndexError:
-                        missing_col = comb_key.join([rc_key, str(i),
-                                                     delimiters[0]])
-                    indexed_cols.append((missing_col, rc_index))
-        return indexed_cols
-
-    def translate_relation_to_component(self, error):
-        comb_key = ':::'
-        rc = RelationalConfig()
-        rc.read(dctc.filename_rel_config)
-        rc_auto = {rc.rc[dctc.KEY][k]: v.split('::')[::2]
-                   for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
-        rc_delimit = {rc.rc[dctc.KEY][k]: v.split('::')[1::2]
-                      for k, v in rc.rc[dctc.AUTO].items() if str(v) != 'nan'}
-        for rc_key in rc_auto:
-            rel_cols = [col for col in error.columns
-                        if col.split(comb_key)[0] == rc_key]
-            if not rel_cols:
-                continue
-            indexed_cols = self.get_rc_index(rel_cols, rc_delimit[rc_key],
-                                             comb_key)
-            for col_idx in indexed_cols:
-                col = col_idx[0]
-                rc_index = col_idx[1]
-                try:
-                    component = rc_auto[rc_key][rc_index]
-                except IndexError:
-                    continue
-                if len(col.split(comb_key)) < 3:
-                    delimit = rc_delimit[rc_key][0]
-                    index = 0
-                else:
-                    delimit = col.split(comb_key)[2]
-                    index = int(col.split(comb_key)[1]) - rc_index
-                    if rc_key in rel_cols:
-                        index += 1
-                trans_col = comb_key.join([component, str(index), delimit])
-                error.rename(columns={col: trans_col}, inplace=True)
-        return error
-
     def auto(self, err, autodicord, placement):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
@@ -218,22 +95,18 @@ class Dict(object):
             err.reset()
 
     def auto_combine(self, error=pd.DataFrame()):
+        sorted_missing = self.sort_relation_cols(
+            error.columns, return_missing=True, return_bad_values=True)
+        if sorted_missing['bad_values']:
+            logging.warning(
+                'The following auto dictionary items could not be sorted into '
+                'a relation column: {} They will not be added to {}'.format(
+                    sorted_missing['bad values'], self.filename))
+        error.drop(columns=sorted_missing['bad_values'], inplace=True)
         error = self.translate_relation_cols(error)
-        sorted_missing = self.sort_relation_cols(error.columns,
-                                                 return_missing=True)
         comb_cols = [x for x in error.columns if self.comb_key in x]
         final_cols = set(x.split(self.comb_key)[0] for x in comb_cols)
         for col in final_cols:
-            if col in sorted_missing:
-                valid_cols = [x for sublist in sorted_missing[col].values()
-                              for x in sublist]
-                print(valid_cols)
-                invalid_cols = [x for x in comb_cols if
-                                x.split(self.comb_key)[0] == col
-                                and x not in valid_cols]
-                print(invalid_cols)
-                comb_cols = [x for x in comb_cols if x not in invalid_cols]
-                error.drop(invalid_cols, axis=1, inplace=True)
             ind = [int(x.split(self.comb_key)[1]) for x in comb_cols if
                    x.split(self.comb_key)[0] == col]
             ind = [x for x in range(max(ind) + 1) if x not in ind]
@@ -264,8 +137,8 @@ class Dict(object):
             error.drop([col], axis=1, inplace=True)
         return error
 
-    def sort_relation_cols(self, columns, keep_bad_delim=False,
-                           return_missing=False):
+    def sort_relation_cols(self, columns, keep_bad_delim=True,
+                           return_missing=False, return_bad_values=False):
         MISS = 'missing'
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
@@ -314,17 +187,22 @@ class Dict(object):
                 component_dict[rc_key][comp].extend(first_col)
                 component_dict[rc_key][comp].extend(seq_cols)
                 start_idx += len(component_dict[rc_key][comp])
+        if return_bad_values:
+            valid_values = [x for col in component_dict for sublist in
+                            component_dict[col].values() for x in sublist]
+            component_dict['bad_values'] = [x for x in columns if x not in
+                                            valid_values]
         return component_dict
 
     def get_first_comp_col(self, start_idx, columns, delim=None,
-                           bad_delim=False):
+                           keep_bad_delim=True):
         if not columns:
             return []
         col_name = columns[0].split(self.comb_key)[0]
         if col_name in columns:
             first_col = [col_name]
             return first_col
-        if delim and not bad_delim:
+        if delim and not keep_bad_delim:
             first_col = [col for col in columns if col.split(self.comb_key)[1:]
                          == [str(start_idx), delim]]
         else:
@@ -354,18 +232,20 @@ class Dict(object):
             idx += 1
         return sequential_cols
 
-    def get_relation_translations(self, columns, fix_bad_delim=False):
+    def get_relation_translations(self, columns, fix_bad_delim=True):
         if not columns:
             return {}
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
         rc_delimit = rc.get_auto_delims()
-        sorted_columns = self.sort_relation_cols(columns, fix_bad_delim)
+        sorted_columns = self.sort_relation_cols(
+            columns, keep_bad_delim=fix_bad_delim)
         translation_dict = {}
         for rc_key in sorted_columns:
             abs_index = 0
             for idx, comp in enumerate(sorted_columns[rc_key]):
                 if not sorted_columns[rc_key][comp]:
+                    abs_index += 1
                     continue
                 col_name = (sorted_columns[rc_key][comp][0]
                             .split(self.comb_key)[0])
@@ -384,10 +264,9 @@ class Dict(object):
                     if not first_col:
                         col_idx += 1
                     if len(col.split(self.comb_key)) != 3:
+                        new_delim = '_'
                         if lead_delim:
                             new_delim = lead_delim
-                        else:
-                            new_delim = '_'
                     else:
                         new_delim = col.split(self.comb_key)[2]
                     if col_name == comp:
