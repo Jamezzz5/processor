@@ -304,6 +304,10 @@ class FbApi(object):
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
             report = self.get_report(ar)
+        except requests.exceptions.ConnectionError as e:
+            logging.warning('Warning ConnectionError as follows {}'.format(e))
+            time.sleep(30)
+            report = self.get_report(ar)
         return report
 
     def reset_report_request(self, fb_request):
