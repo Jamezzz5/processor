@@ -101,7 +101,7 @@ class Dict(object):
             logging.warning(
                 'The following auto dictionary items could not be sorted into '
                 'a relation column: {} They will not be added to {}'.format(
-                    sorted_missing['bad values'], self.filename))
+                    sorted_missing['bad_values'], self.filename))
         error.drop(columns=sorted_missing['bad_values'], inplace=True)
         error = self.translate_relation_cols(error)
         comb_cols = [x for x in error.columns if self.comb_key in x]
@@ -139,12 +139,15 @@ class Dict(object):
 
     def sort_relation_cols(self, columns, keep_bad_delim=True,
                            return_missing=False, return_bad_values=False):
-        MISS = 'missing'
+        miss = 'missing'
+        bad_value = 'bad_values'
+        default_delim = '_'
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
         rc_auto = rc.get_auto_cols()
         rc_delimit = rc.get_auto_delims()
         component_dict = {}
+        valid_values = []
         for rc_key in rc_auto:
             start_idx = 0
             component_dict[rc_key] = {comp: [] for comp in rc_auto[rc_key]}
@@ -176,22 +179,43 @@ class Dict(object):
                                                          trail_delim)
                 if not first_col:
                     if return_missing and check_cols:
-                        if MISS not in component_dict[rc_key]:
-                            component_dict[rc_key][MISS] = []
+                        if miss not in component_dict[rc_key]:
+                            component_dict[rc_key][miss] = []
                         if not lead_delim:
-                            lead_delim = '_'
+                            lead_delim = default_delim
                         missing_col = self.comb_key.join(
                             [rc_key, str(start_idx), lead_delim])
-                        component_dict[rc_key][MISS].append(missing_col)
+                        component_dict[rc_key][miss].append(missing_col)
                     start_idx += 1
                 component_dict[rc_key][comp].extend(first_col)
                 component_dict[rc_key][comp].extend(seq_cols)
                 start_idx += len(component_dict[rc_key][comp])
+
+            extra_cols = [col for col in key_cols if
+                          len(col.split(self.comb_key)) == 3]
+            extra_cols = [col for col in extra_cols if
+                          int(col.split(self.comb_key)[1]) >= start_idx]
+            if return_missing:
+                if miss not in component_dict[rc_key]:
+                    component_dict[rc_key][miss] = []
+                if extra_cols:
+                    extra_ind = [int(col.split(self.comb_key)[1]) for col in
+                                 extra_cols]
+                    missing_ind = [
+                        str(x) for x in range(start_idx, max(extra_ind)) if x
+                        not in extra_ind]
+                    missing_col = [
+                        self.comb_key.join([rc_key, i, default_delim])
+                        for i in missing_ind]
+                    component_dict[rc_key][miss].extend(missing_col)
+            if return_bad_values:
+                valid_values.extend(extra_cols)
         if return_bad_values:
-            valid_values = [x for col in component_dict for sublist in
-                            component_dict[col].values() for x in sublist]
-            component_dict['bad_values'] = [x for x in columns if x not in
-                                            valid_values]
+            valid_values.extend([x for col in component_dict for sublist in
+                                 component_dict[col].values() for x in
+                                 sublist])
+            component_dict[bad_value] = [x for x in columns if x not in
+                                         valid_values]
         return component_dict
 
     def get_first_comp_col(self, start_idx, columns, delim=None,

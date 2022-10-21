@@ -764,7 +764,7 @@ class DataSource(object):
                                    self.p[vmc.autodicplace],
                                    include_index=include_index,
                                    include_full_name=include_full_name)
-        error = dic.translate_relation_to_component(error)
+        error = dic.translate_relation_cols(error, to_component=True)
         return error
 
     def get_and_merge_dictionary(self, df):
