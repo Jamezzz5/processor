@@ -148,11 +148,13 @@ class Dict(object):
         rc_delimit = rc.get_auto_delims()
         component_dict = {}
         valid_values = []
+        all_rel_cols = []
         for rc_key in rc_auto:
             start_idx = 0
             component_dict[rc_key] = {comp: [] for comp in rc_auto[rc_key]}
             key_cols = [col for col in columns
                         if col.split(self.comb_key)[0] == rc_key]
+            all_rel_cols.extend(key_cols)
             for idx, comp in enumerate(rc_auto[rc_key]):
                 lead_delim = None
                 trail_delim = None
@@ -162,6 +164,7 @@ class Dict(object):
                     trail_delim = rc_delimit[rc_key][idx]
                 rel_cols = [col for col in columns
                             if col.split(self.comb_key)[0] == comp]
+                all_rel_cols.extend(rel_cols)
                 if rel_cols:
                     first_index = 0
                     check_cols = rel_cols
@@ -214,7 +217,7 @@ class Dict(object):
             valid_values.extend([x for col in component_dict for sublist in
                                  component_dict[col].values() for x in
                                  sublist])
-            component_dict[bad_value] = [x for x in columns if x not in
+            component_dict[bad_value] = [x for x in all_rel_cols if x not in
                                          valid_values]
         return component_dict
 
