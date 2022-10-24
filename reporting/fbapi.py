@@ -350,15 +350,15 @@ class FbApi(object):
                     complete_job = list(ar.get_result())
                 except FacebookRequestError as e:
                     self.request_error(e)
-                    self.async_requests.append(job)
+                    self.async_requests.append(fb_request)
                     complete_job = None
                 except FacebookBadObjectError as e:
                     logging.warning('Facebook Bad Object Error: {}'.format(e))
-                    self.async_requests.append(job)
+                    self.async_requests.append(fb_request)
                     complete_job = None
                 except requests.exceptions.SSLError as e:
                     logging.warning('Warning SSLError as follows {}'.format(e))
-                    self.async_requests.append(job)
+                    self.async_requests.append(fb_request)
                     complete_job = None
                     time.sleep(30)
                 if complete_job:
