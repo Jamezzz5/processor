@@ -260,7 +260,11 @@ class RedApi(object):
         self.click_on_xpath(export_xpath)
         download_xpath = (
             '//button[contains(normalize-space(), "Download .csv")]')
-        self.click_on_xpath(download_xpath)
+        try:
+            self.click_on_xpath(download_xpath)
+        except ex.TimeoutException as e:
+            logging.warning('Timed out - attempting again. {}'.format(e))
+            self.click_on_xpath(download_xpath)
 
     def get_base_xpath(self):
         base_app_xpath = '//*[@id="app"]/div/div[1]/div[2]/div'
