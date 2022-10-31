@@ -227,6 +227,7 @@ def col_removal(df, key, removal_cols, warn=True):
 
 
 def apply_rules(df, vm_rules, pre_or_post, **kwargs):
+    grouped_q_idx = {}
     for rule in vm_rules:
         for item in RULE_CONST:
             if item not in vm_rules[rule].keys():
@@ -249,7 +250,13 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 logging.warning(
                     '{} not in columns setting to 0.'.format(metrics[1]))
                 df[metrics[1]] = 0
-            df[metrics[2]] = df[metrics[1]]
+            if metrics[2] in grouped_q_idx:
+                df.loc[~df.index.isin(grouped_q_idx[metrics[2]]),
+                       metrics[2]] = (
+                    df.loc[~df.index.isin(grouped_q_idx[metrics[2]]),
+                           metrics[1]])
+            else:
+                df[metrics[2]] = df[metrics[1]]
             metrics[1] = metrics[2]
         tdf = df
         metrics = metrics[1].split('|')
@@ -285,8 +292,16 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
             df.loc[q_idx, metric] = (df.loc[q_idx, metric].astype(float) *
                                      float(factor))
             if set_column_to_value:
-                df.loc[~df.index.isin(q_idx), metric] = (
-                    df.loc[~df.index.isin(q_idx), metric].astype(float) * 0)
+                if metric not in grouped_q_idx:
+                    grouped_q_idx[metric] = q_idx
+                else:
+                    grouped_q_idx[metric].extend(q_idx)
+    for metric in grouped_q_idx:
+        if metric not in df:
+            continue
+        df.loc[~df.index.isin(grouped_q_idx[metric]), metric] = (
+                df.loc[~df.index.isin(grouped_q_idx[metric]), metric]
+                .astype(float) * 0)
     return df
 
 

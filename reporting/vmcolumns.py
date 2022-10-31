@@ -294,3 +294,5 @@ api_partner_name_translation = {
     api_yv_key: ['Yahoo', 'Verizon'],
     api_amd_key: ['Amazon DSP']
 }
+
+output_file = 'Raw Data Output.csv'
