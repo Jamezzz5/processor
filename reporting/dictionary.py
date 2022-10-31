@@ -260,7 +260,7 @@ class Dict(object):
         return sequential_cols
 
     def get_relation_translations(self, columns, fix_bad_delim=True):
-        if not columns:
+        if columns.empty:
             return {}
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
@@ -300,7 +300,13 @@ class Dict(object):
                         new_name = rc_key
                         new_index = str(abs_index)
                         if fix_bad_delim and col_idx < 1 and lead_delim:
-                            new_delim = lead_delim
+                            if new_delim != lead_delim:
+                                new_delim = lead_delim
+                                logging.warning(
+                                    '{} has incorrect delimiter to be the '
+                                    'first component of {}. Treating '
+                                    'delimiter as {}.'
+                                    .format(col, comp, lead_delim))
                     else:
                         new_name = comp
                         new_index = str(col_idx)
@@ -312,20 +318,22 @@ class Dict(object):
 
     def translate_relation_cols(self, df, to_component=False,
                                 fix_bad_delim=True):
+        if df.columns.empty:
+            return df
         rc = RelationalConfig()
         rc.read(dctc.filename_rel_config)
         rc_keys = rc.rc[dctc.KEY].values()
         rc_comps = rc.get_auto_cols_list()
         translation_dict = self.get_relation_translations(
-            df.columns.to_list(), fix_bad_delim=fix_bad_delim)
+            df.columns, fix_bad_delim=fix_bad_delim)
         if to_component:
             translation_dict = {k: v for k, v in translation_dict.items()
                                 if k.split(self.comb_key)[0] in rc_keys}
         else:
             translation_dict = {k: v for k, v in translation_dict.items()
                                 if k.split(self.comb_key)[0] in rc_comps}
-        df.rename(columns=translation_dict, inplace=True)
-        return df
+        tdf = df.rename(columns=translation_dict)
+        return tdf
 
     @staticmethod
     def auto_split(error=pd.DataFrame()):
