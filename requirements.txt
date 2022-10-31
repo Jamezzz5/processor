@@ -16,4 +16,4 @@ tableauserverclient==0.18.0
 tableauhyperapi==0.0.14751
 tableaudocumentapi==0.9
 filelock==3.4.1
-pytest==7.1.3
+pytest==7.0.0
