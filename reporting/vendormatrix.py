@@ -772,8 +772,12 @@ class DataSource(object):
         dic = dct.Dict(self.p[vmc.filenamedict])
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto_tuple = rc.get_auto_tuple()
         dic.auto_functions(err=err, autodicord=self.p[vmc.autodicord],
-                           placement=self.p[vmc.autodicplace])
+                           placement=self.p[vmc.autodicplace],
+                           rc_auto=rc_auto_tuple)
         df = dic.merge(df, dctc.FPN)
         return df
 

@@ -51,8 +51,8 @@ class Dict(object):
         df = df.merge(self.data_dict, on=colname, how='left')
         return df
 
-    def auto_functions(self, err, autodicord, placement):
-        self.auto(err, autodicord, placement)
+    def auto_functions(self, err, autodicord, placement, rc_auto):
+        self.auto(err, autodicord, placement, rc_auto)
         self.apply_functions()
 
     @staticmethod
@@ -75,7 +75,7 @@ class Dict(object):
             error[col_name] = error[placement].str.split('_').str[i]
         return error
 
-    def auto(self, err, autodicord, placement):
+    def auto(self, err, autodicord, placement, rc_auto):
         error = err.get()
         if not autodicord == ['nan'] and not error.empty:
             if placement not in error.columns:
@@ -86,7 +86,7 @@ class Dict(object):
                 return True
             logging.info('Populating {}'.format(self.filename))
             error = self.split_error_df(err, autodicord, placement)
-            error = self.auto_combine(error)
+            error = self.auto_combine(error, rc_auto)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
             self.data_dict = self.data_dict.append(error, sort=True)
@@ -94,16 +94,17 @@ class Dict(object):
             err.dic = self
             err.reset()
 
-    def auto_combine(self, error=pd.DataFrame()):
+    def auto_combine(self, error, rc_auto):
         sorted_missing = self.sort_relation_cols(
-            error.columns, return_missing=True, return_bad_values=True)
+            error.columns, rc_auto, return_missing=True,
+            return_bad_values=True)
         if sorted_missing['bad_values']:
             logging.warning(
                 'The following auto dictionary items could not be sorted into '
                 'a relation column: {} They will not be added to {}'.format(
                     sorted_missing['bad_values'], self.filename))
-        error.drop(columns=sorted_missing['bad_values'], inplace=True)
-        error = self.translate_relation_cols(error)
+            error.drop(columns=sorted_missing['bad_values'], inplace=True)
+        error = self.translate_relation_cols(error, rc_auto)
         comb_cols = [x for x in error.columns if self.comb_key in x]
         final_cols = set(x.split(self.comb_key)[0] for x in comb_cols)
         for col in final_cols:
@@ -137,25 +138,22 @@ class Dict(object):
             error.drop([col], axis=1, inplace=True)
         return error
 
-    def sort_relation_cols(self, columns, keep_bad_delim=True,
+    def sort_relation_cols(self, columns, rc_auto, keep_bad_delim=True,
                            return_missing=False, return_bad_values=False):
         miss = 'missing'
         bad_value = 'bad_values'
         default_delim = '_'
-        rc = RelationalConfig()
-        rc.read(dctc.filename_rel_config)
-        rc_auto = rc.get_auto_cols()
-        rc_delimit = rc.get_auto_delims()
+        rc_cols, rc_delimit = rc_auto
         component_dict = {}
         valid_values = []
         all_rel_cols = []
-        for rc_key in rc_auto:
+        for rc_key in rc_cols:
             start_idx = 0
-            component_dict[rc_key] = {comp: [] for comp in rc_auto[rc_key]}
+            component_dict[rc_key] = {comp: [] for comp in rc_cols[rc_key]}
             key_cols = [col for col in columns
                         if col.split(self.comb_key)[0] == rc_key]
             all_rel_cols.extend(key_cols)
-            for idx, comp in enumerate(rc_auto[rc_key]):
+            for idx, comp in enumerate(rc_cols[rc_key]):
                 lead_delim = None
                 trail_delim = None
                 if 0 < idx <= len(rc_delimit[rc_key]):
@@ -259,14 +257,12 @@ class Dict(object):
             idx += 1
         return sequential_cols
 
-    def get_relation_translations(self, columns, fix_bad_delim=True):
+    def get_relation_translations(self, columns, rc_auto, fix_bad_delim=True):
         if columns.empty:
             return {}
-        rc = RelationalConfig()
-        rc.read(dctc.filename_rel_config)
-        rc_delimit = rc.get_auto_delims()
+        rc_delimit = rc_auto[1]
         sorted_columns = self.sort_relation_cols(
-            columns, keep_bad_delim=fix_bad_delim)
+            columns, rc_auto, keep_bad_delim=fix_bad_delim)
         translation_dict = {}
         for rc_key in sorted_columns:
             abs_index = 0
@@ -316,16 +312,14 @@ class Dict(object):
                     abs_index += 1
         return translation_dict
 
-    def translate_relation_cols(self, df, to_component=False,
+    def translate_relation_cols(self, df, rc_auto, to_component=False,
                                 fix_bad_delim=True):
         if df.columns.empty:
             return df
-        rc = RelationalConfig()
-        rc.read(dctc.filename_rel_config)
-        rc_keys = rc.rc[dctc.KEY].values()
-        rc_comps = rc.get_auto_cols_list()
+        rc_keys = rc_auto[0].keys()
+        rc_comps = [col for sublist in rc_auto[0].values() for col in sublist]
         translation_dict = self.get_relation_translations(
-            df.columns, fix_bad_delim=fix_bad_delim)
+            df.columns, rc_auto, fix_bad_delim=fix_bad_delim)
         if to_component:
             translation_dict = {k: v for k, v in translation_dict.items()
                                 if k.split(self.comb_key)[0] in rc_keys}
@@ -440,6 +434,10 @@ class RelationalConfig(object):
                       for k, v in self.rc[dctc.AUTO].items()
                       if str(v) != 'nan'}
         return rc_delimit
+
+    def get_auto_tuple(self):
+        auto_tuple = (self.get_auto_cols(), self.get_auto_delims())
+        return auto_tuple
 
     def get_auto_cols_list(self):
         rc_auto = self.get_auto_cols()
