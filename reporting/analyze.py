@@ -1269,7 +1269,7 @@ class CheckApiDateLength(AnalyzeBase):
             new_str_sd = new_sd.strftime('%Y-%m-%d')
             ndf.loc[0, vmc.startdate] = new_str_sd
             ndf.loc[0, vmc.enddate] = ''
-            new_vk = '{}_{}'.format('_'.join(vk.split('_')[:2]), new_str_sd)
+            new_vk = '{}_{}'.format(vk, new_str_sd)
             ndf.loc[0, vmc.vendorkey] = new_vk
             file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
             new_fn = '{}{}'.format(new_vk.replace('API_', '').lower(),
