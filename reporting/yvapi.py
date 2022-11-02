@@ -24,19 +24,13 @@ class YvApi(object):
     def __init__(self):
         self.config = None
         self.config_file = None
-        self.username = None
-        self.password = None
         self.client_id = None
         self.client_secret = None
         self.advertiser = None
         self.campaign_filter = None
         self.config_list = None
         self.header = None
-        self.act_id = None
         self.access_token = None
-        self.response_tokens = []
-        self.aid_dict = {}
-        self.cid_dict = {}
         self.df = pd.DataFrame()
         self.r = None
         self.jwt_token = None
@@ -193,6 +187,10 @@ class YvApi(object):
         }
         self.header['Content-Type'] = 'application/json'
         r = requests.post(self.report_url, headers=self.header, json=payload)
+        if 'customerReportId' not in r.json():
+            logging.warning('No customer report in response as follows: {}'
+                            ''.format(r.json()))
+            return ''
         report_id = r.json()['customerReportId']
         download_url = "{}{}".format(self.report_url, report_id)
         return download_url
@@ -209,9 +207,12 @@ class YvApi(object):
         sd, ed = self.format_dates(sd, ed)
         logging.info('Getting data from {} to {}'.format(sd, ed))
         download_url = self.request_report(sd, ed)
+        if not download_url:
+            logging.warning('No download url returning blank df')
+            return pd.DataFrame()
         df = self.get_report(download_url)
         logging.info('Data downloaded.')
-        if self.campaign_filter:
+        if self.campaign_filter and not df.empty:
             df = self.filter_df_on_campaign(df)
         logging.info('Returning df.')
         return df
