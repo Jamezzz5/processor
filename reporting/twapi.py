@@ -199,6 +199,7 @@ class TwApi(object):
 
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None,
                 ad_name=None):
+        original_parent_filter = parent_filter
         url, params = self.create_base_url(entity)
         if parent_filter:
             original_params = params.copy()
@@ -225,7 +226,8 @@ class TwApi(object):
                             'attempting without start date.'.format(entity, sd))
             id_dict = self.get_ids(entity=entity, eid=eid, name=name,
                                    parent=parent, sd=None,
-                                   parent_filter=parent_filter, ad_name=ad_name)
+                                   parent_filter=original_parent_filter,
+                                   ad_name=ad_name)
         return id_dict
 
     def page_through_ids(self, data, id_dict, first_url, eid, name, parent,
