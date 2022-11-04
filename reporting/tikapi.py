@@ -180,8 +180,9 @@ class TikApi(object):
         return self.df
 
     def filter_df_on_campaign(self, df):
-        if self.campaign_id:
-            df = df[df['campaign_name'].str.contains(self.campaign_id)]
+        campaign_col = 'campaign_name'
+        if self.campaign_id and campaign_col in df.columns:
+            df = df[df[campaign_col].str.contains(self.campaign_id)]
         return df
 
     def reset_params(self):
