@@ -1391,8 +1391,8 @@ class CheckFlatSpends(AnalyzeBase):
                 ndf = df[df['_merge'] == 'left_only']
                 ndf = ndf.drop(columns=['_merge'])
                 ndf[self.error_col] = self.missing_clicks_error
-                df = cdf.append(rdf)
-                df = df.append(ndf)
+                df = cdf.append(rdf, sort=False)
+                df = df.append(ndf, sort=False)
                 df = df.reset_index(drop=True)
                 df = df.dropna(how='all')
                 df = df.fillna('')
@@ -1432,7 +1432,7 @@ class CheckFlatSpends(AnalyzeBase):
                               aly_dict[dctc.PKD], 0]]
                     tdf = pd.DataFrame(
                         trans, columns=self.aly.translation_df.columns)
-                except ValueError:
+                except AssertionError:
                     trans = [['mpPlacement Date', old_val, new_val,
                               'Select::mpPackage Description',
                               aly_dict[dctc.PKD]]]
