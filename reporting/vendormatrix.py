@@ -758,13 +758,17 @@ class DataSource(object):
     def get_dict_order_df(self, include_index=True, include_full_name=False):
         self.df = self.get_raw_df()
         dic = dct.Dict()
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto_tuple = rc.get_auto_tuple()
         err = er.ErrorReport(self.df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         error = dic.split_error_df(err, self.p[vmc.autodicord],
                                    self.p[vmc.autodicplace],
                                    include_index=include_index,
                                    include_full_name=include_full_name)
-        error = dic.translate_relation_cols(error, to_component=True,
+        error = dic.translate_relation_cols(error, rc_auto_tuple,
+                                            to_component=True,
                                             fix_bad_delim=False)
         return error
 
