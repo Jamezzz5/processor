@@ -16,7 +16,7 @@ from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
 
 
-def_params = ['campaign_name', 'adset_name', 'ad_name']
+def_params = ['campaign_name', 'adset_name', 'ad_name', 'ad_id']
 
 def_metrics = ['impressions', 'inline_link_clicks', 'spend',
                'video_thruplay_watched_actions', 'video_p25_watched_actions',
