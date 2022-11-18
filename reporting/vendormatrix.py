@@ -758,20 +758,30 @@ class DataSource(object):
     def get_dict_order_df(self, include_index=True, include_full_name=False):
         self.df = self.get_raw_df()
         dic = dct.Dict()
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto_tuple = rc.get_auto_tuple()
         err = er.ErrorReport(self.df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         error = dic.split_error_df(err, self.p[vmc.autodicord],
                                    self.p[vmc.autodicplace],
                                    include_index=include_index,
                                    include_full_name=include_full_name)
+        error = dic.translate_relation_cols(error, rc_auto_tuple,
+                                            to_component=True,
+                                            fix_bad_delim=False)
         return error
 
     def get_and_merge_dictionary(self, df):
         dic = dct.Dict(self.p[vmc.filenamedict])
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto_tuple = rc.get_auto_tuple()
         dic.auto_functions(err=err, autodicord=self.p[vmc.autodicord],
-                           placement=self.p[vmc.autodicplace])
+                           placement=self.p[vmc.autodicplace],
+                           rc_auto=rc_auto_tuple)
         df = dic.merge(df, dctc.FPN)
         return df
 
