@@ -32,6 +32,14 @@ class TestUtils:
         assert pd.testing.assert_frame_equal(df, ndf) is None
         os.remove(file_name)
 
+    def test_filter_df_on_col(self):
+        col_name = 'a'
+        col_val = 'x'
+        df = pd.DataFrame({col_name: [col_val, 'y', 'z'], 'b': [4, 5, 6]})
+        ndf = utl.filter_df_on_col(df, col_name, col_val)
+        df = pd.DataFrame({col_name: [col_val], 'b': [4]})
+        assert pd.testing.assert_frame_equal(df, ndf) is None
+
     def test_vm_rules(self):
         query_partners = ['{}'.format(x) for x in range(2)]
         query = '{}::{}'.format(dctc.VEN, ','.join(query_partners))

@@ -1026,20 +1026,11 @@ def df_single_transform(df, transform):
     if transform_type == 'FilterCol':
         col_name = transform[1]
         col_val = transform[2]
-        if col_name not in df.columns:
-            log.warning('Unable to execute {} transform. Column "{}" '
-                        'not in datasource.'.format(transform_type, col_name))
-            return df
-        df = df.dropna(subset=[col_name])
-        df = df.reset_index(drop=True)
         exclude_toggle = False
         if len(transform) > 3:
             if transform[3] == 'Exclude':
                 exclude_toggle = True
-        if exclude_toggle:
-            df = df[~df[col_name].astype('U').str.contains(col_val)]
-        else:
-            df = df[df[col_name].astype('U').str.contains(col_val)]
+        df = utl.filter_df_on_col(df, col_name, col_val, exclude_toggle)
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
         if cols[0] not in df.columns or cols[1] not in df.columns:
