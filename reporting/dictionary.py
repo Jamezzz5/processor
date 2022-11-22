@@ -161,7 +161,8 @@ class Dict(object):
                 if idx < len(rc_delimit[rc_key]):
                     trail_delim = rc_delimit[rc_key][idx]
                 rel_cols = [col for col in columns
-                            if col.split(self.comb_key)[0] == comp]
+                            if col.split(self.comb_key)[0] == comp
+                            if col not in key_cols]
                 all_rel_cols.extend(rel_cols)
                 if rel_cols:
                     first_index = 0
