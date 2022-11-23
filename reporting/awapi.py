@@ -1,3 +1,4 @@
+import json.decoder
 import os
 import ast
 import sys
@@ -219,7 +220,7 @@ class AwApi(object):
         return header
 
     def get_headers(self):
-        login_customer_id = self.login_customer_id.replace('-', '')
+        login_customer_id = str(self.login_customer_id).replace('-', '')
         header = {"Content-Type": "application/json",
                   "developer-token": self.developer_token,
                   "Authorization": "Bearer {}".format(self.refresh_token)}
@@ -313,6 +314,9 @@ class AwApi(object):
         report = self.get_report_request_dict(sd, ed, fields)
         r = self.request_report(report)
         r = self.check_report(r, report)
+        if not r:
+            logging.warning('No response returning blank df.')
+            return self.df
         self.df = self.report_to_df(r, fields)
         return self.df
 
@@ -337,17 +341,22 @@ class AwApi(object):
         return r
 
     def check_report(self, r, report):
-        if r.json() != [] and 'results' not in r.json()[0]:
-            if r.json()[0]['error']['status'] == 'PERMISSION_DENIED':
+        try:
+            json_resp = r.json()
+        except json.decoder.JSONDecoder as e:
+            logging.warning('No JSON in response retrying: {}'.format(e))
+            return None
+        if json_resp != [] and 'results' not in json_resp[0]:
+            if json_resp[0]['error']['status'] == 'PERMISSION_DENIED':
                 logging.warning('Permission denied, trying all customers.')
                 r = self.find_correct_login_customer_id(report)
-            elif r.json()[0]['error']['status'] == 'INTERNAL':
+            elif json_resp[0]['error']['status'] == 'INTERNAL':
                 logging.warning('Google internal error - retrying.')
                 time.sleep(30)
                 r = self.find_correct_login_customer_id(report)
             else:
-                logging.warning('Unknown response: {}'.format(r.json()))
-                sys.exit(0)
+                logging.warning('Unknown response: {}'.format(json_resp))
+                return None
         return r
 
     def report_to_df(self, r, fields):
@@ -356,12 +365,19 @@ class AwApi(object):
             logging.warning('No results in response returning blank df.')
             df = pd.DataFrame()
         else:
-            results = r.json()[0]['results']
-            df = pd.io.json.json_normalize(results)
-            replace_dict = {x.return_name: x.display_name for x in fields}
-            df = df.rename(columns=replace_dict)
-            df = self.filter_on_campaign(df)
-            df = self.clean_up_columns(df)
+            total_pages = len(r.json())
+            df = pd.DataFrame()
+            for idx, page in enumerate(r.json()):
+                logging.info('Parsing results page: {} of {}'.format(
+                    idx + 1, total_pages))
+                results = page['results']
+                tdf = pd.io.json.json_normalize(results)
+                replace_dict = {x.return_name: x.display_name for x in fields}
+                tdf = tdf.rename(columns=replace_dict)
+                tdf = self.filter_on_campaign(tdf)
+                tdf = self.clean_up_columns(tdf)
+                tdf = tdf.loc[:, ~tdf.columns.duplicated()].copy()
+                df = pd.concat([df, tdf], sort=False, ignore_index=True)
             logging.info('Returning data as df.')
         return df
 
