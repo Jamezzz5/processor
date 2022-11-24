@@ -70,9 +70,6 @@ class Analyze(object):
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
-        self.translation = dct.DictTranslationConfig()
-        self.translation.read(dctc.filename_tran_config)
-        self.translation_df = self.translation.get()
         self.vc = ValueCalc()
         self.class_list = [
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
@@ -300,10 +297,12 @@ class Analyze(object):
         cost_cols = [x for x in metrics if metrics[x]]
         self.make_heat_map(df, cost_cols)
 
-    def generate_df_table(self, group, metrics, sort=None, data_filter=None):
+    def generate_df_table(self, group, metrics, sort=None, data_filter=None,
+                          df=pd.DataFrame()):
         base_metrics = [x for x in metrics if x not in self.vc.metric_names]
         calc_metrics = [x for x in metrics if x not in base_metrics]
-        df = self.df.copy()
+        if df.empty:
+            df = self.df.copy()
         if data_filter:
             filter_col = data_filter[0]
             filter_val = data_filter[1]
@@ -960,15 +959,11 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
-    def do_analysis_and_fix_processor(self, pre_run=False, write=True):
+    def do_analysis_and_fix_processor(self, pre_run=False):
         for analysis_class in self.class_list:
             if analysis_class.fix:
                 if (pre_run and analysis_class.pre_run) or not pre_run:
                     analysis_class(self).do_and_fix_analysis()
-        if write:
-            self.matrix.write()
-            self.translation.write(
-                self.translation_df, dctc.filename_tran_config)
         return self.fixes_to_run
 
 
@@ -1341,15 +1336,14 @@ class CheckFlatSpends(AnalyzeBase):
     fix = True
     pre_run = True
 
-    def merge_first_click_date(self, df, tdf):
+    def merge_first_click_date(self, df, tdf, groups):
         df = df.merge(tdf.drop_duplicates(),
-                      on=[dctc.VEN, dctc.PKD,
-                          dctc.PD, dctc.BM, cal.NCF],
+                      on=groups,
                       how='left', indicator=True)
         df = df.drop(columns=['Clicks_y'])
-        df = df.rename(columns={'Date': self.first_click_col,
-                                'Clicks_x': 'Clicks'})
-        df = df.astype({"Clicks": str})
+        df = df.rename(columns={vmc.date: self.first_click_col,
+                                'Clicks_x': vmc.clicks})
+        df = df.astype({vmc.clicks: str})
         df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
         df[self.first_click_col] = df[
             self.first_click_col].dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -1360,42 +1354,51 @@ class CheckFlatSpends(AnalyzeBase):
         Checks for flat packages w/ no attributed cost past placement.
         Sorts into missing clicks or wrong placement date.
         """
-        groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, dctc.BR, vmc.date]
+        pn_groups = [dctc.VEN, dctc.COU, dctc.PN, dctc.PKD, dctc.PD, dctc.BM,
+                     dctc.BR, vmc.date]
         metrics = [cal.NCF, vmc.clicks]
         metrics = [metric for metric in metrics if metric in df.columns]
-        df = self.aly.generate_df_table(groups, metrics, sort=None,
-                                        data_filter=None)
+        df = self.aly.generate_df_table(pn_groups, metrics, sort=None,
+                                        data_filter=None, df=df)
         df.reset_index(inplace=True)
-        df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
+        df = df[(df[dctc.BM] == cal.BM_FLAT) | (df[dctc.BM] == cal.BM_FLAT2)]
         if not df.empty:
-            tdf = df[df[vmc.clicks] > 0]
-            tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
+            pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
+            tdf = df.groupby(pk_groups).sum()
             tdf.reset_index(inplace=True)
-            tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
-            tdf = tdf.drop(columns=[dctc.BR])
-            df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
-            df.reset_index(inplace=True)
-            df = utl.data_to_type(df, date_col=[dctc.PD, vmc.date])
-            rdf = df[df[dctc.BR] == 0]
-            if not rdf.empty:
-                rdf = self.merge_first_click_date(rdf, tdf)
-                rdf = rdf.drop(columns='_merge')
-            rdf[self.error_col] = self.missing_rate_error
-            df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
+            tdf = tdf[tdf[cal.NCF] == 0]
+            df = df.merge(tdf[pk_groups], how='right')
             if not df.empty:
-                df = self.merge_first_click_date(df, tdf)
-                cdf = df[df['_merge'] == 'both']
-                cdf = cdf.iloc[:, :-1]
-                cdf = cdf[cdf[self.first_click_col] != cdf[dctc.PD]]
-                cdf[self.error_col] = self.placement_date_error
-                ndf = df[df['_merge'] == 'left_only']
-                ndf = ndf.drop(columns=['_merge'])
-                ndf[self.error_col] = self.missing_clicks_error
-                df = cdf.append(rdf, sort=False)
-                df = df.append(ndf, sort=False)
-                df = df.reset_index(drop=True)
-                df = df.dropna(how='all')
-                df = df.fillna('')
+                pn_groups.remove(vmc.date)
+                tdf = df[df[vmc.clicks] > 0]
+                tdf = tdf.groupby(pn_groups).min()
+                tdf.reset_index(inplace=True)
+                tdf = tdf.drop(columns=[cal.NCF])
+                tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
+                df = df.groupby(pn_groups).sum()
+                df.reset_index(inplace=True)
+                df = utl.data_to_type(df, date_col=[dctc.PD])
+                df = self.merge_first_click_date(df, tdf, pn_groups)
+                df = utl.data_to_type(df, date_col=[dctc.PD])
+                rdf = df[df[dctc.BR] == 0]
+                if not rdf.empty:
+                    rdf = rdf.drop(columns='_merge')
+                rdf[self.error_col] = self.missing_rate_error
+                df = df[df[dctc.PD] <= dt.datetime.today()]
+                if not df.empty:
+                    cdf = df[df['_merge'] == 'both']
+                    cdf = cdf.iloc[:, :-1]
+                    cdf = cdf[cdf[self.first_click_col] != cdf[dctc.PD]]
+                    cdf[self.error_col] = self.placement_date_error
+                    ndf = df[df['_merge'] == 'left_only']
+                    ndf = ndf.drop(columns=['_merge'])
+                    ndf[self.error_col] = self.missing_clicks_error
+                    df = cdf.append(rdf, sort=False)
+                    df = df.append(ndf, sort=False)
+                    df = df.reset_index(drop=True)
+                    df = df.dropna(how='all')
+                    df = df.fillna('')
+        df = utl.data_to_type(df, str_col=[dctc.PD, self.first_click_col])
         return df
 
     def do_analysis(self):
@@ -1411,7 +1414,7 @@ class CheckFlatSpends(AnalyzeBase):
             logging.info('{}\n{}'.format(msg, rdf.to_string()))
         self.add_to_analysis_dict(df=rdf, msg=msg)
 
-    def fix_analysis(self, aly_dict, write=False):
+    def fix_analysis(self, aly_dict, write=True):
         """
         Translates flat packages w/ missing spends placement date to first w/
         clicks.
@@ -1420,30 +1423,35 @@ class CheckFlatSpends(AnalyzeBase):
         :param write: boolean will write the translational_dict as csv when true
         :returns: the translational_dict as a df
         """
+        if self.placement_date_error not in aly_dict[self.error_col].values:
+            return pd.DataFrame()
+        translation = dct.DictTranslationConfig()
+        translation.read(dctc.filename_tran_config)
+        translation_df = translation.get()
         aly_dicts = aly_dict.to_dict(orient='records')
+        tdf = pd.DataFrame(columns=translation_df.columns)
         for aly_dict in aly_dicts:
             if aly_dict[self.error_col] == self.placement_date_error:
                 old_val = aly_dict[dctc.PD].strip('00:00:00').strip()
                 new_val = aly_dict[
                     self.first_click_col].strip('00:00:00').strip()
                 try:
-                    trans = [['mpPlacement Date', old_val, new_val,
-                              'Select::mpPackage Description',
-                              aly_dict[dctc.PKD], 0]]
-                    tdf = pd.DataFrame(
-                        trans, columns=self.aly.translation_df.columns)
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN], 0]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = tdf.append(row, ignore_index=True, sort=False)
                 except AssertionError:
-                    trans = [['mpPlacement Date', old_val, new_val,
-                              'Select::mpPackage Description',
-                              aly_dict[dctc.PKD]]]
-                    tdf = pd.DataFrame(
-                        trans, columns=self.aly.translation_df.columns)
-                self.aly.translation_df = self.aly.translation_df.append(
-                    tdf, ignore_index=True, sort=False)
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN]]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = tdf.append(row, ignore_index=True, sort=False)
+        translation_df = translation_df.append(
+            tdf, ignore_index=True, sort=False)
         if write:
-            self.aly.translation.write(
-                self.aly.translation_df, dctc.filename_tran_config)
-        return self.aly.translation_df
+            translation.write(translation_df, dctc.filename_tran_config)
+        return tdf
 
 
 class GetPacingAnalysis(AnalyzeBase):

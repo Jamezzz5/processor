@@ -81,7 +81,7 @@ def main(arguments=None):
     matrix = vm.VendorMatrix()
     if args.analyze:
         aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-        aly.do_analysis_and_fix_processor(pre_run=True, write=True)
+        aly.do_analysis_and_fix_processor(pre_run=True)
         matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)
@@ -101,7 +101,7 @@ def main(arguments=None):
                 os.path.join(utl.config_path, exc.upload_id_file)):
             logging.info('First run - analyzing data.')
             aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-            fixes_to_run = aly.do_analysis_and_fix_processor(write=True)
+            fixes_to_run = aly.do_analysis_and_fix_processor()
             if fixes_to_run:
                 logging.info('Fixes applied, rerunning processor.')
                 matrix = vm.VendorMatrix()
