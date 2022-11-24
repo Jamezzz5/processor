@@ -262,6 +262,7 @@ class TestAnalyze:
         assert df.empty
 
     def test_flat_fix(self):
+        first_click_date = '2022-07-25'
         cfs = aly.CheckFlatSpends(aly.Analyze())
         translation = dct.DictTranslationConfig()
         df = pd.DataFrame({
@@ -278,11 +279,11 @@ class TestAnalyze:
             cal.NCF: [0],
             vmc.clicks: [1],
             dctc.BR: [0],
-            cfs.first_click_col: ['2022-07-25'],
+            cfs.first_click_col: [first_click_date],
             cfs.error_col: cfs.placement_date_error})
         df = utl.data_to_type(df, date_col=[dctc.PD, cfs.first_click_col])
         df = utl.data_to_type(df, str_col=[dctc.PD, cfs.first_click_col])
         tdf = cfs.fix_analysis(df, write=False)
         translation.df = tdf
         df = translation.apply_translation_to_dict(df)
-        assert df[dctc.PD].values == '2022-07-25'
+        assert df[dctc.PD].values == first_click_date
