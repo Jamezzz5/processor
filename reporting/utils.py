@@ -365,3 +365,17 @@ def date_check(sd, ed):
                         'was set to end date.')
         sd = ed
     return sd, ed
+
+
+def filter_df_on_col(df, col_name, col_val, exclude=False):
+    if col_name not in df.columns:
+        logging.warning('Unable to filter df. Column "{}" '
+                        'not in datasource.'.format(col_name))
+        return df
+    df = df.dropna(subset=[col_name])
+    df = df.reset_index(drop=True)
+    if exclude:
+        df = df[~df[col_name].astype('U').str.contains(col_val)]
+    else:
+        df = df[df[col_name].astype('U').str.contains(col_val)]
+    return df

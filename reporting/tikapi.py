@@ -122,30 +122,41 @@ class TikApi(object):
         return sd, ed
 
     def get_ad_ids(self):
+        logging.info('Getting ad ids.')
         self.set_headers()
         url = self.base_url + self.ad_url
         params = {'advertiser_id': self.advertiser_id,
+                  'page': 1,
                   'filtering': json.dumps(
                       {'primary_status': 'STATUS_ALL',
                        'status': 'AD_STATUS_ALL'})}
-        ad_ids = []
-        for x in range(1, 100):
-            params['page'] = x
-            r = self.make_request(url, method='GET', headers=self.headers,
-                                  params=params)
-            response_data = r.json()['data']
-            if 'list' not in response_data:
-                logging.warning(
-                    'No list in response please make sure accounts '
-                    'have been given access:\n {}'.format(r.json()))
-                break
-            ad_list = response_data['list']
-            self.ad_id_list.extend(ad_list)
-            ad_ids.extend([x['ad_id'] for x in ad_list])
-            if x >= r.json()['data']['page_info']['total_page']:
-                break
+        ad_ids, r = self.request_ad_id(url, params, [])
+        if r and ad_ids:
+            total_pages = r.json()['data']['page_info']['total_page']
+            for x in range(total_pages - 1):
+                page_num = x + 2
+                params['page'] = page_num
+                if page_num % 10 == 0:
+                    logging.info('Pulling ad_ids page #{} of {}'.format(
+                        page_num, total_pages))
+                ad_ids, r = self.request_ad_id(url, params, ad_ids)
         ad_ids = [ad_ids[x:x + 100] for x in range(0, len(ad_ids), 100)]
+        logging.info('Returning all ad ids.')
         return ad_ids
+
+    def request_ad_id(self, url, params, ad_ids):
+        r = self.make_request(url, method='GET', headers=self.headers,
+                              params=params)
+        response_data = r.json()['data']
+        if 'list' not in response_data:
+            logging.warning(
+                'No list in response please make sure accounts '
+                'have been given access:\n {}'.format(r.json()))
+            return ad_ids, r
+        ad_list = response_data['list']
+        self.ad_id_list.extend(ad_list)
+        ad_ids.extend([x['ad_id'] for x in ad_list])
+        return ad_ids, r
 
     def request_and_get_data(self, sd, ed):
         url = self.base_url + self.ad_report_url
@@ -181,8 +192,8 @@ class TikApi(object):
 
     def filter_df_on_campaign(self, df):
         campaign_col = 'campaign_name'
-        if self.campaign_id and campaign_col in df.columns:
-            df = df[df[campaign_col].str.contains(self.campaign_id)]
+        if self.campaign_id:
+            df = utl.filter_df_on_col(df, campaign_col, self.campaign_id)
         return df
 
     def reset_params(self):

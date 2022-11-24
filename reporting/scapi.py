@@ -23,6 +23,9 @@ def_fields = add_fields
 
 
 class ScApi(object):
+    campaign_filter_col = 'campaign_filter'
+    campaign_col = 'Campaign'
+
     def __init__(self):
         self.config = None
         self.config_file = None
@@ -65,8 +68,8 @@ class ScApi(object):
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.access_token, self.ad_account_id,
                             self.refresh_token]
-        if 'campaign_filter' in self.config:
-            self.campaign_filter = self.config['campaign_filter']
+        if self.campaign_filter_col in self.config:
+            self.campaign_filter = self.config[self.campaign_filter_col]
 
     def check_config(self):
         for item in self.config_list:
@@ -195,7 +198,8 @@ class ScApi(object):
         for cid in cids:
             self.get_raw_data(sd, ed, cid, fields)
         logging.info('Data successfully downloaded.')
-        self.df['Campaign Name'] = self.df['Campaign Name'].map(cids)
+        if self.campaign_col in self.df:
+            self.df[self.campaign_col] = self.df[self.campaign_col].map(cids)
         self.df = self.add_names_to_df()
         if not self.df.empty and self.breakdown:
             self.df = self.remove_timezone_from_date()
