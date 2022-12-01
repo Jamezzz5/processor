@@ -1,11 +1,14 @@
 import os
 import re
-import sys
+import time
+import shutil
 import logging
 import pandas as pd
 import datetime as dt
+import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
+import selenium.common.exceptions as ex
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -379,3 +382,73 @@ def filter_df_on_col(df, col_name, col_val, exclude=False):
     else:
         df = df[df[col_name].astype('U').str.contains(col_val)]
     return df
+
+
+class SeleniumWrapper(object):
+    def __init__(self):
+        self.browser = self.init_browser()
+
+    def init_browser(self):
+        download_path = os.path.join(os.getcwd(), 'tmp')
+        co = wd.chrome.options.Options()
+        co.headless = True
+        co.add_argument('--disable-features=VizDisplayCompositor')
+        co.add_argument('--window-size=1920,1080')
+        co.add_argument('--start-maximized')
+        co.add_argument('--no-sandbox')
+        co.add_argument('--disable-gpu')
+        prefs = {'download.default_directory': download_path}
+        co.add_experimental_option('prefs', prefs)
+        browser = wd.Chrome(options=co)
+        browser.maximize_window()
+        browser.set_script_timeout(10)
+        self.enable_download_in_headless_chrome(browser, download_path)
+        return browser
+
+    @staticmethod
+    def enable_download_in_headless_chrome(driver, download_dir):
+        # add missing support for chrome "send_command"  to selenium webdriver
+        driver.command_executor._commands["send_command"] = \
+            ("POST", '/session/$sessionId/chromium/send_command')
+        params = {'cmd': 'Page.setDownloadBehavior',
+                  'params': {'behavior': 'allow', 'downloadPath': download_dir}}
+        driver.execute("send_command", params)
+
+    def go_to_url(self, url, sleep=5):
+        logging.info('Going to url {}.'.format(url))
+        try:
+            self.browser.get(url)
+        except ex.TimeoutException:
+            logging.warning('Timeout exception, retrying.')
+            self.go_to_url(url)
+        time.sleep(sleep)
+
+    @staticmethod
+    def click_on_elem(elem, sleep=2):
+        elem.click()
+        time.sleep(sleep)
+
+    def click_on_xpath(self, xpath, sleep=2):
+        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
+
+    def quit(self):
+        self.browser.quit()
+
+    @staticmethod
+    def get_file_as_df(temp_path=None):
+        df = pd.DataFrame()
+        for x in range(100):
+            logging.info('Checking for file.  Attempt {}.'.format(x + 1))
+            files = os.listdir(temp_path)
+            files = [x for x in files if x[-4:] == '.csv']
+            if files:
+                files = files[-1]
+                logging.info('File downloaded.')
+                temp_file = os.path.join(temp_path, files)
+                time.sleep(5)
+                df = import_read_csv(temp_file, empty_df=True)
+                os.remove(temp_file)
+                break
+            time.sleep(5)
+        shutil.rmtree(temp_path)
+        return df
