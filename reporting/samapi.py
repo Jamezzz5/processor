@@ -8,11 +8,10 @@ import pandas as pd
 import datetime as dt
 import reporting.utils as utl
 
-config_path = utl.config_path
-base_url = 'https://reporting.trader.adgear.com/v1/reports'
-
 
 class SamApi(object):
+    config_path = utl.config_path
+    base_url = 'https://reporting.trader.adgear.com/v1/reports'
     default_dimensions = [
         "advertiser_id", "advertiser_name", "campaign_id", "campaign_name",
         "creative_id", "creative_group_name", "creative_name", "day"]
@@ -28,7 +27,6 @@ class SamApi(object):
         self.access_token = None
         self.author_name = None
         self.campaign_id = None
-        self.report_id = None
         self.config_list = None
         self.client = None
         self.df = pd.DataFrame()
@@ -41,7 +39,7 @@ class SamApi(object):
                             'Aborting.')
             sys.exit(0)
         logging.info('Loading Sam config file: {}'.format(config))
-        self.config_file = os.path.join(config_path, config)
+        self.config_file = os.path.join(self.config_path, config)
         self.load_config()
         self.check_config()
 
@@ -68,8 +66,11 @@ class SamApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
-        self.create_report(sd, ed)
-        self.get_raw_data()
+        report_id = self.create_report(sd, ed)
+        if not report_id:
+            logging.warning('No report ID, returning blank df.')
+            return pd.DataFrame()
+        self.df = self.get_raw_data(report_id)
         self.check_empty_df()
         return self.df
 
@@ -105,32 +106,37 @@ class SamApi(object):
                 ]
             }
         }
-        self.r = self.make_request('post', body, header)
+        self.r = self.make_request('post', self.base_url, body, header)
+        response = self.r.json()
+        if 'id' in response:
+            report_id = response['id']
+        else:
+            logging.warning('ID not in response: {}'.format(response))
+            report_id = None
+        return report_id
 
-    def make_request(self, method, body=None, header=None):
+    def make_request(self, method, url, body=None, header=None):
         try:
-            self.r = self.raw_request(method, body=body, header=header)
+            self.r = self.raw_request(method, url, body=body, header=header)
         except requests.exceptions.SSLError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
-            self.r = self.make_request(method, body=body, header=header)
+            self.r = self.make_request(method, url, body=body, header=header)
         return self.r
 
-    def raw_request(self, method, body=None, header=None):
+    def raw_request(self, method, url, body=None, header=None):
         if method == 'post':
-            self.r = requests.post(base_url, json=body, headers=header)
-            response = self.r.json()
-            self.report_id = response["id"]
+            self.r = requests.post(url, json=body, headers=header)
         elif method == 'get':
-            url = base_url + '/' + str(self.report_id)
             self.r = requests.get(url, headers=header)
         return self.r
 
-    def get_raw_data(self):
+    def get_raw_data(self, report_id):
         header = self.create_header()
         response = None
+        url = '{}/{}'.format(self.base_url, report_id)
         for x in range(1, 101):
-            self.r = self.make_request('get', header=header)
+            self.r = self.make_request('get', url, header=header)
             response = self.r.json()
             if response.get('urls') and response['urls']:
                 break
@@ -144,8 +150,9 @@ class SamApi(object):
             self.df = utl.import_read_csv(report_url[0], file_check=False,
                                           error_bad=False)
         else:
-            logging.warning('Report does not exist.  Create it.')
-            sys.exit(0)
+            logging.warning('Report does not exist.')
+            self.df = pd.DataFrame()
+        return self.df
 
     def create_report_query(self, sd, ed):
         query = {
