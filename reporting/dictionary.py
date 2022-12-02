@@ -636,6 +636,9 @@ class DictTranslationConfig(object):
             logging.warning('{} could not be opened.  This dictionary '
                             'was not saved.'.format(configfile))
 
+    def get(self):
+        return self.df
+
     def apply_translation_to_dict(self, data_dict):
         if self.df.empty:
             return data_dict

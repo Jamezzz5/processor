@@ -46,8 +46,7 @@ class Analyze(object):
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
-    missing_flat_costs = 'missing_flat_costs'
-    missing_flat_clicks = 'missing_flat_clicks'
+    missing_flat = 'missing_flat'
     missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
     change_auto_order = 'change_auto_order'
@@ -74,8 +73,8 @@ class Analyze(object):
         self.vc = ValueCalc()
         self.class_list = [
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts]
+            CheckApiDateLength, CheckFlatSpends, GetPacingAnalysis,
+            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -298,10 +297,12 @@ class Analyze(object):
         cost_cols = [x for x in metrics if metrics[x]]
         self.make_heat_map(df, cost_cols)
 
-    def generate_df_table(self, group, metrics, sort=None, data_filter=None):
+    def generate_df_table(self, group, metrics, sort=None, data_filter=None,
+                          df=pd.DataFrame()):
         base_metrics = [x for x in metrics if x not in self.vc.metric_names]
         calc_metrics = [x for x in metrics if x not in base_metrics]
-        df = self.df.copy()
+        if df.empty:
+            df = self.df.copy()
         if data_filter:
             filter_col = data_filter[0]
             filter_val = data_filter[1]
@@ -855,63 +856,6 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.double_counting_partial,
                                   message=pmsg, data=pdf.to_dict())
 
-    def find_missing_flat_spend(self):
-        cdf = pd.DataFrame()
-        ndf = pd.DataFrame()
-        groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, vmc.date]
-        metrics = [cal.NCF, vmc.clicks]
-        metrics = [metric for metric in metrics if metric in self.df.columns]
-        df = self.generate_df_table(groups, metrics, sort=None,
-                                    data_filter=None)
-        df.reset_index(inplace=True)
-        df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
-        if not df.empty:
-            tdf = df[df[vmc.clicks] > 0]
-            tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
-            tdf.reset_index(inplace=True)
-            df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
-            df.reset_index(inplace=True)
-            df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
-            if not df.empty:
-                df = df.merge(tdf.drop_duplicates(),
-                              on=[dctc.VEN, dctc.PKD,
-                                  dctc.PD, dctc.BM, cal.NCF],
-                              how='left', indicator=True)
-                df = df.drop(columns=['Clicks_y'])
-                df = df.rename(columns={'Date': 'First Click Date',
-                                        'Clicks_x': 'Clicks'})
-                df = df.astype({"Clicks": str})
-                df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
-                df['First Click Date'] = df[
-                    'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                cdf = df[df['_merge'] == 'both']
-                cdf = cdf.iloc[:, :-1]
-                ndf = df[df['_merge'] == 'left_only']
-                ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
-        if df.empty:
-            cdf = pd.DataFrame()
-            ndf = pd.DataFrame()
-        if cdf.empty:
-            cmsg = ('All flat packages past their placement date, '
-                    'with clicks, have net cost.')
-            logging.info('{}'.format(cmsg))
-        else:
-            cmsg = ('The following flat packages have passed their placement '
-                    'date and have no net cost:')
-            logging.info('{}\n{}'.format(cmsg, cdf.to_string()))
-        self.add_to_analysis_dict(key_col=self.missing_flat_costs,
-                                  message=cmsg, data=cdf.to_dict())
-        if ndf.empty:
-            nmsg = ('All flat packages past their placement '
-                    'date have associated clicks.')
-            logging.info('{}'.format(nmsg))
-        else:
-            nmsg = ('The following flat packages have passed their placement '
-                    'date and have no net cost nor associated clicks:')
-            logging.info('{}\n{}'.format(nmsg, ndf.to_string()))
-        self.add_to_analysis_dict(key_col=self.missing_flat_clicks,
-                                  message=nmsg, data=ndf.to_dict())
-
     def find_missing_serving(self):
         groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.PN]
         metrics = []
@@ -1009,7 +953,6 @@ class Analyze(object):
         self.find_missing_metrics()
         self.flag_errant_metrics()
         self.find_metric_double_counting()
-        self.find_missing_flat_spend()
         self.find_missing_serving()
         self.find_missing_ad_rate()
         for analysis_class in self.class_list:
@@ -1382,6 +1325,136 @@ class CheckColumnNames(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
+class CheckFlatSpends(AnalyzeBase):
+    """Checks for passed flat packages reassigns placement date if necessary."""
+    name = Analyze.missing_flat
+    first_click_col = 'First Click Date'
+    error_col = 'Error'
+    missing_clicks_error = 'No Clicks'
+    placement_date_error = 'Incorrect Placement Date'
+    missing_rate_error = 'Missing Buy Rate'
+    fix = True
+    pre_run = True
+
+    def merge_first_click_date(self, df, tdf, groups):
+        df = df.merge(tdf.drop_duplicates(),
+                      on=groups,
+                      how='left', indicator=True)
+        df = df.drop(columns=['Clicks_y'])
+        df = df.rename(columns={vmc.date: self.first_click_col,
+                                'Clicks_x': vmc.clicks})
+        df = df.astype({vmc.clicks: str})
+        df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df[self.first_click_col] = df[
+            self.first_click_col].dt.strftime('%Y-%m-%d %H:%M:%S')
+        return df
+
+    def find_missing_flat_spend(self, df):
+        """
+        Checks for flat packages w/ no attributed cost past placement.
+        Sorts into missing clicks or wrong placement date.
+        """
+        pn_groups = [dctc.VEN, dctc.COU, dctc.PN, dctc.PKD, dctc.PD, dctc.BM,
+                     dctc.BR, vmc.date]
+        metrics = [cal.NCF, vmc.clicks]
+        metrics = [metric for metric in metrics if metric in df.columns]
+        df = self.aly.generate_df_table(pn_groups, metrics, sort=None,
+                                        data_filter=None, df=df)
+        df.reset_index(inplace=True)
+        df = df[(df[dctc.BM] == cal.BM_FLAT) | (df[dctc.BM] == cal.BM_FLAT2)]
+        if not df.empty:
+            pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
+            tdf = df.groupby(pk_groups).sum()
+            tdf.reset_index(inplace=True)
+            tdf = tdf[tdf[cal.NCF] == 0]
+            df = df.merge(tdf[pk_groups], how='right')
+            if not df.empty:
+                pn_groups.remove(vmc.date)
+                tdf = df[df[vmc.clicks] > 0]
+                tdf = tdf.groupby(pn_groups).min()
+                tdf.reset_index(inplace=True)
+                tdf = tdf.drop(columns=[cal.NCF])
+                tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
+                df = df.groupby(pn_groups).sum()
+                df.reset_index(inplace=True)
+                df = utl.data_to_type(df, date_col=[dctc.PD])
+                df = self.merge_first_click_date(df, tdf, pn_groups)
+                df = utl.data_to_type(df, date_col=[dctc.PD])
+                rdf = df[df[dctc.BR] == 0]
+                if not rdf.empty:
+                    rdf = rdf.drop(columns='_merge')
+                rdf[self.error_col] = self.missing_rate_error
+                df = df[df[dctc.PD] <= dt.datetime.today()]
+                if not df.empty:
+                    cdf = df[df['_merge'] == 'both']
+                    cdf = cdf.iloc[:, :-1]
+                    cdf = cdf[cdf[self.first_click_col] != cdf[dctc.PD]]
+                    cdf[self.error_col] = self.placement_date_error
+                    ndf = df[df['_merge'] == 'left_only']
+                    ndf = ndf.drop(columns=['_merge'])
+                    ndf[self.error_col] = self.missing_clicks_error
+                    df = cdf.append(rdf, sort=False)
+                    df = df.append(ndf, sort=False)
+                    df = df.reset_index(drop=True)
+                    df = df.dropna(how='all')
+                    df = df.fillna('')
+        df = utl.data_to_type(df, str_col=[dctc.PD, self.first_click_col])
+        return df
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_missing_flat_spend(df)
+        if rdf.empty:
+            msg = ('All flat packages with clicks past their placement date '
+                   'have associated net cost.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following flat packages are not calculating net cost '
+                   'for the following reasons:')
+            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Translates flat packages w/ missing spends placement date to first w/
+        clicks.
+
+        :param aly_dict: a df containing items to fix
+        :param write: boolean will write the translational_dict as csv when true
+        :returns: the translational_dict as a df
+        """
+        if (aly_dict.empty or self.placement_date_error
+                not in aly_dict[self.error_col].values):
+            return pd.DataFrame()
+        translation = dct.DictTranslationConfig()
+        translation.read(dctc.filename_tran_config)
+        translation_df = translation.get()
+        aly_dicts = aly_dict.to_dict(orient='records')
+        tdf = pd.DataFrame(columns=translation_df.columns)
+        for aly_dict in aly_dicts:
+            if aly_dict[self.error_col] == self.placement_date_error:
+                old_val = aly_dict[dctc.PD].strip('00:00:00').strip()
+                new_val = aly_dict[
+                    self.first_click_col].strip('00:00:00').strip()
+                try:
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN], 0]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = tdf.append(row, ignore_index=True, sort=False)
+                except AssertionError:
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN]]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = tdf.append(row, ignore_index=True, sort=False)
+        translation_df = translation_df.append(
+            tdf, ignore_index=True, sort=False)
+        if write:
+            translation.write(translation_df, dctc.filename_tran_config)
+        return tdf
+
+
 class GetPacingAnalysis(AnalyzeBase):
     name = Analyze.delivery_comp_col
     fix = False
@@ -1638,10 +1711,11 @@ class GetServingAlerts(AnalyzeBase):
     fix = False
     pre_run = False
     adserving_ratio = 'Adserving %'
+    prog_vendors = ['DV360', 'dv360', 'DV 360', 'Verizon', 'VERIZON']
 
     def get_serving_alerts(self):
         """
-        Check for adserving overages -- over 5.5% of net cost
+        Check for adserving overages -- over 6% of net cost (> 2 stddevs)
 
         """
         pacing_analysis = self.aly.find_in_analysis_dict(
@@ -1654,7 +1728,9 @@ class GetServingAlerts(AnalyzeBase):
             df[self.adserving_ratio] = df.apply(
                 lambda row: 0 if row[vmc.cost] == 0
                 else (row[vmc.AD_COST] / row[vmc.cost]) * 100, axis=1)
-            df = df[df[self.adserving_ratio] > 5.5]
+            df = df[(df[self.adserving_ratio] > 9) |
+                    ((df[self.adserving_ratio] > 6) &
+                     ~(df[dctc.VEN].isin(self.prog_vendors)))]
             if not df.empty:
                 df[[vmc.cost, vmc.AD_COST]] = (
                         '$' + df[[vmc.cost, vmc.AD_COST]].round(2).astype(str))
