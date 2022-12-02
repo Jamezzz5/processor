@@ -1423,7 +1423,8 @@ class CheckFlatSpends(AnalyzeBase):
         :param write: boolean will write the translational_dict as csv when true
         :returns: the translational_dict as a df
         """
-        if self.placement_date_error not in aly_dict[self.error_col].values:
+        if (aly_dict.empty or self.placement_date_error
+                not in aly_dict[self.error_col].values):
             return pd.DataFrame()
         translation = dct.DictTranslationConfig()
         translation.read(dctc.filename_tran_config)

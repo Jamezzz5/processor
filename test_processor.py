@@ -287,3 +287,9 @@ class TestAnalyze:
         translation.df = tdf
         df = translation.apply_translation_to_dict(df)
         assert df[dctc.PD].values == first_click_date
+
+    def test_empty_flat_fix(self):
+        cfs = aly.CheckFlatSpends(aly.Analyze())
+        df = pd.DataFrame()
+        tdf = cfs.fix_analysis(df, write=False)
+        assert tdf.empty
