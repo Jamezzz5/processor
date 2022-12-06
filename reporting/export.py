@@ -120,6 +120,9 @@ class ExportHandler(object):
         db = DB(config='dbconfig.json')
         dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
                                   self.config[exc.output_file][exp_key], db)
+        if dft_class.df.empty:
+            logging.warning('Empty df stopping export.')
+            return False
         s3_class.input_config(self.config[exc.config_file][exp_key])
         if exc.default_format in self.config:
             default_format = self.config[exc.default_format][exp_key]
@@ -128,6 +131,7 @@ class ExportHandler(object):
         else:
             default_format = True
         s3_class.s3_write_file(dft_class.df, default_format=default_format)
+        return True
 
 
 class DBUpload(object):

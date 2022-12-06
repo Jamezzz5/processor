@@ -225,13 +225,14 @@ api_rawx_key = 'RawfileXbox'
 api_yv_key = 'YahooVerizon'
 api_amd_key = 'AmazonDsp'
 api_mp_key = 'MediaPlan'
+api_ss_key = 'Screenshot'
 api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
             api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
             api_red_key, api_dv_key, api_raw_key, api_adk_key, api_inn_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
-            api_mp_key]
+            api_mp_key, api_ss_key]
 
 api_translation = {
     api_aw_key: 'aw',
@@ -261,7 +262,8 @@ api_translation = {
     api_gs_key: 'gs',
     api_qt_key: 'qt',
     api_yv_key: 'yv',
-    api_amd_key: 'amd'
+    api_amd_key: 'amd',
+    api_ss_key: 'ss'
 }
 
 api_partner_name_translation = {

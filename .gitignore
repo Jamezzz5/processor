@@ -49,6 +49,7 @@ Thumbs.db
 *.twbx
 *.twb
 *.twbr
+*.png
 
 Config/
 Raw Data/
@@ -60,3 +61,4 @@ venv/
 backup/
 raw_data/
 logfile.log
+screenshots/

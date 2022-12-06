@@ -384,9 +384,21 @@ def filter_df_on_col(df, col_name, col_val, exclude=False):
     return df
 
 
+def image_to_binary(file_name):
+    if os.path.isfile(file_name):
+        with open(file_name, 'rb') as image_file:
+            image_data = image_file.read()
+    else:
+        logging.warning('{} does not exist returning None'.format(file_name))
+        image_data = None
+    return image_data
+
+
 class SeleniumWrapper(object):
-    def __init__(self):
+    def __init__(self, mobile=False):
+        self.mobile = mobile
         self.browser = self.init_browser()
+        self.base_window = self.browser.window_handles[0]
 
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
@@ -399,6 +411,9 @@ class SeleniumWrapper(object):
         co.add_argument('--disable-gpu')
         prefs = {'download.default_directory': download_path}
         co.add_experimental_option('prefs', prefs)
+        if self.mobile:
+            mobile_emulation = {"deviceName": "iPhone X"}
+            co.add_experimental_option("mobileEmulation", mobile_emulation)
         browser = wd.Chrome(options=co)
         browser.maximize_window()
         browser.set_script_timeout(10)
@@ -452,3 +467,47 @@ class SeleniumWrapper(object):
             time.sleep(5)
         shutil.rmtree(temp_path)
         return df
+
+    def take_screenshot_get_ads(self, url=None, file_name=None):
+        self.take_screenshot(url=url, file_name=file_name)
+        ads = self.get_all_iframe_ads()
+        return ads
+
+    def take_screenshot(self, url=None, file_name=None):
+        logging.info('Getting screenshot from {} and '
+                     'saving to {}.'.format(url, file_name))
+        self.go_to_url(url)
+        self.browser.save_screenshot(file_name)
+
+    def get_all_iframes(self, url=None):
+        if url:
+            self.go_to_url(url)
+        all_iframes = self.browser.find_elements_by_tag_name('iframe')
+        all_iframes = [x for x in all_iframes if x.is_displayed()]
+        return all_iframes
+
+    def get_all_iframe_ads(self, url=None):
+        ads = []
+        all_iframes = self.get_all_iframes(url)
+        for iframe in all_iframes:
+            iframe_properties = {}
+            for x in ['width', 'height']:
+                try:
+                    iframe_properties[x] = iframe.get_attribute(x)
+                except ex.StaleElementReferenceException:
+                    logging.warning('{} element not gathered.'.format(x))
+                    iframe_properties[x] = 'None'
+            iframe.click()
+            if len(self.browser.window_handles) > 1:
+                new_window = [x for x in self.browser.window_handles
+                              if x != self.base_window][0]
+                self.browser.switch_to.window(new_window)
+                time.sleep(5)
+                iframe_properties['lp_url'] = self.browser.current_url
+                logging.info('Got iframe with properties:'
+                             ' {}'.format(iframe_properties))
+                ads.append(iframe_properties)
+                self.browser.close()
+                self.browser.switch_to.window(self.base_window)
+            time.sleep(5)
+        return ads
