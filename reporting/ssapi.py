@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.awss3 as awss3
 
 
 class SsApi(object):
@@ -17,6 +18,7 @@ class SsApi(object):
     device_desktop = 'Desktop'
     ss_file_path = 'screenshots'
     output_file = 'sites.xlsx'
+    output_csv = 'sites.csv'
 
     def __init__(self, file_name='site_config.csv', ss_file_path_date=None):
         logging.info('Getting config from {}.'.format(file_name))
@@ -27,10 +29,11 @@ class SsApi(object):
         self.ss_file_path_date = self.add_file_path(self.ss_file_path_date)
         self.add_device_to_config()
         self.set_all_sites()
+        self.s3 = None
 
-    @staticmethod
-    def input_config(api_file):
-        return api_file
+    def input_config(self, api_file):
+        self.s3 = awss3.S3()
+        self.s3.input_config(api_file)
 
     def import_config(self):
         df = pd.read_csv(self.file_name)
@@ -69,7 +72,8 @@ class SsApi(object):
             browser.take_screenshot(site.url, site.file_name)
             self.config[index][self.file_name] = site.file_name
         browser.quit()
-        df = self.write_config_to_df()
+        self.write_config_to_df()
+        df = self.upload_screenshots()
         return df
 
     def take_screenshots_get_ads(self):
@@ -83,14 +87,14 @@ class SsApi(object):
         self.write_config_to_df()
 
     def upload_screenshots(self):
-        """
-        api = imgapi.ImgApi()
         for index in self.config:
             site = self.get_site(index)
-            url = api.read_image_and_upload(site.file_name)
+            image_data = utl.image_to_binary(site.file_name, True)
+            key = site.file_name.replace('\\', '/')
+            url = self.s3.s3_upload_file_obj(image_data, key)
             self.config[index][self.img_url] = url
-        self.write_config_to_df()
-        """
+        df = self.write_config_to_df()
+        return df
 
     def add_file_path(self, ss_file_path_date=None):
         if not ss_file_path_date:
@@ -107,6 +111,7 @@ class SsApi(object):
         output_file = os.path.join(self.ss_file_path_date, self.output_file)
         df.to_excel(output_file, index=False)
         df.to_excel(self.output_file, index=False)
+        df.to_csv(self.output_csv, index=False)
         return df
 
 

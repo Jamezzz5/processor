@@ -1,4 +1,5 @@
 import os
+import io
 import re
 import time
 import shutil
@@ -384,10 +385,12 @@ def filter_df_on_col(df, col_name, col_val, exclude=False):
     return df
 
 
-def image_to_binary(file_name):
+def image_to_binary(file_name, as_bytes_io=False):
     if os.path.isfile(file_name):
         with open(file_name, 'rb') as image_file:
             image_data = image_file.read()
+            if as_bytes_io:
+                image_data = io.BytesIO(image_data)
     else:
         logging.warning('{} does not exist returning None'.format(file_name))
         image_data = None

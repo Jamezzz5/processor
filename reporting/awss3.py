@@ -116,11 +116,16 @@ class S3(object):
         product_name = re.sub(r'\W+', '', product_name)
         zip_file = '{}/{}{}/{}'.format(
             self.prefix, today_folder_name, product_name, zip_file)
-        client = self.get_client()
         buffer = io.BytesIO()
         with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
             f.write(df.to_csv().encode())
         buffer.seek(0)
-        client.upload_fileobj(Fileobj=buffer, Bucket=self.bucket, Key=zip_file,
+        self.s3_upload_file_obj(buffer, zip_file)
+
+    def s3_upload_file_obj(self, file_object, key):
+        client = self.get_client()
+        client.upload_fileobj(Fileobj=file_object, Bucket=self.bucket, Key=key,
                               ExtraArgs={'ACL': 'bucket-owner-full-control'})
-        logging.info('File was successfully uploaded as: {}'.format(zip_file))
+        logging.info('File successfully uploaded as: {}'.format(key))
+        object_url = 'https://{}.s3.amazonaws.com/{}'.format(self.bucket, key)
+        return object_url

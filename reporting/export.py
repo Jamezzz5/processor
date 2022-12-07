@@ -146,14 +146,16 @@ class DBUpload(object):
 
     def upload_to_db(self, db_file, schema_file, translation_file, data_file):
         self.db = DB(db_file)
-        logging.info('Uploading ' + data_file + ' to ' + self.db.db)
+        logging.info('Uploading {} to {}'.format(data_file, self.db.db))
         self.dbs = DBSchema(schema_file)
         self.dft = DFTranslation(translation_file, data_file, self.db)
         if self.dft.df.empty:
+            logging.warning('Dataframe empty stopping upload.')
             return False
         for table in self.dbs.table_list:
             self.upload_table_to_db(table)
-        logging.info(data_file + ' successfully upload to ' + self.db.db)
+        logging.info(
+            '{} successfully uploaded to {}'.format(data_file, self.db.db))
         return True
 
     def upload_table_to_db(self, table):
@@ -631,10 +633,7 @@ class DFTranslation(object):
                              if v == 'REAL' or v == 'DECIMAL']
 
     def load_df(self, datafile):
-        try:
-            self.df = pd.read_csv(datafile, encoding='utf-8')
-        except UnicodeDecodeError:
-            self.df = pd.read_csv(datafile, encoding='iso-8859-1')
+        self.df = utl.import_read_csv(datafile)
         if self.df.empty:
             logging.warning('Dataframe empty, stopping upload.')
             return False
@@ -649,13 +648,17 @@ class DFTranslation(object):
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
         real_columns = [x for x in self.real_columns if x in self.df.columns]
-        self.df = self.df[self.df[real_columns].sum(axis=1) != 0]
+        if real_columns:
+            self.df = self.df[self.df[real_columns].sum(axis=1) != 0]
         self.df = self.df.reset_index(drop=True)
         replace_dict = {'"': '', "\\\\": '/', '\r': '', '\n': '', '\t': ''}
         self.df.replace(replace_dict, regex=True, inplace=True)
         return True
 
     def get_upload_id(self):
+        for col in exc.upload_name_param:
+            if col not in self.df:
+                return False
         self.add_upload_cols()
         ul_id_file_path = config_path + exc.upload_id_file
         if not os.path.isfile(ul_id_file_path):
@@ -697,6 +700,8 @@ class DFTranslation(object):
         self.df[exc.upload_name] = upload_name
 
     def add_event_name(self):
+        if exc.full_placement_name not in self.df:
+            return False
         self.df[exc.full_placement_name] = (self.df[exc.full_placement_name] +
                                             str(self.upload_id))
         self.df[exc.event_name] = (self.df[exc.event_date].astype('U') +
