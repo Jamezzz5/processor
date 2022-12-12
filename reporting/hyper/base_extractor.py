@@ -609,7 +609,13 @@ class BaseExtractor(ABC):
 
         cursor = self.source_database_cursor()
         logger.info(f"Execute SQL:{sql_query}")
-        cursor.execute(sql_query)
+        import psycopg2
+        try:
+            cursor.execute(sql_query)
+        except psycopg2.errors.UndefinedTable as e:
+            logger.warning('Table does not exist: {}'.format(e))
+            yield ''
+            return
         path_to_database = self.query_result_to_hyper_file(cursor=cursor, hyper_table_name=hyper_table_name)
         yield path_to_database
         return
