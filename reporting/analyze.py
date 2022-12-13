@@ -73,8 +73,9 @@ class Analyze(object):
         self.vc = ValueCalc()
         self.class_list = [
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, CheckFlatSpends, GetPacingAnalysis,
-            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts]
+            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
+            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
+            GetDailyPacingAlerts]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -788,74 +789,6 @@ class Analyze(object):
             cds.df = df
         self.write_raw_file_dict(vk, cd)
 
-    def find_metric_double_counting(self):
-        rdf = pd.DataFrame()
-        groups = [dctc.VEN, vmc.vendorkey, dctc.PN, vmc.date]
-        metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.views,
-                   vmc.views25, vmc.views50, vmc.views75, vmc.views100]
-        metrics = [metric for metric in metrics if metric in self.df.columns]
-        df = self.generate_df_table(groups, metrics, sort=None,
-                                    data_filter=None)
-        df.reset_index(inplace=True)
-        sdf = df.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
-        sdf = sdf.reset_index().rename(columns={0: 'temp'})
-        sdf = sdf.groupby([dctc.VEN, vmc.vendorkey]).size()
-        sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
-        sdf = sdf.groupby(dctc.VEN).max().reset_index()
-        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
-        if not df.empty:
-            for metric in metrics:
-                tdf = df[df[metric] > 0]
-                tdf = tdf[tdf.duplicated(
-                    subset=[dctc.PN, vmc.date], keep=False)]
-                if not tdf.empty:
-                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
-                    tdf = tdf.reset_index().rename(
-                        columns={0: 'temp'})
-                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
-                    tdf = tdf.reset_index().rename(
-                        columns={0: 'Num Duplicates'})
-                    tdf['Metric'] = metric
-                    rdf = pd.concat([rdf, tdf], ignore_index=True)
-        if not rdf.empty:
-            rdf = sdf[[dctc.VEN, 'Total Num Placements']].merge(
-                rdf, how='inner', on=dctc.VEN)
-            rdf = rdf.groupby([dctc.VEN, 'Metric', 'Total Num Placements',
-                               'Num Duplicates'])[vmc.vendorkey].apply(
-                lambda x: ','.join(x)).reset_index()
-            rdf = rdf.groupby([dctc.VEN, 'Metric', vmc.vendorkey,
-                               'Num Duplicates']).max().reset_index()
-            adf = rdf[rdf['Total Num Placements'] == rdf['Num Duplicates']]
-            pdf = rdf[rdf['Total Num Placements'] > rdf['Num Duplicates']]
-        else:
-            adf = pd.DataFrame()
-            pdf = pd.DataFrame()
-        if adf.empty:
-            amsg = ('No vendors are double counting on all placements '
-                    'for any one metric.')
-            logging.info('{}'.format(amsg))
-        else:
-            adf = adf.astype({'Total Num Placements': str})
-            adf = adf.astype({'Num Duplicates': str})
-            amsg = ('The following vendors are double counting metrics on all '
-                    'placements from the following sources:')
-            logging.info('{}\n{}'.format(amsg, adf.to_string()))
-        self.add_to_analysis_dict(key_col=self.double_counting_all,
-                                  message=amsg, data=adf.to_dict())
-        if pdf.empty:
-            pmsg = ('No vendors are double counting on only some placements '
-                    'for any one metric.')
-            logging.info('{}'.format(pmsg))
-        else:
-            pdf = pdf.astype({'Total Num Placements': str})
-            pdf = pdf.astype({'Num Duplicates': str})
-            pmsg = ('The following vendors are double counting metrics on some'
-                    ' placements from the following sources. Check only'
-                    ' untracked placements are being uploaded in rawfiles:')
-            logging.info('{}\n{}'.format(pmsg, pdf.to_string()))
-        self.add_to_analysis_dict(key_col=self.double_counting_partial,
-                                  message=pmsg, data=pdf.to_dict())
-
     def find_missing_serving(self):
         groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.PN]
         metrics = []
@@ -952,7 +885,6 @@ class Analyze(object):
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
-        self.find_metric_double_counting()
         self.find_missing_serving()
         self.find_missing_ad_rate()
         for analysis_class in self.class_list:
@@ -1326,7 +1258,7 @@ class CheckColumnNames(AnalyzeBase):
 
 
 class CheckFlatSpends(AnalyzeBase):
-    """Checks for passed flat packages reassigns placement date if necessary."""
+    """Checks for past flat packages reassigns placement date if necessary."""
     name = Analyze.missing_flat
     first_click_col = 'First Click Date'
     error_col = 'Error'
@@ -1351,8 +1283,8 @@ class CheckFlatSpends(AnalyzeBase):
 
     def find_missing_flat_spend(self, df):
         """
-        Checks for flat packages w/ no attributed cost past placement.
-        Sorts into missing clicks or wrong placement date.
+        Checks for flat packages w/ no attributed cost past placement date.
+        Sorts into missing clicks, no buy model, or wrong placement date.
         """
         pn_groups = [dctc.VEN, dctc.COU, dctc.PN, dctc.PKD, dctc.PD, dctc.BM,
                      dctc.BR, vmc.date]
@@ -1421,7 +1353,7 @@ class CheckFlatSpends(AnalyzeBase):
 
         :param aly_dict: a df containing items to fix
         :param write: boolean will write the translational_dict as csv when true
-        :returns: the translational_dict as a df
+        :returns: the lines added to translational_dict
         """
         if (aly_dict.empty or self.placement_date_error
                 not in aly_dict[self.error_col].values):
@@ -1453,6 +1385,178 @@ class CheckFlatSpends(AnalyzeBase):
         if write:
             translation.write(translation_df, dctc.filename_tran_config)
         return tdf
+
+
+class CheckDoubleCounting(AnalyzeBase):
+    """
+    Checks for double counting datasources.
+    If double counting all placements, removes metric from one of the
+    datasources.
+    """
+    name = Analyze.double_counting_all
+    error_col = 'Error'
+    double_counting_all = 'All'
+    double_counting_partial = 'Partial'
+    tmp_col = 'temp'
+    metric_col = 'Metric'
+    total_placement_count = 'Total Num Placements'
+    num_duplicates = 'Num Duplicates'
+    fix = True
+    pre_run = True
+
+    def count_unique_placements(self, df, col):
+        df = df.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
+        df = df.reset_index().rename(columns={0: self.tmp_col})
+        df = df.groupby([dctc.VEN, vmc.vendorkey]).size()
+        df = df.reset_index().rename(columns={0: col})
+        return df
+
+    def find_metric_double_counting(self, df):
+        rdf = pd.DataFrame()
+        groups = [dctc.VEN, vmc.vendorkey, dctc.PN, vmc.date]
+        metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.video_plays,
+                   vmc.views, vmc.views25, vmc.views50, vmc.views75,
+                   vmc.views100]
+        metrics = [metric for metric in metrics if metric in df.columns]
+        df = self.aly.generate_df_table(groups, metrics, sort=None,
+                                        data_filter=None, df=df)
+        df.reset_index(inplace=True)
+        sdf = self.count_unique_placements(df, self.total_placement_count)
+        sdf = sdf.groupby(dctc.VEN).max().reset_index()
+        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
+        if not df.empty:
+            for metric in metrics:
+                tdf = df[df[metric] > 0]
+                tdf = tdf[tdf.duplicated(
+                    subset=[dctc.PN, vmc.date], keep=False)]
+                if not tdf.empty:
+                    tdf = self.count_unique_placements(tdf, self.num_duplicates)
+                    tdf[self.metric_col] = metric
+                    rdf = pd.concat([rdf, tdf], ignore_index=True)
+        if not rdf.empty:
+            rdf = sdf[[dctc.VEN, self.total_placement_count]].merge(
+                rdf, how='inner', on=dctc.VEN)
+            rdf = rdf.groupby([dctc.VEN, self.metric_col,
+                               self.total_placement_count,
+                               self.num_duplicates])[vmc.vendorkey].apply(
+                lambda x: ','.join(x)).reset_index()
+            rdf = rdf.groupby([dctc.VEN, self.metric_col, vmc.vendorkey,
+                               self.num_duplicates]).max().reset_index()
+            rdf[self.error_col] = np.where(
+                rdf[self.total_placement_count] == rdf[self.num_duplicates],
+                self.double_counting_all, self.double_counting_partial)
+        return rdf
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_metric_double_counting(df)
+        if rdf.empty:
+            msg = ('No datasources are double counting placements for any '
+                   'metric.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following datasources are double counting the following'
+                   ' metrics on all or some placements:')
+            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+
+    def fix_all(self, aly_dict):
+        metric_buckets = {
+            'ctr_metrics': [vmc.impressions, vmc.clicks],
+            'vtr_metrics': [
+                vmc.views25, vmc.views50, vmc.views75, vmc.views100],
+            'video_play_metrics': [vmc.video_plays, vmc.views],
+            'net_cost_metrics': [cal.NCF]
+        }
+        vm_df = self.aly.matrix.vm_df
+        logging.info('Attempting to remove double counting.')
+        for index, row in aly_dict.iterrows():
+            vks = row[vmc.vendorkey].split(',')
+            while (any(vmc.api_raw_key in x or vmc.api_gs_key in x for x in vks)
+                   and len(vks) > 1):
+                vk = [x for x in vks if vmc.api_raw_key in x
+                      or vmc.api_gs_key in x][0]
+                idx = vm_df[vm_df[vmc.vendorkey] == vk].index
+                if row['Metric'] == cal.NCF:
+                    vm_df.loc[idx, vmc.cost] = ''
+                vm_df.loc[idx, row['Metric']] = ''
+                logging.info('Removing {} from {}.'.format(row['Metric'], vk))
+                vks.remove(vk)
+            while (any(vmc.api_szk_key in x or vmc.api_dc_key in x for x in vks)
+                   and len(vks) > 1):
+                vk = [x for x in vks if vmc.api_szk_key in x
+                      or vmc.api_dc_key in x][0]
+                idx = vm_df[vm_df[vmc.vendorkey] == vk].index
+                first_empty = None
+                added = False
+                bucket = [k for k, v in metric_buckets.items()
+                          if row[self.metric_col] in v]
+                if not bucket:
+                    bucket = row[self.metric_col]
+                else:
+                    bucket = bucket[0]
+                for i in range(1, 6):
+                    metric_str = "_".join(
+                        [utl.RULE_PREF, str(i), utl.RULE_METRIC])
+                    query_str = "_".join(
+                        [utl.RULE_PREF, str(i), utl.RULE_QUERY])
+                    if not vm_df.loc[idx, query_str].any():
+                        if not first_empty:
+                            first_empty = i
+                        continue
+                    if ([x for x in metric_buckets[bucket]
+                         if x in vm_df.loc[idx, metric_str].values[0]]):
+                        vm_df.loc[idx, query_str] = (
+                                vm_df.loc[idx, query_str][idx[0]] +
+                                ',' + row[dctc.VEN])
+                        if not (row[self.metric_col] in
+                                vm_df.loc[idx, metric_str].values[0]):
+                            vm_df.loc[idx, metric_str] = (
+                                    vm_df.loc[idx, query_str][idx[0]] +
+                                    '::' + row['Metric'])
+                        logging.info('Adding rule for {} to remove '
+                                     '{} {}.'.format(vk, row[dctc.VEN],
+                                                     row['Metric']))
+                        added = True
+                        break
+                if not added:
+                    if first_empty:
+                        metric_str = "_".join(
+                            [utl.RULE_PREF, str(first_empty), utl.RULE_METRIC])
+                        query_str = "_".join(
+                            [utl.RULE_PREF, str(first_empty), utl.RULE_QUERY])
+                        factor_str = "_".join(
+                            [utl.RULE_PREF, str(first_empty), utl.RULE_FACTOR])
+                        vm_df.loc[idx, factor_str] = 0.0
+                        vm_df.loc[idx, metric_str] = ('POST' + '::' +
+                                                      row['Metric'])
+                        vm_df.loc[idx, query_str] = row[dctc.VEN]
+                        logging.info('Adding rule for {} to remove '
+                                     '{} {}.'.format(vk, row[dctc.VEN],
+                                                     row['Metric']))
+                    else:
+                        logging.warning('No empty rules for {}. Could not '
+                                        'auto-fix double counting.'.format(vk))
+                vks.remove(vk)
+        self.aly.matrix.vm_df = vm_df
+        return vm_df
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Removes duplicate metrics if all placements duplicated.
+        Prioritizes removal from rawfiles first, adservers otherwise.
+
+        :param aly_dict: a df containing items to fix
+        :param write: boolean will write the vendormatrix as csv when true
+        :returns: the vendormatrix as a df
+        """
+        if aly_dict.empty:
+            return pd.DataFrame()
+        self.fix_all(
+            aly_dict[aly_dict[self.error_col] == self.double_counting_all])
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
 
 
 class GetPacingAnalysis(AnalyzeBase):

@@ -100,9 +100,12 @@ class VendorMatrix(object):
             utl.sheet_name_splitter).str[0]
         return self.vm_df
 
-    def vm_parse(self):
-        self.vm_df = pd.DataFrame(columns=vmc.datacol)
-        self.vm_df = self.read()
+    def vm_parse(self, df=pd.DataFrame()):
+        if not df.empty:
+            self.vm_df = df
+        else:
+            self.vm_df = pd.DataFrame(columns=vmc.datacol)
+            self.vm_df = self.read()
         self.vm_df = self.add_file_name_col()
         self.vm = self.vm_df.copy()
         self.plan_net_check()
