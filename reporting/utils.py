@@ -432,14 +432,19 @@ class SeleniumWrapper(object):
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
         driver.execute("send_command", params)
 
-    def go_to_url(self, url, sleep=5):
+    def go_to_url(self, url, sleep=5, attempt=1):
         logging.info('Going to url {}.'.format(url))
         try:
             self.browser.get(url)
-        except ex.TimeoutException:
-            logging.warning('Timeout exception, retrying.')
-            self.go_to_url(url)
+        except (ex.TimeoutException, ex.WebDriverException) as e:
+            logging.warning('Exception attempt: {}, retrying : \n {}'.format(
+                attempt, e))
+            if attempt > 10:
+                logging.warning('More than ten attempts returning.')
+                return False
+            self.go_to_url(url, sleep, attempt)
         time.sleep(sleep)
+        return True
 
     @staticmethod
     def click_on_elem(elem, sleep=2):
