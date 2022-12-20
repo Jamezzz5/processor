@@ -1373,6 +1373,8 @@ class CheckFlatSpends(AnalyzeBase):
                 tdf = df[df[vmc.clicks] > 0]
                 tdf = tdf.groupby(pn_groups).min()
                 tdf.reset_index(inplace=True)
+                if cal.NCF not in tdf:
+                    return pd.DataFrame()
                 tdf = tdf.drop(columns=[cal.NCF])
                 tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
                 df = df.groupby(pn_groups).sum()
