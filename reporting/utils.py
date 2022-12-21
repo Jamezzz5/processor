@@ -406,7 +406,7 @@ class SeleniumWrapper(object):
     def init_browser(self):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        # co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -519,3 +519,18 @@ class SeleniumWrapper(object):
                 self.browser.switch_to.window(self.base_window)
             time.sleep(5)
         return ads
+
+    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
+        for item in elem_input_list:
+            elem_xpath = item[1]
+            if get_xpath_from_id:
+                elem_xpath = self.get_xpath_from_id(elem_xpath)
+            elem = self.browser.find_element_by_xpath(elem_xpath)
+            elem.send_keys(item[0])
+
+    def xpath_from_id_and_click(self, elem_id, sleep=2):
+        self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
+
+    @staticmethod
+    def get_xpath_from_id(elem_id):
+        return '//*[@id="{}"]'.format(elem_id)
