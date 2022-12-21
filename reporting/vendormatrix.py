@@ -760,6 +760,8 @@ class DataSource(object):
 
     def get_dict_order_df(self, include_index=True, include_full_name=False):
         self.df = self.get_raw_df()
+        if self.df.empty:
+            return self.df
         dic = dct.Dict()
         rc = dct.RelationalConfig()
         rc.read(dctc.filename_rel_config)
