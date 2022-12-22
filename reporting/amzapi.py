@@ -143,10 +143,10 @@ class AmzApi(object):
                     self.base_url = endpoint
                     self.amazon_dsp = True
                     return True
-        logging.warning('Could not find the specified profile, check that'
+        logging.warning('Could not find the specified profile, check that '
                         'the provided account ID {} is correct and API has '
                         'access.'.format(self.advertiser_id))
-        sys.exit(0)
+        return False
 
     @staticmethod
     def date_check(sd, ed):
@@ -194,7 +194,9 @@ class AmzApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         self.report_ids = []
         self.df = pd.DataFrame()
-        self.get_profiles()
+        profile_found = self.get_profiles()
+        if not profile_found:
+            return self.df
         sd, ed = self.get_data_default_check(sd, ed, fields)
         if self.amazon_dsp:
             report_id = self.request_dsp_report(sd, ed)
