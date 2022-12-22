@@ -1462,38 +1462,44 @@ class CheckDoubleCounting(AnalyzeBase):
 
     @staticmethod
     def remove_metric(vm_df, vk, metric):
-        idx = vm_df[vm_df[vmc.vendorkey] == vk].index
         if metric == cal.NCF:
-            vm_df.loc[idx, vmc.cost] = ''
+            metric = vmc.cost
+        idx = vm_df[vm_df[vmc.vendorkey] == vk].index
         vm_df.loc[idx, metric] = ''
         logging.info('Removing {} from {}.'.format(metric, vk))
         return vm_df
 
     @staticmethod
     def update_rule(vm_df, vk, metric, vendor, idx, query_str, metric_str):
-        vm_df.loc[idx, query_str] = (
-                vm_df.loc[idx, query_str][idx[0]] + ',' + vendor)
-        if not (metric in vm_df.loc[idx, metric_str].values[0]):
+        if metric == cal.NCF:
+            metric = vmc.cost
+        if vendor not in str(vm_df.loc[idx, query_str].values):
+            vm_df.loc[idx, query_str] = (
+                    vm_df.loc[idx, query_str][idx[0]] + ',' + vendor)
+        if not (metric in str(vm_df.loc[idx, metric_str].values)):
             vm_df.loc[idx, metric_str] = (
-                    vm_df.loc[idx, query_str][idx[0]] +
-                    '::' + metric)
+                    vm_df.loc[idx, metric_str][idx[0]] +
+                    '|' + metric)
         logging.info('Adding rule for {} to remove {} {}.'.format(
             vk, vendor, metric))
         return vm_df
 
     @staticmethod
     def add_rule(vm_df, vk, rule_num, idx, metric, vendor):
+        if metric == cal.NCF:
+            metric = vmc.cost
         metric_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_METRIC])
         query_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_QUERY])
         factor_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_FACTOR])
         vm_df.loc[idx, factor_str] = 0.0
         vm_df.loc[idx, metric_str] = ('POST' + '::' + metric)
-        vm_df.loc[idx, query_str] = vendor
+        vm_df.loc[idx, query_str] = (dctc.VEN + '::' + vendor)
         logging.info('Adding rule for {} to remove ''{} {}.'.format(vk, vendor,
                                                                     metric))
         return vm_df
 
     def fix_all(self, aly_dict):
+        aly_dict = aly_dict.sort_values(by=[dctc.VEN, self.metric_col])
         metric_buckets = {
             'ctr_metrics': [vmc.impressions, vmc.clicks],
             'vtr_metrics': [
@@ -1509,6 +1515,14 @@ class CheckDoubleCounting(AnalyzeBase):
                        or vmc.api_gs_key in x]
             serve_vks = [x for x in vks if vmc.api_szk_key in x
                          or vmc.api_dc_key in x]
+            first_empty = None
+            added = False
+            bucket = [k for k, v in metric_buckets.items()
+                      if row[self.metric_col] in v]
+            if not bucket:
+                bucket = row[self.metric_col]
+            else:
+                bucket = bucket[0]
             for vk in raw_vks:
                 if len(vks) > 1:
                     vm_df = self.remove_metric(vm_df, vk, row[self.metric_col])
@@ -1516,21 +1530,13 @@ class CheckDoubleCounting(AnalyzeBase):
             for vk in serve_vks:
                 if len(vks) > 1:
                     idx = vm_df[vm_df[vmc.vendorkey] == vk].index
-                    first_empty = None
-                    added = False
-                    bucket = [k for k, v in metric_buckets.items()
-                              if row[self.metric_col] in v]
-                    if not bucket:
-                        bucket = row[self.metric_col]
-                    else:
-                        bucket = bucket[0]
-                    for i in range(1, 6):
+                    for i in range(1, 7):
                         metric_str = "_".join(
                             [utl.RULE_PREF, str(i), utl.RULE_METRIC])
                         query_str = "_".join(
                             [utl.RULE_PREF, str(i), utl.RULE_QUERY])
                         if ([x for x in metric_buckets[bucket]
-                             if x in vm_df.loc[idx, metric_str].values[0]]):
+                             if x in str(vm_df.loc[idx, metric_str].values)]):
                             vm_df = self.update_rule(
                                 vm_df, vk, row[self.metric_col],
                                 row[dctc.VEN], idx, query_str, metric_str)
