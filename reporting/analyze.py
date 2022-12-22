@@ -1361,7 +1361,9 @@ class CheckFlatSpends(AnalyzeBase):
         df = self.aly.generate_df_table(pn_groups, metrics, sort=None,
                                         data_filter=None, df=df)
         df.reset_index(inplace=True)
-        df = df[(df[dctc.BM] == cal.BM_FLAT) | (df[dctc.BM] == cal.BM_FLAT2)]
+        if dctc.BM in df.columns:
+            df = df[(df[dctc.BM] == cal.BM_FLAT) |
+                    (df[dctc.BM] == cal.BM_FLAT2)]
         if not df.empty:
             pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
             tdf = df.groupby(pk_groups).sum()
