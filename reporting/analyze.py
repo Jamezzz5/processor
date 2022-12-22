@@ -1460,6 +1460,39 @@ class CheckDoubleCounting(AnalyzeBase):
             logging.info('{}\n{}'.format(msg, rdf.to_string()))
         self.add_to_analysis_dict(df=rdf, msg=msg)
 
+    @staticmethod
+    def remove_metric(vm_df, vk, metric):
+        idx = vm_df[vm_df[vmc.vendorkey] == vk].index
+        if metric == cal.NCF:
+            vm_df.loc[idx, vmc.cost] = ''
+        vm_df.loc[idx, metric] = ''
+        logging.info('Removing {} from {}.'.format(metric, vk))
+        return vm_df
+
+    @staticmethod
+    def update_rule(vm_df, vk, metric, vendor, idx, query_str, metric_str):
+        vm_df.loc[idx, query_str] = (
+                vm_df.loc[idx, query_str][idx[0]] + ',' + vendor)
+        if not (metric in vm_df.loc[idx, metric_str].values[0]):
+            vm_df.loc[idx, metric_str] = (
+                    vm_df.loc[idx, query_str][idx[0]] +
+                    '::' + metric)
+        logging.info('Adding rule for {} to remove {} {}.'.format(
+            vk, vendor, metric))
+        return vm_df
+
+    @staticmethod
+    def add_rule(vm_df, vk, rule_num, idx, metric, vendor):
+        metric_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_METRIC])
+        query_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_QUERY])
+        factor_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_FACTOR])
+        vm_df.loc[idx, factor_str] = 0.0
+        vm_df.loc[idx, metric_str] = ('POST' + '::' + metric)
+        vm_df.loc[idx, query_str] = vendor
+        logging.info('Adding rule for {} to remove ''{} {}.'.format(vk, vendor,
+                                                                    metric))
+        return vm_df
+
     def fix_all(self, aly_dict):
         metric_buckets = {
             'ctr_metrics': [vmc.impressions, vmc.clicks],
@@ -1472,71 +1505,49 @@ class CheckDoubleCounting(AnalyzeBase):
         logging.info('Attempting to remove double counting.')
         for index, row in aly_dict.iterrows():
             vks = row[vmc.vendorkey].split(',')
-            while (any(vmc.api_raw_key in x or vmc.api_gs_key in x for x in vks)
-                   and len(vks) > 1):
-                vk = [x for x in vks if vmc.api_raw_key in x
-                      or vmc.api_gs_key in x][0]
-                idx = vm_df[vm_df[vmc.vendorkey] == vk].index
-                if row['Metric'] == cal.NCF:
-                    vm_df.loc[idx, vmc.cost] = ''
-                vm_df.loc[idx, row['Metric']] = ''
-                logging.info('Removing {} from {}.'.format(row['Metric'], vk))
-                vks.remove(vk)
-            while (any(vmc.api_szk_key in x or vmc.api_dc_key in x for x in vks)
-                   and len(vks) > 1):
-                vk = [x for x in vks if vmc.api_szk_key in x
-                      or vmc.api_dc_key in x][0]
-                idx = vm_df[vm_df[vmc.vendorkey] == vk].index
-                first_empty = None
-                added = False
-                bucket = [k for k, v in metric_buckets.items()
-                          if row[self.metric_col] in v]
-                if not bucket:
-                    bucket = row[self.metric_col]
-                else:
-                    bucket = bucket[0]
-                for i in range(1, 6):
-                    metric_str = "_".join(
-                        [utl.RULE_PREF, str(i), utl.RULE_METRIC])
-                    query_str = "_".join(
-                        [utl.RULE_PREF, str(i), utl.RULE_QUERY])
-                    if not vm_df.loc[idx, query_str].any():
-                        if not first_empty:
-                            first_empty = i
-                        continue
-                    if ([x for x in metric_buckets[bucket]
-                         if x in vm_df.loc[idx, metric_str].values[0]]):
-                        vm_df.loc[idx, query_str] = (
-                                vm_df.loc[idx, query_str][idx[0]] +
-                                ',' + row[dctc.VEN])
-                        if not (row[self.metric_col] in
-                                vm_df.loc[idx, metric_str].values[0]):
-                            vm_df.loc[idx, metric_str] = (
-                                    vm_df.loc[idx, query_str][idx[0]] +
-                                    '::' + row['Metric'])
-                        logging.info('Adding rule for {} to remove '
-                                     '{} {}.'.format(vk, row[dctc.VEN],
-                                                     row['Metric']))
-                        added = True
-                        break
-                if not added:
-                    if first_empty:
-                        metric_str = "_".join(
-                            [utl.RULE_PREF, str(first_empty), utl.RULE_METRIC])
-                        query_str = "_".join(
-                            [utl.RULE_PREF, str(first_empty), utl.RULE_QUERY])
-                        factor_str = "_".join(
-                            [utl.RULE_PREF, str(first_empty), utl.RULE_FACTOR])
-                        vm_df.loc[idx, factor_str] = 0.0
-                        vm_df.loc[idx, metric_str] = ('POST' + '::' +
-                                                      row['Metric'])
-                        vm_df.loc[idx, query_str] = row[dctc.VEN]
-                        logging.info('Adding rule for {} to remove '
-                                     '{} {}.'.format(vk, row[dctc.VEN],
-                                                     row['Metric']))
+            raw_vks = [x for x in vks if vmc.api_raw_key in x
+                       or vmc.api_gs_key in x]
+            serve_vks = [x for x in vks if vmc.api_szk_key in x
+                         or vmc.api_dc_key in x]
+            for vk in raw_vks:
+                if len(vks) > 1:
+                    vm_df = self.remove_metric(vm_df, vk, row[self.metric_col])
+                    vks.remove(vk)
+            for vk in serve_vks:
+                if len(vks) > 1:
+                    idx = vm_df[vm_df[vmc.vendorkey] == vk].index
+                    first_empty = None
+                    added = False
+                    bucket = [k for k, v in metric_buckets.items()
+                              if row[self.metric_col] in v]
+                    if not bucket:
+                        bucket = row[self.metric_col]
                     else:
-                        logging.warning('No empty rules for {}. Could not '
-                                        'auto-fix double counting.'.format(vk))
+                        bucket = bucket[0]
+                    for i in range(1, 6):
+                        metric_str = "_".join(
+                            [utl.RULE_PREF, str(i), utl.RULE_METRIC])
+                        query_str = "_".join(
+                            [utl.RULE_PREF, str(i), utl.RULE_QUERY])
+                        if ([x for x in metric_buckets[bucket]
+                             if x in vm_df.loc[idx, metric_str].values[0]]):
+                            vm_df = self.update_rule(
+                                vm_df, vk, row[self.metric_col],
+                                row[dctc.VEN], idx, query_str, metric_str)
+                            added = True
+                            break
+                        if not vm_df.loc[idx, query_str].any():
+                            if not first_empty:
+                                first_empty = i
+                            continue
+                    if not added:
+                        if first_empty:
+                            self.add_rule(vm_df, vk, first_empty, idx,
+                                          row[self.metric_col], row[dctc.VEN])
+                        else:
+                            logging.warning('No empty rules for {}. Could not '
+                                            'auto-fix double counting.'
+                                            .format(vk))
                 vks.remove(vk)
         self.aly.matrix.vm_df = vm_df
         return vm_df
