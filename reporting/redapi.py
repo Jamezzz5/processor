@@ -22,8 +22,9 @@ class RedApi(object):
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
 
-    def __init__(self):
-        self.sw = utl.SeleniumWrapper()
+    def __init__(self, headless=True):
+        self.headless = headless
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
         self.browser = self.sw.browser
         self.base_window = self.browser.window_handles[0]
         self.config_file = None
@@ -106,6 +107,9 @@ class RedApi(object):
         else:
             logo_xpath = '//*[@id="app"]/div/div[1]/div[1]/div/a/img'
             self.sw.click_on_xpath(logo_xpath, sleep=5)
+        if 'adsregister' in self.browser.current_url:
+            logging.warning('Could not log in check username and password.')
+            return False
         return True
 
     def set_breakdowns(self):

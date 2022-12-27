@@ -398,15 +398,17 @@ def image_to_binary(file_name, as_bytes_io=False):
 
 
 class SeleniumWrapper(object):
-    def __init__(self, mobile=False):
+    def __init__(self, mobile=False, headless=True):
         self.mobile = mobile
-        self.browser = self.init_browser()
+        self.headless = headless
+        self.browser = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
 
-    def init_browser(self):
+    def init_browser(self, headless):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
-        co.headless = True
+        if headless:
+            co.headless = True
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
