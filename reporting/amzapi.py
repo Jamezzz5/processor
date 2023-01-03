@@ -203,7 +203,10 @@ class AmzApi(object):
             self.get_dsp_report(report_id)
         else:
             date_list = self.list_dates(sd, ed)
-            self.request_reports_for_all_dates(date_list)
+            report_made = self.request_reports_for_all_dates(date_list)
+            if not report_made:
+                logging.warning('Report not made returning blank df.')
+                return self.df
             self.check_and_get_all_reports(self.report_ids)
         logging.info('All reports downloaded - returning dataframe.')
         self.df = self.filter_df_on_campaign(self.df)
@@ -282,7 +285,10 @@ class AmzApi(object):
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
-            self.request_reports_for_date(report_date)
+            report_made = self.request_reports_for_date(report_date)
+            if not report_made:
+                return False
+        return True
 
     def request_reports_for_date(self, report_date):
         for report_type in self.report_types:
@@ -291,9 +297,14 @@ class AmzApi(object):
             else:
                 has_video = [False]
             for vid in has_video:
-                self.make_report_request(report_date, report_type, vid)
+                report_made = self.make_report_request(report_date, report_type,
+                                                       vid)
+                if not report_made:
+                    return False
+        return True
 
     def make_report_request(self, report_date, report_type, vid):
+        report_made = False
         report_date_string = dt.datetime.strftime(report_date, '%Y%m%d')
         logging.info(
             'Requesting report for date: {} type: {} video: {}'.format(
@@ -309,15 +320,17 @@ class AmzApi(object):
             logging.warning('reportId not in json: {}'.format(r.json()))
             if 'code' in r.json() and r.json()['code'] == '406':
                 logging.warning('Could not request date range is too long.')
-                sys.exit(0)
             else:
                 time.sleep(30)
-                self.make_report_request(report_date, report_type, vid)
+                report_made = self.make_report_request(report_date, report_type,
+                                                       vid)
         else:
             report_id = r.json()['reportId']
             self.report_ids.append(
                 {'report_id': report_id, 'date': report_date,
                  'complete': False})
+            report_made = True
+        return report_made
 
     def check_and_get_all_reports(self, report_ids):
         for report_id in report_ids:
@@ -333,7 +346,7 @@ class AmzApi(object):
         url = self.create_url(report_id=report_id)
         r = self.make_request(url, method='GET', headers=self.headers)
         if 'status' in r.json() and 'SUCCESS' in r.json()['status']:
-            logging.info('Report available - downloading.')
+            logging.debug('Report available - downloading.')
             url += '/download'
             r = self.make_request(url, method='GET', headers=self.headers,
                                   json_response=False)
