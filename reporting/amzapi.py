@@ -273,7 +273,8 @@ class AmzApi(object):
                                         'returning empty dataframe')
                     else:
                         df['date'] = df['date'].apply(
-                            lambda x: dt.datetime.fromtimestamp(x / 1000).date())
+                            lambda x: dt.datetime.fromtimestamp(
+                                x / 1000).date())
                     self.df = df
                     break
                 else:
@@ -377,7 +378,8 @@ class AmzApi(object):
         try:
             self.r = self.raw_request(url, method, body=body, params=params,
                                       headers=headers)
-        except requests.exceptions.SSLError as e:
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError) as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
             self.r = self.make_request(url=url, method=method, body=body,
