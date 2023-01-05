@@ -3,6 +3,7 @@ import string
 import pytest
 import numpy as np
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
@@ -70,6 +71,31 @@ class TestUtils:
             ndf[col] = np.where(mask, 0.0, df[col])
         df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
         assert pd.testing.assert_frame_equal(df, ndf) is None
+
+    def test_data_to_type(self):
+        str_col = 'str_col'
+        float_col = 'float_col'
+        date_col = 'date_col'
+        int_col = 'int_col'
+        str_list = ['0', '1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
+                    '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
+                    'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22']
+        float_list = [str(x) for x in range(len(str_list))]
+        df_dict = {str_col: str_list, float_col: float_list,
+                   date_col: str_list, int_col: float_list}
+        df = pd.DataFrame(df_dict)
+        ndf = utl.data_to_type(df.copy(), str_col=[str_col],
+                               float_col=[float_col],
+                               date_col=[date_col], int_col=[int_col])
+        date_list = [pd.NaT] + [dt.datetime.strptime('2022-01-01', '%Y-%m-%d')
+                                for _ in range(len(str_list) - 1)]
+        df_dict = {str_col: str_list, date_col: date_list,
+                   float_col: [float(x) for x in float_list],
+                   int_col: [np.int32(x) for x in float_list]}
+        df = pd.DataFrame(df_dict)
+        df[int_col] = df[int_col].astype('int32')
+        for col in [str_col, float_col, date_col, int_col]:
+            assert pd.testing.assert_series_equal(df[col], ndf[col]) is None
 
 
 class TestApis:
