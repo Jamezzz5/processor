@@ -77,9 +77,11 @@ class TestUtils:
         float_col = 'float_col'
         date_col = 'date_col'
         int_col = 'int_col'
-        str_list = ['0', '1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
+        nat_list = ['0', '1/32/22', '30/11/22', '2022-1-32']
+        str_list = ['1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
                     '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
                     'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22']
+        str_list = nat_list + str_list
         float_list = [str(x) for x in range(len(str_list))]
         df_dict = {str_col: str_list, float_col: float_list,
                    date_col: str_list, int_col: float_list}
@@ -87,8 +89,10 @@ class TestUtils:
         ndf = utl.data_to_type(df.copy(), str_col=[str_col],
                                float_col=[float_col],
                                date_col=[date_col], int_col=[int_col])
-        date_list = [pd.NaT] + [dt.datetime.strptime('2022-01-01', '%Y-%m-%d')
-                                for _ in range(len(str_list) - 1)]
+        cor_date_list = [
+            dt.datetime.strptime('2022-01-01', '%Y-%m-%d')
+            for _ in range(len(str_list) - len(nat_list))]
+        date_list = [pd.NaT] * len(nat_list) + cor_date_list
         df_dict = {str_col: str_list, date_col: date_list,
                    float_col: [float(x) for x in float_list],
                    int_col: [np.int32(x) for x in float_list]}

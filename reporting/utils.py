@@ -109,7 +109,11 @@ def exceldate_to_datetime(excel_date):
 def string_to_date(my_string):
     if ('/' in my_string and my_string[-4:][:2] != '20' and
             ':' not in my_string and len(my_string) in [6, 7, 8]):
-        return dt.datetime.strptime(my_string, '%m/%d/%y')
+        try:
+            return dt.datetime.strptime(my_string, '%m/%d/%y')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
             ':' not in my_string):
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
