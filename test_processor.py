@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.vendormatrix as vm
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.dictcolumns as dctc
@@ -260,6 +261,8 @@ class TestDictionary:
 
 
 class TestAnalyze:
+    vm_df = None
+
     def test_check_flat(self):
         df = pd.DataFrame({
             vmc.clicks: [1],
@@ -323,3 +326,173 @@ class TestAnalyze:
         df = pd.DataFrame()
         tdf = cfs.fix_analysis(df, write=False)
         assert tdf.empty
+
+    @pytest.fixture
+    def test_vm(self):
+        vm_dict = {
+            'Vendor Key':
+                {0: 'API_DCM_Test', 1: 'API_Tiktok_Test',
+                 2: 'API_Rawfile_Test', 3: 'Plan Net'},
+            'FILENAME': {0: 'dcm_Test', 1: 'tiktok_Test.csv',
+                         2: 'Rawfile_Test.csv', 3: 'plannet.csv'},
+            'FIRSTROW': {0: 0, 1: 0, 2: 0, 3: 0},
+            'LASTROW': {0: 0, 1: 0, 2: 0, 3: 0},
+            'Full Placement Name': {0: 'Placement', 1: 'ad_name',
+                                    2: 'ad_name', 3: 'mpCampaign|mpVendor'},
+            'Placement Name': {0: 'Placement', 1: 'ad_name',
+                               2: 'ad_name', 3: 'mpVendor'},
+            'FILENAME_DICTIONARY': {0: 'dcm_dictionary_Test',
+                                    1: 'tiktok_dictionary_Test.csv',
+                                    2: 'Rawfile_dictionary_Test.csv',
+                                    3: 'plannet_dictionary.csv'},
+            'FILENAME_ERROR': {0: 'DCM_ERROR_REPORT.csv',
+                               1: 'TIKTOK_ERROR_REPORT.csv',
+                               2: 'Rawfile_ERROR_REPORT.csv',
+                               3: 'PLANNET_ERROR_REPORT.csv'},
+            'START DATE': {0: '7/18/2022', 1: '7/1/2022',
+                           2: '7/1/2022', 3: ''},
+            'END DATE': {0: '', 1: '7/27/2022', 2: '7/27/2022', 3: ''},
+            'DROP_COLUMNS': {0: 'ALL', 1: 'ALL', 2: 'ALL', 3: ''},
+            'AUTO DICTIONARY PLACEMENT': {0: 'Full Placement Name',
+                                          1: 'Full Placement Name',
+                                          2: 'Full Placement Name',
+                                          3: 'Full Placement Name'},
+            'AUTO DICTIONARY ORDER': {
+                0: 'mpCampaign|mpVendor', 1: 'mpCampaign|mpVendor',
+                2: 'mpCampaign|mpVendor', 3: 'mpCampaign|mpVendor'},
+            'API_FILE': {0: 'dcapi_Test.json', 1: 'tikapi_Test.json',
+                         2: 'tikapi_Test.json', 3: ''},
+            'API_FIELDS': {0: '', 1: '', 2: '', 3: ''},
+            'API_MERGE': {0: '', 1: '', 2: '', 3: ''},
+            'TRANSFORM': {0: '', 1: '', 2: '', 3: ''},
+            'HEADER': {0: '', 1: '', 2: '', 3: ''},
+            'OMIT_PLAN': {0: '', 1: '', 2: '', 3: ''},
+            'Date': {0: 'Date', 1: 'stat_datetime', 2: 'stat_datetime', 3: ''},
+            'Impressions': {0: 'Impressions', 1: 'show_cnt',
+                            2: 'show_cnt', 3: ''},
+            'Clicks': {0: 'Clicks', 1: 'click_cnt', 2: 'click_cnt', 3: ''},
+            'Net Cost': {0: '', 1: 'stat_cost', 2: 'stat_cost', 3: ''},
+            'Video Views': {0: 'TrueView Views', 1: 'total_play',
+                            2: 'total_play', 3: ''},
+            'Video Views 25': {0: 'Video First Quartile Completions',
+                               1: 'play_first_quartile',
+                               2: 'play_first_quartile', 3: ''},
+            'Video Views 50': {0: 'Video Midpoints', 1: 'play_midpoint',
+                               2: 'play_midpoint', 3: ''},
+            'Video Views 75': {0: 'Video Third Quartile Completions',
+                               1: 'play_third_quartile',
+                               2: 'play_third_quartile', 3: ''},
+            'Video Views 100': {0: 'Video Completions', 1: 'play_over',
+                                2: 'play_over', 3: ''},
+            'RULE_1_METRIC': {0: 'POST::Impressions|Clicks', 1: '',
+                              2: '', 3: ''},
+            'RULE_1_QUERY': {
+                0: 'mpVendor::Facebook,Instagram,SEM,YouTube',
+                1: '', 2: '', 3: ''},
+            'RULE_2_FACTOR': {0: '', 1: 0.0, 2: 0.0, 3: 0.0},
+            'RULE_2_METRIC': {0: '', 1: 'POST::Adserving Cost',
+                              2: 'POST::Adserving Cost',
+                              3: 'POST::Adserving Cost'},
+            'RULE_2_QUERY': {0: '', 1: 'mpAgency::Liquid Advertising',
+                             2: 'mpAgency::Liquid Advertising',
+                             3: 'mpAgency::Liquid Advertising'},
+            'RULE_3_FACTOR': {0: 0.1, 1: '', 2: '', 3: ''},
+            'RULE_3_METRIC': {0: 'POST::Adserving Cost::DCM Service Fee',
+                              1: '', 2: '', 3: ''},
+            'RULE_3_QUERY': {0: 'mpAgency::Liquid Advertising',
+                             1: '', 2: '', 3: ''},
+            'RULE_4_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_4_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_4_QUERY': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_5_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_5_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_5_QUERY': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_6_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_6_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_6_QUERY': {0: '', 1: '', 2: '', 3: ''}
+        }
+        for key in vmc.datacol:
+            if key not in vm_dict:
+                vm_dict[key] = {0: '', 1: '', 2: ''}
+        vm_df = pd.DataFrame(vm_dict)
+        self.vm_df = vm_df
+        return vm_df
+
+    def test_double_fix_all_raw(self, test_vm):
+        vm_df = self.vm_df
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_df)
+        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        aly_dict = pd.DataFrame({
+            dctc.VEN: ['TikTok'],
+            cdc.metric_col: [vmc.clicks],
+            vmc.vendorkey: ['API_Rawfile_Test,API_Tiktok_Test'],
+            cdc.num_duplicates: ['1'],
+            cdc.total_placement_count: ['1'],
+            cdc.error_col: [cdc.double_counting_all]
+        })
+        cdc.fix_all(aly_dict)
+        matrix = cdc.aly.matrix
+        rawfile_cell = matrix.vm_df.loc[
+            matrix.vm_df[vmc.vendorkey] == 'API_Rawfile_Test',
+            vmc.clicks].item()
+        api_cell = matrix.vm_df.loc[
+            matrix.vm_df[vmc.vendorkey] == 'API_Tiktok_Test', vmc.clicks].item()
+        assert not rawfile_cell
+        assert api_cell
+
+    def test_double_fix_empty(self, test_vm):
+        vm_df = self.vm_df
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_df)
+        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        aly_dict = pd.DataFrame()
+        df = cdc.fix_analysis(aly_dict, write=False)
+        assert df.empty
+
+    def test_double_fix_all_server(self, test_vm):
+        rule_1_query = 'RULE_1_QUERY'
+        vm_df = self.vm_df
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_df)
+        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        aly_dict = pd.DataFrame({
+            dctc.VEN: ['TikTok'],
+            cdc.metric_col: [vmc.clicks],
+            vmc.vendorkey: ['API_DCM_Test,API_Tiktok_Test'],
+            cdc.num_duplicates: ['1'],
+            cdc.total_placement_count: ['1'],
+            cdc.error_col: [cdc.double_counting_all]
+        })
+        cdc.fix_all(aly_dict)
+        matrix = cdc.aly.matrix
+        server_cell = matrix.vm_df.loc[
+            matrix.vm_df[vmc.vendorkey] == 'API_DCM_Test',
+            rule_1_query].item()
+        api_cell = matrix.vm_df.loc[
+            matrix.vm_df[vmc.vendorkey] == 'API_Tiktok_Test',
+            rule_1_query].item()
+        assert 'TikTok' in server_cell
+        assert not api_cell
+
+    def test_find_double_counting(self):
+        df = pd.DataFrame({
+            dctc.VEN: {0: 'TikTok', 1: 'TikTok'},
+            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Rawfile_Test'},
+            vmc.clicks: {0: 15.0, 1: 15.0},
+            vmc.date: {0: '7/27/2022', 1: '7/27/2022'},
+            vmc.impressions: {0: 1.0, 1: 1.0},
+            vmc.views: {0: 1.0, 1: 1.0},
+            dctc.PN: {0: 'Test', 1: 'Test'}})
+        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
+        cdc = aly.CheckDoubleCounting(aly.Analyze())
+        df = cdc.find_metric_double_counting(df)
+        assert cdc.double_counting_all in df[cdc.error_col].values
+        assert 'API_Tiktok_Test' in df[vmc.vendorkey][0]
+        assert 'API_Rawfile_Test' in df[vmc.vendorkey][0]
+
+    def test_find_double_counting_empty(self):
+        df = pd.DataFrame()
+        cdc = aly.CheckDoubleCounting(aly.Analyze())
+        df = cdc.find_metric_double_counting(df)
+        assert df.empty

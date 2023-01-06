@@ -17,6 +17,7 @@ error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
 
+RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
 RULE_QUERY = 'QUERY'
 RULE_FACTOR = 'FACTOR'
