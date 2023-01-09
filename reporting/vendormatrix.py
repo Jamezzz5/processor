@@ -794,6 +794,13 @@ class DataSource(object):
         return df
 
     def combine_data(self, df):
+        """
+        Moves float and date columns of data source to column names specified
+        in vm while also converting type and applying rules.
+
+        :param df: the raw df to act on
+        :returns: the df with data under correct columns and types
+        """
         df = combining_data(df, self.key, vmc.datadatecol, **self.p)
         df = utl.data_to_type(df, date_col=vmc.datadatecol)
         df = utl.apply_rules(df, self.vm_rules, utl.PRE, **self.p)
@@ -805,7 +812,7 @@ class DataSource(object):
         else:
             float_cols = vmc.datafloatcol
         df = combining_data(df, self.key, float_cols, **self.p)
-        df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
+        df = utl.data_to_type(df, float_cols, vmc.datadatecol)
         return df
 
     def remove_cols_and_make_calculations(self, df):
