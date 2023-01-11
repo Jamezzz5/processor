@@ -405,7 +405,7 @@ class SeleniumWrapper(object):
     def __init__(self, mobile=False, headless=True):
         self.mobile = mobile
         self.headless = headless
-        self.browser = self.init_browser(self.headless)
+        self.browser, self.co = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
 
     def init_browser(self, headless):
@@ -427,7 +427,7 @@ class SeleniumWrapper(object):
         browser.maximize_window()
         browser.set_script_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
-        return browser
+        return browser, co
 
     @staticmethod
     def enable_download_in_headless_chrome(driver, download_dir):
@@ -438,17 +438,19 @@ class SeleniumWrapper(object):
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
         driver.execute("send_command", params)
 
-    def go_to_url(self, url, sleep=5, attempt=1):
+    def go_to_url(self, url, sleep=5):
         logging.info('Going to url {}.'.format(url))
-        try:
-            self.browser.get(url)
-        except (ex.TimeoutException, ex.WebDriverException) as e:
-            logging.warning('Exception attempt: {}, retrying : \n {}'.format(
-                attempt, e))
-            if attempt > 10:
-                logging.warning('More than ten attempts returning.')
-                return False
-            self.go_to_url(url, sleep, attempt)
+        max_attempts = 10
+        for x in range(max_attempts):
+            try:
+                self.browser.get(url)
+                break
+            except (ex.TimeoutException, ex.WebDriverException) as e:
+                msg = 'Exception attempt: {}, retrying: \n {}'.format(x + 1, e)
+                logging.warning(msg)
+                if x > (max_attempts - 2):
+                    logging.warning('More than ten attempts returning.')
+                    return False
         time.sleep(sleep)
         return True
 

@@ -102,6 +102,14 @@ class TestUtils:
         for col in [str_col, float_col, date_col, int_col]:
             assert pd.testing.assert_series_equal(df[col], ndf[col]) is None
 
+    def test_selenium_wrapper(self):
+        sw = utl.SeleniumWrapper()
+        assert sw.co.headless is True
+        test_url = 'https://www.google.com/'
+        sw.go_to_url(test_url, sleep=1)
+        assert sw.browser.current_url == test_url
+        sw.quit()
+
 
 class TestApis:
     pass

@@ -24,9 +24,8 @@ class RedApi(object):
 
     def __init__(self, headless=True):
         self.headless = headless
-        self.sw = utl.SeleniumWrapper(headless=self.headless)
-        self.browser = self.sw.browser
-        self.base_window = self.browser.window_handles[0]
+        self.sw = None
+        self.browser = None
         self.config_file = None
         self.username = None
         self.password = None
@@ -251,6 +250,8 @@ class RedApi(object):
         self.sw.click_on_xpath(account_xpath)
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.sw.go_to_url(self.base_url)
         sign_in_result = self.sign_in()
