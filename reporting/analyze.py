@@ -1168,8 +1168,10 @@ class CheckPackageCapping(AnalyzeBase):
         """
         df = aly_dict
         if not df.empty:
-            t_df = pd.DataFrame({dctc.DICT_COL_NAME: [], dctc.DICT_COL_VALUE: [],
-                                 dctc.DICT_COL_NVALUE: [], dctc.DICT_COL_FNC: [],
+            t_df = pd.DataFrame({dctc.DICT_COL_NAME: [],
+                                 dctc.DICT_COL_VALUE: [],
+                                 dctc.DICT_COL_NVALUE: [],
+                                 dctc.DICT_COL_FNC: [],
                                  dctc.DICT_COL_SEL: [], 'index': []})
             t_df[dctc.DICT_COL_SEL] = df[dctc.VEN]
             t_df[dctc.DICT_COL_NAME] = temp_package_cap
