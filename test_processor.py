@@ -603,5 +603,6 @@ class TestAnalyze:
                                  })
         df = cpc.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
                                     write=False, aly_dict=aly_dict)
+        os.remove('raw_data/cap_test.csv')
         assert not df.empty
         assert df.equals(match_df)
