@@ -92,8 +92,8 @@ class VendorMatrix(object):
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
-            logging.error('No Plan Net key in Vendor Matrix.  Add it.')
-            sys.exit(0)
+            logging.warning('No Plan Net key in Vendor Matrix.  Add it.')
+            return False
 
     def add_file_name_col(self):
         self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
@@ -208,7 +208,7 @@ class VendorMatrix(object):
                                   if str(v) == 'ALL']
 
     def vendor_set(self, vk):
-        ven_param = {x: self.vm[x][vk] for x in self.vm}
+        ven_param = {x: self.vm[x][vk] for x in self.vm if vk in self.vm[x]}
         return ven_param
 
     def vm_change_on_key(self, vk, col, new_value):
@@ -740,6 +740,8 @@ class DataSource(object):
         return matrix
 
     def get_raw_df_before_transform(self, nrows=None):
+        if vmc.filename not in self.p:
+            return pd.DataFrame()
         df = utl.import_read_csv(self.p[vmc.filename], nrows=nrows)
         if df is None or df.empty:
             return df
