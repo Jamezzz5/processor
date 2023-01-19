@@ -105,7 +105,7 @@ class SsApi(object):
 
     def write_config_to_df(self):
         df = pd.DataFrame.from_dict(self.config, orient='index')
-        date = self.ss_file_path_date.split('\\')[-1]
+        date = self.ss_file_path_date.split('\\')[-1].split('/')[-1]
         date = dt.datetime.strptime(date, '%y%m%d_%H')
         df[self.date] = date
         output_file = os.path.join(self.ss_file_path_date, self.output_file)

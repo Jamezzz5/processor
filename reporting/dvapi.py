@@ -7,7 +7,6 @@ import logging
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-import selenium.webdriver as wd
 import selenium.common.exceptions as ex
 
 
@@ -51,6 +50,7 @@ class DvApi(object):
         self.config = None
         self.report_name = None
         self.report_type = None
+        self.sw = None
         self.dimensions = self.def_dimensions
         self.metrics = self.def_metrics
         self.dim_end = 53
@@ -120,44 +120,6 @@ class DvApi(object):
             self.advertiser_name = 'Advertiser Name'
         return sd, ed, fields
 
-    def init_browser(self):
-        download_path = os.path.join(os.getcwd(), 'tmp')
-        co = wd.chrome.options.Options()
-        co.headless = True
-        co.add_argument('--disable-features=VizDisplayCompositor')
-        co.add_argument('--window-size=1920,1080')
-        co.add_argument('--start-maximized')
-        co.add_argument('--no-sandbox')
-        co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path,
-                 'download.prompt_for_download': False,
-                 'download.directory_upgrade': True,
-                 'safebrowsing.enabled': False,
-                 'safebrowsing.disable_download_protection': True}
-        co.add_experimental_option('prefs', prefs)
-        browser = wd.Chrome(options=co)
-        browser.maximize_window()
-        browser.set_script_timeout(10)
-        self.enable_download_in_headless_chrome(browser, download_path)
-        return browser
-
-    def enable_download_in_headless_chrome(self, driver, download_dir):
-        # add missing support for chrome "send_command"  to selenium webdriver
-        driver.command_executor._commands["send_command"] = \
-            ("POST", '/session/$sessionId/chromium/send_command')
-        params = {'cmd': 'Page.setDownloadBehavior',
-                  'params': {'behavior': 'allow', 'downloadPath': download_dir}}
-        command_result = driver.execute("send_command", params)
-
-    def go_to_url(self, url, sleep=5):
-        logging.info('Going to url {}.'.format(url))
-        try:
-            self.browser.get(url)
-        except ex.TimeoutException:
-            logging.warning('Timeout exception, retrying.')
-            self.go_to_url(url)
-        time.sleep(sleep)
-
     def sign_in(self):
         logging.info('Signing in.')
         user_pass = [(self.username, '//*[@id="username"]'),
@@ -173,23 +135,24 @@ class DvApi(object):
         self.browser.find_element_by_xpath(xpath).click()
         time.sleep(sleep)
 
-    def get_cal_month(self, lr=2, desired_date=None):
-        month_xpath = '//*[@id="mat-datepicker-0"]/mat-calendar-header/div/div/button[2]' \
-                      ''.format(lr)
-        cal_date_xpath = '//*[@id="mat-datepicker-0"]/mat-calendar-header/div/div/button[1]'
+    def get_cal_month(self, desired_date=None):
+        date_sel = '//*[@id="mat-datepicker-0"]'
+        cal_xpath = '{}/mat-calendar-header/div/div/button'.format(date_sel)
+        month_xpath = '{}[2]'.format(cal_xpath)
+        cal_date_xpath = '{}[1]'.format(cal_xpath)
         for x in range(12):
             cur_month = self.browser.find_element_by_xpath(cal_date_xpath).text
             cur_month_dt = dt.datetime.strptime(cur_month, '%b %Y')
             if (cur_month_dt.month < desired_date.month and
                     cur_month_dt.year == desired_date.year):
-                month_xpath = '//*[@id="mat-datepicker-0"]/div[1]/div/button[3]'
+                month_xpath = '{}/div[1]/div/button[3]'.format(date_sel)
             if cur_month != desired_date.strftime('%b %Y').upper():
                 self.click_on_xpath(month_xpath)
             else:
                 break
 
     def set_date(self, date):
-        self.get_cal_month(lr=2, desired_date=date)
+        self.get_cal_month(desired_date=date)
         for row in range(1, 7):
             for col in range(1, 8):
                 xpath = '//*[@id="mat-datepicker-0"]/div/mat-month-view/' \
@@ -234,7 +197,7 @@ class DvApi(object):
             if attempt > 10:
                 logging.warning('Greater 10 attemprts returning None')
                 return None
-            self.go_to_url(self.report_url)
+            self.sw.go_to_url(self.report_url)
             value = self.get_name_of_report(row_num, attempt)
         return value
 
@@ -271,7 +234,7 @@ class DvApi(object):
                 return None
             logging.warning('Could not find element, retrying.  '
                             'Attempt: {}'.format(attempt))
-            self.go_to_url(self.report_url)
+            self.sw.go_to_url(self.report_url)
             elem = self.get_report_element(attempt=attempt)
         return elem
 
@@ -279,7 +242,7 @@ class DvApi(object):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
         for x in range(20):
-            self.go_to_url(self.report_url, sleep=(x + 5))
+            self.sw.go_to_url(self.report_url, sleep=(x + 5))
             if self.client:
                 self.change_client()
             elem = self.get_report_element()
@@ -294,7 +257,7 @@ class DvApi(object):
                 logging.warning('Got null url, refreshing page.')
                 continue
             if link and link[:4] == 'http':
-                self.go_to_url(elem.get_attribute('href'))
+                self.sw.go_to_url(elem.get_attribute('href'))
                 break
             else:
                 logging.warning('Report not ready, current link {}'
@@ -317,7 +280,7 @@ class DvApi(object):
                 return None
             logging.warning('Could not click on xpath, retrying.  '
                             'Attempt {}'.format(attempt))
-            self.go_to_url(self.report_url, sleep=attempt + 5)
+            self.sw.go_to_url(self.report_url, sleep=attempt + 5)
             self.click_report_creation(attempt)
         return True
 
@@ -336,7 +299,7 @@ class DvApi(object):
                     return None
                 logging.warning('Could not click on xpath, retrying.  '
                                 'Attempt {}'.format(attempt))
-                self.go_to_url(self.report_url, sleep=attempt + 5)
+                self.sw.go_to_url(self.report_url, sleep=attempt + 5)
                 self.change_client(attempt)
         return True
 
@@ -500,19 +463,17 @@ class DvApi(object):
             return None
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.browser = self.init_browser()
+        self.sw = utl.SeleniumWrapper()
+        self.browser = self.sw.browser
         self.base_window = self.browser.window_handles[0]
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        self.go_to_url(self.base_url)
+        self.sw.go_to_url(self.base_url)
         self.sign_in()
-        self.go_to_url(self.report_url)
+        self.sw.go_to_url(self.report_url)
         self.reject_cookies()
         report_created = self.create_report(sd, ed)
         if not report_created:
             return pd.DataFrame()
         df = self.get_file_as_df(self.temp_path)
-        self.quit()
-        return df
-
-    def quit(self):
         self.browser.quit()
+        return df
