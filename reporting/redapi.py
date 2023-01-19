@@ -193,7 +193,7 @@ class RedApi(object):
         for x in range(2, 6):
             metric_xpath = (
                 '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
-                'ul/li[{}]/div[1]/div/button/div/span'.format(x))
+                'ul/li[{}]/div[1]/div/button/div/div/label/i'.format(x))
             try:
                 self.sw.click_on_xpath(metric_xpath, sleep=1)
             except ex.NoSuchElementException as e:
