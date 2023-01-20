@@ -10,7 +10,7 @@ import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.dictcolumns as dctc
 import reporting.calc as cal
-import reporting.analyze as aly
+import reporting.analyze as az
 
 
 def func(x):
@@ -290,21 +290,21 @@ class TestAnalyze:
             dctc.VEN: ['IMGN'],
             cal.NCF: [0]})
         df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cfs = aly.CheckFlatSpends(aly.Analyze())
+        cfs = az.CheckFlatSpends(az.Analyze())
         df = cfs.find_missing_flat_spend(df)
         assert cfs.placement_date_error in df[cfs.error_col].values
         assert cfs.missing_rate_error in df[cfs.error_col].values
 
     def test_empty_flat(self):
         df = pd.DataFrame()
-        analyze = aly.Analyze()
-        cfs = aly.CheckFlatSpends(analyze)
+        analyze = az.Analyze()
+        cfs = az.CheckFlatSpends(analyze)
         df = cfs.find_missing_flat_spend(df)
         assert df.empty
 
     def test_flat_fix(self):
         first_click_date = '2022-07-25'
-        cfs = aly.CheckFlatSpends(aly.Analyze())
+        cfs = az.CheckFlatSpends(az.Analyze())
         translation = dct.DictTranslationConfig()
         df = pd.DataFrame({
             dctc.VEN: ['IMGN'],
@@ -330,7 +330,7 @@ class TestAnalyze:
         assert df[dctc.PD].values == first_click_date
 
     def test_empty_flat_fix(self):
-        cfs = aly.CheckFlatSpends(aly.Analyze())
+        cfs = az.CheckFlatSpends(az.Analyze())
         df = pd.DataFrame()
         tdf = cfs.fix_analysis(df, write=False)
         assert tdf.empty
@@ -430,7 +430,7 @@ class TestAnalyze:
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
-        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        cdc = az.CheckDoubleCounting(az.Analyze(matrix=matrix))
         aly_dict = pd.DataFrame({
             dctc.VEN: ['TikTok'],
             cdc.metric_col: [vmc.clicks],
@@ -453,7 +453,7 @@ class TestAnalyze:
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
-        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        cdc = az.CheckDoubleCounting(az.Analyze(matrix=matrix))
         aly_dict = pd.DataFrame()
         df = cdc.fix_analysis(aly_dict, write=False)
         assert df.empty
@@ -463,7 +463,7 @@ class TestAnalyze:
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
-        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        cdc = az.CheckDoubleCounting(az.Analyze(matrix=matrix))
         aly_dict = pd.DataFrame({
             dctc.VEN: ['TikTok'],
             cdc.metric_col: [vmc.clicks],
@@ -493,7 +493,7 @@ class TestAnalyze:
             vmc.views: {0: 1.0, 1: 1.0},
             dctc.PN: {0: 'Test', 1: 'Test'}})
         df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cdc = aly.CheckDoubleCounting(aly.Analyze())
+        cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert cdc.double_counting_all in df[cdc.error_col].values
         assert 'API_Tiktok_Test' in df[vmc.vendorkey][0]
@@ -501,7 +501,7 @@ class TestAnalyze:
 
     def test_find_double_counting_empty(self):
         df = pd.DataFrame()
-        cdc = aly.CheckDoubleCounting(aly.Analyze())
+        cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
         
@@ -606,3 +606,7 @@ class TestAnalyze:
         os.remove('raw_data/cap_test.csv')
         assert not df.empty
         assert df.equals(match_df)
+
+    def test_all_analysis_on_empty_df(self):
+        aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
+        aly.do_all_analysis()

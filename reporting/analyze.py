@@ -115,7 +115,15 @@ class Analyze(object):
         self.analysis_dict.append(base_dict)
 
     def check_delivery(self, df):
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        plan_names = self.matrix.vendor_set(vm.plan_key)
+        if not plan_names:
+            logging.warning('VM does not have plan key')
+            return False
+        plan_names = plan_names[vmc.fullplacename]
+        miss_cols = [x for x in plan_names if x not in df.columns]
+        if miss_cols:
+            logging.warning('Df does not have cols {}'.format(miss_cols))
+            return False
         df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
                                           else x[vmc.cost].sum() /
                                           x[dctc.PNC].sum())
@@ -205,6 +213,8 @@ class Analyze(object):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
+            if vmc.filename not in source.p:
+                continue
             file_name = source.p[vmc.filename]
             if os.path.exists(file_name):
                 t = os.path.getmtime(file_name)
@@ -223,14 +233,27 @@ class Analyze(object):
                          'update_tier': [update_tier]}
             df = df.append(pd.DataFrame(data_dict),
                            ignore_index=True, sort=False)
+        if df.empty:
+            return False
         df['update_time'] = df['update_time'].astype('U')
         update_msg = 'Raw File update times and tiers are as follows:'
         logging.info('{}\n{}'.format(update_msg, df.to_string()))
         self.add_to_analysis_dict(key_col=self.raw_file_update_col,
                                   message=update_msg, data=df.to_dict())
 
+    def get_plan_names(self):
+        plan_names = self.matrix.vendor_set(vm.plan_key)
+        if not plan_names:
+            logging.warning('VM does not have plan key')
+            plan_names = None
+        else:
+            plan_names = plan_names[vmc.fullplacename]
+        return plan_names
+
     def check_plan_error(self, df):
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        plan_names = self.get_plan_names()
+        if not plan_names:
+            return False
         er = self.matrix.vendor_set(vm.plan_key)[vmc.filenameerror]
         edf = utl.import_read_csv(er, utl.error_path)
         if edf.empty:
@@ -240,6 +263,9 @@ class Analyze(object):
             self.add_to_analysis_dict(key_col=self.unknown_col,
                                       message=plan_error_msg)
             return True
+        if dctc.PFPN not in df.columns:
+            logging.warning('Df does not have column: {}'.format(dctc.PFPN))
+            return False
         df = df[df[dctc.PFPN].isin(edf[vmc.fullplacename].values)][
             plan_names + [vmc.vendorkey]].drop_duplicates()
         df = vm.full_placement_creation(df, None, dctc.FPN, plan_names)
@@ -259,21 +285,23 @@ class Analyze(object):
     def backup_files(self):
         bu = os.path.join(utl.backup_path, dt.date.today().strftime('%Y%m%d'))
         logging.info('Backing up all files to {}'.format(bu))
-        for path in [utl.backup_path, bu]:
+        dir_to_backup = [utl.config_path, utl.dict_path, utl.raw_path]
+        for path in [utl.backup_path, bu] + dir_to_backup:
             utl.dir_check(path)
         file_dicts = {'raw.gzip': self.df}
         for file_name, df in file_dicts.items():
             file_name = os.path.join(bu, file_name)
             df.to_csv(file_name, compression='gzip')
-        for file_path in [utl.config_path, utl.dict_path, utl.raw_path]:
+        for file_path in dir_to_backup:
             file_name = '{}.tar.gz'.format(file_path.replace('/', ''))
             file_name = os.path.join(bu, file_name)
             tar = tarfile.open(file_name, "w:gz")
             tar.add(file_path, arcname=file_path.replace('/', ''))
             tar.close()
         for file_name in ['logfile.log']:
-            new_file_name = os.path.join(bu, file_name)
-            shutil.copy(file_name, new_file_name)
+            if os.path.exists(file_name):
+                new_file_name = os.path.join(bu, file_name)
+                shutil.copy(file_name, new_file_name)
         logging.info('Successfully backed up files to {}'.format(bu))
 
     # noinspection PyUnresolvedReferences
@@ -1201,6 +1229,8 @@ class FindPlacementNameCol(AnalyzeBase):
 
     @staticmethod
     def do_analysis_on_data_source(source, df):
+        if vmc.filename not in source.p:
+            return pd.DataFrame()
         file_name = source.p[vmc.filename]
         first_row = source.p[vmc.firstrow]
         transforms = str(source.p[vmc.transform]).split(':::')
@@ -1359,6 +1389,8 @@ class CheckColumnNames(AnalyzeBase):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
+            if vmc.firstrow not in source.p:
+                continue
             first_row = source.p[vmc.firstrow]
             transforms = str(source.p[vmc.transform]).split(':::')
             transforms = [x for x in transforms if x.split('::')[0]
@@ -2029,7 +2061,9 @@ class GetServingAlerts(AnalyzeBase):
         pacing_analysis = self.aly.find_in_analysis_dict(
             self.aly.delivery_comp_col)[0]
         df = pd.DataFrame(pacing_analysis['data'])
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        plan_names = self.aly.get_plan_names()
+        if not plan_names:
+            return pd.DataFrame()
         final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
         if not df.empty:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])

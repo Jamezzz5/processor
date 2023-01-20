@@ -192,15 +192,15 @@ class RedApi(object):
     def click_grouped_metrics(self):
         for x in range(2, 6):
             metric_xpath = (
-                '/html/body/div[7]/div/div/div/div/div/div[2]/div[2]/div/'
-                'ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
+                '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
+                'ul/li[{}]/div[1]/div/button/div/div/label/i'.format(x))
             try:
                 self.sw.click_on_xpath(metric_xpath, sleep=1)
             except ex.NoSuchElementException as e:
                 logging.warning(
                     'Could not click update trying another selector.'
                     '  Error: {}'.format(e))
-                metric_xpath = metric_xpath.replace('body/div[7', 'body/div[8')
+                metric_xpath = metric_xpath.replace('body/div[8', 'body/div[7')
                 self.sw.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
