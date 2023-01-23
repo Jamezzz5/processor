@@ -44,9 +44,11 @@ class ErrorReport(object):
                 logging.warning('Full Placement Name not in {}. Delete that '
                                 'dictionary and try '
                                 'rebuilding.'.format(self.filename))
-            self.merge_df = pd.merge(self.df, self.dictionary,
-                                     on=self.merge_col, how='left',
-                                     indicator=True)
+            cols_to_merge = [x for x in [self.merge_col, self.pn]
+                             if x in self.df.columns]
+            self.merge_df = pd.merge(
+                self.df[cols_to_merge], self.dictionary,
+                on=self.merge_col, how='left', indicator=True)
         data_err = self.merge_df[self.merge_df['_merge'] == 'left_only']
         if self.pn is None:
             data_err = self.drop_error_df_duplicates(data_err,

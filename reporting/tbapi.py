@@ -212,11 +212,22 @@ class TabApi(object):
             conn_cred = tsc.ConnectionCredentials(
                 name=db.config['USER'], password=db.config['PASS'], embed=True)
             connection.connection_credentials = conn_cred
-            published_obj = ser_object.publish(
-                pub_obj, '{}{}'.format(object_name, ext_object),
-                mode=publish_mode, connection_credentials=conn_cred)
-            logging.info('Object published with name: {}'.format(
-                published_obj.name))
+            object_published = False
+            for x in range(10):
+                logging.info('Attempting to publish attempt {}'.format(x + 1))
+                try:
+                    published_obj = ser_object.publish(
+                        pub_obj, '{}{}'.format(object_name, ext_object),
+                        mode=publish_mode, connection_credentials=conn_cred)
+                    object_published = True
+                    break
+                except tsc.server.endpoint.exceptions.ServerResponseError as e:
+                    logging.warning('Error attempting again in 30s')
+                    time.sleep(30)
+            publish_msg = ' ' if object_published else ' not '
+            logging.info('Object{}published with name: {}'.format(
+                publish_msg, published_obj.name))
+            return object_published
 
     def create_publish_hyper(self, db, table_name='auto_processor'):
         self.create_hyper(db, table_name)

@@ -7,7 +7,6 @@ import logging
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-import selenium.webdriver as wd
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
 
@@ -18,8 +17,8 @@ class PmApi(object):
     temp_path = 'tmp'
 
     def __init__(self):
-        self.browser = self.init_browser()
-        self.base_window = self.browser.window_handles[0]
+        self.sw = None
+        self.browser = None
         self.config_file = None
         self.username = None
         self.password = None
@@ -66,42 +65,6 @@ class PmApi(object):
                 self.ispot_title = fields[0].lower()
         return sd, ed
 
-    def init_browser(self):
-        download_path = os.path.join(os.getcwd(), 'tmp')
-        co = wd.chrome.options.Options()
-        co.headless = True
-        co.add_argument('--disable-features=VizDisplayCompositor')
-        co.add_argument('--window-size=1920,1080')
-        co.add_argument('--start-maximized')
-        co.add_argument('--no-sandbox')
-        co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path}
-        co.add_experimental_option('prefs', prefs)
-        browser = wd.Chrome(options=co)
-        browser.maximize_window()
-        browser.set_script_timeout(10)
-        self.enable_download_in_headless_chrome(browser, download_path)
-        return browser
-
-    @staticmethod
-    def enable_download_in_headless_chrome(driver, download_dir):
-        # add missing support for chrome "send_command"  to selenium webdriver
-        driver.command_executor._commands["send_command"] = \
-            ("POST", '/session/$sessionId/chromium/send_command')
-        params = {'cmd': 'Page.setDownloadBehavior',
-                  'params': {'behavior': 'allow',
-                             'downloadPath': download_dir}}
-        driver.execute("send_command", params)
-
-    def go_to_url(self, url):
-        logging.info('Going to url {}.'.format(url))
-        try:
-            self.browser.get(url)
-        except ex.TimeoutException:
-            logging.warning('Timeout exception, retrying.')
-            self.go_to_url(url)
-        time.sleep(5)
-
     def sign_in(self):
         user_pass = [(self.username, '//*[@id="signin-username"]'),
                      (self.password, '//*[@id=\"signin-password\"]')]
@@ -130,7 +93,8 @@ class PmApi(object):
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
         self.click_on_xpath(title_result)
-        title_result = self.browser.find_element_by_xpath("//*[@class='entity-name']")
+        title_result = self.browser.find_element_by_xpath(
+            "//*[@class='entity-name']")
         logging.info('Getting data for {}.'.format(title_result.text))
 
     def open_calendar(self):
@@ -340,9 +304,10 @@ class PmApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.browser = self.init_browser()
+        self.sw = utl.SeleniumBrowser()
+        self.browser = self.sw.browser
         sd, ed = self.get_data_default_check(sd, ed, fields)
-        self.go_to_url(self.base_url)
+        self.sw.go_to_url(self.base_url)
         self.sign_in()
         self.create_report(sd, ed)
         self.export_to_csv()

@@ -1,11 +1,15 @@
 import os
+import io
 import re
-import sys
+import time
+import shutil
 import logging
 import pandas as pd
 import datetime as dt
+import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
+import selenium.common.exceptions as ex
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -13,6 +17,7 @@ error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
 
+RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
 RULE_QUERY = 'QUERY'
 RULE_FACTOR = 'FACTOR'
@@ -105,15 +110,18 @@ def exceldate_to_datetime(excel_date):
 def string_to_date(my_string):
     if ('/' in my_string and my_string[-4:][:2] != '20' and
             ':' not in my_string and len(my_string) in [6, 7, 8]):
-        return dt.datetime.strptime(my_string, '%m/%d/%y')
+        try:
+            return dt.datetime.strptime(my_string, '%m/%d/%y')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
             ':' not in my_string):
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
             ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
-    elif (len(my_string) == 8 and my_string[0].isdigit()
-            and my_string[0] == '2'):
+    elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
         return dt.datetime.strptime(my_string, '%Y%m%d')
     elif len(my_string) == 8 and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
@@ -227,6 +235,7 @@ def col_removal(df, key, removal_cols, warn=True):
 
 
 def apply_rules(df, vm_rules, pre_or_post, **kwargs):
+    grouped_q_idx = {}
     for rule in vm_rules:
         for item in RULE_CONST:
             if item not in vm_rules[rule].keys():
@@ -249,7 +258,13 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
                 logging.warning(
                     '{} not in columns setting to 0.'.format(metrics[1]))
                 df[metrics[1]] = 0
-            df[metrics[2]] = df[metrics[1]]
+            if metrics[2] in grouped_q_idx:
+                df.loc[~df.index.isin(grouped_q_idx[metrics[2]]),
+                       metrics[2]] = (
+                    df.loc[~df.index.isin(grouped_q_idx[metrics[2]]),
+                           metrics[1]])
+            else:
+                df[metrics[2]] = df[metrics[1]]
             metrics[1] = metrics[2]
         tdf = df
         metrics = metrics[1].split('|')
@@ -285,8 +300,16 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
             df.loc[q_idx, metric] = (df.loc[q_idx, metric].astype(float) *
                                      float(factor))
             if set_column_to_value:
-                df.loc[~df.index.isin(q_idx), metric] = (
-                    df.loc[~df.index.isin(q_idx), metric].astype(float) * 0)
+                if metric not in grouped_q_idx:
+                    grouped_q_idx[metric] = q_idx
+                else:
+                    grouped_q_idx[metric].extend(q_idx)
+    for metric in grouped_q_idx:
+        if metric not in df:
+            continue
+        df.loc[~df.index.isin(grouped_q_idx[metric]), metric] = (
+                df.loc[~df.index.isin(grouped_q_idx[metric]), metric]
+                .astype(float) * 0)
     return df
 
 
@@ -350,3 +373,172 @@ def date_check(sd, ed):
                         'was set to end date.')
         sd = ed
     return sd, ed
+
+
+def filter_df_on_col(df, col_name, col_val, exclude=False):
+    if col_name not in df.columns:
+        logging.warning('Unable to filter df. Column "{}" '
+                        'not in datasource.'.format(col_name))
+        return df
+    df = df.dropna(subset=[col_name])
+    df = df.reset_index(drop=True)
+    if exclude:
+        df = df[~df[col_name].astype('U').str.contains(col_val)]
+    else:
+        df = df[df[col_name].astype('U').str.contains(col_val)]
+    return df
+
+
+def image_to_binary(file_name, as_bytes_io=False):
+    if os.path.isfile(file_name):
+        with open(file_name, 'rb') as image_file:
+            image_data = image_file.read()
+            if as_bytes_io:
+                image_data = io.BytesIO(image_data)
+    else:
+        logging.warning('{} does not exist returning None'.format(file_name))
+        image_data = None
+    return image_data
+
+
+class SeleniumWrapper(object):
+    def __init__(self, mobile=False, headless=True):
+        self.mobile = mobile
+        self.headless = headless
+        self.browser, self.co = self.init_browser(self.headless)
+        self.base_window = self.browser.window_handles[0]
+
+    def init_browser(self, headless):
+        download_path = os.path.join(os.getcwd(), 'tmp')
+        co = wd.chrome.options.Options()
+        if headless:
+            co.headless = True
+        co.add_argument('--disable-features=VizDisplayCompositor')
+        co.add_argument('--window-size=1920,1080')
+        co.add_argument('--start-maximized')
+        co.add_argument('--no-sandbox')
+        co.add_argument('--disable-gpu')
+        prefs = {'download.default_directory': download_path}
+        co.add_experimental_option('prefs', prefs)
+        if self.mobile:
+            mobile_emulation = {"deviceName": "iPhone X"}
+            co.add_experimental_option("mobileEmulation", mobile_emulation)
+        browser = wd.Chrome(options=co)
+        browser.maximize_window()
+        browser.set_script_timeout(10)
+        self.enable_download_in_headless_chrome(browser, download_path)
+        return browser, co
+
+    @staticmethod
+    def enable_download_in_headless_chrome(driver, download_dir):
+        # add missing support for chrome "send_command"  to selenium webdriver
+        driver.command_executor._commands["send_command"] = \
+            ("POST", '/session/$sessionId/chromium/send_command')
+        params = {'cmd': 'Page.setDownloadBehavior',
+                  'params': {'behavior': 'allow', 'downloadPath': download_dir}}
+        driver.execute("send_command", params)
+
+    def go_to_url(self, url, sleep=5):
+        logging.info('Going to url {}.'.format(url))
+        max_attempts = 10
+        for x in range(max_attempts):
+            try:
+                self.browser.get(url)
+                break
+            except (ex.TimeoutException, ex.WebDriverException) as e:
+                msg = 'Exception attempt: {}, retrying: \n {}'.format(x + 1, e)
+                logging.warning(msg)
+                if x > (max_attempts - 2):
+                    logging.warning('More than ten attempts returning.')
+                    return False
+        time.sleep(sleep)
+        return True
+
+    @staticmethod
+    def click_on_elem(elem, sleep=2):
+        elem.click()
+        time.sleep(sleep)
+
+    def click_on_xpath(self, xpath, sleep=2):
+        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
+
+    def quit(self):
+        self.browser.quit()
+
+    @staticmethod
+    def get_file_as_df(temp_path=None):
+        df = pd.DataFrame()
+        for x in range(100):
+            logging.info('Checking for file.  Attempt {}.'.format(x + 1))
+            files = os.listdir(temp_path)
+            files = [x for x in files if x[-4:] == '.csv']
+            if files:
+                files = files[-1]
+                logging.info('File downloaded.')
+                temp_file = os.path.join(temp_path, files)
+                time.sleep(5)
+                df = import_read_csv(temp_file, empty_df=True)
+                os.remove(temp_file)
+                break
+            time.sleep(5)
+        shutil.rmtree(temp_path)
+        return df
+
+    def take_screenshot_get_ads(self, url=None, file_name=None):
+        self.take_screenshot(url=url, file_name=file_name)
+        ads = self.get_all_iframe_ads()
+        return ads
+
+    def take_screenshot(self, url=None, file_name=None):
+        logging.info('Getting screenshot from {} and '
+                     'saving to {}.'.format(url, file_name))
+        self.go_to_url(url)
+        self.browser.save_screenshot(file_name)
+
+    def get_all_iframes(self, url=None):
+        if url:
+            self.go_to_url(url)
+        all_iframes = self.browser.find_elements_by_tag_name('iframe')
+        all_iframes = [x for x in all_iframes if x.is_displayed()]
+        return all_iframes
+
+    def get_all_iframe_ads(self, url=None):
+        ads = []
+        all_iframes = self.get_all_iframes(url)
+        for iframe in all_iframes:
+            iframe_properties = {}
+            for x in ['width', 'height']:
+                try:
+                    iframe_properties[x] = iframe.get_attribute(x)
+                except ex.StaleElementReferenceException:
+                    logging.warning('{} element not gathered.'.format(x))
+                    iframe_properties[x] = 'None'
+            iframe.click()
+            if len(self.browser.window_handles) > 1:
+                new_window = [x for x in self.browser.window_handles
+                              if x != self.base_window][0]
+                self.browser.switch_to.window(new_window)
+                time.sleep(5)
+                iframe_properties['lp_url'] = self.browser.current_url
+                logging.info('Got iframe with properties:'
+                             ' {}'.format(iframe_properties))
+                ads.append(iframe_properties)
+                self.browser.close()
+                self.browser.switch_to.window(self.base_window)
+            time.sleep(5)
+        return ads
+
+    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
+        for item in elem_input_list:
+            elem_xpath = item[1]
+            if get_xpath_from_id:
+                elem_xpath = self.get_xpath_from_id(elem_xpath)
+            elem = self.browser.find_element_by_xpath(elem_xpath)
+            elem.send_keys(item[0])
+
+    def xpath_from_id_and_click(self, elem_id, sleep=2):
+        self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
+
+    @staticmethod
+    def get_xpath_from_id(elem_id):
+        return '//*[@id="{}"]'.format(elem_id)

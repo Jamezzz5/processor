@@ -98,7 +98,10 @@ class RsApi(object):
         r = requests.get(self.games_url, headers=self.headers)
         self.game_id = [x['id'] for x in r.json()['games']
                         if x['name'] == self.game_name]
-        self.game_id = int(self.game_id[0])
+        if len(self.game_id) > 0:
+            self.game_id = int(self.game_id[0])
+        else:
+            logging.warning('Game ID not in response: {}'.format(r.json()))
 
     def date_check(self, sd, ed):
         sd, ed = self.get_data_default_check(sd, ed)
@@ -142,6 +145,9 @@ class RsApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.date_check(sd, ed)
         self.get_id()
+        if not self.game_id:
+            logging.warning('No Game ID check API key.  Returning blank df.')
+            return pd.DataFrame()
         self.get_raw_data(sd, ed, fields)
         return self.df
 
@@ -221,11 +227,12 @@ class RsApi(object):
                 for n2_col in n2_df.columns:
                     n3_df = self.flatten_nested_cols(n2_df, n2_col)
                     df = df.join(n3_df)
-        df = df.drop(self.nested_cols, axis=1)
+        df = utl.col_removal(df, 'Redshell', self.nested_cols)
         return df
 
     @staticmethod
     def flatten_nested_cols(df, col):
-        n_df = df[col].apply(pd.Series)
-        n_df.columns = ['{} - {}'.format(col, x) for x in n_df.columns]
-        return n_df
+        if col in df.columns:
+            df = df[col].apply(pd.Series)
+            df.columns = ['{} - {}'.format(col, x) for x in df.columns]
+        return df

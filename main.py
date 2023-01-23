@@ -7,6 +7,7 @@ import reporting.utils as utl
 import reporting.export as exp
 import reporting.analyze as az
 import reporting.tbapi as tbapi
+import reporting.vmcolumns as vmc
 import reporting.expcolumns as exc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
@@ -47,7 +48,7 @@ def get_args(arguments=None):
     parser.add_argument('--api', choices=[
         'all', 'fb', 'aw', 'tw', 'ttd', 'ga', 'nb', 'af', 'sc', 'aj', 'dc',
         'rs', 'db', 'vk', 'rc', 'szk', 'red', 'dv', 'adk', 'inn', 'tik', 'amz',
-        'cri', 'pm', 'sam', 'gs', 'qt', 'yv', 'amd'])
+        'cri', 'pm', 'sam', 'gs', 'qt', 'yv', 'amd', 'ss'])
     parser.add_argument('--ftp', choices=['all', 'sz'])
     parser.add_argument('--dbi', choices=['all', 'dna'])
     parser.add_argument('--s3', choices=['all', 'dna'])
@@ -65,7 +66,7 @@ def get_args(arguments=None):
     return args
 
 
-OUTPUT_FILE = 'Raw Data Output.csv'
+OUTPUT_FILE = vmc.output_file
 
 
 def main(arguments=None):

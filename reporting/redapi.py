@@ -2,14 +2,12 @@ import os
 import sys
 import json
 import time
-import shutil
 import logging
 import operator
 import calendar
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-import selenium.webdriver as wd
 import selenium.common.exceptions as ex
 
 
@@ -24,9 +22,10 @@ class RedApi(object):
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
 
-    def __init__(self):
-        self.browser = self.init_browser()
-        self.base_window = self.browser.window_handles[0]
+    def __init__(self, headless=True):
+        self.headless = headless
+        self.sw = None
+        self.browser = None
         self.config_file = None
         self.username = None
         self.password = None
@@ -69,53 +68,18 @@ class RedApi(object):
                     self.account = val
         return sd, ed
 
-    def init_browser(self):
-        download_path = os.path.join(os.getcwd(), 'tmp')
-        co = wd.chrome.options.Options()
-        co.headless = True
-        co.add_argument('--disable-features=VizDisplayCompositor')
-        co.add_argument('--window-size=1920,1080')
-        co.add_argument('--start-maximized')
-        co.add_argument('--no-sandbox')
-        co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path}
-        co.add_experimental_option('prefs', prefs)
-        browser = wd.Chrome(options=co)
-        browser.maximize_window()
-        browser.set_script_timeout(10)
-        self.enable_download_in_headless_chrome(browser, download_path)
-        return browser
-
-    @staticmethod
-    def enable_download_in_headless_chrome(driver, download_dir):
-        # add missing support for chrome "send_command"  to selenium webdriver
-        driver.command_executor._commands["send_command"] = \
-            ("POST", '/session/$sessionId/chromium/send_command')
-        params = {'cmd': 'Page.setDownloadBehavior',
-                  'params': {'behavior': 'allow', 'downloadPath': download_dir}}
-        driver.execute("send_command", params)
-
-    def go_to_url(self, url):
-        logging.info('Going to url {}.'.format(url))
-        try:
-            self.browser.get(url)
-        except ex.TimeoutException:
-            logging.warning('Timeout exception, retrying.')
-            self.go_to_url(url)
-        time.sleep(5)
-
     def sign_in(self):
         logging.info('Signing in.')
         try:
-            self.click_on_xpath('//*[@id="Content"]/h2/a')
+            self.sw.click_on_xpath('//*[@id="Content"]/h2/a')
         except ex.NoSuchElementException as e:
             logging.warning('No logo, attempting footer.  Error: {}'.format(e))
             try:
-                self.click_on_xpath('//*[@id="Footer"]/p[2]/a')
+                self.sw.click_on_xpath('//*[@id="Footer"]/p[2]/a')
             except ex.NoSuchElementException as e:
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
-                self.click_on_xpath("//a[text()='Log In']")
+                self.sw.click_on_xpath("//a[text()='Log In']")
         user_pass = [(self.username, '//*[@id="loginUsername"]'),
                      (self.password, '//*[@id="loginPassword"]')]
         for item in user_pass:
@@ -126,7 +90,7 @@ class RedApi(object):
                         for x in ['Sign in', 'Log in', 'Log In']]
         for xpath in login_xpaths:
             try:
-                self.click_on_xpath(xpath, sleep=5)
+                self.sw.click_on_xpath(xpath, sleep=5)
                 break
             except:
                 logging.warning('Could not click xpath: {}'.format(xpath))
@@ -138,27 +102,26 @@ class RedApi(object):
         except:
             pass
         if self.browser.current_url[:len(self.base_url)] != self.base_url:
-            self.go_to_url(self.base_url)
+            self.sw.go_to_url(self.base_url)
         else:
             logo_xpath = '//*[@id="app"]/div/div[1]/div[1]/div/a/img'
-            self.click_on_xpath(logo_xpath, sleep=5)
+            self.sw.click_on_xpath(logo_xpath, sleep=5)
+        if 'adsregister' in self.browser.current_url:
+            logging.warning('Could not log in check username and password.')
+            return False
         return True
-
-    def click_on_xpath(self, xpath, sleep=2):
-        self.browser.find_element_by_xpath(xpath).click()
-        time.sleep(sleep)
 
     def set_breakdowns(self):
         logging.info('Setting breakdowns.')
         bd_xpath = '//button[contains(normalize-space(),"Breakdown")]'
-        self.click_on_xpath(bd_xpath)
+        self.sw.click_on_xpath(bd_xpath)
         bd_date_xpath = '//button[contains(normalize-space(),"Date")]'
-        self.click_on_xpath(bd_date_xpath)
+        self.sw.click_on_xpath(bd_date_xpath)
 
-    def get_cal_month(self, lr=1, cal_xpath=None):
-        month_xpath = '[2]/div[{}]/div[1]/div'.format(lr)
-        cal_month_xpath = cal_xpath + month_xpath
-        month = self.browser.find_element_by_xpath(cal_month_xpath).text
+    def get_cal_month(self, lr=1):
+        cal_class = 'DayPicker-Caption'
+        month = self.browser.find_elements_by_class_name(cal_class)
+        month = month[lr - 1].text
         month = dt.datetime.strptime(month, '%B %Y')
         if lr == 2:
             last_day = calendar.monthrange(month.year, month.month)[1]
@@ -173,90 +136,94 @@ class RedApi(object):
             comp = operator.lt
         return comp
 
-    def change_month(self, date, lr, cal_xpath, month):
-        cal_sel_xpath = cal_xpath + '[1]/span[{}]'.format(lr)
+    def change_month(self, date, lr, month):
+        cal_el = self.browser.find_elements_by_class_name("DayPicker-NavButton")
+        cal_el = cal_el[lr - 1]
         month_diff = abs((((month.year - date.year) * 12) +
                           month.month - date.month))
         for x in range(month_diff):
-            self.click_on_xpath(cal_sel_xpath, sleep=1)
+            self.sw.click_on_elem(cal_el, sleep=1)
 
-    def go_to_month(self, date, left_month, right_month, cal_xpath):
+    def go_to_month(self, date, left_month, right_month):
         if date < left_month:
-            self.change_month(date, 1, cal_xpath, left_month)
+            self.change_month(date, 1, left_month)
         if date > right_month:
-            self.change_month(date, 2, cal_xpath, right_month)
+            self.change_month(date, 2, right_month)
 
     def click_on_date(self, date):
         date = dt.datetime.strftime(date, '%a %b %d %Y')
         cal_date_xpath = "//div[@aria-label='{}']".format(date)
-        self.click_on_xpath(cal_date_xpath)
+        self.sw.click_on_xpath(cal_date_xpath)
 
-    def find_and_click_date(self, date, left_month, right_month, cal_xpath):
-        self.go_to_month(date, left_month, right_month, cal_xpath)
+    def find_and_click_date(self, date, left_month, right_month):
+        self.go_to_month(date, left_month, right_month)
         self.click_on_date(date)
 
-    def set_date(self, date, cal_xpath=None):
-        cal_xpath = cal_xpath + '[1]/td[1]/div/div/div'
-        left_month = self.get_cal_month(lr=1, cal_xpath=cal_xpath)
-        right_month = self.get_cal_month(lr=2, cal_xpath=cal_xpath)
-        self.find_and_click_date(date, left_month, right_month, cal_xpath)
+    def set_date(self, date):
+        left_month = self.get_cal_month(lr=1)
+        right_month = self.get_cal_month(lr=2)
+        self.find_and_click_date(date, left_month, right_month)
 
     def open_calendar(self, base_xpath):
         cal_button_xpath = '/div/div/div'
         cal_xpath = base_xpath + cal_button_xpath
-        self.click_on_xpath(cal_xpath)
+        self.sw.click_on_xpath(cal_xpath)
         cal_table_xpath = '/html/body/div[8]/div/table/tbody/tr'
         return cal_table_xpath
 
     def set_dates(self, sd, ed, base_xpath=None):
         logging.info('Setting dates to {} and {}.'.format(sd, ed))
-        cal_xpath = self.open_calendar(base_xpath)
-        self.set_date(sd, cal_xpath=cal_xpath)
-        self.set_date(ed, cal_xpath=cal_xpath)
-        try:
-            self.click_on_xpath(
-                cal_xpath + '[2]/td/div/div[2]/div[2]/button[2]')
-        except ex.NoSuchElementException as e:
-            logging.warning('Could not click update trying another selector.'
-                            '  Error: {}'.format(e))
-            self.click_on_xpath(cal_xpath + '[2]/td/div/div[2]/button[2]/div')
+        self.open_calendar(base_xpath)
+        self.set_date(sd)
+        self.set_date(ed)
+        elem = self.browser.find_elements_by_xpath(
+            "//*[contains(text(), 'Update')]")
+        if len(elem) > 1:
+            elem = elem[1]
+        else:
+            elem = elem[0]
+        self.sw.click_on_elem(elem)
 
     def click_individual_metrics(self):
         for metric in self.video_metrics:
             xpath = '{}{}"]'.format(self.base_metric, metric)
-            self.click_on_xpath(xpath, sleep=1)
+            self.sw.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
         for x in range(2, 6):
             metric_xpath = (
                 '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
-                'ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
+                'ul/li[{}]/div[1]/div/button/div/div/label/i'.format(x))
             try:
-                self.click_on_xpath(metric_xpath, sleep=1)
+                self.sw.click_on_xpath(metric_xpath, sleep=1)
             except ex.NoSuchElementException as e:
                 logging.warning(
                     'Could not click update trying another selector.'
                     '  Error: {}'.format(e))
-                metric_xpath = metric_xpath.replace('body/div[4', 'body/div[5')
-                self.click_on_xpath(metric_xpath, sleep=1)
+                metric_xpath = metric_xpath.replace('body/div[8', 'body/div[7')
+                self.sw.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
         logging.info('Setting metrics.')
         metric_button_xpath = 'button/div'
         metric_xpath = base_xpath + metric_button_xpath
-        self.click_on_xpath(metric_xpath)
+        self.sw.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
         apply_button_xpath = '//div[text()="Apply"]'
-        self.click_on_xpath(apply_button_xpath)
+        self.sw.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self):
         logging.info('Downloading created report.')
         utl.dir_check(self.temp_path)
         export_xpath = '//button[contains(normalize-space(), "Export report")]'
-        self.click_on_xpath(export_xpath)
+        self.sw.click_on_xpath(export_xpath)
         download_xpath = (
             '//button[contains(normalize-space(), "Download .csv")]')
-        self.click_on_xpath(download_xpath)
+        try:
+            self.sw.click_on_xpath(download_xpath)
+        except ex.TimeoutException as e:
+            logging.warning('Timed out - attempting again. {}'.format(e))
+            self.sw.click_on_xpath(download_xpath)
 
     def get_base_xpath(self):
         base_app_xpath = '//*[@id="app"]/div/div[1]/div[2]/div'
@@ -275,45 +242,25 @@ class RedApi(object):
         self.set_metrics(base_xpath=base_app_xpath)
         self.export_to_csv()
 
-    @staticmethod
-    def get_file_as_df(temp_path=None):
-        df = pd.DataFrame()
-        for x in range(100):
-            logging.info('Checking for file.  Attempt {}.'.format(x + 1))
-            files = os.listdir(temp_path)
-            files = [x for x in files if x[-4:] == '.csv']
-            if files:
-                files = files[-1]
-                logging.info('File downloaded.')
-                temp_file = os.path.join(temp_path, files)
-                time.sleep(5)
-                df = utl.import_read_csv(temp_file, empty_df=True)
-                os.remove(temp_file)
-                break
-            time.sleep(5)
-        shutil.rmtree(temp_path)
-        return df
-
     def change_account(self):
-        account_url = self.browser.current_url.replace(
-            'dashboard?entity=campaigns', 'accounts')
-        self.go_to_url(account_url)
+        drop_class = 'automation-account-name'
+        elem = self.browser.find_elements_by_class_name(drop_class)
+        elem[0].click()
         account_xpath = '//a[text()="{}"]'.format(self.account)
-        self.click_on_xpath(account_xpath)
+        self.sw.click_on_xpath(account_xpath)
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
         sd, ed = self.get_data_default_check(sd, ed, fields)
-        self.go_to_url(self.base_url)
+        self.sw.go_to_url(self.base_url)
         sign_in_result = self.sign_in()
         if not sign_in_result:
-            self.quit()
+            self.sw.quit()
             return pd.DataFrame()
         if self.account:
             self.change_account()
         self.create_report(sd, ed)
-        df = self.get_file_as_df(self.temp_path)
-        self.quit()
+        df = self.sw.get_file_as_df(self.temp_path)
+        self.sw.quit()
         return df
-
-    def quit(self):
-        self.browser.quit()

@@ -93,7 +93,7 @@ class TwApi(object):
         self.promoted_account_id_dict = None
         self.tweet_dict = None
         self.async_requests = []
-        self.v = 10
+        self.v = 11
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
@@ -175,11 +175,13 @@ class TwApi(object):
                     ad_name=None):
         data = self.request(url, params=params)
         if sd:
-            data['data'] = [x for x in data['data'] if
-                            (x['end_time'] and
-                             dt.datetime.strptime(
-                                 x['end_time'], '%Y-%m-%dT%H:%M:%SZ') > sd)
-                            or not x['end_time']]
+            et = 'end_time'
+            week_fmt = '%Y-%m-%dT%H:%M:%SZ'
+            last_week_sd = sd = sd - dt.timedelta(days=7)
+            data['data'] = [
+                x for x in data['data'] if
+                (x[et] and dt.datetime.strptime(x[et], week_fmt) > last_week_sd)
+                or not x[et]]
         if 'data' in data:
             if ad_name:
                 id_dict = {x[eid]: {'parent': x[parent], 'name': x[name],
@@ -197,6 +199,7 @@ class TwApi(object):
 
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None,
                 ad_name=None):
+        original_parent_filter = parent_filter
         url, params = self.create_base_url(entity)
         if parent_filter:
             original_params = params.copy()
@@ -223,7 +226,8 @@ class TwApi(object):
                             'attempting without start date.'.format(entity, sd))
             id_dict = self.get_ids(entity=entity, eid=eid, name=name,
                                    parent=parent, sd=None,
-                                   parent_filter=parent_filter, ad_name=ad_name)
+                                   parent_filter=original_parent_filter,
+                                   ad_name=ad_name)
         return id_dict
 
     def page_through_ids(self, data, id_dict, first_url, eid, name, parent,
@@ -244,10 +248,10 @@ class TwApi(object):
         return id_dict
 
     def get_all_id_dicts(self, sd):
-        self.cid_dict = self.get_ids('campaigns', 'id', 'name',
-                                     'funding_instrument_id', sd=sd)
-        self.asid_dict = self.get_ids('line_items', 'id', 'name',
-                                      'campaign_id',
+        self.cid_dict = self.get_ids(entity='campaigns', eid='id', name='name',
+                                     parent='funding_instrument_id')
+        self.asid_dict = self.get_ids(entity='line_items', eid='id',
+                                      name='name', parent='campaign_id', sd=sd,
                                       parent_filter=self.cid_dict.keys())
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
                                       'tweet_id', 'line_item_id',
@@ -578,7 +582,11 @@ class TwApi(object):
         return df
 
     def add_cards(self, df):
-        card_uris = df['Card name'].unique()
+        card_col = 'Card name'
+        if card_col not in df.columns:
+            logging.warning('{} not in df.'.format(card_col))
+            return df
+        card_uris = df[card_col].unique()
         card_uris = [x for x in card_uris if x is not None and str(x) != 'nan'
                      and x[:4] == 'card']
         card_uris = [card_uris[x:x + 100]
@@ -596,7 +604,7 @@ class TwApi(object):
                 else:
                     for x in d['data']:
                         uri_dict[x['card_uri']] = x['name']
-        df['Card name'] = df['Card name'].map(uri_dict)
+        df[card_col] = df[card_col].map(uri_dict)
         return df
 
     @staticmethod

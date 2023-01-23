@@ -47,15 +47,14 @@ class Analyze(object):
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
-    missing_flat_costs = 'missing_flat_costs'
-    missing_flat_clicks = 'missing_flat_clicks'
+    missing_flat = 'missing_flat'
     missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
     package_cap = 'package_cap'
     package_vendor = 'package_vendor'
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
-    cap_name = 'Cap_Name'
+    cap_name = 'cap_name'
     change_auto_order = 'change_auto_order'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
@@ -78,11 +77,11 @@ class Analyze(object):
         self.file_name = file_name
         self.matrix = matrix
         self.vc = ValueCalc()
-        self.class_list = [CheckPackageCapping]
-        # CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-        # CheckApiDateLength, GetPacingAnalysis, GetDailyDelivery,
-        # GetServingAlerts, GetDailyPacingAlerts,
-        # CheckBlankLines
+        self.class_list = [
+            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
+            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
+            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
+            GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -117,10 +116,18 @@ class Analyze(object):
         self.analysis_dict.append(base_dict)
 
     def check_delivery(self, df):
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        plan_names = self.matrix.vendor_set(vm.plan_key)
+        if not plan_names:
+            logging.warning('VM does not have plan key')
+            return False
+        plan_names = plan_names[vmc.fullplacename]
+        miss_cols = [x for x in plan_names if x not in df.columns]
+        if miss_cols:
+            logging.warning('Df does not have cols {}'.format(miss_cols))
+            return False
         df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
-        else x[vmc.cost].sum() /
-             x[dctc.PNC].sum())
+                                          else x[vmc.cost].sum() /
+                                          x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
             delivery_msg = 'Nothing has delivered in full.'
@@ -207,6 +214,8 @@ class Analyze(object):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
+            if vmc.filename not in source.p:
+                continue
             file_name = source.p[vmc.filename]
             if os.path.exists(file_name):
                 t = os.path.getmtime(file_name)
@@ -214,7 +223,7 @@ class Analyze(object):
                 if last_update.date() == dt.datetime.today().date():
                     update_tier = 'Today'
                 elif last_update.date() > (
-                        dt.datetime.today() - dt.timedelta(days=7)).date():
+                            dt.datetime.today() - dt.timedelta(days=7)).date():
                     update_tier = 'Within A Week'
                 else:
                     update_tier = 'Greater Than One Week'
@@ -225,14 +234,27 @@ class Analyze(object):
                          'update_tier': [update_tier]}
             df = df.append(pd.DataFrame(data_dict),
                            ignore_index=True, sort=False)
+        if df.empty:
+            return False
         df['update_time'] = df['update_time'].astype('U')
         update_msg = 'Raw File update times and tiers are as follows:'
         logging.info('{}\n{}'.format(update_msg, df.to_string()))
         self.add_to_analysis_dict(key_col=self.raw_file_update_col,
                                   message=update_msg, data=df.to_dict())
 
+    def get_plan_names(self):
+        plan_names = self.matrix.vendor_set(vm.plan_key)
+        if not plan_names:
+            logging.warning('VM does not have plan key')
+            plan_names = None
+        else:
+            plan_names = plan_names[vmc.fullplacename]
+        return plan_names
+
     def check_plan_error(self, df):
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        plan_names = self.get_plan_names()
+        if not plan_names:
+            return False
         er = self.matrix.vendor_set(vm.plan_key)[vmc.filenameerror]
         edf = utl.import_read_csv(er, utl.error_path)
         if edf.empty:
@@ -242,6 +264,9 @@ class Analyze(object):
             self.add_to_analysis_dict(key_col=self.unknown_col,
                                       message=plan_error_msg)
             return True
+        if dctc.PFPN not in df.columns:
+            logging.warning('Df does not have column: {}'.format(dctc.PFPN))
+            return False
         df = df[df[dctc.PFPN].isin(edf[vmc.fullplacename].values)][
             plan_names + [vmc.vendorkey]].drop_duplicates()
         df = vm.full_placement_creation(df, None, dctc.FPN, plan_names)
@@ -261,21 +286,23 @@ class Analyze(object):
     def backup_files(self):
         bu = os.path.join(utl.backup_path, dt.date.today().strftime('%Y%m%d'))
         logging.info('Backing up all files to {}'.format(bu))
-        for path in [utl.backup_path, bu]:
+        dir_to_backup = [utl.config_path, utl.dict_path, utl.raw_path]
+        for path in [utl.backup_path, bu] + dir_to_backup:
             utl.dir_check(path)
         file_dicts = {'raw.gzip': self.df}
         for file_name, df in file_dicts.items():
             file_name = os.path.join(bu, file_name)
             df.to_csv(file_name, compression='gzip')
-        for file_path in [utl.config_path, utl.dict_path, utl.raw_path]:
+        for file_path in dir_to_backup:
             file_name = '{}.tar.gz'.format(file_path.replace('/', ''))
             file_name = os.path.join(bu, file_name)
             tar = tarfile.open(file_name, "w:gz")
             tar.add(file_path, arcname=file_path.replace('/', ''))
             tar.close()
         for file_name in ['logfile.log']:
-            new_file_name = os.path.join(bu, file_name)
-            shutil.copy(file_name, new_file_name)
+            if os.path.exists(file_name):
+                new_file_name = os.path.join(bu, file_name)
+                shutil.copy(file_name, new_file_name)
         logging.info('Successfully backed up files to {}'.format(bu))
 
     # noinspection PyUnresolvedReferences
@@ -305,10 +332,12 @@ class Analyze(object):
         cost_cols = [x for x in metrics if metrics[x]]
         self.make_heat_map(df, cost_cols)
 
-    def generate_df_table(self, group, metrics, sort=None, data_filter=None):
+    def generate_df_table(self, group, metrics, sort=None, data_filter=None,
+                          df=pd.DataFrame()):
         base_metrics = [x for x in metrics if x not in self.vc.metric_names]
         calc_metrics = [x for x in metrics if x not in base_metrics]
-        df = self.df.copy()
+        if df.empty:
+            df = self.df.copy()
         if data_filter:
             filter_col = data_filter[0]
             filter_val = data_filter[1]
@@ -628,17 +657,17 @@ class Analyze(object):
             if max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
-                    max_date, sd))
+                         max_date, sd))
                 msg = (False, msg)
             elif min_date > ed:
                 msg = ('First day in raw file {} is less than end date {}.\n'
                        'Result will be blank.  Change end date.'.format(
-                    min_date, ed))
+                         min_date, ed))
                 msg = (False, msg)
             else:
                 msg = ('Some or all data in raw file with date range {} - {} '
                        'falls between start and end dates {} - {}'.format(
-                    sd, ed, min_date, max_date))
+                         sd, ed, min_date, max_date))
                 msg = (True, msg)
         cd[vmc.startdate][cds_name] = msg
         return cd
@@ -688,7 +717,7 @@ class Analyze(object):
                         msg = (
                             False, 'Old file total {} was greater than new '
                                    'file total {} for col {}'.format(
-                                old_total, total, col))
+                                      old_total, total, col))
                 cd[col][cds_name] = msg
         return cd
 
@@ -710,18 +739,30 @@ class Analyze(object):
             cd[x] = {}
         return cd, clean_functions, c_cols
 
+    @staticmethod
+    def check_sheet_names(tds, sheet_names):
+        missing_sheets = []
+        xl = pd.read_excel(tds.p[vmc.filename], None)
+        sheet_lists = list(xl.keys())
+        for sheet_name in sheet_names:
+            if sheet_name not in sheet_lists:
+                missing_sheets.append(sheet_name)
+        return missing_sheets
+
     def compare_raw_files(self, vk):
         ds = self.matrix.get_data_source(vk)
         tds = self.matrix.get_data_source(vk)
-        sheet_info = ''
-        if ':::' in ds.p[vmc.filename]:
-            sheet_info = ':::'.join(ds.p[vmc.filename].split(':::')[1:])
-            sheet_info = ':::' + sheet_info
         file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
         tmp_file = ds.p[vmc.filename_true].replace(
             file_type, '{}{}'.format(utl.tmp_file_suffix, file_type))
         tds.p[vmc.filename_true] = tmp_file
-        tds.p[vmc.filename] = tmp_file + sheet_info
+        tds.p[vmc.filename] = tmp_file
+        missing_sheets = []
+        if ':::' in ds.p[vmc.filename]:
+            sheet_names = ds.p[vmc.filename].split(':::')[1:]
+            sheet_info = ':::' + ':::'.join(sheet_names)
+            missing_sheets = self.check_sheet_names(tds, sheet_names)
+            tds.p[vmc.filename] += sheet_info
         cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
@@ -729,9 +770,16 @@ class Analyze(object):
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
                 if cds_name == 'New':
-                    msg = 'Please open the file in excel, select all columns, '
-                    'select General in the Number format dropdown, '
-                    'save as a csv and retry.'
+                    if missing_sheets:
+                        missing_sheets = ', '.join(missing_sheets).upper()
+                        msg = ('Xlsx file is missing the following sheets: '
+                               '{}. Rename sheets if naming is wrong. Else, '
+                               'check w/ vendor to get all needed sheets.'
+                               ).format(missing_sheets)
+                    else:
+                        msg = 'Please open the file in excel, select all '
+                        'columns, select General in the Number format '
+                        'dropdown, save as a csv and retry.'
                 else:
                     msg = ('The old file may not exist.  '
                            'Please save the new file.')
@@ -774,131 +822,6 @@ class Analyze(object):
             cd = self.check_raw_file_against_plan_net(df, cd, cds_name)
             cds.df = df
         self.write_raw_file_dict(vk, cd)
-
-    def find_metric_double_counting(self):
-        rdf = pd.DataFrame()
-        groups = [dctc.VEN, vmc.vendorkey, dctc.PN, vmc.date]
-        metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.views,
-                   vmc.views25, vmc.views50, vmc.views75, vmc.views100]
-        metrics = [metric for metric in metrics if metric in self.df.columns]
-        df = self.generate_df_table(groups, metrics, sort=None,
-                                    data_filter=None)
-        df.reset_index(inplace=True)
-        sdf = df.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
-        sdf = sdf.reset_index().rename(columns={0: 'temp'})
-        sdf = sdf.groupby([dctc.VEN, vmc.vendorkey]).size()
-        sdf = sdf.reset_index().rename(columns={0: 'Total Num Placements'})
-        sdf = sdf.groupby(dctc.VEN).max().reset_index()
-        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
-        if not df.empty:
-            for metric in metrics:
-                tdf = df[df[metric] > 0]
-                tdf = tdf[tdf.duplicated(
-                    subset=[dctc.PN, vmc.date], keep=False)]
-                if not tdf.empty:
-                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
-                    tdf = tdf.reset_index().rename(
-                        columns={0: 'temp'})
-                    tdf = tdf.groupby([dctc.VEN, vmc.vendorkey]).size()
-                    tdf = tdf.reset_index().rename(
-                        columns={0: 'Num Duplicates'})
-                    tdf['Metric'] = metric
-                    rdf = pd.concat([rdf, tdf], ignore_index=True)
-        if not rdf.empty:
-            rdf = sdf[[dctc.VEN, 'Total Num Placements']].merge(
-                rdf, how='inner', on=dctc.VEN)
-            rdf = rdf.groupby([dctc.VEN, 'Metric', 'Total Num Placements',
-                               'Num Duplicates'])[vmc.vendorkey].apply(
-                lambda x: ','.join(x)).reset_index()
-            rdf = rdf.groupby([dctc.VEN, 'Metric', vmc.vendorkey,
-                               'Num Duplicates']).max().reset_index()
-            adf = rdf[rdf['Total Num Placements'] == rdf['Num Duplicates']]
-            pdf = rdf[rdf['Total Num Placements'] > rdf['Num Duplicates']]
-        else:
-            adf = pd.DataFrame()
-            pdf = pd.DataFrame()
-        if adf.empty:
-            amsg = ('No vendors are double counting on all placements '
-                    'for any one metric.')
-            logging.info('{}'.format(amsg))
-        else:
-            adf = adf.astype({'Total Num Placements': str})
-            adf = adf.astype({'Num Duplicates': str})
-            amsg = ('The following vendors are double counting metrics on all '
-                    'placements from the following sources:')
-            logging.info('{}\n{}'.format(amsg, adf.to_string()))
-        self.add_to_analysis_dict(key_col=self.double_counting_all,
-                                  message=amsg, data=adf.to_dict())
-        if pdf.empty:
-            pmsg = ('No vendors are double counting on only some placements '
-                    'for any one metric.')
-            logging.info('{}'.format(pmsg))
-        else:
-            pdf = pdf.astype({'Total Num Placements': str})
-            pdf = pdf.astype({'Num Duplicates': str})
-            pmsg = ('The following vendors are double counting metrics on some'
-                    ' placements from the following sources. Check only'
-                    ' untracked placements are being uploaded in rawfiles:')
-            logging.info('{}\n{}'.format(pmsg, pdf.to_string()))
-        self.add_to_analysis_dict(key_col=self.double_counting_partial,
-                                  message=pmsg, data=pdf.to_dict())
-
-    def find_missing_flat_spend(self):
-        cdf = pd.DataFrame()
-        ndf = pd.DataFrame()
-        groups = [dctc.VEN, dctc.PKD, dctc.PD, dctc.BM, vmc.date]
-        metrics = [cal.NCF, vmc.clicks]
-        metrics = [metric for metric in metrics if metric in self.df.columns]
-        df = self.generate_df_table(groups, metrics, sort=None,
-                                    data_filter=None)
-        df.reset_index(inplace=True)
-        df = df[(df[dctc.BM] == 'Flat') | (df[dctc.BM] == 'FLAT')]
-        if not df.empty:
-            tdf = df[df[vmc.clicks] > 0]
-            tdf = tdf.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).min()
-            tdf.reset_index(inplace=True)
-            df = df.groupby([dctc.VEN, dctc.PKD, dctc.PD, dctc.BM]).sum()
-            df.reset_index(inplace=True)
-            df = df[(df[cal.NCF] == 0) & (df[dctc.PD] <= dt.datetime.today())]
-            if not df.empty:
-                df = df.merge(tdf.drop_duplicates(),
-                              on=[dctc.VEN, dctc.PKD,
-                                  dctc.PD, dctc.BM, cal.NCF],
-                              how='left', indicator=True)
-                df = df.drop(columns=['Clicks_y'])
-                df = df.rename(columns={'Date': 'First Click Date',
-                                        'Clicks_x': 'Clicks'})
-                df = df.astype({"Clicks": str})
-                df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
-                df['First Click Date'] = df[
-                    'First Click Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                cdf = df[df['_merge'] == 'both']
-                cdf = cdf.iloc[:, :-1]
-                ndf = df[df['_merge'] == 'left_only']
-                ndf = ndf[[dctc.VEN, dctc.PKD, dctc.PD]]
-        if df.empty:
-            cdf = pd.DataFrame()
-            ndf = pd.DataFrame()
-        if cdf.empty:
-            cmsg = ('All flat packages past their placement date, '
-                    'with clicks, have net cost.')
-            logging.info('{}'.format(cmsg))
-        else:
-            cmsg = ('The following flat packages have passed their placement '
-                    'date and have no net cost:')
-            logging.info('{}\n{}'.format(cmsg, cdf.to_string()))
-        self.add_to_analysis_dict(key_col=self.missing_flat_costs,
-                                  message=cmsg, data=cdf.to_dict())
-        if ndf.empty:
-            nmsg = ('All flat packages past their placement '
-                    'date have associated clicks.')
-            logging.info('{}'.format(nmsg))
-        else:
-            nmsg = ('The following flat packages have passed their placement '
-                    'date and have no net cost nor associated clicks:')
-            logging.info('{}\n{}'.format(nmsg, ndf.to_string()))
-        self.add_to_analysis_dict(key_col=self.missing_flat_clicks,
-                                  message=nmsg, data=ndf.to_dict())
 
     def find_missing_serving(self):
         groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.PN]
@@ -943,7 +866,7 @@ class Analyze(object):
                 'Dataframe empty, could not determine missing ad rate.')
             return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
-                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
                 (df[dctc.AR] == 'nan')]
@@ -996,8 +919,6 @@ class Analyze(object):
         self.get_metrics_by_vendor_key()
         self.find_missing_metrics()
         self.flag_errant_metrics()
-        self.find_metric_double_counting()
-        self.find_missing_flat_spend()
         self.find_missing_serving()
         self.find_missing_ad_rate()
         for analysis_class in self.class_list:
@@ -1125,7 +1046,6 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
-# make sure theres two lines between
 class CheckPackageCapping(AnalyzeBase):
     name = Analyze.package_cap
     cap_name = Analyze.cap_name
@@ -1304,56 +1224,14 @@ class CheckPackageCapping(AnalyzeBase):
                                 write=write, aly_dict=aly_dict)
 
 
-# class CheckBlankLines(AnalyzeBase):
-#     name = Analyze.blank_lines
-#     fix = True
-#
-#     def find_blank_lines_top(self):
-#         data_sources = self.matrix.get_all_data_sources()
-#         for source in data_sources:
-#             file_name = source.p[vmc.filename]
-#             first_row = source.p[vmc.firstrow]
-#             if os.path.exists(file_name):
-#                 tdf = utl.import_read_csv(file_name, nrows=first_row)
-#             else:
-#                 return
-#
-#         tdf = utl.import_read_csv('raw_data/Blank Lines Test.csv')
-#         tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
-#         if 'Unnamed: 1' in tdf:
-#             return tdf
-#         else:
-#             return
-#
-#     def find_total_line_bottom(self):
-#         data_sources = self.matrix.get_all_data_sources()
-#         for source in data_sources:
-#             file_name = source.p[vmc.filename]
-#             first_row = source.p[vmc.firstrow]
-#             if os.path.exists(file_name):
-#                 tdf = utl.import_read_csv(file_name, nrows=first_row)
-#             else:
-#                 return
-#             tdf = utl.import_read_csv('raw_data/Blank Lines Test.csv')
-#             tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
-#
-#     # def delete_blank_lines(self):
-#
-#     # def delete_total_row(self):
-#
-#     def do_analysis(self):
-#         self.find_blank_lines_top()
-#         self.find_total_line_bottom()
-#
-#     # def fix_analysis(self, aly_dict, write=True):
-
-
 class FindPlacementNameCol(AnalyzeBase):
     name = Analyze.placement_col
     fix = True
 
     @staticmethod
     def do_analysis_on_data_source(source, df):
+        if vmc.filename not in source.p:
+            return pd.DataFrame()
         file_name = source.p[vmc.filename]
         first_row = source.p[vmc.firstrow]
         transforms = str(source.p[vmc.transform]).split(':::')
@@ -1445,7 +1323,7 @@ class CheckApiDateLength(AnalyzeBase):
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
+        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -1480,7 +1358,7 @@ class CheckApiDateLength(AnalyzeBase):
             new_str_sd = new_sd.strftime('%Y-%m-%d')
             ndf.loc[0, vmc.startdate] = new_str_sd
             ndf.loc[0, vmc.enddate] = ''
-            new_vk = '{}_{}'.format('_'.join(vk.split('_')[:2]), new_str_sd)
+            new_vk = '{}_{}'.format(vk, new_str_sd)
             ndf.loc[0, vmc.vendorkey] = new_vk
             file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
             new_fn = '{}{}'.format(new_vk.replace('API_', '').lower(),
@@ -1512,12 +1390,14 @@ class CheckColumnNames(AnalyzeBase):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
+            if vmc.firstrow not in source.p:
+                continue
             first_row = source.p[vmc.firstrow]
             transforms = str(source.p[vmc.transform]).split(':::')
             transforms = [x for x in transforms if x.split('::')[0]
                           in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = source.get_raw_df(nrows=first_row + 5)
+            tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
             cols = list(tdf.columns)
@@ -1588,6 +1468,329 @@ class CheckColumnNames(AnalyzeBase):
                 self.aly.matrix.write()
                 self.matrix = vm.VendorMatrix(display_log=False)
         self.aly.matrix.vm_df = df
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
+class CheckFlatSpends(AnalyzeBase):
+    """Checks for past flat packages reassigns placement date if necessary."""
+    name = Analyze.missing_flat
+    first_click_col = 'First Click Date'
+    error_col = 'Error'
+    missing_clicks_error = 'No Clicks'
+    placement_date_error = 'Incorrect Placement Date'
+    missing_rate_error = 'Missing Buy Rate'
+    fix = True
+    pre_run = True
+
+    def merge_first_click_date(self, df, tdf, groups):
+        df = df.merge(tdf.drop_duplicates(),
+                      on=groups,
+                      how='left', indicator=True)
+        df = df.drop(columns=['Clicks_y'])
+        df = df.rename(columns={vmc.date: self.first_click_col,
+                                'Clicks_x': vmc.clicks})
+        df = df.astype({vmc.clicks: str})
+        df[dctc.PD] = df[dctc.PD].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df[self.first_click_col] = df[
+            self.first_click_col].dt.strftime('%Y-%m-%d %H:%M:%S')
+        return df
+
+    def find_missing_flat_spend(self, df):
+        """
+        Checks for flat packages w/ no attributed cost past placement date.
+        Sorts into missing clicks, no buy model, or wrong placement date.
+        """
+        pn_groups = [dctc.VEN, dctc.COU, dctc.PN, dctc.PKD, dctc.PD, dctc.BM,
+                     dctc.BR, vmc.date]
+        metrics = [cal.NCF, vmc.clicks]
+        metrics = [metric for metric in metrics if metric in df.columns]
+        df = self.aly.generate_df_table(pn_groups, metrics, sort=None,
+                                        data_filter=None, df=df)
+        df.reset_index(inplace=True)
+        if dctc.BM in df.columns:
+            df = df[(df[dctc.BM] == cal.BM_FLAT) |
+                    (df[dctc.BM] == cal.BM_FLAT2)]
+        if not df.empty:
+            pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
+            tdf = df.groupby(pk_groups).sum()
+            tdf.reset_index(inplace=True)
+            tdf = tdf[tdf[cal.NCF] == 0]
+            df = df.merge(tdf[pk_groups], how='right')
+            if not df.empty:
+                pn_groups.remove(vmc.date)
+                tdf = df[df[vmc.clicks] > 0]
+                tdf = tdf.groupby(pn_groups).min()
+                tdf.reset_index(inplace=True)
+                if cal.NCF not in tdf:
+                    return pd.DataFrame()
+                tdf = tdf.drop(columns=[cal.NCF])
+                tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
+                df = df.groupby(pn_groups).sum()
+                df.reset_index(inplace=True)
+                df = utl.data_to_type(df, date_col=[dctc.PD])
+                df = self.merge_first_click_date(df, tdf, pn_groups)
+                df = utl.data_to_type(df, date_col=[dctc.PD])
+                rdf = df[df[dctc.BR] == 0]
+                if not rdf.empty:
+                    rdf = rdf.drop(columns='_merge')
+                rdf[self.error_col] = self.missing_rate_error
+                df = df[df[dctc.PD] <= dt.datetime.today()]
+                if not df.empty:
+                    cdf = df[df['_merge'] == 'both']
+                    cdf = cdf.iloc[:, :-1]
+                    cdf = cdf[cdf[self.first_click_col] != cdf[dctc.PD]]
+                    cdf[self.error_col] = self.placement_date_error
+                    ndf = df[df['_merge'] == 'left_only']
+                    ndf = ndf.drop(columns=['_merge'])
+                    ndf[self.error_col] = self.missing_clicks_error
+                    df = cdf.append(rdf, sort=False)
+                    df = df.append(ndf, sort=False)
+                    df = df.reset_index(drop=True)
+                    df = df.dropna(how='all')
+                    df = df.fillna('')
+        df = utl.data_to_type(df, str_col=[dctc.PD, self.first_click_col])
+        return df
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_missing_flat_spend(df)
+        if rdf.empty:
+            msg = ('All flat packages with clicks past their placement date '
+                   'have associated net cost.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following flat packages are not calculating net cost '
+                   'for the following reasons:')
+            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Translates flat packages w/ missing spends placement date to first w/
+        clicks.
+
+        :param aly_dict: a df containing items to fix
+        :param write: boolean will write the translational_dict as csv when true
+        :returns: the lines added to translational_dict
+        """
+        if (aly_dict.empty or self.placement_date_error
+                not in aly_dict[self.error_col].values):
+            return pd.DataFrame()
+        translation = dct.DictTranslationConfig()
+        translation.read(dctc.filename_tran_config)
+        translation_df = translation.get()
+        aly_dicts = aly_dict.to_dict(orient='records')
+        tdf = pd.DataFrame(columns=translation_df.columns)
+        for aly_dict in aly_dicts:
+            if aly_dict[self.error_col] == self.placement_date_error:
+                old_val = aly_dict[dctc.PD].strip('00:00:00').strip()
+                new_val = aly_dict[
+                    self.first_click_col].strip('00:00:00').strip()
+                try:
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN], 0]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = tdf.append(row, ignore_index=True, sort=False)
+                except AssertionError:
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN]]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = tdf.append(row, ignore_index=True, sort=False)
+        translation_df = translation_df.append(
+            tdf, ignore_index=True, sort=False)
+        if write:
+            translation.write(translation_df, dctc.filename_tran_config)
+        return tdf
+
+
+class CheckDoubleCounting(AnalyzeBase):
+    """
+    Checks for double counting datasources.
+    If double counting all placements, removes metric from one of the
+    datasources.
+    """
+    name = Analyze.double_counting_all
+    error_col = 'Error'
+    double_counting_all = 'All'
+    double_counting_partial = 'Partial'
+    tmp_col = 'temp'
+    metric_col = 'Metric'
+    total_placement_count = 'Total Num Placements'
+    num_duplicates = 'Num Duplicates'
+    fix = True
+    pre_run = True
+
+    def count_unique_placements(self, df, col):
+        df = df.groupby([dctc.VEN, vmc.vendorkey, dctc.PN]).size()
+        df = df.reset_index().rename(columns={0: self.tmp_col})
+        df = df.groupby([dctc.VEN, vmc.vendorkey]).size()
+        df = df.reset_index().rename(columns={0: col})
+        return df
+
+    def find_metric_double_counting(self, df):
+        rdf = pd.DataFrame()
+        groups = [dctc.VEN, vmc.vendorkey, dctc.PN, vmc.date]
+        metrics = [cal.NCF, vmc.impressions, vmc.clicks, vmc.video_plays,
+                   vmc.views, vmc.views25, vmc.views50, vmc.views75,
+                   vmc.views100]
+        metrics = [metric for metric in metrics if metric in df.columns]
+        df = self.aly.generate_df_table(groups, metrics, sort=None,
+                                        data_filter=None, df=df)
+        df.reset_index(inplace=True)
+        sdf = self.count_unique_placements(df, self.total_placement_count)
+        sdf = sdf.groupby(dctc.VEN).max().reset_index()
+        df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
+        if not df.empty:
+            for metric in metrics:
+                tdf = df[df[metric] > 0]
+                tdf = tdf[tdf.duplicated(
+                    subset=[dctc.PN, vmc.date], keep=False)]
+                if not tdf.empty:
+                    tdf = self.count_unique_placements(tdf, self.num_duplicates)
+                    tdf[self.metric_col] = metric
+                    rdf = pd.concat([rdf, tdf], ignore_index=True)
+        if not rdf.empty:
+            rdf = sdf[[dctc.VEN, self.total_placement_count]].merge(
+                rdf, how='inner', on=dctc.VEN)
+            rdf = rdf.groupby([dctc.VEN, self.metric_col,
+                               self.total_placement_count,
+                               self.num_duplicates])[vmc.vendorkey].apply(
+                lambda x: ','.join(x)).reset_index()
+            rdf = rdf.groupby([dctc.VEN, self.metric_col, vmc.vendorkey,
+                               self.num_duplicates]).max().reset_index()
+            rdf[self.error_col] = np.where(
+                rdf[self.total_placement_count] == rdf[self.num_duplicates],
+                self.double_counting_all, self.double_counting_partial)
+        return rdf
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_metric_double_counting(df)
+        if rdf.empty:
+            msg = ('No datasources are double counting placements for any '
+                   'metric.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following datasources are double counting the following'
+                   ' metrics on all or some placements:')
+            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+
+    @staticmethod
+    def remove_metric(vm_df, vk, metric):
+        if metric == cal.NCF:
+            metric = vmc.cost
+        idx = vm_df[vm_df[vmc.vendorkey] == vk].index
+        vm_df.loc[idx, metric] = ''
+        logging.info('Removing {} from {}.'.format(metric, vk))
+        return vm_df
+
+    @staticmethod
+    def update_rule(vm_df, vk, metric, vendor, idx, query_str, metric_str):
+        if metric == cal.NCF:
+            metric = vmc.cost
+        if vendor not in str(vm_df.loc[idx, query_str].values):
+            vm_df.loc[idx, query_str] = (
+                    vm_df.loc[idx, query_str][idx[0]] + ',' + vendor)
+        if not (metric in str(vm_df.loc[idx, metric_str].values)):
+            vm_df.loc[idx, metric_str] = (
+                    vm_df.loc[idx, metric_str][idx[0]] +
+                    '|' + metric)
+        logging.info('Adding rule for {} to remove {} {}.'.format(
+            vk, vendor, metric))
+        return vm_df
+
+    @staticmethod
+    def add_rule(vm_df, vk, rule_num, idx, metric, vendor):
+        if metric == cal.NCF:
+            metric = vmc.cost
+        metric_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_METRIC])
+        query_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_QUERY])
+        factor_str = "_".join([utl.RULE_PREF, str(rule_num), utl.RULE_FACTOR])
+        vm_df.loc[idx, factor_str] = 0.0
+        vm_df.loc[idx, metric_str] = ('POST' + '::' + metric)
+        vm_df.loc[idx, query_str] = (dctc.VEN + '::' + vendor)
+        logging.info('Adding rule for {} to remove ''{} {}.'.format(vk, vendor,
+                                                                    metric))
+        return vm_df
+
+    def fix_all(self, aly_dict):
+        aly_dict = aly_dict.sort_values(by=[dctc.VEN, self.metric_col])
+        metric_buckets = {
+            'ctr_metrics': [vmc.impressions, vmc.clicks],
+            'vtr_metrics': [
+                vmc.views25, vmc.views50, vmc.views75, vmc.views100],
+            'video_play_metrics': [vmc.video_plays, vmc.views],
+            'net_cost_metrics': [cal.NCF]
+        }
+        vm_df = self.aly.matrix.vm_df
+        logging.info('Attempting to remove double counting.')
+        for index, row in aly_dict.iterrows():
+            vks = row[vmc.vendorkey].split(',')
+            raw_vks = [x for x in vks if vmc.api_raw_key in x
+                       or vmc.api_gs_key in x]
+            serve_vks = [x for x in vks if vmc.api_szk_key in x
+                         or vmc.api_dc_key in x]
+            first_empty = None
+            added = False
+            bucket = [k for k, v in metric_buckets.items()
+                      if row[self.metric_col] in v]
+            if not bucket:
+                bucket = row[self.metric_col]
+            else:
+                bucket = bucket[0]
+            for vk in raw_vks:
+                if len(vks) > 1:
+                    vm_df = self.remove_metric(vm_df, vk, row[self.metric_col])
+                    vks.remove(vk)
+            for vk in serve_vks:
+                if len(vks) > 1:
+                    idx = vm_df[vm_df[vmc.vendorkey] == vk].index
+                    for i in range(1, 7):
+                        metric_str = "_".join(
+                            [utl.RULE_PREF, str(i), utl.RULE_METRIC])
+                        query_str = "_".join(
+                            [utl.RULE_PREF, str(i), utl.RULE_QUERY])
+                        if ([x for x in metric_buckets[bucket]
+                             if x in str(vm_df.loc[idx, metric_str].values)]):
+                            vm_df = self.update_rule(
+                                vm_df, vk, row[self.metric_col],
+                                row[dctc.VEN], idx, query_str, metric_str)
+                            added = True
+                            break
+                        if not vm_df.loc[idx, query_str].any():
+                            if not first_empty:
+                                first_empty = i
+                            continue
+                    if not added:
+                        if first_empty:
+                            self.add_rule(vm_df, vk, first_empty, idx,
+                                          row[self.metric_col], row[dctc.VEN])
+                        else:
+                            logging.warning('No empty rules for {}. Could not '
+                                            'auto-fix double counting.'
+                                            .format(vk))
+                vks.remove(vk)
+        self.aly.matrix.vm_df = vm_df
+        return vm_df
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Removes duplicate metrics if all placements duplicated.
+        Prioritizes removal from rawfiles first, adservers otherwise.
+
+        :param aly_dict: a df containing items to fix
+        :param write: boolean will write the vendormatrix as csv when true
+        :returns: the vendormatrix as a df
+        """
+        if aly_dict.empty:
+            return pd.DataFrame()
+        self.fix_all(
+            aly_dict[aly_dict[self.error_col] == self.double_counting_all])
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
@@ -1849,23 +2052,28 @@ class GetServingAlerts(AnalyzeBase):
     fix = False
     pre_run = False
     adserving_ratio = 'Adserving %'
+    prog_vendors = ['DV360', 'dv360', 'DV 360', 'Verizon', 'VERIZON']
 
     def get_serving_alerts(self):
         """
-        Check for adserving overages -- over 5.5% of net cost
+        Check for adserving overages -- over 6% of net cost (> 2 stddevs)
 
         """
         pacing_analysis = self.aly.find_in_analysis_dict(
             self.aly.delivery_comp_col)[0]
         df = pd.DataFrame(pacing_analysis['data'])
-        plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
+        plan_names = self.aly.get_plan_names()
+        if not plan_names:
+            return pd.DataFrame()
         final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
         if not df.empty:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
             df[self.adserving_ratio] = df.apply(
                 lambda row: 0 if row[vmc.cost] == 0
                 else (row[vmc.AD_COST] / row[vmc.cost]) * 100, axis=1)
-            df = df[df[self.adserving_ratio] > 5.5]
+            df = df[(df[self.adserving_ratio] > 9) |
+                    ((df[self.adserving_ratio] > 6) &
+                     ~(df[dctc.VEN].isin(self.prog_vendors)))]
             if not df.empty:
                 df[[vmc.cost, vmc.AD_COST]] = (
                         '$' + df[[vmc.cost, vmc.AD_COST]].round(2).astype(str))

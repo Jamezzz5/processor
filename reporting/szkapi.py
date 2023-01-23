@@ -11,35 +11,39 @@ import reporting.utils as utl
 
 config_path = utl.config_path
 
-login_url = 'https://adapi.sizmek.com/sas/login/login/'
-report_url = 'https://adapi.sizmek.com/analytics/reports/saveAndExecute'
-base_report_get_url = 'https://adapi.sizmek.com/analytics/reports/executions/'
-
-def_metrics = ["Served Impressions", "Total Clicks", "Video Played 25%",
-               "Video Played 50%", "Video Played 75%", "Video Started",
-               "Video Fully Played", "Total Conversions",
-               "Post Click Conversions", "Post Impression Conversions",
-               "Total Media Cost", "Default Tracked Ads",
-               "Default Interactions From Tracked Ads"]
-
-p2c_fields = ['Conversion Date', 'Conversion ID', 'Event Date',
-              'Event Type Name', 'Conversion Time Lag', 'Placement Name',
-              'Campaign Name', 'Site Name', 'Winner Placement Name',
-              'Query String', 'Conversion Activity Name',
-              'Winner Event Type Name']
-
-unique_metrics = ["Unique Impressions", "Unique Clicks", "Average Frequency",
-                  "Unique Video Users", "Unique Interacting Users",
-                  "Total Conversions"]
-
-campaign_dimensions = ['Campaign Name']
-site_dimensions = campaign_dimensions + ['Site Name', 'Site ID']
-placement_dimensions = site_dimensions + ['Placement Name', 'Placement ID',
-                                          'Placement Dimension']
-def_dimensions = placement_dimensions + ['Ad Name', 'Ad ID']
-
 
 class SzkApi(object):
+    login_url = 'https://adapi.sizmek.com/sas/login/login/'
+    base_report_url = 'https://api.sizmek.com/rest/ReportBuilder/reports/'
+    report_ex_route = 'executions'
+    report_save_route = 'saveAndExecute'
+    report_url = '{}{}'.format(base_report_url, report_save_route)
+    report_get_url = '{}{}'.format(base_report_url, report_ex_route)
+
+    def_metrics = ["Served Impressions", "Total Clicks", "Video Played 25%",
+                   "Video Played 50%", "Video Played 75%", "Video Started",
+                   "Video Fully Played", "Total Conversions",
+                   "Post Click Conversions", "Post Impression Conversions",
+                   "Total Media Cost", "Default Tracked Ads",
+                   "Default Interactions From Tracked Ads"]
+
+    p2c_fields = ['Conversion Date', 'Conversion ID', 'Event Date',
+                  'Event Type Name', 'Conversion Time Lag', 'Placement Name',
+                  'Campaign Name', 'Site Name', 'Winner Placement Name',
+                  'Query String', 'Conversion Activity Name',
+                  'Winner Event Type Name']
+
+    unique_metrics = ["Unique Impressions", "Unique Clicks",
+                      "Average Frequency",
+                      "Unique Video Users", "Unique Interacting Users",
+                      "Total Conversions"]
+
+    campaign_dimensions = ['Campaign Name']
+    site_dimensions = campaign_dimensions + ['Site Name', 'Site ID']
+    placement_dimensions = site_dimensions + ['Placement Name', 'Placement ID',
+                                              'Placement Dimension']
+    def_dimensions = placement_dimensions + ['Ad Name', 'Ad ID']
+
     def __init__(self):
         self.config = None
         self.config_file = None
@@ -88,8 +92,9 @@ class SzkApi(object):
     def set_headers(self):
         self.headers = {'api-key': self.api_key}
         data = {'username': self.username, 'password': self.password}
-        r = self.make_request(login_url, method='POST', data=json.dumps(data),
-                              headers=self.headers)
+        r = self.make_request(
+            self.login_url, method='POST', data=json.dumps(data),
+            headers=self.headers)
         if 'result' not in r.json():
             logging.warning('Could not set headers with error as follows: '
                             '{}'.format(r.json()))
@@ -123,12 +128,11 @@ class SzkApi(object):
                 r = self.make_request(url, method, headers, json_body, attempt)
         return r
 
-    @staticmethod
-    def parse_fields(fields, sd, ed):
+    def parse_fields(self, fields, sd, ed):
         field_dict = {'type': 'AnalyticsReport',
                       'timeBreakdown': 'Day',
-                      'attributeIDs': def_dimensions,
-                      'metricIDs': def_metrics,
+                      'attributeIDs': self.def_dimensions,
+                      'metricIDs': self.def_metrics,
                       'attributeIDsOnColumns': ["Conversion Tag Name"],
                       'timeRange': {
                           "timeZone": "US/Pacific",
@@ -155,9 +159,9 @@ class SzkApi(object):
                         "dataStartTimestamp": None,
                         "dataEndTimestamp": None}
                 if field == 'Site':
-                    field_dict['attributeIDs'] = site_dimensions
+                    field_dict['attributeIDs'] = self.site_dimensions
                 if field == 'Unique':
-                    field_dict['metricIDs'] = unique_metrics
+                    field_dict['metricIDs'] = self.unique_metrics
                     field_dict['attributeIDsOnColumns'] = []
                 if field == 'P2C':
                     field_dict['type'] = 'ReportP2C'
@@ -199,11 +203,12 @@ class SzkApi(object):
         logging.info('Requesting report for {} to {}.'.format(sd, ed))
         self.set_headers()
         report = self.create_report_body(fields)
-        r = self.make_request(report_url, method='POST', headers=self.headers,
-                              json_body=report)
+        r = self.make_request(
+            self.report_url, method='POST', headers=self.headers,
+            json_body=report)
         if 'result' in r.json() and r.json()['result']:
             execution_id = r.json()['result']['executionID']
-            report_get_url = '{}{}'.format(base_report_get_url, execution_id)
+            report_get_url = '{}/{}'.format(self.report_get_url, execution_id)
         elif ('error' in r.json() and
                 (r.json()['error']['errors'][0]['code'] == 6308)):
             logging.warning('Timezone error in response, attempting '
@@ -295,7 +300,7 @@ class SzkApi(object):
             report['entities'][0]["maxConversionPathLength"] = 5
             report['entities'][0]["withHeader"] = True
             report['entities'][0]['reportStructure'] = {
-                "p2cFields": p2c_fields
+                "p2cFields": self.p2c_fields
             }
         if 'filters' in fields:
             report['entities'][0]['reportScope']['filters'] = fields['filters']

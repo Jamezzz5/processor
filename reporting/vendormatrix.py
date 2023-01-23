@@ -59,6 +59,7 @@ class VendorMatrix(object):
         self.api_qt_key = []
         self.api_yv_key = []
         self.api_amd_key = []
+        self.api_ss_key = []
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -91,17 +92,20 @@ class VendorMatrix(object):
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
-            logging.error('No Plan Net key in Vendor Matrix.  Add it.')
-            sys.exit(0)
+            logging.warning('No Plan Net key in Vendor Matrix.  Add it.')
+            return False
 
     def add_file_name_col(self):
         self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
             utl.sheet_name_splitter).str[0]
         return self.vm_df
 
-    def vm_parse(self):
-        self.vm_df = pd.DataFrame(columns=vmc.datacol)
-        self.vm_df = self.read()
+    def vm_parse(self, df=pd.DataFrame()):
+        if not df.empty:
+            self.vm_df = df
+        else:
+            self.vm_df = pd.DataFrame(columns=vmc.datacol)
+            self.vm_df = self.read()
         self.vm_df = self.add_file_name_col()
         self.vm = self.vm_df.copy()
         self.plan_net_check()
@@ -175,6 +179,8 @@ class VendorMatrix(object):
                     self.api_yv_key.append(vk)
                 if vk_split[vk][1] == vmc.api_amd_key:
                     self.api_amd_key.append(vk)
+                if vk_split[vk][1] == vmc.api_ss_key:
+                    self.api_ss_key.append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)
@@ -202,7 +208,7 @@ class VendorMatrix(object):
                                   if str(v) == 'ALL']
 
     def vendor_set(self, vk):
-        ven_param = {x: self.vm[x][vk] for x in self.vm}
+        ven_param = {x: self.vm[x][vk] for x in self.vm if vk in self.vm[x]}
         return ven_param
 
     def vm_change_on_key(self, vk, col, new_value):
@@ -734,6 +740,8 @@ class DataSource(object):
         return matrix
 
     def get_raw_df_before_transform(self, nrows=None):
+        if vmc.filename not in self.p:
+            return pd.DataFrame()
         df = utl.import_read_csv(self.p[vmc.filename], nrows=nrows)
         if df is None or df.empty:
             return df
@@ -757,25 +765,44 @@ class DataSource(object):
 
     def get_dict_order_df(self, include_index=True, include_full_name=False):
         self.df = self.get_raw_df()
+        if self.df.empty:
+            return self.df
         dic = dct.Dict()
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto_tuple = rc.get_auto_tuple()
         err = er.ErrorReport(self.df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         error = dic.split_error_df(err, self.p[vmc.autodicord],
                                    self.p[vmc.autodicplace],
                                    include_index=include_index,
                                    include_full_name=include_full_name)
+        error = dic.translate_relation_cols(error, rc_auto_tuple,
+                                            to_component=True,
+                                            fix_bad_delim=False)
         return error
 
     def get_and_merge_dictionary(self, df):
         dic = dct.Dict(self.p[vmc.filenamedict])
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        rc_auto_tuple = rc.get_auto_tuple()
         dic.auto_functions(err=err, autodicord=self.p[vmc.autodicord],
-                           placement=self.p[vmc.autodicplace])
+                           placement=self.p[vmc.autodicplace],
+                           rc_auto=rc_auto_tuple)
         df = dic.merge(df, dctc.FPN)
         return df
 
     def combine_data(self, df):
+        """
+        Moves float and date columns of data source to column names specified
+        in vm while also converting type and applying rules.
+
+        :param df: the raw df to act on
+        :returns: the df with data under correct columns and types
+        """
         df = combining_data(df, self.key, vmc.datadatecol, **self.p)
         df = utl.data_to_type(df, date_col=vmc.datadatecol)
         df = utl.apply_rules(df, self.vm_rules, utl.PRE, **self.p)
@@ -787,7 +814,7 @@ class DataSource(object):
         else:
             float_cols = vmc.datafloatcol
         df = combining_data(df, self.key, float_cols, **self.p)
-        df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
+        df = utl.data_to_type(df, float_cols, vmc.datadatecol)
         return df
 
     def remove_cols_and_make_calculations(self, df):
@@ -1016,20 +1043,11 @@ def df_single_transform(df, transform):
     if transform_type == 'FilterCol':
         col_name = transform[1]
         col_val = transform[2]
-        if col_name not in df.columns:
-            log.warning('Unable to execute {} transform. Column "{}" '
-                        'not in datasource.'.format(transform_type, col_name))
-            return df
-        df = df.dropna(subset=[col_name])
-        df = df.reset_index(drop=True)
         exclude_toggle = False
         if len(transform) > 3:
             if transform[3] == 'Exclude':
                 exclude_toggle = True
-        if exclude_toggle:
-            df = df[~df[col_name].astype('U').str.contains(col_val)]
-        else:
-            df = df[df[col_name].astype('U').str.contains(col_val)]
+        df = utl.filter_df_on_col(df, col_name, col_val, exclude_toggle)
     if transform_type == 'CombineColumns':
         cols = transform[1].split('|')
         if cols[0] not in df.columns or cols[1] not in df.columns:
