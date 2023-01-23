@@ -19,7 +19,6 @@ import reporting.dictcolumns as dctc
 
 
 class Analyze(object):
-    blank_lines = 'blank_lines'
     date_col = 'date'
     database_cache = 'database_cache'
     delivery_col = 'delivery'
