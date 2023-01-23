@@ -496,7 +496,7 @@ class TestAnalyze:
               'Net Cost': [50, 100, 200]}
         df = pd.DataFrame(df)
         temp_package_cap = 'mpPackageDesc'
-        cpc = aly.CheckPackageCapping(aly.Analyze())
+        cpc = az.CheckPackageCapping(az.Analyze())
         df = cpc.check_package_cap(df, temp_package_cap)
         assert 'Over' in df['mpPackageDesc'][0]
 
@@ -507,12 +507,12 @@ class TestAnalyze:
               'Net Cost': [50, 100, 100]}
         df = pd.DataFrame(df)
         temp_package_cap = 'mpPackageDesc'
-        cpc = aly.CheckPackageCapping(aly.Analyze())
+        cpc = az.CheckPackageCapping(az.Analyze())
         df = cpc.check_package_cap(df, temp_package_cap)
         assert 'Full' in df['mpPackageDesc'][0]
 
     def test_package_cap_under(self):
-        cpc = aly.CheckPackageCapping(aly.Analyze())
+        cpc = az.CheckPackageCapping(az.Analyze())
         df = {dctc.VEN: ['Adwords', 'Facebook', 'Twitter'],
               dctc.PKD: ['Under', 'Full', 'Over'],
               cpc.plan_net_temp: [100, 100, 100],
@@ -523,7 +523,7 @@ class TestAnalyze:
         assert df.empty
 
     def test_package_vendor_duplicates(self):
-        cpc = aly.CheckPackageCapping(aly.Analyze())
+        cpc = az.CheckPackageCapping(az.Analyze())
         df = {dctc.VEN: ['Adwords', 'Twitter', 'Facebook'],
               vmc.vendorkey: ['key1', 'key2', 'key3'],
               dctc.PN: ['PN1', 'PN2', 'PN3'],
@@ -540,7 +540,7 @@ class TestAnalyze:
         assert 'Facebook' not in df[dctc.VEN]
 
     def test_package_vendor_different(self):
-        cpc = aly.CheckPackageCapping(aly.Analyze())
+        cpc = az.CheckPackageCapping(az.Analyze())
         df = pd.DataFrame({dctc.VEN: ['Adwords', 'Twitter', 'Facebook'],
                            vmc.vendorkey: ['key1', 'key2', 'key3'],
                            dctc.PN: ['PN1', 'PN2', 'PN3'],
@@ -554,7 +554,7 @@ class TestAnalyze:
         assert df.empty
 
     def test_fix_vendor(self):
-        cpc = aly.CheckPackageCapping(aly.Analyze())
+        cpc = az.CheckPackageCapping(az.Analyze())
         temp_package_cap = dctc.PKD
         pdf = pd.DataFrame({dctc.PKD: ['package1', 'package2'],
                             cpc.plan_net_temp: [10, 10]})
