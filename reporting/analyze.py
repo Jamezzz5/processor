@@ -1208,6 +1208,9 @@ class CheckPackageCapping(AnalyzeBase):
         except AttributeError:
             logging.debug("one of the files may be empty")
             return None
+        except KeyError:
+            logging.debug("mpPlacement name does not exist")
+            return None
         self.check_package_cap(df, temp_package_cap)
         self.check_package_vendor(df, temp_package_cap, pdf)
 
@@ -1219,6 +1222,9 @@ class CheckPackageCapping(AnalyzeBase):
             return None
         except AttributeError:
             logging.debug("one of the files may be empty")
+            return None
+        except KeyError:
+            logging.debug("mpPlacement name does not exist")
             return None
         self.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
                                 write=write, aly_dict=aly_dict)
