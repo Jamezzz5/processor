@@ -21,7 +21,10 @@ class TikApi(object):
                'play_duration_2s', 'play_duration_6s', 'play_over',
                'play_third_quartile', 'play_midpoint', 'play_first_quartile',
                'total_play', 'ad_comment', 'ad_like', 'ad_share',
-               'ad_home_visited', 'show_uv', 'frequency']
+               'ad_home_visited', 'show_uv', 'frequency',
+               'time_attr_on_web_register',
+               'time_attr_shopping', 'time_attr_view',
+               'value_per_page_browse_view']
 
     def __init__(self):
         self.config = None
