@@ -14,7 +14,7 @@ from facebook_business.exceptions import FacebookRequestError,\
     FacebookBadObjectError
 from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
-
+from facebook_business.adobjects.adcreative import AdCreative
 
 def_params = ['campaign_name', 'adset_name', 'ad_name', 'ad_id']
 
@@ -50,7 +50,6 @@ ad_status_enabled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
                      'PREAPPROVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED',
                      'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']
 ad_status_disabled = ['DELETED', 'ARCHIVED']
-
 
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
@@ -127,6 +126,7 @@ class FbApi(object):
         attribution_window = []
         fields = def_fields
         time_breakdown = 1
+        screenshots = False
         level = AdsInsights.Level.ad
         for item in items:
             if item == 'Actions':
@@ -159,8 +159,10 @@ class FbApi(object):
                 level = AdsInsights.Level.adset
             if item == 'Campaign':
                 level = AdsInsights.Level.campaign
+            if item == 'Screenshots':
+                screenshots = True
         return fields, breakdowns, action_breakdowns, attribution_window,\
-            time_breakdown, level
+            time_breakdown, level, screenshots
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -185,8 +187,8 @@ class FbApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         self.df = pd.DataFrame()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields, breakdowns, action_breakdowns, attr, time_breakdown, level = \
-            self.parse_fields(fields)
+        (fields, breakdowns, action_breakdowns, attr, time_breakdown, level,
+         screenshots) = self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
         self.make_all_requests(fields, breakdowns, action_breakdowns, attr,
@@ -201,6 +203,8 @@ class FbApi(object):
             if col in self.df.columns:
                 self.nested_dicts_to_cols(col)
         self.df = self.rename_cols()
+        if screenshots:
+            self.get_and_take_screenshots()
         return self.df
 
     def make_all_requests(self, fields, breakdowns, action_breakdowns, attr,
@@ -496,6 +500,40 @@ class FbApi(object):
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
+
+    def get_and_take_screenshots(self):
+        urls = self.get_screenshots()
+        image_urls = self.take_screenshots(urls)
+        return image_urls
+
+    def get_screenshots(self):
+        urls = {}
+        fields = []
+        params = {
+            'ad_format': 'DESKTOP_FEED_STANDARD',
+        }
+        ad_ids = self.df[def_params[3]].tolist()
+        for ad in ad_ids:
+            response = AdCreative(ad).get_previews(
+                fields=fields,
+                params=params,
+            )
+            url = (
+                response[0]['body'].split("src=\"")[1].split("\" width=")[0])
+            url = url.replace("amp;t", "amp&t")
+            urls[ad] = url
+        return urls
+
+    @staticmethod
+    def take_screenshots(urls):
+        filenames = []
+        xpath = "//*[@id='fb-ad-preview']"
+        sw = utl.SeleniumWrapper()
+        for ad, url in urls.items():
+            filename = ad + ".png"
+            filenames.append(filename)
+            sw.take_elem_screenshot(url, xpath, filename)
+        return filenames
 
 
 class FacebookRequest(object):
