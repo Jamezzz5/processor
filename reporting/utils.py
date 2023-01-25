@@ -535,6 +535,8 @@ class SeleniumWrapper(object):
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
             elem.send_keys(item[0])
+            if 'selectized' in elem_xpath:
+                elem.send_keys(u'\ue007')
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
