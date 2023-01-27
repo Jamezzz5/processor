@@ -17,9 +17,8 @@ class PmApi(object):
     temp_path = 'tmp'
 
     def __init__(self):
-        self.sw = utl.SeleniumWrapper()
-        self.browser = self.sw.browser
-        self.base_window = self.browser.window_handles[0]
+        self.sw = None
+        self.browser = None
         self.config_file = None
         self.username = None
         self.password = None
@@ -311,7 +310,6 @@ class PmApi(object):
 
 
     def get_data(self, sd=None, ed=None, fields=None):
-        # self.browser = self.sw.init_browser()
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.sw.go_to_url(self.base_url)
         self.sign_in()

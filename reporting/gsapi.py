@@ -80,6 +80,10 @@ class GsApi(object):
         self.get_client()
         url = self.create_url()
         r = self.client.get(url)
-        self.df = pd.DataFrame(r.json()['values'])
-        logging.info('Data received, returning dataframe.')
+        response = r.json()
+        if 'values' in response:
+            self.df = pd.DataFrame(response['values'])
+            logging.info('Data received, returning dataframe.')
+        else:
+            logging.warning('Values not in response: {}'.format(response))
         return self.df
