@@ -2,10 +2,10 @@ import os
 import sys
 import json
 import time
+import shutil
 import logging
 import pandas as pd
 import datetime as dt
-import shutil
 import reporting.utils as utl
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
@@ -28,7 +28,7 @@ class PmApi(object):
         self.pm_title = None
         self.publisher = None
         self.ispot_title = None
-        self.brand_tracker = None
+        self.brand_tracker = False
 
     def input_config(self, config):
         logging.info('Loading Pathmatics config file: {}.'.format(config))
@@ -46,7 +46,6 @@ class PmApi(object):
         self.username = self.config['username']
         self.password = self.config['password']
         self.pm_title = self.config['account_filter']
-        self.brand_tracker = self.config['brand_tracker']
         if not self.config['campaign_filter'] == "":
             self.publisher = self.config['campaign_filter']
         else:
@@ -63,28 +62,26 @@ class PmApi(object):
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        if fields:
-            if str(fields) != 'nan':
+        if fields and str(fields) != 'nan':
+            if str(fields) == 'Brand Tracker':
+                self.brand_tracker = True
+            else:
                 self.ispot_title = fields[0].lower()
         return sd, ed
-
 
     def sign_in(self):
         user_pass = [(self.username, '//*[@id="signin-username"]'),
                      (self.password, '//*[@id=\"signin-password\"]')]
         submit_path = '//*[@id=\"signin-button\"]'
-
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
             self.sw.click_on_xpath(submit_path, sleep=5)
         time.sleep(2)
 
-
     def find_elem(self, xpath):
         elem = self.browser.find_element_by_xpath(xpath)
         return elem
-
 
     def search_title(self):
         self.browser.implicitly_wait(10)
@@ -92,10 +89,6 @@ class PmApi(object):
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
         title_bar.send_keys(self.pm_title)
         time.sleep(10)
-
-        # update config/campaign filter = search result number, starting at 1,
-        # if first result is incorrect
-
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
         self.sw.click_on_xpath(title_result)
@@ -279,7 +272,6 @@ class PmApi(object):
             value_name='Environment-value')
         return df
 
-
     def get_file_as_df(self, temp_path=None, creative_df=None, ed=None):
         pd.DataFrame()
         file_path = None
@@ -309,22 +301,16 @@ class PmApi(object):
         shutil.rmtree(temp_path)
         return df
 
-
     def get_data(self, sd=None, ed=None, fields=None):
-        # self.browser = self.sw.init_browser()
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.sw.go_to_url(self.base_url)
         self.sign_in()
         self.create_report(sd, ed)
         self.export_to_csv()
-        creative_df = self.create_creatives_df()
+        if not fields == 'Brand Tracker':
+            creative_df = self.create_creatives_df()
+        else:
+            creative_df = pd.DataFrame()
         df = self.get_file_as_df(self.temp_path, creative_df, ed)
         self.sw.quit()
-
-        # for brand tracker
-        # raw_output_file = pd.read_csv(r'raw_data/pathmatics_World of Warcraft.csv', header=0)
-        # spend_total = raw_output_file.sum()[4]
-        # print("Total spend: " + str(spend_total))
-        # return spend_total
-
         return df
