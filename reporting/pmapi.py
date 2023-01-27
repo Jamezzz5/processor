@@ -2,12 +2,11 @@ import os
 import sys
 import json
 import time
-import shutil
 import logging
 import pandas as pd
 import datetime as dt
+import shutil
 import reporting.utils as utl
-import selenium.webdriver as wd
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
 
@@ -18,7 +17,8 @@ class PmApi(object):
     temp_path = 'tmp'
 
     def __init__(self):
-        self.browser = self.init_browser()
+        self.sw = utl.SeleniumWrapper()
+        self.browser = self.sw.browser
         self.base_window = self.browser.window_handles[0]
         self.config_file = None
         self.username = None
@@ -28,6 +28,7 @@ class PmApi(object):
         self.pm_title = None
         self.publisher = None
         self.ispot_title = None
+        self.brand_tracker = None
 
     def input_config(self, config):
         logging.info('Loading Pathmatics config file: {}.'.format(config))
@@ -45,6 +46,7 @@ class PmApi(object):
         self.username = self.config['username']
         self.password = self.config['password']
         self.pm_title = self.config['account_filter']
+        self.brand_tracker = self.config['brand_tracker']
         if not self.config['campaign_filter'] == "":
             self.publisher = self.config['campaign_filter']
         else:
@@ -66,41 +68,6 @@ class PmApi(object):
                 self.ispot_title = fields[0].lower()
         return sd, ed
 
-    def init_browser(self):
-        download_path = os.path.join(os.getcwd(), 'tmp')
-        co = wd.chrome.options.Options()
-        co.headless = True
-        co.add_argument('--disable-features=VizDisplayCompositor')
-        co.add_argument('--window-size=1920,1080')
-        co.add_argument('--start-maximized')
-        co.add_argument('--no-sandbox')
-        co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path}
-        co.add_experimental_option('prefs', prefs)
-        browser = wd.Chrome(options=co)
-        browser.maximize_window()
-        browser.set_script_timeout(10)
-        self.enable_download_in_headless_chrome(browser, download_path)
-        return browser
-
-    @staticmethod
-    def enable_download_in_headless_chrome(driver, download_dir):
-        # add missing support for chrome "send_command"  to selenium webdriver
-        driver.command_executor._commands["send_command"] = \
-            ("POST", '/session/$sessionId/chromium/send_command')
-        params = {'cmd': 'Page.setDownloadBehavior',
-                  'params': {'behavior': 'allow',
-                             'downloadPath': download_dir}}
-        driver.execute("send_command", params)
-
-    def go_to_url(self, url):
-        logging.info('Going to url {}.'.format(url))
-        try:
-            self.browser.get(url)
-        except ex.TimeoutException:
-            logging.warning('Timeout exception, retrying.')
-            self.go_to_url(url)
-        time.sleep(5)
 
     def sign_in(self):
         user_pass = [(self.username, '//*[@id="signin-username"]'),
@@ -110,16 +77,14 @@ class PmApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-            self.click_on_xpath(submit_path, sleep=5)
+            self.sw.click_on_xpath(submit_path, sleep=5)
         time.sleep(2)
+
 
     def find_elem(self, xpath):
         elem = self.browser.find_element_by_xpath(xpath)
         return elem
 
-    def click_on_xpath(self, xpath, sleep=2):
-        self.find_elem(xpath).click()
-        time.sleep(sleep)
 
     def search_title(self):
         self.browser.implicitly_wait(10)
@@ -127,17 +92,21 @@ class PmApi(object):
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
         title_bar.send_keys(self.pm_title)
         time.sleep(10)
+
+        # update config/campaign filter = search result number, starting at 1,
+        # if first result is incorrect
+
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
-        self.click_on_xpath(title_result)
+        self.sw.click_on_xpath(title_result)
         title_result = self.browser.find_element_by_xpath("//*[@class='entity-name']")
         logging.info('Getting data for {}.'.format(title_result.text))
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
-        self.click_on_xpath(cal_button_xpath)
+        self.sw.click_on_xpath(cal_button_xpath)
         custom_date_xpath = '//*[@id="date-filter-menu"]/div/div[1]/div[10]'
-        self.click_on_xpath(custom_date_xpath)
+        self.sw.click_on_xpath(custom_date_xpath)
 
     def delete_contents(self, date_path):
         elem = self.find_elem(date_path)
@@ -159,7 +128,7 @@ class PmApi(object):
         for date_info in start_end:
             self.change_dates(date_info[0], date_info[1])
         done_path = '//*[@id="date-filter-menu-date-picker-button"]/a/span'
-        self.click_on_xpath(done_path)
+        self.sw.click_on_xpath(done_path)
 
     def create_report(self, sd, ed):
         self.search_title()
@@ -168,14 +137,14 @@ class PmApi(object):
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
         try:
-            self.click_on_xpath(export_xpath)
+            self.sw.click_on_xpath(export_xpath)
         except ex.NoSuchElementException:
             logging.error('No data for title. Aborting.')
             sys.exit(0)
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
-        self.click_on_xpath(xlsx_path)
+        self.sw.click_on_xpath(xlsx_path)
         download_xpath = '//*[@id="pick-export-options"]'
-        self.click_on_xpath(download_xpath)
+        self.sw.click_on_xpath(download_xpath)
 
     @staticmethod
     def get_url(html):
@@ -310,6 +279,7 @@ class PmApi(object):
             value_name='Environment-value')
         return df
 
+
     def get_file_as_df(self, temp_path=None, creative_df=None, ed=None):
         pd.DataFrame()
         file_path = None
@@ -339,17 +309,22 @@ class PmApi(object):
         shutil.rmtree(temp_path)
         return df
 
+
     def get_data(self, sd=None, ed=None, fields=None):
-        self.browser = self.init_browser()
+        # self.browser = self.sw.init_browser()
         sd, ed = self.get_data_default_check(sd, ed, fields)
-        self.go_to_url(self.base_url)
+        self.sw.go_to_url(self.base_url)
         self.sign_in()
         self.create_report(sd, ed)
         self.export_to_csv()
         creative_df = self.create_creatives_df()
         df = self.get_file_as_df(self.temp_path, creative_df, ed)
-        self.quit()
-        return df
+        self.sw.quit()
 
-    def quit(self):
-        self.browser.quit()
+        # for brand tracker
+        # raw_output_file = pd.read_csv(r'raw_data/pathmatics_World of Warcraft.csv', header=0)
+        # spend_total = raw_output_file.sum()[4]
+        # print("Total spend: " + str(spend_total))
+        # return spend_total
+
+        return df
