@@ -92,17 +92,20 @@ class VendorMatrix(object):
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
-            logging.error('No Plan Net key in Vendor Matrix.  Add it.')
-            sys.exit(0)
+            logging.warning('No Plan Net key in Vendor Matrix.  Add it.')
+            return False
 
     def add_file_name_col(self):
         self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
             utl.sheet_name_splitter).str[0]
         return self.vm_df
 
-    def vm_parse(self):
-        self.vm_df = pd.DataFrame(columns=vmc.datacol)
-        self.vm_df = self.read()
+    def vm_parse(self, df=pd.DataFrame()):
+        if not df.empty:
+            self.vm_df = df
+        else:
+            self.vm_df = pd.DataFrame(columns=vmc.datacol)
+            self.vm_df = self.read()
         self.vm_df = self.add_file_name_col()
         self.vm = self.vm_df.copy()
         self.plan_net_check()
@@ -205,7 +208,7 @@ class VendorMatrix(object):
                                   if str(v) == 'ALL']
 
     def vendor_set(self, vk):
-        ven_param = {x: self.vm[x][vk] for x in self.vm}
+        ven_param = {x: self.vm[x][vk] for x in self.vm if vk in self.vm[x]}
         return ven_param
 
     def vm_change_on_key(self, vk, col, new_value):
@@ -737,6 +740,8 @@ class DataSource(object):
         return matrix
 
     def get_raw_df_before_transform(self, nrows=None):
+        if vmc.filename not in self.p:
+            return pd.DataFrame()
         df = utl.import_read_csv(self.p[vmc.filename], nrows=nrows)
         if df is None or df.empty:
             return df
@@ -760,6 +765,8 @@ class DataSource(object):
 
     def get_dict_order_df(self, include_index=True, include_full_name=False):
         self.df = self.get_raw_df()
+        if self.df.empty:
+            return self.df
         dic = dct.Dict()
         rc = dct.RelationalConfig()
         rc.read(dctc.filename_rel_config)
@@ -789,6 +796,13 @@ class DataSource(object):
         return df
 
     def combine_data(self, df):
+        """
+        Moves float and date columns of data source to column names specified
+        in vm while also converting type and applying rules.
+
+        :param df: the raw df to act on
+        :returns: the df with data under correct columns and types
+        """
         df = combining_data(df, self.key, vmc.datadatecol, **self.p)
         df = utl.data_to_type(df, date_col=vmc.datadatecol)
         df = utl.apply_rules(df, self.vm_rules, utl.PRE, **self.p)
@@ -800,7 +814,7 @@ class DataSource(object):
         else:
             float_cols = vmc.datafloatcol
         df = combining_data(df, self.key, float_cols, **self.p)
-        df = utl.data_to_type(df, vmc.datafloatcol, vmc.datadatecol)
+        df = utl.data_to_type(df, float_cols, vmc.datadatecol)
         return df
 
     def remove_cols_and_make_calculations(self, df):

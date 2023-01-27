@@ -1,10 +1,10 @@
+import io
 import sys
 import json
 import time
 import logging
 import requests
 import pandas as pd
-from io import StringIO
 import reporting.utils as utl
 
 
@@ -112,10 +112,12 @@ class TtdApi(object):
 
     def get_df_from_response(self, r):
         try:
-            self.df = pd.read_csv(StringIO(r.content.decode('utf-8')))
+            self.df = pd.read_csv(io.StringIO(r.content.decode('utf-8')))
         except pd.io.common.EmptyDataError:
             logging.warning('Report is empty, returning blank df.')
             self.df = pd.DataFrame()
+        except UnicodeDecodeError:
+            self.df = pd.read_excel(io.BytesIO(r.content))
         return self.df
 
     def get_data(self, sd=None, ed=None, fields=None):

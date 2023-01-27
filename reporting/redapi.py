@@ -22,10 +22,10 @@ class RedApi(object):
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
 
-    def __init__(self):
-        self.sw = utl.SeleniumWrapper()
-        self.browser = self.sw.browser
-        self.base_window = self.browser.window_handles[0]
+    def __init__(self, headless=True):
+        self.headless = headless
+        self.sw = None
+        self.browser = None
         self.config_file = None
         self.username = None
         self.password = None
@@ -106,6 +106,9 @@ class RedApi(object):
         else:
             logo_xpath = '//*[@id="app"]/div/div[1]/div[1]/div/a/img'
             self.sw.click_on_xpath(logo_xpath, sleep=5)
+        if 'adsregister' in self.browser.current_url:
+            logging.warning('Could not log in check username and password.')
+            return False
         return True
 
     def set_breakdowns(self):
@@ -189,15 +192,15 @@ class RedApi(object):
     def click_grouped_metrics(self):
         for x in range(2, 6):
             metric_xpath = (
-                '/html/body/div[7]/div/div/div/div/div/div[2]/div[2]/div/'
-                'ul/li[{}]/div[1]/div/button/div/label/i'.format(x))
+                '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
+                'ul/li[{}]/div[1]/div/button/div/div/label/i'.format(x))
             try:
                 self.sw.click_on_xpath(metric_xpath, sleep=1)
             except ex.NoSuchElementException as e:
                 logging.warning(
                     'Could not click update trying another selector.'
                     '  Error: {}'.format(e))
-                metric_xpath = metric_xpath.replace('body/div[7', 'body/div[8')
+                metric_xpath = metric_xpath.replace('body/div[8', 'body/div[7')
                 self.sw.click_on_xpath(metric_xpath, sleep=1)
 
     def set_metrics(self, base_xpath):
@@ -247,6 +250,8 @@ class RedApi(object):
         self.sw.click_on_xpath(account_xpath)
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.sw.go_to_url(self.base_url)
         sign_in_result = self.sign_in()

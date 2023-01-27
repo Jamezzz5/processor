@@ -154,6 +154,9 @@ class DcApi(object):
             logging.warning('Report not created returning blank df.')
             return pd.DataFrame()
         files_url = self.get_files_url()
+        if not files_url:
+            logging.warning('Report not created returning blank df.')
+            return pd.DataFrame()
         self.r = self.get_report(files_url)
         if not self.r:
             return pd.DataFrame()
@@ -205,6 +208,9 @@ class DcApi(object):
     def get_files_url(self):
         full_url = self.create_url()
         self.r = self.make_request('{}/run'.format(full_url), 'post')
+        if not self.r:
+            logging.warning('No files URL returning.')
+            return None
         file_id = self.r.json()['id']
         files_url = '{}/files/{}'.format(full_url, file_id)
         return files_url
@@ -222,7 +228,7 @@ class DcApi(object):
                                        json_response=json_response)
         if json_response and 'error' in self.r.json():
             logging.warning('Request error.  Retrying {}'.format(self.r.json()))
-            time.sleep(30)
+            time.sleep(10)
             attempt += 1
             if attempt > 10:
                 self.request_error()
