@@ -492,8 +492,9 @@ class SeleniumWrapper(object):
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        self.go_to_url(url)
-        self.browser.save_screenshot(file_name)
+        went_to_url = self.go_to_url(url)
+        if went_to_url:
+            self.browser.save_screenshot(file_name)
 
     def get_all_iframes(self, url=None):
         if url:
