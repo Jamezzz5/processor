@@ -94,7 +94,8 @@ class PmApi(object):
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
         self.sw.click_on_xpath(title_result)
-        title_result = self.browser.find_element_by_xpath("//*[@class='entity-name']")
+        title_result = self.browser.find_element_by_xpath(
+            "//*[@class='entity-name']")
         logging.info('Getting data for {}.'.format(title_result.text))
 
     def open_calendar(self):
