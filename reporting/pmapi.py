@@ -68,7 +68,7 @@ class PmApi(object):
                 if field == 'Brand Tracker':
                     self.brand_tracker = True
                 else:
-                    self.ispot_title = fields[0].lower()
+                    self.ispot_title = fields.lower()
         return sd, ed
 
     def sign_in(self):
