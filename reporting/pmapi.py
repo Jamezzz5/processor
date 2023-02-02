@@ -16,7 +16,7 @@ class PmApi(object):
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
 
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.sw = None
         self.browser = None
         self.base_window = None
