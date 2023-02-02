@@ -16,10 +16,11 @@ class PmApi(object):
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
 
-    def __init__(self):
-        self.sw = utl.SeleniumWrapper()
-        self.browser = self.sw.browser
-        self.base_window = self.browser.window_handles[0]
+    def __init__(self, headless=False):
+        self.sw = None
+        self.browser = None
+        self.base_window = None
+        self.headless = headless
         self.config_file = None
         self.username = None
         self.password = None
@@ -62,11 +63,12 @@ class PmApi(object):
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        if fields and str(fields) != 'nan':
-            if str(fields) == 'Brand Tracker':
-                self.brand_tracker = True
-            else:
-                self.ispot_title = fields[0].lower()
+        if fields and fields != ['nan']:
+            for field in fields:
+                if field == 'Brand Tracker':
+                    self.brand_tracker = True
+                else:
+                    self.ispot_title = fields[0].lower()
         return sd, ed
 
     def sign_in(self):
@@ -303,14 +305,17 @@ class PmApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed, fields)
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
+        self.base_window = self.browser.window_handles[0]
         self.sw.go_to_url(self.base_url)
         self.sign_in()
         self.create_report(sd, ed)
         self.export_to_csv()
-        if not fields == 'Brand Tracker':
-            creative_df = self.create_creatives_df()
-        else:
+        if self.brand_tracker:
             creative_df = pd.DataFrame()
+        else:
+            creative_df = self.create_creatives_df()
         df = self.get_file_as_df(self.temp_path, creative_df, ed)
         self.sw.quit()
         return df
