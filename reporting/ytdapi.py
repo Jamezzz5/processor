@@ -4,6 +4,7 @@ import time
 import logging
 import requests
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
@@ -122,15 +123,22 @@ class YtdApi(object):
             logging.warning('Request error. Retrying {}'
                             .format(response.json()))
 
-    def parse_fields(self, sd, ed, fields):
-        sd, ed = utl.date_check(sd, ed)
+    @staticmethod
+    def get_data_default_check(sd, ed):
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=1)
+        if ed is None:
+            ed = dt.datetime.today() - dt.timedelta(days=1)
+        return sd, ed
+
+    def parse_fields(self, fields):
         report_fields = self.def_fields + self.video_fields
         if fields:
             for field in fields:
                 if field == 'channel':
                     self.query_type = 'channel'
                     report_fields = self.def_fields + self.channel_fields
-        return sd, ed, report_fields
+        return report_fields
 
     def create_search_url(self, query, sd, ed):
         max_url = '&maxResults=50'
@@ -141,11 +149,11 @@ class YtdApi(object):
         if self.query_type != 'channel':
             if sd:
                 sd_url = '&publishedAfter={}'.format(
-                    sd.isoformat() + 'T00:00:00Z')
+                    sd.isoformat() + 'Z')
                 full_url += sd_url
             if ed:
                 ed_url = '&publishedBefore={}'.format(
-                    ed.isoformat() + 'T00:00:00Z')
+                    ed.isoformat() + 'Z')
                 full_url += ed_url
         return full_url
 
@@ -164,12 +172,17 @@ class YtdApi(object):
     @staticmethod
     def data_to_df(response):
         df = pd.DataFrame()
+        date_col = 'snippet.publishedAt'
         if response:
             df = pd.io.json.json_normalize(response.json()['items'])
+        if date_col in df.columns:
+            df = utl.data_to_type(df, date_col=[date_col])
+            df[date_col] = df[date_col].dt.date
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        sd, ed, fields = self.parse_fields(sd, ed, fields)
+        sd, ed = self.get_data_default_check(sd, ed)
+        fields = self.parse_fields(fields)
         ids = self.get_search_ids(self.query, sd, ed)
         if self.query_type == 'channel':
             url = self.create_yt_url([ids[0]], fields=fields)
