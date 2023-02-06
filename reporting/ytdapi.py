@@ -36,7 +36,7 @@ class YtdApi(object):
         self.query = None
         self.config_list = None
         self.client = None
-        self.query_type = 'video'
+        self.query_type = None
         self.df = pd.DataFrame()
 
     def input_config(self, config):
@@ -95,33 +95,38 @@ class YtdApi(object):
             token = self.get_token(token, extra)
         return token
 
-    def make_request(self, url, attempt=1):
+    def make_request(self, url, method='GET', attempt=1, **kwargs):
         self.get_client()
         try:
-            r = self.client.get(url)
-        except requests.exceptions.SSLError as e:
-            logging.warning('Warning SSLError as follows {}'.format(e))
-            time.sleep(30)
-            r = self.make_request(url, attempt=attempt)
+            r = self.client.request(method=method, url=url, **kwargs)
+        except requests.exceptions.ConnectionError as e:
+            if attempt > 10:
+                logging.warning('Unable to resolve Connection Error. {}'
+                                .format(e))
+                return None
+            else:
+                logging.warning('Connection Error. Retrying {}'
+                                .format(e))
+                attempt += 1
+                time.sleep(30)
+                r = self.make_request(url, method, attempt=attempt, **kwargs)
         if r.status_code != 200:
             self.request_error(r)
-            if attempt > 2:
-                return None
-            time.sleep(30)
-            attempt += 1
-            r = self.make_request(url, attempt=attempt)
+            return None
         return r
 
     @staticmethod
     def request_error(response):
-        reason = response.json()['error']['errors'][0]['reason']
+        reason = None
+        if 'error' in response.json():
+            reason = response.json()['error']['errors'][0]['reason']
         if response.status_code == 403 and reason == 'quotaExceeded':
             logging.warning(
                 'Daily quota exceeded. Queries will be available again at '
                 'midnight PT.')
         else:
-            logging.warning('Request error. Retrying {}'
-                            .format(response.json()))
+            logging.warning('Request error. {}'
+                            .format(response.text))
 
     @staticmethod
     def get_data_default_check(sd, ed):
@@ -132,6 +137,7 @@ class YtdApi(object):
         return sd, ed
 
     def parse_fields(self, fields):
+        self.query_type = 'video'
         report_fields = self.def_fields + self.video_fields
         if fields:
             for field in fields:
@@ -184,6 +190,11 @@ class YtdApi(object):
         sd, ed = self.get_data_default_check(sd, ed)
         fields = self.parse_fields(fields)
         ids = self.get_search_ids(self.query, sd, ed)
+        if not ids:
+            logging.warning('No results found for query {}. Returning empty '
+                            'DataFrame.'.format(self.query))
+            self.df = pd.DataFrame()
+            return self.df
         if self.query_type == 'channel':
             url = self.create_yt_url([ids[0]], fields=fields)
         else:
@@ -193,8 +204,11 @@ class YtdApi(object):
         return self.df
 
     def get_search_ids(self, query, sd, ed):
+        id_col = 'id.{}Id'.format(self.query_type)
         full_url = self.create_search_url(query, sd, ed)
         r = self.make_request(full_url)
         df = self.data_to_df(r)
-        ids = list(df['id.{}Id'.format(self.query_type)])
+        ids = []
+        if id_col in df.columns:
+            ids = list(df[id_col])
         return ids
