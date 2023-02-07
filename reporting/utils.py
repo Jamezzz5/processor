@@ -494,8 +494,9 @@ class SeleniumWrapper(object):
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        self.go_to_url(url)
-        self.browser.save_screenshot(file_name)
+        went_to_url = self.go_to_url(url)
+        if went_to_url:
+            self.browser.save_screenshot(file_name)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
         logging.info('Getting screenshot from {} and '
@@ -544,6 +545,8 @@ class SeleniumWrapper(object):
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
             elem.send_keys(item[0])
+            if 'selectized' in elem_xpath:
+                elem.send_keys(u'\ue007')
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
