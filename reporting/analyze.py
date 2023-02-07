@@ -973,8 +973,10 @@ class CheckAutoDictOrder(AnalyzeBase):
     def get_vendor_list():
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
-        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         ven_list = []
+        if dctc.DICT_COL_NAME not in tc.df.columns:
+            return ven_list
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
@@ -1134,7 +1136,11 @@ class CheckPackageCapping(AnalyzeBase):
         """
         df = df[[dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
                  self.plan_net_temp, vmc.cost]]
-        df = df.groupby([temp_package_cap, dctc.VEN])
+        try:
+            df = df.groupby([temp_package_cap, dctc.VEN])
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
         df = df.size().reset_index(name='count')
         df = df[[temp_package_cap, dctc.VEN]]
         df = df[df[temp_package_cap].isin(pdf[temp_package_cap])]
