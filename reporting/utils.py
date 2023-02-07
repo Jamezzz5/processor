@@ -16,6 +16,8 @@ raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
+preview_path = './ad_previews/'
+preview_config = 'preview_config.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'

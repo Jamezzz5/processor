@@ -783,7 +783,7 @@ class DataSource(object):
         return error
 
     def get_and_merge_dictionary(self, df):
-        dic = dct.Dict(self.p[vmc.filenamedict])
+        dic = dct.Dict(self.p[vmc.filenamedict], self.key, df)
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         rc = dct.RelationalConfig()

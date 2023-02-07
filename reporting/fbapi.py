@@ -8,9 +8,11 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.awss3 as awss3
+import reporting.gsapi as gsapi
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.exceptions import FacebookRequestError,\
+from facebook_business.exceptions import FacebookRequestError, \
     FacebookBadObjectError
 from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
@@ -204,7 +206,8 @@ class FbApi(object):
                 self.nested_dicts_to_cols(col)
         self.df = self.rename_cols()
         if screenshots:
-            self.get_and_take_screenshots()
+            previews = FacebookScreenshots(df=self.df)
+            previews.get_and_take_screenshots()
         return self.df
 
     def make_all_requests(self, fields, breakdowns, action_breakdowns, attr,
@@ -501,40 +504,6 @@ class FbApi(object):
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
 
-    def get_and_take_screenshots(self):
-        urls = self.get_screenshots()
-        image_urls = self.take_screenshots(urls)
-        return image_urls
-
-    def get_screenshots(self):
-        urls = {}
-        fields = []
-        params = {
-            'ad_format': 'DESKTOP_FEED_STANDARD',
-        }
-        ad_ids = self.df[def_params[3]].tolist()
-        for ad in ad_ids:
-            response = AdCreative(ad).get_previews(
-                fields=fields,
-                params=params,
-            )
-            url = (
-                response[0]['body'].split("src=\"")[1].split("\" width=")[0])
-            url = url.replace("amp;t", "amp&t")
-            urls[ad] = url
-        return urls
-
-    @staticmethod
-    def take_screenshots(urls):
-        filenames = []
-        xpath = "//*[@id='fb-ad-preview']"
-        sw = utl.SeleniumWrapper()
-        for ad, url in urls.items():
-            filename = ad + ".png"
-            filenames.append(filename)
-            sw.take_elem_screenshot(url, xpath, filename)
-        return filenames
-
 
 class FacebookRequest(object):
     def __init__(self, init_dict=None):
@@ -569,3 +538,130 @@ class FacebookRequest(object):
             return True
         else:
             return False
+
+
+class FacebookScreenshots(object):
+    config_cols = ['ad_id', 'Ad Name', 'url']
+    pres_col = 'presentation_id'
+    screenshot_dir = 'screenshots/facebook/'
+
+    def __init__(self, file_name='preview_config.csv',
+                 s3config='s3config.json', gsconfig='gsapi.json', df=None):
+        logging.info('Getting config from {}.'.format(file_name))
+        self.file_name = file_name
+        self.s3config = s3config
+        self.gsconfig = gsconfig
+        self.config = self.import_config()
+        self.s3 = None
+        self.gsapi = None
+        self.df = df
+        self.pres_id = None
+        self.ad_names_dic = {}
+
+    def import_config(self):
+        if not os.path.exists(utl.preview_path):
+            os.mkdir(utl.preview_path)
+        if os.path.isfile(utl.preview_path + self.file_name):
+            df = pd.read_csv(utl.preview_path + self.file_name)
+        else:
+            df = pd.DataFrame(columns=self.config_cols)
+        return df
+
+    def get_and_take_screenshots(self):
+        self.get_ad_name_dict()
+        urls = self.get_screenshots()
+        urls = self.take_screenshots(urls)
+        self.upload_screenshots(urls)
+        self.create_presentation()
+        self.add_images_presentation(urls)
+        self.config.to_csv(utl.preview_path + self.file_name, index=False)
+        self.clear_screenshots()
+
+    def get_screenshots(self):
+        urls = {}
+        fields = []
+        params = {
+            'ad_format': 'DESKTOP_FEED_STANDARD',
+        }
+        ad_ids = self.df[self.config_cols[0]].unique().tolist()
+        cur_ad_ids = list(map(str, self.config[self.config_cols[0]].to_list()))
+        new_ad_ids = list(set(ad_ids) - set(cur_ad_ids))
+        for ad in new_ad_ids:
+            response = AdCreative(ad).get_previews(
+                fields=fields,
+                params=params,
+            )
+            url = (
+                response[0]['body'].split("src=\"")[1].split("\" width=")[0])
+            url = url.replace("amp;t", "amp&t")
+            urls[ad] = url
+        return urls
+
+    @staticmethod
+    def take_screenshots(urls):
+        xpath = "//*[@id='fb-ad-preview']"
+        sw = utl.SeleniumWrapper()
+        for ad, url in urls.items():
+            filename = utl.preview_path + str(ad) + ".png"
+            sw.take_elem_screenshot(url, xpath, filename)
+            urls[ad] = filename
+        return urls
+
+    def get_ad_name_dict(self):
+        ad_names = self.df[self.config_cols[:2]]
+        ad_names = ad_names.drop_duplicates()
+        self.ad_names_dic = dict(zip(
+            ad_names[self.config_cols[0]], ad_names[self.config_cols[1]]))
+
+    def upload_screenshots(self, urls):
+        self.s3 = awss3.S3()
+        self.s3.input_config(self.s3config)
+        for ad, file in urls.items():
+            image_data = utl.image_to_binary(file, True)
+            file_path = self.screenshot_dir + ad + '.png'
+            url = self.s3.s3_upload_file_obj(image_data, file_path)
+            self.config = self.config.append({
+                self.config_cols[0]: ad,
+                self.config_cols[1]: self.ad_names_dic[ad],
+                self.config_cols[2]: url},
+                ignore_index=True)
+
+    @staticmethod
+    def clear_screenshots():
+        ad_previews = os.listdir(utl.preview_path)
+        for file in ad_previews:
+            if file.endswith(".png"):
+                os.remove(os.path.join(utl.preview_path, file))
+
+    def create_presentation(self):
+        self.gsapi = gsapi.GsApi()
+        self.gsapi.input_config(self.gsconfig)
+        self.gsapi.get_client()
+        if (self.pres_col in self.config.columns and
+                not pd.isnull(self.config.loc[0, self.pres_col])):
+            self.pres_id = self.config[self.pres_col][0]
+        else:
+            presentation_name = ''.join(os.getcwd().split('\\')[-3:])
+            pres_id = self.gsapi.create_presentation(presentation_name)
+            self.config[self.pres_col] = pres_id
+            self.pres_id = pres_id
+
+    def add_images_presentation(self, urls):
+        r = []
+        urls = list(map(str, list(urls.keys())))
+        new_ads = self.config[
+            self.config[self.config_cols[0]].isin(urls)]
+        for k, v in new_ads.iterrows():
+            client = self.s3.get_client()
+            key = str(v[self.config_cols[2]]).split('.com/')[1]
+            url = client.generate_presigned_url(
+                ClientMethod='get_object',
+                Params={'Bucket': self.s3.bucket, 'Key': key},
+                ExpiresIn=3600)
+            r1 = self.gsapi.add_image_slide(
+                str(self.pres_id), str(v[self.config_cols[0]]), url)
+            r2 = self.gsapi.add_speaker_notes(
+                str(self.pres_id), str(v[self.config_cols[0]]),
+                str(v[self.config_cols[1]]))
+            r.append([r1, r2])
+        return r
