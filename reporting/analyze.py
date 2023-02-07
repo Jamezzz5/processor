@@ -1143,6 +1143,9 @@ class CheckPackageCapping(AnalyzeBase):
             return pd.DataFrame()
         df = df.size().reset_index(name='count')
         df = df[[temp_package_cap, dctc.VEN]]
+        if (temp_package_cap not in df.columns or
+                temp_package_cap not in pdf.columns):
+            return pd.DataFrame()
         df = df[df[temp_package_cap].isin(pdf[temp_package_cap])]
         df = df[df.duplicated(subset=temp_package_cap, keep=False)]
         if not df.empty:
