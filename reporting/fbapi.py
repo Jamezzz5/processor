@@ -12,7 +12,7 @@ import reporting.awss3 as awss3
 import reporting.gsapi as gsapi
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.exceptions import FacebookRequestError, \
+from facebook_business.exceptions import FacebookRequestError,\
     FacebookBadObjectError
 from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
@@ -572,10 +572,10 @@ class FacebookScreenshots(object):
         urls = self.get_screenshots()
         urls = self.take_screenshots(urls)
         self.upload_screenshots(urls)
+        self.clear_screenshots()
         self.create_presentation()
         self.add_images_presentation(urls)
         self.config.to_csv(utl.preview_path + self.file_name, index=False)
-        self.clear_screenshots()
 
     def get_screenshots(self):
         urls = {}
