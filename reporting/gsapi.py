@@ -12,6 +12,7 @@ config_path = utl.config_path
 class GsApi(object):
     sheets_url = 'https://sheets.googleapis.com/v4/spreadsheets'
     slides_url = 'https://slides.googleapis.com/v1/presentations'
+    drive_url = 'https://www.googleapis.com/drive/v3/files'
 
     def __init__(self):
         self.config = None
@@ -98,7 +99,18 @@ class GsApi(object):
         response = self.client.post(url=self.slides_url, json=body)
         response = json.loads(response.text)
         presentation_id = response["presentationId"]
+        self.add_permissions(presentation_id)
         return presentation_id
+
+    def add_permissions(self, presentation_id, domain="liquidarcade.com"):
+        url = self.drive_url + "/" + presentation_id + "/permissions"
+        body = {
+            "role": "writer",
+            "type": "domain",
+            "domain": domain
+        }
+        response = self.client.post(url=url, json=body)
+        return response
 
     def add_image_slide(self, presentation_id=None, ad_id=None,
                         image_url=None):
