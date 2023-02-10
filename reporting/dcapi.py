@@ -53,7 +53,7 @@ class DcApi(object):
         self.config_list = None
         self.client = None
         self.date_range = None
-        self.version = '3.5'
+        self.version = '4'
         self.df = pd.DataFrame()
         self.r = None
 
