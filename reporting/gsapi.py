@@ -97,7 +97,7 @@ class GsApi(object):
             "title": presentation_name,
         }
         response = self.client.post(url=self.slides_url, json=body)
-        response = json.loads(response.text)
+        response = response.json()
         presentation_id = response["presentationId"]
         self.add_permissions(presentation_id)
         return presentation_id
@@ -142,7 +142,7 @@ class GsApi(object):
         logging.info('Adding speaker note: {}'.format(text))
         url = self.slides_url + "/" + presentation_id + "/pages/" + page_id
         response = self.client.get(url)
-        response = json.loads(response.text)
+        response = response.json()
         notes_id = response["slideProperties"][
             "notesPage"]["notesProperties"]["speakerNotesObjectId"]
         url = self.slides_url + "/" + presentation_id + ":batchUpdate"

@@ -377,15 +377,17 @@ class Dict(object):
         self.data_dict = tc.apply_translation_to_dict(self.data_dict)
 
     def add_creative_urls(self):
-        cols = ['ad_id', 'url']
+        ad_col = 'ad_id'
+        url_col = 'url'
+        preview_path = os.path.join(utl.preview_path, utl.preview_config)
         if self.vk and [x for x in vmc.preview_apis if x in self.vk]:
-            if os.path.isfile(utl.preview_path + utl.preview_config):
-                urls = pd.read_csv(utl.preview_path + utl.preview_config)
-                raw_data = self.df[[vmc.fullplacename, cols[0]]]
+            if os.path.isfile(preview_path):
+                urls = pd.read_csv(preview_path)
+                raw_data = self.df[[vmc.fullplacename, ad_col]]
                 raw_data = raw_data.drop_duplicates()
-                urls = raw_data.merge(urls, how='right', on=cols[0])
-                urls = urls.rename(columns={cols[1]: dctc.CURL})
-                urls = urls.drop(columns=cols[0])
+                urls = raw_data.merge(urls, how='right', on=ad_col)
+                urls = urls.rename(columns={url_col: dctc.CURL})
+                urls = urls.drop(columns=ad_col)
                 self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
                     self.data_dict[dctc.CURL].eq(0)).fillna(
                     self.data_dict[dctc.FPN].map(

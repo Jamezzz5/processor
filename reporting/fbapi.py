@@ -541,12 +541,16 @@ class FacebookRequest(object):
 
 
 class FacebookScreenshots(object):
-    config_cols = ['ad_id', 'Ad Name', 'url']
+    ad_id_col = 'ad_id'
+    ad_name_col = 'Ad Name'
+    url_col = 'url'
     pres_col = 'presentation_id'
-    screenshot_dir = 'screenshots/facebook/'
+    config_cols = [ad_id_col, ad_name_col, url_col]
+    screenshot_dir = os.path.join('screenshots', 'facebook/')
 
     def __init__(self, file_name='preview_config.csv',
-                 s3config='s3config.json', gsconfig='gsapi.json', df=None):
+                 s3config='s3config_screenshots.json',
+                 gsconfig='gsapi_screenshots.json', df=None):
         logging.info('Getting config from {}.'.format(file_name))
         self.file_name = file_name
         self.s3config = s3config
@@ -559,23 +563,24 @@ class FacebookScreenshots(object):
         self.ad_names_dic = {}
 
     def import_config(self):
-        if not os.path.exists(utl.preview_path):
-            os.mkdir(utl.preview_path)
-        if os.path.isfile(utl.preview_path + self.file_name):
+        utl.dir_check(utl.preview_path)
+        if os.path.isfile(os.path.join(utl.preview_path, self.file_name)):
             df = pd.read_csv(utl.preview_path + self.file_name)
         else:
             df = pd.DataFrame(columns=self.config_cols)
         return df
 
     def get_and_take_screenshots(self):
-        self.get_ad_name_dict()
-        urls = self.get_screenshots()
-        urls = self.take_screenshots(urls)
-        self.upload_screenshots(urls)
-        self.clear_screenshots()
-        self.create_presentation()
-        self.add_images_presentation(urls)
-        self.config.to_csv(utl.preview_path + self.file_name, index=False)
+        if not self.df.empty:
+            self.get_ad_name_dict()
+            urls = self.get_screenshots()
+            urls = self.take_screenshots(urls)
+            self.upload_screenshots(urls)
+            self.clear_screenshots()
+            self.create_presentation()
+            self.add_images_presentation(urls)
+            self.config.to_csv(os.path.join(utl.preview_path, self.file_name),
+                               index=False)
 
     def get_screenshots(self):
         urls = {}
@@ -583,8 +588,8 @@ class FacebookScreenshots(object):
         params = {
             'ad_format': 'DESKTOP_FEED_STANDARD',
         }
-        ad_ids = self.df[self.config_cols[0]].unique().tolist()
-        cur_ad_ids = list(map(str, self.config[self.config_cols[0]].to_list()))
+        ad_ids = self.df[self.ad_id_col].unique().tolist()
+        cur_ad_ids = list(map(str, self.config[self.ad_id_col].to_list()))
         new_ad_ids = list(set(ad_ids) - set(cur_ad_ids))
         for ad in new_ad_ids:
             response = AdCreative(ad).get_previews(
@@ -608,10 +613,10 @@ class FacebookScreenshots(object):
         return urls
 
     def get_ad_name_dict(self):
-        ad_names = self.df[self.config_cols[:2]]
+        ad_names = self.df[[self.ad_id_col, self.ad_name_col]]
         ad_names = ad_names.drop_duplicates()
         self.ad_names_dic = dict(zip(
-            ad_names[self.config_cols[0]], ad_names[self.config_cols[1]]))
+            ad_names[self.ad_id_col], ad_names[self.ad_name_col]))
 
     def upload_screenshots(self, urls):
         self.s3 = awss3.S3()
@@ -621,17 +626,17 @@ class FacebookScreenshots(object):
             file_path = self.screenshot_dir + ad + '.png'
             url = self.s3.s3_upload_file_obj(image_data, file_path)
             self.config = self.config.append({
-                self.config_cols[0]: ad,
-                self.config_cols[1]: self.ad_names_dic[ad],
-                self.config_cols[2]: url},
+                self.ad_id_col: ad,
+                self.ad_name_col: self.ad_names_dic[ad],
+                self.url_col: url},
                 ignore_index=True)
 
     @staticmethod
     def clear_screenshots():
         ad_previews = os.listdir(utl.preview_path)
-        for file in ad_previews:
-            if file.endswith(".png"):
-                os.remove(os.path.join(utl.preview_path, file))
+        for img in ad_previews:
+            if img.endswith(".png"):
+                os.remove(os.path.join(utl.preview_path, img))
 
     def create_presentation(self):
         self.gsapi = gsapi.GsApi()
@@ -650,18 +655,18 @@ class FacebookScreenshots(object):
         r = []
         urls = list(map(str, list(urls.keys())))
         new_ads = self.config[
-            self.config[self.config_cols[0]].isin(urls)]
+            self.config[self.ad_id_col].isin(urls)]
         for k, v in new_ads.iterrows():
             client = self.s3.get_client()
-            key = str(v[self.config_cols[2]]).split('.com/')[1]
+            key = str(v[self.url_col]).split('.com/')[1]
             url = client.generate_presigned_url(
                 ClientMethod='get_object',
                 Params={'Bucket': self.s3.bucket, 'Key': key},
                 ExpiresIn=3600)
             r1 = self.gsapi.add_image_slide(
-                str(self.pres_id), str(v[self.config_cols[0]]), url)
+                str(self.pres_id), str(v[self.ad_id_col]), url)
             r2 = self.gsapi.add_speaker_notes(
-                str(self.pres_id), str(v[self.config_cols[0]]),
-                str(v[self.config_cols[1]]))
+                str(self.pres_id), str(v[self.ad_id_col]),
+                str(v[self.ad_name_col]))
             r.append([r1, r2])
         return r
