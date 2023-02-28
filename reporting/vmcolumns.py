@@ -233,6 +233,7 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
             api_mp_key, api_ss_key]
+test_apis = [api_dc_key, api_fb_key]
 
 api_translation = {
     api_aw_key: 'aw',
@@ -295,6 +296,38 @@ api_partner_name_translation = {
     api_qt_key: ['Quantcast'],
     api_yv_key: ['Yahoo', 'Verizon'],
     api_amd_key: ['Amazon DSP']
+}
+
+api_class_translation = {
+    api_aw_key: ['awapi', 'AwApi'],
+    api_fb_key: ['fbapi', 'FbApi'],
+    api_tw_key: ['twapi', 'TwApi'],
+    api_ttd_key: ['ttdapi', 'TtdApi'],
+    api_ga_key: ['gaapi', 'GaApi'],
+    api_nb_key: ['nbapi', 'NbApi'],
+    api_af_key: ['afapi', 'AfApi'],
+    api_sc_key: ['scapi', 'ScApi'],
+    api_aj_key: ['ajapi', 'AjApi'],
+    api_dc_key: ['dcapi', 'DcApi'],
+    api_rs_key: ['dbapi', 'DbApi'],
+    api_db_key: ['vkapi', 'VkApi'],
+    api_vk_key: ['rsapi', 'RsApi'],
+    api_rc_key: ['rcapi', 'RcApi'],
+    api_szk_key: ['szkapi', 'SzkApi'],
+    api_red_key: ['redapi', 'RedApi'],
+    api_dv_key: ['dvapi', 'DvApi'],
+    api_adk_key: ['adkapi', 'AdkApi'],
+    api_inn_key: ['innapi', 'InnApi'],
+    api_tik_key: ['tikapi', 'TikApi'],
+    api_amz_key: ['amzapi', 'AmzApi'],
+    api_cri_key: ['criapi', 'CriApi'],
+    api_pm_key: ['pmapi', 'PmApi'],
+    api_sam_key: ['samapi', 'SamApi'],
+    api_gs_key: ['gsapi', 'GsApi'],
+    api_qt_key: ['qtapi', 'QtApi'],
+    api_yv_key: ['yvapi', 'YvApi'],
+    api_amd_key: ['amzapi', 'AmzApi'],
+    api_ss_key: ['ssapi', 'SsApi'],
 }
 
 output_file = 'Raw Data Output.csv'

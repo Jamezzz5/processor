@@ -341,3 +341,47 @@ class DcApi(object):
     def rename_cols(self):
         self.df.iloc[0] = self.df.iloc[0].replace(self.col_rename_dict)
         return self.df
+
+    def test_connection(self, config):
+        self.input_config(config)
+        self.get_client()
+        if self.campaign_id is None:
+            campaign_ids = []
+        elif ',' in self.campaign_id:
+            campaign_ids = self.campaign_id.split(',')
+        else:
+            campaign_ids = [self.campaign_id]
+        acc_col = 'Account ID'
+        camp_col = 'Campaign ID'
+        r_cols = ['Field', 'Result', 'Success']
+        results = pd.DataFrame(columns=r_cols)
+        user_url = self.create_user_url()
+        query_url = user_url + 'advertisers/{}'.format(self.advertiser_id)
+        r = self.client.get(url=query_url)
+        if r.status_code == 200:
+            row = pd.DataFrame([[
+                acc_col, ' '.join(['SUCCESS -- ID:', str(self.advertiser_id)]),
+                True]], columns=r_cols)
+            results = results.append(row)
+        else:
+            r = r.json()
+            row = pd.DataFrame(
+                [[acc_col, ' '.join(['FAILURE:', r['error']['message']]),
+                  False]], columns=r_cols)
+            results = results.append(row)
+            return results
+        for campaign in campaign_ids:
+            query_url = user_url + 'campaigns/{}'.format(campaign)
+            r = self.client.get(url=query_url)
+            if r.status_code == 200:
+                row = pd.DataFrame([[
+                    camp_col, ' '.join(['SUCCESS -- ID:', str(campaign)]),
+                    True]], columns=r_cols)
+                results = results.append(row)
+            else:
+                r = r.json()
+                row = pd.DataFrame([[
+                    camp_col, ' '.join(['FAILURE:', r['error']['message']]),
+                    False]], columns=r_cols)
+                results = results.append(row)
+        return results

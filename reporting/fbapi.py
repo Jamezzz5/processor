@@ -51,7 +51,6 @@ ad_status_enabled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
                      'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']
 ad_status_disabled = ['DELETED', 'ARCHIVED']
 
-
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
                 'campaign_name': 'Campaign Name', 'adset_name': 'Ad Set Name',
@@ -496,6 +495,54 @@ class FbApi(object):
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
+
+    def test_connection(self, config):
+        self.input_config(config)
+        acc_col = 'Account ID'
+        camp_col = 'Campaign ID'
+        r_cols = ['Field', 'Result', 'Success']
+        results = pd.DataFrame(columns=r_cols)
+        try:
+            self.account = AdAccount(self.act_id)
+            fields = [
+                'name',
+                'objective',
+            ]
+            params = {
+                'effective_status': ['ACTIVE', 'PAUSED'],
+            }
+            r = self.account.get_campaigns(fields=fields, params=params)
+            row = pd.DataFrame(
+                [[acc_col,
+                  ' '.join(['SUCCESS -- ID:', str(self.act_id).strip('act_')]),
+                  True]], columns=r_cols)
+            results = results.append(row)
+            if self.campaign_filter:
+                params['filtering'] = ([{'field': 'campaign.name',
+                                         'operator': 'CONTAIN',
+                                         'value': self.campaign_filter}])
+                r = self.account.get_campaigns(fields=fields, params=params)
+                if r:
+                    row = pd.DataFrame(
+                        [[camp_col, 'SUCCESS -- CAMPAIGNS INCLUDED IF DATA PAST'
+                                    ' START DATA:', True]], columns=r_cols)
+                    results = results.append(row)
+                    for campaign in r:
+                        row = pd.DataFrame([[camp_col, campaign["name"], True]],
+                                           columns=r_cols)
+                        results = results.append(row)
+                else:
+                    row = pd.DataFrame(
+                        [[camp_col, 'FAILURE: No Campaigns under filter.',
+                          False]], columns=r_cols)
+                    results = results.append(row)
+            return results
+        except FacebookRequestError as e:
+            row = pd.DataFrame(
+                [[acc_col, ' '.join(['FAILURE:', e._api_error_message]),
+                  False]], columns=r_cols)
+            results = results.append(row)
+            return results
 
 
 class FacebookRequest(object):
