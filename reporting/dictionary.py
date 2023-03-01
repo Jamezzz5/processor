@@ -5,17 +5,20 @@ import numpy as np
 import pandas as pd
 import reporting.utils as utl
 import reporting.dictcolumns as dctc
+import reporting.vmcolumns as vmc
 
 csv_path = utl.dict_path
 
 
 class Dict(object):
-    def __init__(self, filename=None):
+    def __init__(self, filename=None, vk=None, df=None):
         utl.dir_check(csv_path)
         if str(filename) == 'nan':
             logging.error('No dictionary file provided.  Aborting.')
             sys.exit(0)
         self.filename = filename
+        self.df = df
+        self.vk = vk
         self.comb_key = ':::'
         self.dict_path = csv_path
         self.data_dict = pd.DataFrame(columns=dctc.COLS, index=None)
@@ -354,6 +357,7 @@ class Dict(object):
         self.apply_translation()
         self.apply_relation()
         self.apply_translation()
+        self.add_creative_urls()
         self.clean()
         self.write()
 
@@ -371,6 +375,23 @@ class Dict(object):
         tc = DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         self.data_dict = tc.apply_translation_to_dict(self.data_dict)
+
+    def add_creative_urls(self):
+        ad_col = 'ad_id'
+        url_col = 'url'
+        preview_path = os.path.join(utl.preview_path, utl.preview_config)
+        if self.vk and [x for x in vmc.preview_apis if x in self.vk]:
+            if os.path.isfile(preview_path):
+                urls = pd.read_csv(preview_path)
+                raw_data = self.df[[vmc.fullplacename, ad_col]]
+                raw_data = raw_data.drop_duplicates()
+                urls = raw_data.merge(urls, how='right', on=ad_col)
+                urls = urls.rename(columns={url_col: dctc.CURL})
+                urls = urls.drop(columns=ad_col)
+                self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
+                    self.data_dict[dctc.CURL].eq(0)).fillna(
+                    self.data_dict[dctc.FPN].map(
+                        urls.set_index(dctc.FPN)[dctc.CURL]))
 
     def write(self, df=None):
         logging.debug('Writing {}'.format(self.filename))
