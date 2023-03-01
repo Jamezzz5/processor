@@ -190,7 +190,7 @@ class RedApi(object):
             self.sw.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
-        xpath = '//button[contains(normalize-space(), "All metrics")]'
+        xpath = '//span[contains(normalize-space(), "All metrics")]'
         elems = self.sw.browser.find_elements_by_xpath(xpath)
         for elem in elems[1:]:
             elem.click()
