@@ -690,7 +690,6 @@ class Fullplacement(Base):
     copy = relationship('Copy')
     country = relationship('Country')
     creative = relationship('Creative')
-    creativeurl = Column(Text)
     environment = relationship('Environment')
     faction = relationship('Faction')
     kpi = relationship('Kpi')
