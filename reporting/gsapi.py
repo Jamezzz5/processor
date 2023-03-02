@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import time
 import pandas as pd
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
@@ -107,7 +108,8 @@ class GsApi(object):
         body = {
             "role": "writer",
             "type": "domain",
-            "domain": domain
+            "domain": domain,
+            "allowFileDiscovery": True
         }
         response = self.client.post(url=url, json=body)
         return response
@@ -141,10 +143,20 @@ class GsApi(object):
     def add_speaker_notes(self, presentation_id=None, page_id=None, text=''):
         logging.info('Adding speaker note: {}'.format(text))
         url = self.slides_url + "/" + presentation_id + "/pages/" + page_id
-        response = self.client.get(url)
-        response = response.json()
-        notes_id = response["slideProperties"][
-            "notesPage"]["notesProperties"]["speakerNotesObjectId"]
+        notes_id = None
+        for x in range(1, 11):
+            response = self.client.get(url)
+            response = response.json()
+            if "slideProperties" in response:
+                notes_id = response["slideProperties"][
+                    "notesPage"]["notesProperties"]["speakerNotesObjectId"]
+                break
+            else:
+                logging.warning('Slide not created yet. Attempt: {}'.format(x))
+                time.sleep(3)
+        if not notes_id:
+            return {'error': 'Unable to add speaker notes to slide '
+                             '{}.'.format(page_id)}
         url = self.slides_url + "/" + presentation_id + ":batchUpdate"
         headers = {"Content-Type": "application/json"}
         body = {

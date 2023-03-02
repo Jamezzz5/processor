@@ -505,7 +505,7 @@ class SeleniumWrapper(object):
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        self.go_to_url(url)
+        self.go_to_url(url, sleep=10)
         elem = self.browser.find_element_by_xpath(xpath)
         elem.screenshot(file_name)
 
