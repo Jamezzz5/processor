@@ -124,7 +124,11 @@ def string_to_date(my_string):
             ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
-        return dt.datetime.strptime(my_string, '%Y%m%d')
+        try:
+            return dt.datetime.strptime(my_string, '%Y%m%d')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif len(my_string) == 8 and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
     elif my_string == '0' or my_string == '0.0':

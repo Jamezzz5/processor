@@ -3,7 +3,6 @@ import sys
 import json
 import logging
 import time
-
 import pandas as pd
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
@@ -110,7 +109,7 @@ class GsApi(object):
             "role": "writer",
             "type": "domain",
             "domain": domain,
-            "allowFileDiscovery": True,
+            "allowFileDiscovery": True
         }
         response = self.client.post(url=url, json=body)
         return response
