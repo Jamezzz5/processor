@@ -17,7 +17,7 @@ from requests.exceptions import ConnectionError
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
-twitter_account_object_fields = ['ACCOUNT']
+twitter_account_field = ['ACCOUNT']
 configpath = utl.config_path
 
 base_url = 'https://ads-api.twitter.com'
@@ -72,6 +72,9 @@ mobile_conversions = ['mobile_conversion_spent_credits',
                       'mobile_conversion_sign_ups',
                       'mobile_conversion_site_visits',
                       'mobile_conversion_purchases']
+
+user_fields = ['id', 'name', 'location', 'description', 
+                       'followers_count', 'friends_count']
 
 
 class TwApi(object):
@@ -200,31 +203,11 @@ class TwApi(object):
 
     def get_twitter_objects(self, usernames):
         request_url = 'https://api.twitter.com/1.1/users/lookup.json?'
-        #data = self.make_request(request_url, params={'user_id' : usernames})
-        data = self.request(request_url, params={'user_id' : usernames})
-        
-        # Check for error response
-        if data.status_code != 200:
-            logging.warning("")
-            raise Exception(f"API request failed with status code {data.status_code}")
-        
-        # Convert response to DataFrame
-        users_data = []
-        for user in data.json():
-            user_data = {
-                'id': user.get('id'),
-                'name': user.get('name'),
-                'screen_name': user.get('screen_name'),
-                'location': user.get('location'),
-                'description': user.get('description'),
-                'followers_count': user.get('followers_count'),
-                'friends_count': user.get('friends_count'),
-                'created_at': user.get('created_at'),
-            }
-            users_data.append(user_data)
-        
-        users_df = pd.DataFrame(users_data)
-        
+        data = self.request(request_url, params={'screen_name' : usernames})
+        if 'errors' in data:
+            return pd.DataFrame()
+        users_df = pd.DataFrame(data)
+        users_df = users_df[user_fields]
         return users_df
 
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None,
@@ -300,8 +283,8 @@ class TwApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields is None:
             fields = def_fields
-        if 'ACCOUNTS' in fields:
-            fields = twitter_account_object_fields
+        elif 'ACCOUNTS' in fields:
+            fields = twitter_account_field
         else:
             fields = def_fields + conv_fields
         return sd, ed, fields
@@ -345,8 +328,9 @@ class TwApi(object):
         self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
-        if fields == twitter_account_object_fields:
-            return self.get_twitter_objects(usernames = self.account_id)
+        if fields == twitter_account_field:
+            self.df = self.get_twitter_objects(usernames = self.account_id)
+            return self.df
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
         if async_request:
