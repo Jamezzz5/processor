@@ -73,8 +73,9 @@ mobile_conversions = ['mobile_conversion_spent_credits',
                       'mobile_conversion_site_visits',
                       'mobile_conversion_purchases']
 
-user_fields = ['id', 'name', 'location', 'description', 
-                       'followers_count', 'friends_count']
+user_fields = ['id', 'name', 'screen_name', 'location', 'description', 
+               'followers_count', 'friends_count', 'listed_count', 'favourites_count', 
+               'verified', 'statuses_count', 'withheld_in_countries']
 
 
 class TwApi(object):
