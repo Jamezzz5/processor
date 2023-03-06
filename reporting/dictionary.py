@@ -388,6 +388,7 @@ class Dict(object):
                 urls = raw_data.merge(urls, how='right', on=ad_col)
                 urls = urls.rename(columns={url_col: dctc.CURL})
                 urls = urls.drop(columns=ad_col)
+                urls = urls[urls[dctc.FPN].notna()]
                 self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
                     self.data_dict[dctc.CURL].eq(0)).fillna(
                     self.data_dict[dctc.FPN].map(
