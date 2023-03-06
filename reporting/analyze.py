@@ -54,6 +54,7 @@ class Analyze(object):
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
+    blank_lines = 'blank_lines'
     change_auto_order = 'change_auto_order'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
@@ -77,12 +78,11 @@ class Analyze(object):
         self.matrix = matrix
         self.vc = ValueCalc()
         self.class_list = [
-            # CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            # CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            # GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            # GetDailyPacingAlerts, CheckPackageCapping,
-            FindBlankLines]
-        # CheckPackageCapping]
+            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
+            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
+            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
+            GetDailyPacingAlerts, CheckPackageCapping,
+            FindBlankLines, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
