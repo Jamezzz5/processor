@@ -61,6 +61,7 @@ CH = 'mpCharacter'
 CM = 'mpCreative Modifier'
 LI = 'mpCreative Line Item'
 LEN = 'mpCreative Length'
+CURL = 'mpCreative URL'
 AD = 'mpAd'
 MN = 'mpModel Name'
 MT = 'mpModel Type'
@@ -88,8 +89,8 @@ COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
         VT, MC, TAR, CRE, COP, SIZ, BM, BR, PD, SRV, MIS, RET, PLD, PKD, AM, AR,
         RFT, RFM, RFR, VFM, VFR, AGF, AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR,
         ENV, DT1, DT2, TB, GT, GTF, KPI, FAC, PLA, TP, TPB, TPF, AT, AF, CD, CH,
-        CM, LI, LEN, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, SD, ED, BR2, BR3, BR4,
-        BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        CM, LI, LEN, CURL, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, SD, ED, BR2,
+        BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
 
 floatcol = [BR, AR, RFR, VFR, BR2, BR3, BR4, BR5, AGF]
 datecol = [PD, SD, ED, PD2, PD3, PD4, PD5]

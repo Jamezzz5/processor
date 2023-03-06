@@ -17,7 +17,7 @@ base_url = 'https://www.googleapis.com/dfareporting'
 class DcApi(object):
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
-        'date', 'placementId', 'creative', 'ad', 'creativeId']
+        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId']
     default_metrics = [
         'impressions', 'clicks', 'clickRate',
         'activeViewViewableImpressions',
@@ -53,7 +53,7 @@ class DcApi(object):
         self.config_list = None
         self.client = None
         self.date_range = None
-        self.version = '3.5'
+        self.version = '4'
         self.df = pd.DataFrame()
         self.r = None
 

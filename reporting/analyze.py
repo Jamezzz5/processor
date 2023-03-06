@@ -82,7 +82,7 @@ class Analyze(object):
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
             GetDailyPacingAlerts, CheckPackageCapping,
-            FindBlankLines, CheckPackageCapping]
+            FindBlankLines]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -127,8 +127,8 @@ class Analyze(object):
             logging.warning('Df does not have cols {}'.format(miss_cols))
             return False
         df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
-        else x[vmc.cost].sum() /
-             x[dctc.PNC].sum())
+                                          else x[vmc.cost].sum() /
+                                          x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
             delivery_msg = 'Nothing has delivered in full.'
@@ -224,7 +224,7 @@ class Analyze(object):
                 if last_update.date() == dt.datetime.today().date():
                     update_tier = 'Today'
                 elif last_update.date() > (
-                        dt.datetime.today() - dt.timedelta(days=7)).date():
+                            dt.datetime.today() - dt.timedelta(days=7)).date():
                     update_tier = 'Within A Week'
                 else:
                     update_tier = 'Greater Than One Week'
@@ -658,17 +658,17 @@ class Analyze(object):
             if max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
-                    max_date, sd))
+                         max_date, sd))
                 msg = (False, msg)
             elif min_date > ed:
                 msg = ('First day in raw file {} is less than end date {}.\n'
                        'Result will be blank.  Change end date.'.format(
-                    min_date, ed))
+                         min_date, ed))
                 msg = (False, msg)
             else:
                 msg = ('Some or all data in raw file with date range {} - {} '
                        'falls between start and end dates {} - {}'.format(
-                    sd, ed, min_date, max_date))
+                         sd, ed, min_date, max_date))
                 msg = (True, msg)
         cd[vmc.startdate][cds_name] = msg
         return cd
@@ -718,7 +718,7 @@ class Analyze(object):
                         msg = (
                             False, 'Old file total {} was greater than new '
                                    'file total {} for col {}'.format(
-                                old_total, total, col))
+                                      old_total, total, col))
                 cd[col][cds_name] = msg
         return cd
 
@@ -867,7 +867,7 @@ class Analyze(object):
                 'Dataframe empty, could not determine missing ad rate.')
             return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
-                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
                 (df[dctc.AR] == 'nan')]
@@ -911,17 +911,17 @@ class Analyze(object):
             json.dump(self.analysis_dict, fp)
 
     def do_all_analysis(self):
-        # self.backup_files()
-        # self.check_delivery(self.df)
-        # self.check_plan_error(self.df)
-        # self.check_raw_file_update_time()
-        # self.generate_topline_and_weekly_metrics()
-        # self.evaluate_on_kpis()
-        # self.get_metrics_by_vendor_key()
-        # self.find_missing_metrics()
-        # self.flag_errant_metrics()
-        # self.find_missing_serving()
-        # self.find_missing_ad_rate()
+        self.backup_files()
+        self.check_delivery(self.df)
+        self.check_plan_error(self.df)
+        self.check_raw_file_update_time()
+        self.generate_topline_and_weekly_metrics()
+        self.evaluate_on_kpis()
+        self.get_metrics_by_vendor_key()
+        self.find_missing_metrics()
+        self.flag_errant_metrics()
+        self.find_missing_serving()
+        self.find_missing_ad_rate()
         for analysis_class in self.class_list:
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
@@ -975,8 +975,10 @@ class CheckAutoDictOrder(AnalyzeBase):
     def get_vendor_list():
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
-        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         ven_list = []
+        if dctc.DICT_COL_NAME not in tc.df.columns:
+            return ven_list
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
@@ -1047,6 +1049,84 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
+class FindBlankLines(AnalyzeBase):
+    name = Analyze.blank_lines
+    fix = True
+    pre_run = True
+
+    def find_first_row(self, source):
+        """
+        finds the first row in a raw file where all columns in FPN appear
+        loops through only first 10 rows in case of major error
+        source -> an item from the VM
+        If first row is incorrect, returns a data frame containing:
+        vendor key, filename, line to new first row cut off
+        returns empty df otherwise
+        """
+        line = -1
+        l_df = pd.DataFrame()
+        if vmc.filename not in source.p:
+            return l_df
+        raw_file = source.p[vmc.filename]
+        place_cols = source.p[dctc.FPN]
+        try:
+            df = pd.read_csv(raw_file, skip_blank_lines=False)
+        except FileNotFoundError:
+            logging.debug("File: {} could not be found...".format(raw_file))
+            return l_df
+        for index, row in df.head(10).iterrows():
+            if all(x in row.values or x in df.columns for x in place_cols):
+                line = index
+        if len(df.head(10))-1 > line >= 0:
+            line = line + 1
+            l_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 vmc.filename: [source.p[vmc.filename]],
+                                 'new_first_line': [line]})
+            delivery_msg = "Uploaded file first row may be incorrect"
+            msg2 = "File Name: "
+            msg3 = "Suggested new first row: "
+            logging.info('{}\n{}{}\n{}{}'.format(
+                delivery_msg, msg2, raw_file, msg3, line))
+            self.aly.add_to_analysis_dict(key_col=self.name,
+                                          message=delivery_msg,
+                                          data=l_df.to_dict())
+            return l_df
+        missing_strings = (set(place_cols) -
+                           set(df.head(10).values.flatten()) -
+                           set(df.columns))
+        if missing_strings:
+            logging.warning('Could not find the following cols in'
+                            ' {}: {}'.format(raw_file, missing_strings))
+        return l_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        for source in data_sources:
+            self.find_first_row(source)
+
+    def fix_analysis_for_data_source(self, source, write=None):
+        """
+        Plugs in new first line from aly dict to the VM
+        source -> data source from aly dict (created from find_first_row)
+        """
+        vk = source[vmc.vendorkey]
+        new_first_line = source['new_first_line']
+        logging.info('Changing {} {} to {}'.format(vk,
+                                                   vmc.firstrow,
+                                                   new_first_line))
+        self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
+        if write:
+            self.aly.matrix.write()
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, False)
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
 class CheckPackageCapping(AnalyzeBase):
     name = Analyze.package_cap
     cap_name = Analyze.cap_name
@@ -1075,7 +1155,6 @@ class CheckPackageCapping(AnalyzeBase):
                 c = cap_file.config[cfg]
             if c and os.path.isfile(c[cal.MetricCap().file_name]):
                 pdf = cap_file.get_cap_file(c)
-                df = df.loc[:, ~df.columns.duplicated()].copy()
                 df = df.append(pdf)
                 temp_package_cap = c[cap_file.proc_dim]
                 return df, temp_package_cap, c, pdf, cap_file
@@ -1137,9 +1216,16 @@ class CheckPackageCapping(AnalyzeBase):
         """
         df = df[[dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
                  self.plan_net_temp, vmc.cost]]
-        df = df.groupby([temp_package_cap, dctc.VEN])
+        try:
+            df = df.groupby([temp_package_cap, dctc.VEN])
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
         df = df.size().reset_index(name='count')
         df = df[[temp_package_cap, dctc.VEN]]
+        if (temp_package_cap not in df.columns or
+                temp_package_cap not in pdf.columns):
+            return pd.DataFrame()
         df = df[df[temp_package_cap].isin(pdf[temp_package_cap])]
         df = df[df.duplicated(subset=temp_package_cap, keep=False)]
         if not df.empty:
@@ -1230,84 +1316,6 @@ class CheckPackageCapping(AnalyzeBase):
             return None
         self.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
                                 write=write, aly_dict=aly_dict)
-
-
-class FindBlankLines(AnalyzeBase):
-    name = Analyze.blank_lines
-    fix = True
-    pre_run = True
-
-    def find_first_row(self, source):
-        """
-        finds the first row in a raw file where all columns in FPN appear
-        loops through only first 10 rows in case of major error
-        source -> an item from the VM
-        If first row is incorrect, returns a data frame containing:
-        vendor key, filename, line to new first row cut off
-        returns empty df otherwise
-        """
-        line = -1
-        l_df = pd.DataFrame()
-        if vmc.filename not in source.p:
-            return l_df
-        raw_file = source.p[vmc.filename]
-        place_cols = source.p[dctc.FPN]
-        try:
-            df = pd.read_csv(raw_file, skip_blank_lines=False)
-        except FileNotFoundError:
-            logging.debug("File: {} could not be found...".format(raw_file))
-            return l_df
-        for index, row in df.head(10).iterrows():
-            if all(x in row.values or x in df.columns for x in place_cols):
-                line = index
-        if len(df.head(10))-1 > line >= 0:
-            line = line + 1
-            l_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 vmc.filename: [source.p[vmc.filename]],
-                                 'new_first_line': [line]})
-            delivery_msg = "Uploaded file first row may be incorrect"
-            msg2 = "File Name: "
-            msg3 = "Suggested new first row: "
-            logging.info('{}\n{}{}\n{}{}'.format(
-                delivery_msg, msg2, raw_file, msg3, line))
-            self.aly.add_to_analysis_dict(key_col=self.name,
-                                          message=delivery_msg,
-                                          data=l_df.to_dict())
-            return l_df
-        missing_strings = (set(place_cols) -
-                           set(df.head(10).values.flatten()) -
-                           set(df.columns))
-        if missing_strings:
-            logging.warning('Could not find the following cols in'
-                            ' {}: {}'.format(raw_file, missing_strings))
-        return l_df
-
-    def do_analysis(self):
-        data_sources = self.matrix.get_all_data_sources()
-        for source in data_sources:
-            self.find_first_row(source)
-
-    def fix_analysis_for_data_source(self, source, write=None):
-        """
-        Plugs in new first line from aly dict to the VM
-        source -> data source from aly dict (created from find_first_row)
-        """
-        vk = source[vmc.vendorkey]
-        new_first_line = source['new_first_line']
-        logging.info('Changing {} {} to {}'.format(vk,
-                                                   vmc.firstrow,
-                                                   new_first_line))
-        self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
-        if write:
-            self.aly.matrix.write()
-
-    def fix_analysis(self, aly_dict, write=True):
-        aly_dict = aly_dict.to_dict(orient='records')
-        for x in aly_dict:
-            self.fix_analysis_for_data_source(x, False)
-        if write:
-            self.aly.matrix.write()
-        return self.aly.matrix.vm_df
 
 
 class FindPlacementNameCol(AnalyzeBase):
@@ -1409,7 +1417,7 @@ class CheckApiDateLength(AnalyzeBase):
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
+        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -1483,7 +1491,7 @@ class CheckColumnNames(AnalyzeBase):
             transforms = [x for x in transforms if x.split('::')[0]
                           in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = source.get_raw_df(nrows=first_row + 5)
+            tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
             cols = list(tdf.columns)

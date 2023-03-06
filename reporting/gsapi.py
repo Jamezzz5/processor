@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import time
 import pandas as pd
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
@@ -10,7 +11,9 @@ config_path = utl.config_path
 
 
 class GsApi(object):
-    base_url = 'https://sheets.googleapis.com/v4/spreadsheets'
+    sheets_url = 'https://sheets.googleapis.com/v4/spreadsheets'
+    slides_url = 'https://slides.googleapis.com/v1/presentations'
+    drive_url = 'https://www.googleapis.com/drive/v3/files'
 
     def __init__(self):
         self.config = None
@@ -72,7 +75,7 @@ class GsApi(object):
         self.client = OAuth2Session(self.client_id, token=token)
 
     def create_url(self):
-        url = '{}/{}/values/{}'.format(self.base_url, self.sheet_id, 'A:ZZ')
+        url = '{}/{}/values/{}'.format(self.sheets_url, self.sheet_id, 'A:ZZ')
         return url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -80,6 +83,92 @@ class GsApi(object):
         self.get_client()
         url = self.create_url()
         r = self.client.get(url)
-        self.df = pd.DataFrame(r.json()['values'])
-        logging.info('Data received, returning dataframe.')
+        response = r.json()
+        if 'values' in response:
+            self.df = pd.DataFrame(response['values'])
+            logging.info('Data received, returning dataframe.')
+        else:
+            logging.warning('Values not in response: {}'.format(response))
         return self.df
+
+    def create_presentation(self, presentation_name=None):
+        logging.info('Creating GSlides Presentation: {}'.format(
+            presentation_name))
+        body = {
+            "title": presentation_name,
+        }
+        response = self.client.post(url=self.slides_url, json=body)
+        response = response.json()
+        presentation_id = response["presentationId"]
+        self.add_permissions(presentation_id)
+        return presentation_id
+
+    def add_permissions(self, presentation_id, domain="liquidarcade.com"):
+        url = self.drive_url + "/" + presentation_id + "/permissions"
+        body = {
+            "role": "writer",
+            "type": "domain",
+            "domain": domain,
+            "allowFileDiscovery": True
+        }
+        response = self.client.post(url=url, json=body)
+        return response
+
+    def add_image_slide(self, presentation_id=None, ad_id=None,
+                        image_url=None):
+        logging.info('Creating slide and adding image: {}, {}'.format(
+            ad_id, image_url))
+        url = self.slides_url + "/" + presentation_id + ":batchUpdate"
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "requests": [
+                {
+                    "createSlide": {
+                        "objectId": ad_id
+                    }
+                },
+                {
+                    "createImage": {
+                        "elementProperties": {
+                            "pageObjectId": ad_id
+                        },
+                        "url": image_url
+                    }
+                }
+            ]
+        }
+        response = self.client.post(url=url, json=body, headers=headers)
+        return response
+
+    def add_speaker_notes(self, presentation_id=None, page_id=None, text=''):
+        logging.info('Adding speaker note: {}'.format(text))
+        url = self.slides_url + "/" + presentation_id + "/pages/" + page_id
+        notes_id = None
+        for x in range(1, 11):
+            response = self.client.get(url)
+            response = response.json()
+            if "slideProperties" in response:
+                notes_id = response["slideProperties"][
+                    "notesPage"]["notesProperties"]["speakerNotesObjectId"]
+                break
+            else:
+                logging.warning('Slide not created yet. Attempt: {}'.format(x))
+                time.sleep(3)
+        if not notes_id:
+            return {'error': 'Unable to add speaker notes to slide '
+                             '{}.'.format(page_id)}
+        url = self.slides_url + "/" + presentation_id + ":batchUpdate"
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "requests": [
+                {
+                    "insertText": {
+                        "objectId": notes_id,
+                        "insertionIndex": 0,
+                        "text": text
+                    }
+                }
+            ]
+        }
+        response = self.client.post(url=url, json=body, headers=headers)
+        return response

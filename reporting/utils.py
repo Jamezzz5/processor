@@ -16,6 +16,8 @@ raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
+preview_path = './ad_previews/'
+preview_config = 'preview_config.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
@@ -122,7 +124,11 @@ def string_to_date(my_string):
             ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
-        return dt.datetime.strptime(my_string, '%Y%m%d')
+        try:
+            return dt.datetime.strptime(my_string, '%Y%m%d')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif len(my_string) == 8 and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
     elif my_string == '0' or my_string == '0.0':
@@ -492,8 +498,16 @@ class SeleniumWrapper(object):
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        self.go_to_url(url)
-        self.browser.save_screenshot(file_name)
+        went_to_url = self.go_to_url(url)
+        if went_to_url:
+            self.browser.save_screenshot(file_name)
+
+    def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
+        logging.info('Getting screenshot from {} and '
+                     'saving to {}.'.format(url, file_name))
+        self.go_to_url(url, sleep=10)
+        elem = self.browser.find_element_by_xpath(xpath)
+        elem.screenshot(file_name)
 
     def get_all_iframes(self, url=None):
         if url:
@@ -535,6 +549,8 @@ class SeleniumWrapper(object):
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
             elem.send_keys(item[0])
+            if 'selectized' in elem_xpath:
+                elem.send_keys(u'\ue007')
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
