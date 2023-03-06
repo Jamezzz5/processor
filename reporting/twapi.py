@@ -17,7 +17,7 @@ from requests.exceptions import ConnectionError
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
-twitter_account_field = ['ACCOUNT']
+user_field = 'USER_STATS'
 configpath = utl.config_path
 
 base_url = 'https://ads-api.twitter.com'
@@ -74,8 +74,9 @@ mobile_conversions = ['mobile_conversion_spent_credits',
                       'mobile_conversion_purchases']
 
 user_fields = ['id', 'name', 'screen_name', 'location', 'description', 
-               'followers_count', 'friends_count', 'listed_count', 'favourites_count', 
-               'verified', 'statuses_count', 'withheld_in_countries']
+               'followers_count', 'friends_count', 'listed_count',
+               'favourites_count', 'verified', 'statuses_count',
+               'withheld_in_countries']
 
 
 class TwApi(object):
@@ -203,9 +204,11 @@ class TwApi(object):
         return id_dict
 
     def get_twitter_objects(self, usernames):
-        request_url = 'https://api.twitter.com/1.1/users/lookup.json?'
-        data = self.request(request_url, params={'screen_name' : usernames})
+        request_url = 'https://api.twitter.com/1.1/users/lookup.json'
+        data = self.request(request_url, params={'screen_name': usernames})
+        logging.info('Getting user data for {}'.format(usernames))
         if 'errors' in data:
+            logging.warning('Error in response: {}'.format(data))
             return pd.DataFrame()
         users_df = pd.DataFrame(data)
         users_df = users_df[user_fields]
@@ -284,8 +287,8 @@ class TwApi(object):
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields is None:
             fields = def_fields
-        elif 'ACCOUNTS' in fields:
-            fields = twitter_account_field
+        elif user_field in fields:
+            fields = [user_field]
         else:
             fields = def_fields + conv_fields
         return sd, ed, fields
@@ -329,8 +332,8 @@ class TwApi(object):
         self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
-        if fields == twitter_account_field:
-            self.df = self.get_twitter_objects(usernames = self.account_id)
+        if user_field in fields:
+            self.df = self.get_twitter_objects(usernames=self.account_id)
             return self.df
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
