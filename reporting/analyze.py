@@ -1069,6 +1069,13 @@ class FindBlankLines(AnalyzeBase):
             return l_df
         raw_file = source.p[vmc.filename]
         place_cols = source.p[dctc.FPN]
+        col_list = []
+        for s in place_cols:
+            if s.startswith('::'):
+                col_list.append(s[2:])
+            else:
+                col_list.append(s)
+        place_cols = col_list
         try:
             df = pd.read_csv(raw_file, skip_blank_lines=False)
         except FileNotFoundError:
