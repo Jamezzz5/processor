@@ -726,7 +726,7 @@ class TestAnalyze:
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                  vmc.filename: file_name,
-                                 'new_first_line': [5]})
+                                 'new_first_line': ['5']})
         os.remove(file_name)
         assert not df.empty
         assert df.equals(match_df)
@@ -781,7 +781,7 @@ class TestAnalyze:
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                  vmc.filename: file_name,
-                                 'new_first_line': [1]})
+                                 'new_first_line': ['1']})
         os.remove(file_name)
         assert not df.empty
         assert df.equals(match_df)

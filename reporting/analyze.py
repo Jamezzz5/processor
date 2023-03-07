@@ -1075,10 +1075,11 @@ class FindBlankLines(AnalyzeBase):
             logging.debug("File: {} could not be found...".format(raw_file))
             return l_df
         for index, row in df.head(10).iterrows():
-            if all(x in row.values or x in df.columns for x in place_cols):
+            if any(x in row.values or x in df.columns for x in place_cols):
                 line = index
         if len(df.head(10))-1 > line >= 0:
             line = line + 1
+            line = str(line)
             l_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                  vmc.filename: [source.p[vmc.filename]],
                                  'new_first_line': [line]})
