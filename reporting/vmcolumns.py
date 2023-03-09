@@ -234,6 +234,8 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
             api_mp_key, api_ss_key]
 test_apis = [api_dc_key, api_fb_key]
+r_cols = ['Field', 'Result', 'Success']
+preview_apis = [api_fb_key]
 
 api_translation = {
     api_aw_key: 'aw',
@@ -298,36 +300,38 @@ api_partner_name_translation = {
     api_amd_key: ['Amazon DSP']
 }
 
+module_col = 'module_name'
+class_col = 'class_name'
 api_class_translation = {
-    api_aw_key: ['awapi', 'AwApi'],
-    api_fb_key: ['fbapi', 'FbApi'],
-    api_tw_key: ['twapi', 'TwApi'],
-    api_ttd_key: ['ttdapi', 'TtdApi'],
-    api_ga_key: ['gaapi', 'GaApi'],
-    api_nb_key: ['nbapi', 'NbApi'],
-    api_af_key: ['afapi', 'AfApi'],
-    api_sc_key: ['scapi', 'ScApi'],
-    api_aj_key: ['ajapi', 'AjApi'],
-    api_dc_key: ['dcapi', 'DcApi'],
-    api_rs_key: ['dbapi', 'DbApi'],
-    api_db_key: ['vkapi', 'VkApi'],
-    api_vk_key: ['rsapi', 'RsApi'],
-    api_rc_key: ['rcapi', 'RcApi'],
-    api_szk_key: ['szkapi', 'SzkApi'],
-    api_red_key: ['redapi', 'RedApi'],
-    api_dv_key: ['dvapi', 'DvApi'],
-    api_adk_key: ['adkapi', 'AdkApi'],
-    api_inn_key: ['innapi', 'InnApi'],
-    api_tik_key: ['tikapi', 'TikApi'],
-    api_amz_key: ['amzapi', 'AmzApi'],
-    api_cri_key: ['criapi', 'CriApi'],
-    api_pm_key: ['pmapi', 'PmApi'],
-    api_sam_key: ['samapi', 'SamApi'],
-    api_gs_key: ['gsapi', 'GsApi'],
-    api_qt_key: ['qtapi', 'QtApi'],
-    api_yv_key: ['yvapi', 'YvApi'],
-    api_amd_key: ['amzapi', 'AmzApi'],
-    api_ss_key: ['ssapi', 'SsApi'],
+    api_aw_key: {module_col: 'reporting.awapi', class_col: 'AwApi'},
+    api_fb_key: {module_col: 'reporting.fbapi', class_col: 'FbApi'},
+    api_tw_key: {module_col: 'reporting.twapi', class_col: 'TwApi'},
+    api_ttd_key: {module_col: 'reporting.ttdapi', class_col: 'TtdApi'},
+    api_ga_key: {module_col: 'reporting.gaapi', class_col: 'GaApi'},
+    api_nb_key: {module_col: 'reporting.nbapi', class_col: 'NbApi'},
+    api_af_key: {module_col: 'reporting.afapi', class_col: 'AfApi'},
+    api_sc_key: {module_col: 'reporting.scapi', class_col: 'ScApi'},
+    api_aj_key: {module_col: 'reporting.ajapi', class_col: 'AjApi'},
+    api_dc_key: {module_col: 'reporting.dcapi', class_col: 'DcApi'},
+    api_rs_key: {module_col: 'reporting.dbapi', class_col: 'DbApi'},
+    api_db_key: {module_col: 'reporting.vkapi', class_col: 'VkApi'},
+    api_vk_key: {module_col: 'reporting.rsapi', class_col: 'RsApi'},
+    api_rc_key: {module_col: 'reporting.rcapi', class_col: 'RcApi'},
+    api_szk_key: {module_col: 'reporting.szkapi', class_col: 'SzkApi'},
+    api_red_key: {module_col: 'reporting.redapi', class_col: 'RedApi'},
+    api_dv_key: {module_col: 'reporting.dvapi', class_col: 'DvApi'},
+    api_adk_key: {module_col: 'reporting.adkapi', class_col: 'AdkApi'},
+    api_inn_key: {module_col: 'reporting.innapi', class_col: 'InnApi'},
+    api_tik_key: {module_col: 'reporting.tikapi', class_col: 'TikApi'},
+    api_amz_key: {module_col: 'reporting.amzapi', class_col: 'AmzApi'},
+    api_cri_key: {module_col: 'reporting.criapi', class_col: 'CriApi'},
+    api_pm_key: {module_col: 'reporting.pmapi', class_col: 'PmApi'},
+    api_sam_key: {module_col: 'reporting.samapi', class_col: 'SamApi'},
+    api_gs_key: {module_col: 'reporting.gsapi', class_col: 'GsApi'},
+    api_qt_key: {module_col: 'reporting.qtapi', class_col: 'QtApi'},
+    api_yv_key: {module_col: 'reporting.yvapi', class_col: 'YvApi'},
+    api_amd_key: {module_col: 'reporting.amzapi', class_col: 'AmzApi'},
+    api_ss_key: {module_col: 'reporting.ssapi', class_col: 'SsApi'},
 }
 
 output_file = 'Raw Data Output.csv'

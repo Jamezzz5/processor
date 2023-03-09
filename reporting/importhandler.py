@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import importlib
 import pandas as pd
 import datetime as dt
 import reporting.fbapi as fbapi
@@ -8,6 +9,7 @@ import reporting.awapi as awapi
 import reporting.twapi as twapi
 import reporting.gaapi as gaapi
 import reporting.nbapi as nbapi
+import reporting.afapi as afapi
 import reporting.scapi as scapi
 import reporting.ajapi as ajapi
 import reporting.dcapi as dcapi
@@ -32,7 +34,6 @@ import reporting.yvapi as yvapi
 import reporting.ssapi as ssapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
-import reporting.afapi as afapi
 import reporting.export as export
 import reporting.vmcolumns as vmc
 import reporting.utils as utl
@@ -158,38 +159,13 @@ class ImportHandler(object):
         """Loops through all APIs and makes function call to retrieve data.
 
         """
-        apis = [('fb', self.matrix.api_fb_key, fbapi.FbApi),
-                ('aw', self.matrix.api_aw_key, awapi.AwApi),
-                ('tw', self.matrix.api_tw_key, twapi.TwApi),
-                ('ttd', self.matrix.api_ttd_key, ttdapi.TtdApi),
-                ('ga', self.matrix.api_ga_key, gaapi.GaApi),
-                ('nb', self.matrix.api_nb_key, nbapi.NbApi),
-                ('af', self.matrix.api_af_key, afapi.AfApi),
-                ('sc', self.matrix.api_sc_key, scapi.ScApi),
-                ('aj', self.matrix.api_aj_key, ajapi.AjApi),
-                ('dc', self.matrix.api_dc_key, dcapi.DcApi),
-                ('db', self.matrix.api_db_key, dbapi.DbApi),
-                ('vk', self.matrix.api_vk_key, vkapi.VkApi),
-                ('rs', self.matrix.api_rs_key, rsapi.RsApi),
-                ('rc', self.matrix.api_rc_key, rcapi.RcApi),
-                ('szk', self.matrix.api_szk_key, szkapi.SzkApi),
-                ('red', self.matrix.api_red_key, redapi.RedApi),
-                ('dv', self.matrix.api_dv_key, dvapi.DvApi),
-                ('adk', self.matrix.api_adk_key, adkapi.AdkApi),
-                ('inn', self.matrix.api_inn_key, innapi.InnApi),
-                ('tik', self.matrix.api_tik_key, tikapi.TikApi),
-                ('amz', self.matrix.api_amz_key, amzapi.AmzApi),
-                ('cri', self.matrix.api_cri_key, criapi.CriApi),
-                ('pm', self.matrix.api_pm_key, pmapi.PmApi),
-                ('sam', self.matrix.api_sam_key, samapi.SamApi),
-                ('gs', self.matrix.api_gs_key, gsapi.GsApi),
-                ('qt', self.matrix.api_qt_key, qtapi.QtApi),
-                ('yv', self.matrix.api_yv_key, yvapi.YvApi),
-                ('amd', self.matrix.api_amd_key, amzapi.AmzApi),
-                ('ss', self.matrix.api_ss_key, ssapi.SsApi)]
-        for api in apis:
-            if self.arg_check(api[0]) and api[1]:
-                self.api_calls(api[1], api[2]())
+        for api, vks in self.matrix.vks.items():
+            if self.arg_check(vmc.api_translation[api]) and vks:
+                api_module = importlib.import_module(
+                    vmc.api_class_translation[api][vmc.module_col])
+                api_class = getattr(
+                    api_module, vmc.api_class_translation[api][vmc.class_col])()
+                self.api_calls(vks, api_class)
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:

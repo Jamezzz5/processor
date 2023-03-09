@@ -31,35 +31,37 @@ class VendorMatrix(object):
         self.vm = None
         self.vm_df = pd.DataFrame()
         self.vl = []
-        self.api_fb_key = []
-        self.api_aw_key = []
-        self.api_tw_key = []
-        self.api_ttd_key = []
-        self.api_ga_key = []
-        self.api_nb_key = []
-        self.api_af_key = []
-        self.api_sc_key = []
-        self.api_aj_key = []
-        self.api_dc_key = []
-        self.api_rs_key = []
-        self.api_db_key = []
-        self.api_vk_key = []
-        self.api_rc_key = []
-        self.api_szk_key = []
-        self.api_red_key = []
-        self.api_dv_key = []
-        self.api_adk_key = []
-        self.api_inn_key = []
-        self.api_tik_key = []
-        self.api_amz_key = []
-        self.api_cri_key = []
-        self.api_pm_key = []
-        self.api_sam_key = []
-        self.api_gs_key = []
-        self.api_qt_key = []
-        self.api_yv_key = []
-        self.api_amd_key = []
-        self.api_ss_key = []
+        self.vks = {
+            vmc.api_fb_key: [],
+            vmc.api_aw_key: [],
+            vmc.api_tw_key: [],
+            vmc.api_ttd_key: [],
+            vmc.api_ga_key: [],
+            vmc.api_nb_key: [],
+            vmc.api_af_key: [],
+            vmc.api_sc_key: [],
+            vmc.api_aj_key: [],
+            vmc.api_dc_key: [],
+            vmc.api_rs_key: [],
+            vmc.api_db_key: [],
+            vmc.api_vk_key: [],
+            vmc.api_rc_key: [],
+            vmc.api_szk_key: [],
+            vmc.api_red_key: [],
+            vmc.api_dv_key: [],
+            vmc.api_adk_key: [],
+            vmc.api_inn_key: [],
+            vmc.api_tik_key: [],
+            vmc.api_amz_key: [],
+            vmc.api_cri_key: [],
+            vmc.api_pm_key: [],
+            vmc.api_sam_key: [],
+            vmc.api_gs_key: [],
+            vmc.api_qt_key: [],
+            vmc.api_yv_key: [],
+            vmc.api_amd_key: [],
+            vmc.api_ss_key: [],
+        }
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -123,64 +125,8 @@ class VendorMatrix(object):
         for vk in self.vl:
             vk_split = {vk: vk.split('_')}
             if vk_split[vk][0] == 'API':
-                if vk_split[vk][1] == vmc.api_aw_key:
-                    self.api_aw_key.append(vk)
-                if vk_split[vk][1] == vmc.api_fb_key:
-                    self.api_fb_key.append(vk)
-                if vk_split[vk][1] == vmc.api_tw_key:
-                    self.api_tw_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ttd_key:
-                    self.api_ttd_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ga_key:
-                    self.api_ga_key.append(vk)
-                if vk_split[vk][1] == vmc.api_nb_key:
-                    self.api_nb_key.append(vk)
-                if vk_split[vk][1] == vmc.api_af_key:
-                    self.api_af_key.append(vk)
-                if vk_split[vk][1] == vmc.api_sc_key:
-                    self.api_sc_key.append(vk)
-                if vk_split[vk][1] == vmc.api_aj_key:
-                    self.api_aj_key.append(vk)
-                if vk_split[vk][1] == vmc.api_dc_key:
-                    self.api_dc_key.append(vk)
-                if vk_split[vk][1] == vmc.api_rs_key:
-                    self.api_rs_key.append(vk)
-                if vk_split[vk][1] == vmc.api_db_key:
-                    self.api_db_key.append(vk)
-                if vk_split[vk][1] == vmc.api_vk_key:
-                    self.api_vk_key.append(vk)
-                if vk_split[vk][1] == vmc.api_rc_key:
-                    self.api_rc_key.append(vk)
-                if vk_split[vk][1] == vmc.api_szk_key:
-                    self.api_szk_key.append(vk)
-                if vk_split[vk][1] == vmc.api_red_key:
-                    self.api_red_key.append(vk)
-                if vk_split[vk][1] == vmc.api_dv_key:
-                    self.api_dv_key.append(vk)
-                if vk_split[vk][1] == vmc.api_adk_key:
-                    self.api_adk_key.append(vk)
-                if vk_split[vk][1] == vmc.api_inn_key:
-                    self.api_inn_key.append(vk)
-                if vk_split[vk][1] == vmc.api_tik_key:
-                    self.api_tik_key.append(vk)
-                if vk_split[vk][1] == vmc.api_amz_key:
-                    self.api_amz_key.append(vk)
-                if vk_split[vk][1] == vmc.api_cri_key:
-                    self.api_cri_key.append(vk)
-                if vk_split[vk][1] == vmc.api_pm_key:
-                    self.api_pm_key.append(vk)
-                if vk_split[vk][1] == vmc.api_sam_key:
-                    self.api_sam_key.append(vk)
-                if vk_split[vk][1] == vmc.api_gs_key:
-                    self.api_gs_key.append(vk)
-                if vk_split[vk][1] == vmc.api_qt_key:
-                    self.api_qt_key.append(vk)
-                if vk_split[vk][1] == vmc.api_yv_key:
-                    self.api_yv_key.append(vk)
-                if vk_split[vk][1] == vmc.api_amd_key:
-                    self.api_amd_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ss_key:
-                    self.api_ss_key.append(vk)
+                if vk_split[vk][1] in self.vks.keys():
+                    self.vks[vk_split[vk][1]].append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)
@@ -783,7 +729,7 @@ class DataSource(object):
         return error
 
     def get_and_merge_dictionary(self, df):
-        dic = dct.Dict(self.p[vmc.filenamedict])
+        dic = dct.Dict(self.p[vmc.filenamedict], self.key, df)
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         rc = dct.RelationalConfig()

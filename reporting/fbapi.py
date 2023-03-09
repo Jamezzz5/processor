@@ -8,13 +8,17 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.awss3 as awss3
+import reporting.gsapi as gsapi
+import reporting.vendormatrix as matrix
+import reporting.vmcolumns as vmc
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.exceptions import FacebookRequestError,\
     FacebookBadObjectError
 from facebook_business.adobjects.adsinsights import AdsInsights
 from facebook_business.adobjects.adreportrun import AdReportRun
-
+from facebook_business.adobjects.adcreative import AdCreative
 
 def_params = ['campaign_name', 'adset_name', 'ad_name', 'ad_id']
 
@@ -126,6 +130,7 @@ class FbApi(object):
         attribution_window = []
         fields = def_fields
         time_breakdown = 1
+        screenshots = False
         level = AdsInsights.Level.ad
         for item in items:
             if item == 'Actions':
@@ -158,8 +163,10 @@ class FbApi(object):
                 level = AdsInsights.Level.adset
             if item == 'Campaign':
                 level = AdsInsights.Level.campaign
+            if item == 'Screenshots':
+                screenshots = True
         return fields, breakdowns, action_breakdowns, attribution_window,\
-            time_breakdown, level
+            time_breakdown, level, screenshots
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -184,8 +191,8 @@ class FbApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         self.df = pd.DataFrame()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        fields, breakdowns, action_breakdowns, attr, time_breakdown, level = \
-            self.parse_fields(fields)
+        (fields, breakdowns, action_breakdowns, attr, time_breakdown, level,
+         screenshots) = self.parse_fields(fields)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
         self.make_all_requests(fields, breakdowns, action_breakdowns, attr,
@@ -200,6 +207,9 @@ class FbApi(object):
             if col in self.df.columns:
                 self.nested_dicts_to_cols(col)
         self.df = self.rename_cols()
+        if screenshots:
+            previews = FacebookScreenshots(df=self.df)
+            previews.get_and_take_screenshots()
         return self.df
 
     def make_all_requests(self, fields, breakdowns, action_breakdowns, attr,
@@ -496,53 +506,56 @@ class FbApi(object):
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
 
-    def test_connection(self, config):
-        self.input_config(config)
-        acc_col = 'Account ID'
-        camp_col = 'Campaign ID'
-        r_cols = ['Field', 'Result', 'Success']
-        results = pd.DataFrame(columns=r_cols)
+    def test_connection(self):
+        import_config = matrix.ImportConfig()
+        import_config.import_vm()
+        ic_df = import_config.df.loc[
+            import_config.df[import_config.key] == vmc.api_fb_key]
+        acc_col = ic_df.iloc[0][import_config.account_id]
+        camp_col = ic_df.iloc[0][import_config.filter]
+        acc_pre = ic_df.iloc[0][import_config.account_id_pre]
+        results = pd.DataFrame(columns=vmc.r_cols)
+        self.account = AdAccount(self.act_id)
+        fields = [
+            'name',
+            'objective',
+        ]
+        params = {
+            'effective_status': ['ACTIVE', 'PAUSED'],
+        }
         try:
-            self.account = AdAccount(self.act_id)
-            fields = [
-                'name',
-                'objective',
-            ]
-            params = {
-                'effective_status': ['ACTIVE', 'PAUSED'],
-            }
             r = self.account.get_campaigns(fields=fields, params=params)
-            row = pd.DataFrame(
-                [[acc_col,
-                  ' '.join(['SUCCESS -- ID:', str(self.act_id).strip('act_')]),
-                  True]], columns=r_cols)
-            results = results.append(row)
-            if self.campaign_filter:
-                params['filtering'] = ([{'field': 'campaign.name',
-                                         'operator': 'CONTAIN',
-                                         'value': self.campaign_filter}])
-                r = self.account.get_campaigns(fields=fields, params=params)
-                if r:
-                    row = pd.DataFrame(
-                        [[camp_col, 'SUCCESS -- CAMPAIGNS INCLUDED IF DATA PAST'
-                                    ' START DATA:', True]], columns=r_cols)
-                    results = results.append(row)
-                    for campaign in r:
-                        row = pd.DataFrame([[camp_col, campaign["name"], True]],
-                                           columns=r_cols)
-                        results = results.append(row)
-                else:
-                    row = pd.DataFrame(
-                        [[camp_col, 'FAILURE: No Campaigns under filter.',
-                          False]], columns=r_cols)
-                    results = results.append(row)
-            return results
         except FacebookRequestError as e:
             row = pd.DataFrame(
                 [[acc_col, ' '.join(['FAILURE:', e._api_error_message]),
-                  False]], columns=r_cols)
+                  False]], columns=vmc.r_cols)
             results = results.append(row)
             return results
+        row = pd.DataFrame(
+            [[acc_col,
+              ' '.join(['SUCCESS -- ID:', str(self.act_id).strip(acc_pre)]),
+              True]], columns=vmc.r_cols)
+        results = results.append(row)
+        if self.campaign_filter:
+            params['filtering'] = ([{'field': 'campaign.name',
+                                     'operator': 'CONTAIN',
+                                     'value': self.campaign_filter}])
+            r = self.account.get_campaigns(fields=fields, params=params)
+        if r:
+            row = pd.DataFrame(
+                [[camp_col, 'SUCCESS -- CAMPAIGNS INCLUDED IF DATA PAST'
+                            ' START DATE:', True]], columns=vmc.r_cols)
+            results = results.append(row)
+            for campaign in r:
+                row = pd.DataFrame([[camp_col, campaign["name"], True]],
+                                   columns=vmc.r_cols)
+                results = results.append(row)
+        else:
+            row = pd.DataFrame(
+                [[camp_col, 'FAILURE: No Campaigns under filter.',
+                  False]], columns=vmc.r_cols)
+            results = results.append(row)
+        return results
 
 
 class FacebookRequest(object):
@@ -578,3 +591,135 @@ class FacebookRequest(object):
             return True
         else:
             return False
+
+
+class FacebookScreenshots(object):
+    ad_id_col = 'ad_id'
+    ad_name_col = 'Ad Name'
+    url_col = 'url'
+    pres_col = 'presentation_id'
+    config_cols = [ad_id_col, ad_name_col, url_col]
+    screenshot_dir = os.path.join('screenshots', 'facebook/')
+
+    def __init__(self, file_name='preview_config.csv',
+                 s3config='s3config_screenshots.json',
+                 gsconfig='gsapi_screenshots.json', df=None):
+        logging.info('Getting config from {}.'.format(file_name))
+        self.file_name = file_name
+        self.s3config = s3config
+        self.gsconfig = gsconfig
+        self.config = self.import_config()
+        self.s3 = None
+        self.gsapi = None
+        self.df = df
+        self.pres_id = None
+        self.ad_names_dic = {}
+
+    def import_config(self):
+        utl.dir_check(utl.preview_path)
+        if os.path.isfile(os.path.join(utl.preview_path, self.file_name)):
+            df = pd.read_csv(utl.preview_path + self.file_name)
+        else:
+            df = pd.DataFrame(columns=self.config_cols)
+        return df
+
+    def get_and_take_screenshots(self):
+        if not self.df.empty:
+            self.get_ad_name_dict()
+            urls = self.get_screenshots()
+            urls = self.take_screenshots(urls)
+            self.upload_screenshots(urls)
+            self.clear_screenshots()
+            self.create_presentation()
+            self.add_images_presentation(urls)
+            self.config.to_csv(os.path.join(utl.preview_path, self.file_name),
+                               index=False)
+
+    def get_screenshots(self):
+        urls = {}
+        fields = []
+        params = {
+            'ad_format': 'DESKTOP_FEED_STANDARD',
+        }
+        ad_ids = self.df[self.ad_id_col].unique().tolist()
+        cur_ad_ids = list(map(str, self.config[self.ad_id_col].to_list()))
+        new_ad_ids = list(set(ad_ids) - set(cur_ad_ids))
+        for ad in new_ad_ids:
+            response = AdCreative(ad).get_previews(
+                fields=fields,
+                params=params,
+            )
+            url = (
+                response[0]['body'].split("src=\"")[1].split("\" width=")[0])
+            url = url.replace("amp;t", "amp&t")
+            urls[ad] = url
+        return urls
+
+    @staticmethod
+    def take_screenshots(urls):
+        xpath = "//*[@id='fb-ad-preview']"
+        sw = utl.SeleniumWrapper()
+        for ad, url in urls.items():
+            filename = utl.preview_path + str(ad) + ".png"
+            sw.take_elem_screenshot(url, xpath, filename)
+            urls[ad] = filename
+        return urls
+
+    def get_ad_name_dict(self):
+        ad_names = self.df[[self.ad_id_col, self.ad_name_col]]
+        ad_names = ad_names.drop_duplicates()
+        self.ad_names_dic = dict(zip(
+            ad_names[self.ad_id_col], ad_names[self.ad_name_col]))
+
+    def upload_screenshots(self, urls):
+        self.s3 = awss3.S3()
+        self.s3.input_config(self.s3config)
+        for ad, file in urls.items():
+            image_data = utl.image_to_binary(file, True)
+            file_path = self.screenshot_dir + ad + '.png'
+            url = self.s3.s3_upload_file_obj(image_data, file_path)
+            self.config = self.config.append({
+                self.ad_id_col: ad,
+                self.ad_name_col: self.ad_names_dic[ad],
+                self.url_col: url},
+                ignore_index=True)
+
+    @staticmethod
+    def clear_screenshots():
+        ad_previews = os.listdir(utl.preview_path)
+        for img in ad_previews:
+            if img.endswith(".png"):
+                os.remove(os.path.join(utl.preview_path, img))
+
+    def create_presentation(self):
+        self.gsapi = gsapi.GsApi()
+        self.gsapi.input_config(self.gsconfig)
+        self.gsapi.get_client()
+        if (self.pres_col in self.config.columns and
+                not pd.isnull(self.config.loc[0, self.pres_col])):
+            self.pres_id = self.config[self.pres_col][0]
+        else:
+            presentation_name = ''.join(os.getcwd().split('\\')[-3:])
+            pres_id = self.gsapi.create_presentation(presentation_name)
+            self.config[self.pres_col] = pres_id
+            self.pres_id = pres_id
+
+    def add_images_presentation(self, urls):
+        r = []
+        urls = list(map(str, list(urls.keys())))
+        new_ads = self.config[
+            self.config[self.ad_id_col].isin(urls)]
+        for k, v in new_ads.iterrows():
+            client = self.s3.get_client()
+            key = str(v[self.url_col]).split('.com/')[1]
+            url = client.generate_presigned_url(
+                ClientMethod='get_object',
+                Params={'Bucket': self.s3.bucket, 'Key': key},
+                ExpiresIn=3600)
+            r1 = self.gsapi.add_image_slide(
+                str(self.pres_id), str(v[self.ad_id_col]), url)
+            r2 = self.gsapi.add_speaker_notes(
+                str(self.pres_id), str(v[self.ad_id_col]),
+                str(v[self.ad_name_col]))
+            r.append([r1, r2])
+        return r
