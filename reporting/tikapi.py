@@ -42,7 +42,8 @@ class TikApi(object):
                'registration': 'registration',
                'purchase': 'purchase',
                'checkout': 'checkout',
-               'view_content': 'view_content'}
+               'view_content': 'view_content',
+               'offline_shopping_events': 'offline_shopping_events'}
 
     def __init__(self):
         self.config = None
