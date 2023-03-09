@@ -1088,7 +1088,12 @@ class CheckPackageCapping(AnalyzeBase):
         temp_package_cap -> column name we are capping on from raw file
         'plan_net_temp -> how much we cap,taken from raw file
         """
-        df = df[[temp_package_cap, self.plan_net_temp, vmc.cost]]
+        cols = [temp_package_cap, self.plan_net_temp, vmc.cost]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if any(missing_cols):
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df[cols]
         df = df.groupby([temp_package_cap])
         df = df.apply(lambda x:
                       0 if x[self.plan_net_temp].sum() == 0
