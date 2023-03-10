@@ -16,6 +16,8 @@ raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
+preview_path = './ad_previews/'
+preview_config = 'preview_config.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
@@ -499,6 +501,13 @@ class SeleniumWrapper(object):
         went_to_url = self.go_to_url(url)
         if went_to_url:
             self.browser.save_screenshot(file_name)
+
+    def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
+        logging.info('Getting screenshot from {} and '
+                     'saving to {}.'.format(url, file_name))
+        self.go_to_url(url, sleep=10)
+        elem = self.browser.find_element_by_xpath(xpath)
+        elem.screenshot(file_name)
 
     def get_all_iframes(self, url=None):
         if url:
