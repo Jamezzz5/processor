@@ -558,3 +558,41 @@ class SeleniumWrapper(object):
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
+
+
+def copy_file(old_file, new_file, attempt=1, max_attempts=100):
+    try:
+        shutil.copy(old_file, new_file)
+    except PermissionError as e:
+        logging.warning('Could not copy {}: {}'.format(old_file, e))
+    except OSError as e:
+        attempt += 1
+        if attempt > max_attempts:
+            msg = 'Exceeded after {} attempts not copying {} {}'.format(
+                max_attempts, old_file, e)
+            logging.warning(msg)
+        else:
+            logging.warning('Attempt {}: could not copy {} due to OSError '
+                            'retrying in 60s: {}'.format(attempt, old_file, e))
+            time.sleep(60)
+            copy_file(old_file, new_file, attempt=attempt,
+                      max_attempts=max_attempts)
+
+
+def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
+    old_files = os.listdir(old_path)
+    for idx, file_name in enumerate(old_files):
+        if log:
+            logging.info(int((int(idx) / int(len(old_files))) * 100))
+        old_file = os.path.join(old_path, file_name)
+        new_file = os.path.join(new_path, file_name)
+        if os.path.isfile(old_file):
+            if os.path.exists(new_file) and not overwrite:
+                continue
+            else:
+                copy_file(old_file, new_file)
+        elif os.path.isdir(old_file):
+            if not os.path.exists(new_file):
+                os.mkdir(new_file)
+            copy_tree_no_overwrite(old_file, new_file, log=False,
+                                   overwrite=overwrite)

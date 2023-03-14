@@ -341,6 +341,7 @@ class ImportConfig(object):
     account_id_parent = 'ID Parent'
     account_id_pre = 'ID Pre'
     file_name = 'import_config.csv'
+    name = 'name'
     file_path = utl.config_path
 
     def __init__(self, matrix=None, default_param_ic=None, base_path=None):
@@ -519,7 +520,7 @@ class ImportConfig(object):
                     self.update_import(import_dict, cur_import)
                 else:
                     key_name = 'API_{}_{}'.format(cur_import[self.key],
-                                                  cur_import['name'])
+                                                  cur_import[self.name])
                     drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
                                               key_name].copy()
                     drop_idx = drop_idx.index.values[0]
@@ -538,7 +539,7 @@ class ImportConfig(object):
             import_filter = import_dict[self.filter]
             start_date = import_dict[vmc.startdate]
             api_fields = import_dict[vmc.apifields]
-            key_name = import_dict['name']
+            key_name = import_dict[self.name]
             vk = self.add_import_to_vm(import_key, account_id, import_filter,
                                        start_date, api_fields, key_name)
             vks.append(vk)
@@ -552,11 +553,11 @@ class ImportConfig(object):
         up_idx = up_idx.index.values[0]
         for col in [vmc.startdate, vmc.apifields]:
             self.matrix_df.loc[up_idx, col] = import_dict[col]
-        if import_dict['name'] != old_import_dict['name']:
+        if import_dict[self.name] != old_import_dict[self.name]:
             for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
                 self.matrix_df.loc[up_idx, col] = \
                     self.matrix_df.loc[up_idx, col].replace(
-                        old_import_dict['name'], import_dict['name'])
+                        old_import_dict[self.name], import_dict[self.name])
         file_name = self.matrix_df.loc[up_idx, vmc.apifile]
         if not ((import_dict[self.account_id] ==
                  old_import_dict[self.account_id]) and
@@ -596,7 +597,7 @@ class ImportConfig(object):
             self.filter: filter_val,
             vmc.startdate: start_date,
             vmc.apifields: api_fields,
-            'name': api_key_name
+            self.name: api_key_name
         }
         return import_dict
 
@@ -843,8 +844,9 @@ class DataSource(object):
             ic = ImportConfig(matrix=matrix)
         current_imports = ic.get_current_imports(matrix=True)
         for x in current_imports:
-            possible_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name']),
-                             '{}{}{}'.format(import_type, x['Key'], x['name'])]
+            name_part = [import_type, x[ImportConfig.key], x[ImportConfig.name]]
+            vk_formats = ['{}{}_{}', '{}{}{}']
+            possible_keys = [y.format(*name_part) for y in vk_formats]
             if self.key in possible_keys:
                 self.ic_params = x
                 return self.ic_params
