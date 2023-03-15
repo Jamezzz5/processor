@@ -1,19 +1,16 @@
 import os
 import string
-
-import pandas
 import pytest
 import numpy as np
 import pandas as pd
-
-import reporting.analyze
+import datetime as dt
 import reporting.utils as utl
 import reporting.vendormatrix as vm
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.dictcolumns as dctc
 import reporting.calc as cal
-import reporting.analyze as aly
+import reporting.analyze as az
 
 
 def func(x):
@@ -75,6 +72,43 @@ class TestUtils:
             ndf[col] = np.where(mask, 0.0, df[col])
         df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
         assert pd.testing.assert_frame_equal(df, ndf) is None
+
+    def test_data_to_type(self):
+        str_col = 'str_col'
+        float_col = 'float_col'
+        date_col = 'date_col'
+        int_col = 'int_col'
+        nat_list = ['0', '1/32/22', '30/11/22', '2022-1-32', '29269885']
+        str_list = ['1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
+                    '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
+                    'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22']
+        str_list = nat_list + str_list
+        float_list = [str(x) for x in range(len(str_list))]
+        df_dict = {str_col: str_list, float_col: float_list,
+                   date_col: str_list, int_col: float_list}
+        df = pd.DataFrame(df_dict)
+        ndf = utl.data_to_type(df.copy(), str_col=[str_col],
+                               float_col=[float_col],
+                               date_col=[date_col], int_col=[int_col])
+        cor_date_list = [
+            dt.datetime.strptime('2022-01-01', '%Y-%m-%d')
+            for _ in range(len(str_list) - len(nat_list))]
+        date_list = [pd.NaT] * len(nat_list) + cor_date_list
+        df_dict = {str_col: str_list, date_col: date_list,
+                   float_col: [float(x) for x in float_list],
+                   int_col: [np.int32(x) for x in float_list]}
+        df = pd.DataFrame(df_dict)
+        df[int_col] = df[int_col].astype('int32')
+        for col in [str_col, float_col, date_col, int_col]:
+            assert pd.testing.assert_series_equal(df[col], ndf[col]) is None
+
+    def test_selenium_wrapper(self):
+        sw = utl.SeleniumWrapper()
+        assert sw.co.headless is True
+        test_url = 'https://www.google.com/'
+        sw.go_to_url(test_url, sleep=1)
+        assert sw.browser.current_url == test_url
+        sw.quit()
 
 
 class TestApis:
@@ -256,21 +290,21 @@ class TestAnalyze:
             dctc.VEN: ['IMGN'],
             cal.NCF: [0]})
         df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cfs = aly.CheckFlatSpends(aly.Analyze())
+        cfs = az.CheckFlatSpends(az.Analyze())
         df = cfs.find_missing_flat_spend(df)
         assert cfs.placement_date_error in df[cfs.error_col].values
         assert cfs.missing_rate_error in df[cfs.error_col].values
 
     def test_empty_flat(self):
         df = pd.DataFrame()
-        analyze = aly.Analyze()
-        cfs = aly.CheckFlatSpends(analyze)
+        analyze = az.Analyze()
+        cfs = az.CheckFlatSpends(analyze)
         df = cfs.find_missing_flat_spend(df)
         assert df.empty
 
     def test_flat_fix(self):
         first_click_date = '2022-07-25'
-        cfs = aly.CheckFlatSpends(aly.Analyze())
+        cfs = az.CheckFlatSpends(az.Analyze())
         translation = dct.DictTranslationConfig()
         df = pd.DataFrame({
             dctc.VEN: ['IMGN'],
@@ -296,7 +330,7 @@ class TestAnalyze:
         assert df[dctc.PD].values == first_click_date
 
     def test_empty_flat_fix(self):
-        cfs = aly.CheckFlatSpends(aly.Analyze())
+        cfs = az.CheckFlatSpends(az.Analyze())
         df = pd.DataFrame()
         tdf = cfs.fix_analysis(df, write=False)
         assert tdf.empty
@@ -396,7 +430,7 @@ class TestAnalyze:
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
-        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        cdc = az.CheckDoubleCounting(az.Analyze(matrix=matrix))
         aly_dict = pd.DataFrame({
             dctc.VEN: ['TikTok'],
             cdc.metric_col: [vmc.clicks],
@@ -419,7 +453,7 @@ class TestAnalyze:
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
-        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        cdc = az.CheckDoubleCounting(az.Analyze(matrix=matrix))
         aly_dict = pd.DataFrame()
         df = cdc.fix_analysis(aly_dict, write=False)
         assert df.empty
@@ -429,7 +463,7 @@ class TestAnalyze:
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
-        cdc = aly.CheckDoubleCounting(aly.Analyze(matrix=matrix))
+        cdc = az.CheckDoubleCounting(az.Analyze(matrix=matrix))
         aly_dict = pd.DataFrame({
             dctc.VEN: ['TikTok'],
             cdc.metric_col: [vmc.clicks],
@@ -459,7 +493,7 @@ class TestAnalyze:
             vmc.views: {0: 1.0, 1: 1.0},
             dctc.PN: {0: 'Test', 1: 'Test'}})
         df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cdc = aly.CheckDoubleCounting(aly.Analyze())
+        cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert cdc.double_counting_all in df[cdc.error_col].values
         assert 'API_Tiktok_Test' in df[vmc.vendorkey][0]
@@ -467,27 +501,9 @@ class TestAnalyze:
 
     def test_find_double_counting_empty(self):
         df = pd.DataFrame()
-        cdc = aly.CheckDoubleCounting(aly.Analyze())
+        cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
-
-    def test_check_package_capping_base(self):
-        cap_path = 'raw_data/cap_test.csv'
-        cfg_path = 'config/cap_config.csv'
-        cfg_df = {'file_name': ['raw_data/cap_test.csv'],
-                  'file_dim': ['mpAgency'],
-                  'file_metric': ['Net Cost (Capped)'],
-                  'processor_dim': ['mpAgency'],
-                  'processor_metric': ['Planned Net Cost']}
-        cfg_df = pd.DataFrame(cfg_df)
-        cfg_df.to_csv(cfg_path, index=False)
-        cap_df = {'mpAgency': ['Liquid Advertising'],
-                  'Net Cost (Capped)': [300.0]}
-        cap_df = pd.DataFrame(cap_df)
-        cap_df.to_csv(cap_path, index=False)
-        os.system('python main.py --noprocess --analyze')
-        cap_test = pandas.read_csv(cap_path)
-        assert not cap_test.duplicated(keep=False).empty
 
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
@@ -590,3 +606,217 @@ class TestAnalyze:
         os.remove('raw_data/cap_test.csv')
         assert not df.empty
         assert df.equals(match_df)
+
+    def test_package_cap_over(self):
+        df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
+              'mpPackageDesc': ['Under', 'Full', 'Over'],
+              'Planned Net Cost - TEMP': [100, 100, 100],
+              'Net Cost': [50, 100, 200]}
+        df = pd.DataFrame(df)
+        temp_package_cap = 'mpPackageDesc'
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = cpc.check_package_cap(df, temp_package_cap)
+        assert 'Over' in df['mpPackageDesc'][0]
+
+    def test_package_cap_full(self):
+        df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
+              'mpPackageDesc': ['Under', 'Full', 'Over'],
+              'Planned Net Cost - TEMP': [100, 100, 100],
+              'Net Cost': [50, 100, 100]}
+        df = pd.DataFrame(df)
+        temp_package_cap = 'mpPackageDesc'
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = cpc.check_package_cap(df, temp_package_cap)
+        assert 'Full' in df['mpPackageDesc'][0]
+
+    def test_package_cap_under(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = {dctc.VEN: ['Adwords', 'Facebook', 'Twitter'],
+              dctc.PKD: ['Under', 'Full', 'Over'],
+              cpc.plan_net_temp: [100, 100, 100],
+              vmc.cost: [50, 50, 50]}
+        df = pd.DataFrame(df)
+        temp_package_cap = dctc.PKD
+        df = cpc.check_package_cap(df, temp_package_cap)
+        assert df.empty
+
+    def test_package_vendor_duplicates(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = {dctc.VEN: ['Adwords', 'Twitter', 'Facebook'],
+              vmc.vendorkey: ['key1', 'key2', 'key3'],
+              dctc.PN: ['PN1', 'PN2', 'PN3'],
+              dctc.PKD: ['Same', 'Same', 'Diff'],
+              cpc.plan_net_temp: [100, 100, 100],
+              vmc.cost: [50, 100, 200]}
+        df = pd.DataFrame(df)
+        temp_package_cap = dctc.PKD
+        pdf = {dctc.PKD: ['Same']}
+        pdf = pd.DataFrame(pdf)
+        df = cpc.check_package_vendor(df, temp_package_cap, pdf)
+        assert 'Adwords' in df[dctc.VEN][1]
+        assert 'Twitter' in df[dctc.VEN][2]
+        assert 'Facebook' not in df[dctc.VEN]
+
+    def test_package_vendor_different(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = pd.DataFrame({dctc.VEN: ['Adwords', 'Twitter', 'Facebook'],
+                           vmc.vendorkey: ['key1', 'key2', 'key3'],
+                           dctc.PN: ['PN1', 'PN2', 'PN3'],
+                           dctc.PKD: ['This', 'That', 'Those'],
+                           cpc.plan_net_temp: [100, 100, 100],
+                           vmc.cost: [50, 100, 200]
+                           })
+        temp_package_cap = dctc.PKD
+        pdf = pd.DataFrame({dctc.PKD: ['This']})
+        df = cpc.check_package_vendor(df, temp_package_cap, pdf)
+        assert df.empty
+
+    def test_fix_vendor(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        temp_package_cap = dctc.PKD
+        pdf = pd.DataFrame({dctc.PKD: ['package1', 'package2'],
+                            cpc.plan_net_temp: [10, 10]})
+        pdf.to_csv('raw_data/cap_test.csv', index=False)
+        c = {'file_name': 'raw_data/cap_test.csv',
+             'file_dim': 'mpPackageDescription',
+             'file_metric': 'Net Cost (Capped)',
+             'processor_dim': 'mpPackageDescription',
+             'processor_metric': 'Planned Net Cost'}
+        cap_file = cal.MetricCap()
+        aly_dict = pd.DataFrame({dctc.PKD: ['package1', 'package1',
+                                            'package2', 'package2'],
+                                 dctc.VEN: ['Facebook', 'Twitter',
+                                            'Twitch', 'Adwords']
+                                 })
+        match_df = pd.DataFrame({dctc.DICT_COL_NAME: [dctc.PKD, dctc.PKD,
+                                                      dctc.PKD, dctc.PKD],
+                                 dctc.DICT_COL_VALUE: ['package1', 'package1',
+                                                       'package2', 'package2'],
+                                 dctc.DICT_COL_NVALUE: ['package1-Facebook',
+                                                        'package1-Twitter',
+                                                        'package2-Twitch',
+                                                        'package2-Adwords'],
+                                 dctc.DICT_COL_FNC: ['Select::mpVendor',
+                                                     'Select::mpVendor',
+                                                     'Select::mpVendor',
+                                                     'Select::mpVendor'],
+                                 dctc.DICT_COL_SEL: ['Facebook', 'Twitter',
+                                                     'Twitch', 'Adwords'],
+                                 })
+        df = cpc.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
+                                    write=False, aly_dict=aly_dict)
+        os.remove('raw_data/cap_test.csv')
+        assert not df.empty
+        assert df.equals(match_df)
+
+    """Testing for Find Blank Lines methods in Analyze.py"""
+
+    def test_blank_lines_base(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'Unnamed 1': ['', '', 'Nonsense', '', 'Advertiser',
+                                           'Sega', 'Sega'],
+                             'Unnamed 2': ['', '', 'Nonsense', '',
+                                           'Placement', 'Launch', 'Launch'],
+                             '': ['', '', '', '', 'Creative', '2x2', '3x3']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Placement']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_first_line': ['5']})
+        os.remove(file_name)
+        assert not df.empty
+        assert df.equals(match_df)
+
+    def test_perfect_file(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'Client': ['foo', 'bar'],
+                             'Placement': ['bax', 'bla'],
+                             'Campaign': ['qax', 'sna']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Placement']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_first_line': ['0']})
+        os.remove(file_name)
+        assert not df.empty
+        assert df.equals(match_df)
+
+    def test_missing_fpn_cols(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'Client': ['foo', 'bar'],
+                             'Placement': ['bax', 'bla'],
+                             'Campaign': ['qax', 'sna']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Creative']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        os.remove(file_name)
+        assert df.empty
+
+    def test_blank_lines_empty(self):
+        file_name = 'raw_data/does_not_exist.csv'
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Campaign']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        assert df.empty
+
+    def test_first_line_bad(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'Unnamed 1': ['Client', 'Sega'],
+                             'Unnamed 2': ['Campaign', 'Launch'],
+                             'Unnamed 3': ['Creative', '2x2']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Campaign']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_first_line': ['1']})
+        os.remove(file_name)
+        assert not df.empty
+        assert df.equals(match_df)
+
+    def test_past_tenth_line(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'null': ['NaN', 'NaN', 'NaN', 'NaN', 'NaN', 'NaN',
+                                      'NaN', 'NaN', 'NaN', 'NaN' 'Campaign']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Campaign']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        os.remove(file_name)
+        assert df.empty
+
+    def test_remove_colons(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'Unnamed 1': ['Client', 'Sega'],
+                             'Unnamed 2': ['Campaign', 'Launch'],
+                             'Unnamed 3': ['Creative', '2x2']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['::Campaign']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_first_line': ['1']})
+        os.remove(file_name)
+        assert not df.empty
+        assert df.equals(match_df)
+
+    def test_all_analysis_on_empty_df(self):
+        aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
+        aly.do_all_analysis()
