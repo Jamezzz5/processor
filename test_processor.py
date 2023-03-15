@@ -504,7 +504,7 @@ class TestAnalyze:
         cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
-        
+
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
               'mpPackageDesc': ['Under', 'Full', 'Over'],
@@ -714,9 +714,9 @@ class TestAnalyze:
     def test_blank_lines_base(self):
         file_name = 'raw_data/lines_test.csv'
         r_df = pd.DataFrame({'Unnamed 1': ['', '', 'Nonsense', '', 'Advertiser',
-                                          'Sega', 'Sega'],
+                                           'Sega', 'Sega'],
                              'Unnamed 2': ['', '', 'Nonsense', '',
-                                          'Placement', 'Launch', 'Launch'],
+                                           'Placement', 'Launch', 'Launch'],
                              '': ['', '', '', '', 'Creative', '2x2', '3x3']})
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
@@ -725,7 +725,6 @@ class TestAnalyze:
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 vmc.filename: file_name,
                                  'new_first_line': ['5']})
         os.remove(file_name)
         assert not df.empty
@@ -742,8 +741,11 @@ class TestAnalyze:
                     dctc.FPN: ['Placement']}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_first_line': ['0']})
         os.remove(file_name)
-        assert df.empty
+        assert not df.empty
+        assert df.equals(match_df)
 
     def test_missing_fpn_cols(self):
         file_name = 'raw_data/lines_test.csv'
@@ -780,7 +782,6 @@ class TestAnalyze:
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 vmc.filename: file_name,
                                  'new_first_line': ['1']})
         os.remove(file_name)
         assert not df.empty
@@ -798,6 +799,23 @@ class TestAnalyze:
         df = cbl.find_first_row(source)
         os.remove(file_name)
         assert df.empty
+
+    def test_remove_colons(self):
+        file_name = 'raw_data/lines_test.csv'
+        r_df = pd.DataFrame({'Unnamed 1': ['Client', 'Sega'],
+                             'Unnamed 2': ['Campaign', 'Launch'],
+                             'Unnamed 3': ['Creative', '2x2']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['::Campaign']}
+        cbl = az.FindBlankLines(az.Analyze())
+        df = cbl.find_first_row(source)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_first_line': ['1']})
+        os.remove(file_name)
+        assert not df.empty
+        assert df.equals(match_df)
 
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
