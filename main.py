@@ -84,7 +84,7 @@ def main(arguments=None):
         aly.do_analysis_and_fix_processor(pre_run=True)
         matrix = vm.VendorMatrix()
     if args.api:
-        api = ih.ImportHandler(args.api, matrix)
+        api = ih.ApiHandler(args.api, matrix)
         api.api_loop()
     if args.ftp:
         ftp = ih.ImportHandler(args.ftp, matrix)
