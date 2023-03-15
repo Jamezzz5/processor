@@ -1,5 +1,5 @@
 pandas==0.24.2
-Numpy==1.19.5
+Numpy==1.22.0
 facebook_business==14.0.0
 oauth2==1.9.0.post1
 psycopg2-binary==2.8.5
