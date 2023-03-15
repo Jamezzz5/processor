@@ -1089,7 +1089,7 @@ class FindBlankLines(AnalyzeBase):
                                  self.new_first_line: [new_first_row]})
             delivery_msg = "Uploaded file first row may be incorrect"
             msg1 = "Vendor Key: "
-            msg2 = "File Name: "
+            msg2 = "File: "
             msg3 = "Suggested new first row: "
             logging.info('{}\n{}{}\n{}{}\n{}{}'.format(
                 delivery_msg, msg1, source.key, msg2, raw_file, msg3,
