@@ -18,9 +18,11 @@ from requests.exceptions import ConnectionError
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
 user_field = 'USER_STATS'
+conversion_field = "CONVERSIONS"
 configpath = utl.config_path
 
 base_url = 'https://ads-api.twitter.com'
+twitter_account_data_url = 'https://api.twitter.com/1.1/users/lookup.json?'
 reqdformat = '%Y-%m-%dT%H:%M:%SZ'
 
 colspend = 'billed_charge_local_micro'
@@ -100,6 +102,7 @@ class TwApi(object):
         self.tweet_dict = None
         self.async_requests = []
         self.v = 11
+        self.usernames = []
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
@@ -204,9 +207,7 @@ class TwApi(object):
         return id_dict
 
     def get_twitter_objects(self, usernames):
-        request_url = 'https://api.twitter.com/1.1/users/lookup.json'
-        data = self.request(request_url, params={'screen_name': usernames})
-        logging.info('Getting user data for {}'.format(usernames))
+        data = self.request(twitter_account_data_url, params={'screen_name' : usernames})
         if 'errors' in data:
             logging.warning('Error in response: {}'.format(data))
             return pd.DataFrame()
@@ -279,18 +280,19 @@ class TwApi(object):
         self.tweet_dict = self.get_ids('tweets', 'id',
                                        'full_text', 'id', ad_name='name')
 
-    @staticmethod
-    def get_data_default_check(sd, ed, fields):
+    def get_data_default_check(self, sd, ed, fields):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields is None:
             fields = def_fields
-        elif user_field in fields:
-            fields = [user_field]
-        else:
+        elif conversion_field in fields:
             fields = def_fields + conv_fields
+        else:
+            user_field_args = [f for f in fields if user_field in f]
+            if user_field_args and len(user_field_args[0].split(':')) > 1:
+                self.usernames = user_field_args[0].split(':')[1]        
         return sd, ed, fields
 
     def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
@@ -332,8 +334,8 @@ class TwApi(object):
         self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
-        if user_field in fields:
-            self.df = self.get_twitter_objects(usernames=self.account_id)
+        if self.usernames:
+            self.df = self.get_twitter_objects(usernames=self.usernames)
             return self.df
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
