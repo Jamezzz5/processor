@@ -35,6 +35,7 @@ import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.export as export
 import reporting.vmcolumns as vmc
+import reporting.vendormatrix as vm
 import reporting.utils as utl
 
 
@@ -42,6 +43,37 @@ class ImportHandler(object):
     def __init__(self, args, matrix):
         self.args = args
         self.matrix = matrix
+        self.class_list = {
+            vmc.api_fb_key: fbapi.FbApi,
+            vmc.api_aw_key: awapi.AwApi,
+            vmc.api_tw_key: twapi.TwApi,
+            vmc.api_ttd_key: ttdapi.TtdApi,
+            vmc.api_ga_key: gaapi.GaApi,
+            vmc.api_nb_key: nbapi.NbApi,
+            vmc.api_af_key: afapi.AfApi,
+            vmc.api_sc_key: scapi.ScApi,
+            vmc.api_aj_key: ajapi.AjApi,
+            vmc.api_dc_key: dcapi.DcApi,
+            vmc.api_db_key: dbapi.DbApi,
+            vmc.api_vk_key: vkapi.VkApi,
+            vmc.api_rs_key: rsapi.RsApi,
+            vmc.api_rc_key: rcapi.RcApi,
+            vmc.api_szk_key: szkapi.SzkApi,
+            vmc.api_red_key: redapi.RedApi,
+            vmc.api_dv_key: dvapi.DvApi,
+            vmc.api_adk_key: adkapi.AdkApi,
+            vmc.api_inn_key: innapi.InnApi,
+            vmc.api_tik_key: tikapi.TikApi,
+            vmc.api_amz_key: amzapi.AmzApi,
+            vmc.api_cri_key: criapi.CriApi,
+            vmc.api_pm_key: pmapi.PmApi,
+            vmc.api_sam_key: samapi.SamApi,
+            vmc.api_gs_key: gsapi.GsApi,
+            vmc.api_qt_key: qtapi.QtApi,
+            vmc.api_yv_key: yvapi.YvApi,
+            vmc.api_amd_key: amzapi.AmzApi,
+            vmc.api_ss_key: ssapi.SsApi
+        }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
                last_row=None, date_col=None, start_date=None, end_date=None):
@@ -125,6 +157,67 @@ class ImportHandler(object):
                 sd = ed - dt.timedelta(days=max_date)
         return sd
 
+    def api_calls(self, key_list, api_class):
+        """Makes an API Call
+
+        Keyword arguments:
+        key_list -- list of Vendormatrix keys for a given API
+        api_class -- The class of API to call
+        """
+        for vk in key_list:
+            params = self.matrix.vendor_set(vk)
+            api_class.input_config(params[vmc.apifile])
+            start_check = self.date_check(params[vmc.startdate])
+            end_check = self.date_check(params[vmc.enddate])
+            if params[vmc.apifields] == ['nan']:
+                params[vmc.apifields] = None
+            if start_check:
+                params[vmc.startdate] = None
+            if end_check:
+                params[vmc.enddate] = None
+            params[vmc.startdate] = self.set_start(params[vmc.startdate],
+                                                   params[vmc.enddate],
+                                                   params[vmc.apimerge])
+            df = api_class.get_data(sd=params[vmc.startdate],
+                                    ed=params[vmc.enddate],
+                                    fields=params[vmc.apifields])
+            self.output(df, params[vmc.filename], params[vmc.apimerge],
+                        params[vmc.firstrow], params[vmc.lastrow],
+                        params[vmc.date], params[vmc.startdate],
+                        params[vmc.enddate])
+
+    def api_loop(self):
+        """Loops through all APIs and makes function call to retrieve data.
+
+        """
+        for key, api in self.class_list.items():
+            if (self.arg_check(vmc.api_translation[key]) and
+                    self.matrix.vks[key]):
+                self.api_calls(self.matrix.vks[key], api())
+
+    def test_api_calls(self, key_list):
+        """Makes an API Call to Test Connection
+
+        Keyword arguments:
+        key_list -- list of Vendormatrix keys to test
+        """
+        import_config = vm.ImportConfig()
+        import_config.import_vm()
+        df = pd.DataFrame()
+        for vk in key_list:
+            data_source = self.matrix.get_data_source(vk=vk)
+            config_name = str(data_source.params[import_config.config_file])
+            api_type = vk.split('_')[1]
+            api_class = self.class_list[api_type]()
+            ic_df = import_config.df.loc[
+                import_config.df[import_config.key] == api_type]
+            acc_col = ic_df.iloc[0][import_config.account_id]
+            camp_col = ic_df.iloc[0][import_config.filter]
+            acc_pre = ic_df.iloc[0][import_config.account_id_pre]
+            api_class.input_config(config_name)
+            df = api_class.test_connection(acc_col, camp_col, acc_pre)
+        return df
+
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
             params = self.matrix.vendor_set(vk)
@@ -174,77 +267,3 @@ class ImportHandler(object):
     def s3_loop(self):
         if self.arg_check('dna'):
             self.s3_load(self.matrix.s3_dna_key, awss3.S3())
-
-
-class ApiHandler(ImportHandler):
-    def __init__(self, args, matrix):
-        self.class_list = {
-            vmc.api_fb_key: fbapi.FbApi,
-            vmc.api_aw_key: awapi.AwApi,
-            vmc.api_tw_key: twapi.TwApi,
-            vmc.api_ttd_key: ttdapi.TtdApi,
-            vmc.api_ga_key: gaapi.GaApi,
-            vmc.api_nb_key: nbapi.NbApi,
-            vmc.api_af_key: afapi.AfApi,
-            vmc.api_sc_key: scapi.ScApi,
-            vmc.api_aj_key: ajapi.AjApi,
-            vmc.api_dc_key: dcapi.DcApi,
-            vmc.api_db_key: dbapi.DbApi,
-            vmc.api_vk_key: vkapi.VkApi,
-            vmc.api_rs_key: rsapi.RsApi,
-            vmc.api_rc_key: rcapi.RcApi,
-            vmc.api_szk_key: szkapi.SzkApi,
-            vmc.api_red_key: redapi.RedApi,
-            vmc.api_dv_key: dvapi.DvApi,
-            vmc.api_adk_key: adkapi.AdkApi,
-            vmc.api_inn_key: innapi.InnApi,
-            vmc.api_tik_key: tikapi.TikApi,
-            vmc.api_amz_key: amzapi.AmzApi,
-            vmc.api_cri_key: criapi.CriApi,
-            vmc.api_pm_key: pmapi.PmApi,
-            vmc.api_sam_key: samapi.SamApi,
-            vmc.api_gs_key: gsapi.GsApi,
-            vmc.api_qt_key: qtapi.QtApi,
-            vmc.api_yv_key: yvapi.YvApi,
-            vmc.api_amd_key: amzapi.AmzApi,
-            vmc.api_ss_key: ssapi.SsApi
-        }
-        super().__init__(args, matrix)
-
-    def api_calls(self, key_list, api_class):
-        """Makes an API Call
-
-        Keyword arguments:
-        key_list -- list of Vendormatrix keys for a given API
-        api_class -- The class of API to call
-        """
-        for vk in key_list:
-            params = self.matrix.vendor_set(vk)
-            api_class.input_config(params[vmc.apifile])
-            start_check = self.date_check(params[vmc.startdate])
-            end_check = self.date_check(params[vmc.enddate])
-            if params[vmc.apifields] == ['nan']:
-                params[vmc.apifields] = None
-            if start_check:
-                params[vmc.startdate] = None
-            if end_check:
-                params[vmc.enddate] = None
-            params[vmc.startdate] = self.set_start(params[vmc.startdate],
-                                                   params[vmc.enddate],
-                                                   params[vmc.apimerge])
-            df = api_class.get_data(sd=params[vmc.startdate],
-                                    ed=params[vmc.enddate],
-                                    fields=params[vmc.apifields])
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
-
-    def api_loop(self):
-        """Loops through all APIs and makes function call to retrieve data.
-
-        """
-        for key, api in self.class_list.items():
-            if (self.arg_check(vmc.api_translation[key]) and
-                    self.matrix.vks[key]):
-                self.api_calls(self.matrix.vks[key], api())

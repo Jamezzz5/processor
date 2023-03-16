@@ -506,15 +506,8 @@ class FbApi(object):
         clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
 
-    def test_connection(self):
-        import_config = matrix.ImportConfig()
-        import_config.import_vm()
-        ic_df = import_config.df.loc[
-            import_config.df[import_config.key] == vmc.api_fb_key]
-        acc_col = ic_df.iloc[0][import_config.account_id]
-        camp_col = ic_df.iloc[0][import_config.filter]
-        acc_pre = ic_df.iloc[0][import_config.account_id_pre]
-        results = pd.DataFrame(columns=vmc.r_cols)
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        results = []
         self.account = AdAccount(self.act_id)
         fields = [
             'name',
@@ -526,36 +519,29 @@ class FbApi(object):
         try:
             r = self.account.get_campaigns(fields=fields, params=params)
         except FacebookRequestError as e:
-            row = pd.DataFrame(
-                [[acc_col, ' '.join(['FAILURE:', e._api_error_message]),
-                  False]], columns=vmc.r_cols)
-            results = results.append(row)
-            return results
-        row = pd.DataFrame(
-            [[acc_col,
-              ' '.join(['SUCCESS -- ID:', str(self.act_id).strip(acc_pre)]),
-              True]], columns=vmc.r_cols)
-        results = results.append(row)
+            row = [acc_col, ' '.join(['FAILURE:', e._api_error_message]), False]
+            results.append(row)
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        row = [acc_col,
+               ' '.join(['SUCCESS -- ID:', str(self.act_id).strip(acc_pre)]),
+               True]
+        results.append(row)
         if self.campaign_filter:
             params['filtering'] = ([{'field': 'campaign.name',
                                      'operator': 'CONTAIN',
                                      'value': self.campaign_filter}])
             r = self.account.get_campaigns(fields=fields, params=params)
         if r:
-            row = pd.DataFrame(
-                [[camp_col, 'SUCCESS -- CAMPAIGNS INCLUDED IF DATA PAST'
-                            ' START DATE:', True]], columns=vmc.r_cols)
-            results = results.append(row)
+            row = [camp_col, 'SUCCESS -- CAMPAIGNS INCLUDED IF DATA PAST'
+                             ' START DATE:', True]
+            results.append(row)
             for campaign in r:
-                row = pd.DataFrame([[camp_col, campaign["name"], True]],
-                                   columns=vmc.r_cols)
-                results = results.append(row)
+                row = [camp_col, campaign["name"], True]
+                results.append(row)
         else:
-            row = pd.DataFrame(
-                [[camp_col, 'FAILURE: No Campaigns under filter.',
-                  False]], columns=vmc.r_cols)
-            results = results.append(row)
-        return results
+            row = [camp_col, 'FAILURE: No Campaigns under filter.', False]
+            results.append(row)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
 
 
 class FacebookRequest(object):

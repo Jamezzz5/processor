@@ -346,46 +346,35 @@ class DcApi(object):
         self.df.iloc[0] = self.df.iloc[0].replace(self.col_rename_dict)
         return self.df
 
-    def test_connection(self):
-        import_config = matrix.ImportConfig()
-        import_config.import_vm()
-        import_config_df = import_config.df.loc[
-            import_config.df[import_config.key] == vmc.api_dc_key]
-        acc_col = import_config_df.iloc[0][import_config.account_id]
-        camp_col = import_config_df.iloc[0][import_config.filter]
+    def test_connection(self, acc_col, camp_col, pre_col):
         success_msg = 'SUCCESS -- ID:'
         failure_msg = 'FAILURE:'
         self.get_client()
         if self.campaign_id is None:
             self.campaign_id = ''
         campaign_ids = self.campaign_id.split(',')
-        results = pd.DataFrame(columns=vmc.r_cols)
+        results = []
         query_url = self.create_url(self.advertiser_id, self.ad_path)
         r = self.client.get(url=query_url)
         if r.status_code == 200:
-            row = pd.DataFrame([[
-                acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
-                True]], columns=vmc.r_cols)
-            results = results.append(row)
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
+                   True]
+            results.append(row)
         else:
             r = r.json()
-            row = pd.DataFrame(
-                [[acc_col, ' '.join([failure_msg, r['error']['message']]),
-                  False]], columns=vmc.r_cols)
-            results = results.append(row)
-            return results
+            row = [acc_col, ' '.join([failure_msg, r['error']['message']]),
+                   False]
+            results.append(row)
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
         for campaign in campaign_ids:
             query_url = self.create_url(campaign, self.camp_path)
             r = self.client.get(url=query_url)
             if r.status_code == 200:
-                row = pd.DataFrame([[
-                    camp_col, ' '.join([success_msg, str(campaign)]),
-                    True]], columns=vmc.r_cols)
-                results = results.append(row)
+                row = [camp_col, ' '.join([success_msg, str(campaign)]), True]
+                results.append(row)
             else:
                 r = r.json()
-                row = pd.DataFrame([[
-                    camp_col, ' '.join([failure_msg, r['error']['message']]),
-                    False]], columns=vmc.r_cols)
-                results = results.append(row)
-        return results
+                row = [camp_col, ' '.join([failure_msg, r['error']['message']]),
+                       False]
+                results.append(row)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
