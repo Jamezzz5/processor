@@ -30,6 +30,7 @@ import reporting.gsapi as gsapi
 import reporting.qtapi as qtapi
 import reporting.yvapi as yvapi
 import reporting.ssapi as ssapi
+import reporting.nzapi as nzapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.afapi as afapi
@@ -186,7 +187,8 @@ class ImportHandler(object):
                 ('qt', self.matrix.api_qt_key, qtapi.QtApi),
                 ('yv', self.matrix.api_yv_key, yvapi.YvApi),
                 ('amd', self.matrix.api_amd_key, amzapi.AmzApi),
-                ('ss', self.matrix.api_ss_key, ssapi.SsApi)]
+                ('ss', self.matrix.api_ss_key, ssapi.SsApi),
+                ('nz', self.matrix.api_nz_key, nzapi.NzApi)]
         for api in apis:
             if self.arg_check(api[0]) and api[1]:
                 self.api_calls(api[1], api[2]())
