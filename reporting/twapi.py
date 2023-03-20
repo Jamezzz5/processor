@@ -18,11 +18,13 @@ from requests.exceptions import ConnectionError
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
 user_field = 'USER_STATS'
-conversion_field = "CONVERSIONS"
+conversion_field = 'CONVERSIONS'
 configpath = utl.config_path
 
 base_url = 'https://ads-api.twitter.com'
-twitter_account_data_url = 'https://api.twitter.com/1.1/users/lookup.json?'
+standard_base_url = 'https://api.twitter.com/1.1'
+user_url = '/users/lookup.json?'
+status_url = '/statuses/lookup.json?'
 reqdformat = '%Y-%m-%dT%H:%M:%SZ'
 
 colspend = 'billed_charge_local_micro'
@@ -75,7 +77,7 @@ mobile_conversions = ['mobile_conversion_spent_credits',
                       'mobile_conversion_site_visits',
                       'mobile_conversion_purchases']
 
-user_fields = ['id', 'name', 'screen_name', 'location', 'description', 
+user_fields = ['id', 'name', 'screen_name', 'location', 'description',
                'followers_count', 'friends_count', 'listed_count',
                'favourites_count', 'verified', 'statuses_count',
                'withheld_in_countries']
@@ -100,9 +102,9 @@ class TwApi(object):
         self.adid_dict = None
         self.promoted_account_id_dict = None
         self.tweet_dict = None
+        self.usernames = None
         self.async_requests = []
         self.v = 11
-        self.usernames = []
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
@@ -206,8 +208,10 @@ class TwApi(object):
                                         sd, params)
         return id_dict
 
-    def get_twitter_objects(self, usernames):
-        data = self.request(twitter_account_data_url, params={'screen_name' : usernames})
+    def get_user_stats(self, usernames):
+        url = standard_base_url + user_url
+        data = self.request(url, params={'screen_name': usernames})
+        logging.info('Getting user data for {}'.format(usernames))
         if 'errors' in data:
             logging.warning('Error in response: {}'.format(data))
             return pd.DataFrame()
@@ -281,19 +285,21 @@ class TwApi(object):
                                        'full_text', 'id', ad_name='name')
 
     def get_data_default_check(self, sd, ed, fields):
+        request_fields = def_fields
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields is None:
-            fields = def_fields
-        elif conversion_field in fields:
-            fields = def_fields + conv_fields
-        else:
-            user_field_args = [f for f in fields if user_field in f]
-            if user_field_args and len(user_field_args[0].split(':')) > 1:
-                self.usernames = user_field_args[0].split(':')[1]        
-        return sd, ed, fields
+            return sd, ed, request_fields
+        for field in fields:
+            if field == conversion_field:
+                request_fields = def_fields + conv_fields
+            elif user_field in field:
+                split_field = field.split(':')
+                if len(split_field) > 1:
+                    self.usernames = split_field[1]
+        return sd, ed, request_fields
 
     def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
                          entity='PROMOTED_TWEET', placement='ALL_ON_TWITTER',
@@ -335,7 +341,7 @@ class TwApi(object):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
         if self.usernames:
-            self.df = self.get_twitter_objects(usernames=self.usernames)
+            self.df = self.get_user_stats(usernames=self.usernames)
             return self.df
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
@@ -590,9 +596,10 @@ class TwApi(object):
         id_dict = {}
         tids = [tweet_ids[x:x + 100] for x in range(0, len(tweet_ids), 100)]
         for tid in tids:
-            url = ('https://api.twitter.com/1.1/statuses/lookup.json?'
+            url = ('{}{}'
                    'id={}&include_card_uri=true'
-                   .format(','.join([str(x) for x in tid])))
+                   .format(standard_base_url, status_url,
+                           ','.join([str(x) for x in tid])))
             d = self.request(url)
             for x in d:
                 if 'card_uri' in x:
