@@ -90,9 +90,10 @@ class SsApi(object):
         for index in self.config:
             site = self.get_site(index)
             image_data = utl.image_to_binary(site.file_name, True)
-            key = site.file_name.replace('\\', '/')
-            url = self.s3.s3_upload_file_obj(image_data, key)
-            self.config[index][self.img_url] = url
+            if image_data:
+                key = site.file_name.replace('\\', '/')
+                url = self.s3.s3_upload_file_obj(image_data, key)
+                self.config[index][self.img_url] = url
         df = self.write_config_to_df()
         return df
 

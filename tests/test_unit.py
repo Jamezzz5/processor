@@ -78,7 +78,7 @@ class TestUtils:
         float_col = 'float_col'
         date_col = 'date_col'
         int_col = 'int_col'
-        nat_list = ['0', '1/32/22', '30/11/22', '2022-1-32']
+        nat_list = ['0', '1/32/22', '30/11/22', '2022-1-32', '29269885']
         str_list = ['1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
                     '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
                     'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22']
@@ -504,6 +504,108 @@ class TestAnalyze:
         cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
+        
+    def test_package_cap_over(self):
+        df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
+              'mpPackageDesc': ['Under', 'Full', 'Over'],
+              'Planned Net Cost - TEMP': [100, 100, 100],
+              'Net Cost': [50, 100, 200]}
+        df = pd.DataFrame(df)
+        temp_package_cap = 'mpPackageDesc'
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = cpc.check_package_cap(df, temp_package_cap)
+        assert 'Over' in df['mpPackageDesc'][0]
+
+    def test_package_cap_full(self):
+        df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
+              'mpPackageDesc': ['Under', 'Full', 'Over'],
+              'Planned Net Cost - TEMP': [100, 100, 100],
+              'Net Cost': [50, 100, 100]}
+        df = pd.DataFrame(df)
+        temp_package_cap = 'mpPackageDesc'
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = cpc.check_package_cap(df, temp_package_cap)
+        assert 'Full' in df['mpPackageDesc'][0]
+
+    def test_package_cap_under(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = {dctc.VEN: ['Adwords', 'Facebook', 'Twitter'],
+              dctc.PKD: ['Under', 'Full', 'Over'],
+              cpc.plan_net_temp: [100, 100, 100],
+              vmc.cost: [50, 50, 50]}
+        df = pd.DataFrame(df)
+        temp_package_cap = dctc.PKD
+        df = cpc.check_package_cap(df, temp_package_cap)
+        assert df.empty
+
+    def test_package_vendor_duplicates(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = {dctc.VEN: ['Adwords', 'Twitter', 'Facebook'],
+              vmc.vendorkey: ['key1', 'key2', 'key3'],
+              dctc.PN: ['PN1', 'PN2', 'PN3'],
+              dctc.PKD: ['Same', 'Same', 'Diff'],
+              cpc.plan_net_temp: [100, 100, 100],
+              vmc.cost: [50, 100, 200]}
+        df = pd.DataFrame(df)
+        temp_package_cap = dctc.PKD
+        pdf = {dctc.PKD: ['Same']}
+        pdf = pd.DataFrame(pdf)
+        df = cpc.check_package_vendor(df, temp_package_cap, pdf)
+        assert 'Adwords' in df[dctc.VEN][1]
+        assert 'Twitter' in df[dctc.VEN][2]
+        assert 'Facebook' not in df[dctc.VEN]
+
+    def test_package_vendor_different(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = pd.DataFrame({dctc.VEN: ['Adwords', 'Twitter', 'Facebook'],
+                           vmc.vendorkey: ['key1', 'key2', 'key3'],
+                           dctc.PN: ['PN1', 'PN2', 'PN3'],
+                           dctc.PKD: ['This', 'That', 'Those'],
+                           cpc.plan_net_temp: [100, 100, 100],
+                           vmc.cost: [50, 100, 200]
+                           })
+        temp_package_cap = dctc.PKD
+        pdf = pd.DataFrame({dctc.PKD: ['This']})
+        df = cpc.check_package_vendor(df, temp_package_cap, pdf)
+        assert df.empty
+
+    def test_fix_vendor(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        temp_package_cap = dctc.PKD
+        pdf = pd.DataFrame({dctc.PKD: ['package1', 'package2'],
+                            cpc.plan_net_temp: [10, 10]})
+        pdf.to_csv('raw_data/cap_test.csv', index=False)
+        c = {'file_name': 'raw_data/cap_test.csv',
+             'file_dim': 'mpPackageDescription',
+             'file_metric': 'Net Cost (Capped)',
+             'processor_dim': 'mpPackageDescription',
+             'processor_metric': 'Planned Net Cost'}
+        cap_file = cal.MetricCap()
+        aly_dict = pd.DataFrame({dctc.PKD: ['package1', 'package1',
+                                            'package2', 'package2'],
+                                 dctc.VEN: ['Facebook', 'Twitter',
+                                            'Twitch', 'Adwords']
+                                 })
+        match_df = pd.DataFrame({dctc.DICT_COL_NAME: [dctc.PKD, dctc.PKD,
+                                                      dctc.PKD, dctc.PKD],
+                                 dctc.DICT_COL_VALUE: ['package1', 'package1',
+                                                       'package2', 'package2'],
+                                 dctc.DICT_COL_NVALUE: ['package1-Facebook',
+                                                        'package1-Twitter',
+                                                        'package2-Twitch',
+                                                        'package2-Adwords'],
+                                 dctc.DICT_COL_FNC: ['Select::mpVendor',
+                                                     'Select::mpVendor',
+                                                     'Select::mpVendor',
+                                                     'Select::mpVendor'],
+                                 dctc.DICT_COL_SEL: ['Facebook', 'Twitter',
+                                                     'Twitch', 'Adwords'],
+                                 })
+        df = cpc.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
+                                    write=False, aly_dict=aly_dict)
+        os.remove('raw_data/cap_test.csv')
+        assert not df.empty
+        assert df.equals(match_df)
 
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
