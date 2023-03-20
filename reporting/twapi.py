@@ -136,8 +136,7 @@ class TwApi(object):
         self.access_token_secret = self.config['ACCESS_TOKEN_SECRET']
         self.account_id = self.config['ACCOUNT_ID']
         self.config_list = [self.consumer_key, self.consumer_secret,
-                            self.access_token, self.access_token_secret,
-                            self.account_id]
+                            self.access_token, self.access_token_secret]
         if 'CAMPAIGN_FILTER' in self.config:
             self.campaign_filter = self.config['CAMPAIGN_FILTER']
 
@@ -342,7 +341,10 @@ class TwApi(object):
         sd, ed = self.get_date_info(sd, ed)
         if self.usernames:
             self.df = self.get_user_stats(usernames=self.usernames)
+            self.df[coldate] = dt.date.today()
             return self.df
+        self.config_list.append(self.account_id)
+        self.check_config()
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
         if async_request:
