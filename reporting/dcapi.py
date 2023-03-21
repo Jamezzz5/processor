@@ -84,9 +84,13 @@ class DcApi(object):
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.usr_id]
         if 'advertiser_id' in self.config:
-            self.advertiser_id = self.config['advertiser_id'].replace(' ', '')
+            self.advertiser_id = self.remove_space(self.config['advertiser_id'])
         if 'campaign_id' in self.config:
-            self.campaign_id = self.config['campaign_id'].replace(' ', '')
+            self.campaign_id = self.remove_space(self.config['campaign_id'])
+
+    @staticmethod
+    def remove_space(val):
+        return str(val).replace(' ', '')
 
     def check_config(self):
         for item in self.config_list:

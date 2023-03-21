@@ -115,6 +115,7 @@ DICT_COL_VALUE = 'Value'
 DICT_COL_DICTNAME = 'Dictionary'
 
 filename_tran_config = 'translational_dictionary_config.csv'
+filepath_tran_config = 'Translational'
 DICT_COL_NVALUE = 'New Value'
 DICT_COL_FNC = 'Function'
 DICT_COL_SEL = 'Selection'
