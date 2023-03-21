@@ -14,6 +14,10 @@ class GsApi(object):
     sheets_url = 'https://sheets.googleapis.com/v4/spreadsheets'
     slides_url = 'https://slides.googleapis.com/v1/presentations'
     drive_url = 'https://www.googleapis.com/drive/v3/files'
+    docs_url = 'https://docs.googleapis.com/v1/documents'
+    body_str = 'body'
+    cont_str = 'content'
+    para_str = 'paragraph'
 
     def __init__(self):
         self.config = None
@@ -28,6 +32,8 @@ class GsApi(object):
         self.client = None
         self.df = pd.DataFrame()
         self.r = None
+        self.google_doc = False
+        self.parse_response = self.parse_sheets_response
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -62,6 +68,13 @@ class GsApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
+    def parse_fields(self, fields):
+        if fields:
+            for field in fields:
+                if field == 'Doc':
+                    self.google_doc = True
+                    self.parse_response = self.parse_google_doc
+
     def get_client(self):
         token = {'access_token': self.access_token,
                  'refresh_token': self.refresh_token,
@@ -75,20 +88,29 @@ class GsApi(object):
         self.client = OAuth2Session(self.client_id, token=token)
 
     def create_url(self):
-        url = '{}/{}/values/{}'.format(self.sheets_url, self.sheet_id, 'A:ZZ')
+        if self.google_doc:
+            url = '{}/{}'.format(self.docs_url, self.sheet_id)
+        else:
+            url = '{}/{}/values/A:ZZ'.format(self.sheets_url, self.sheet_id)
         return url
 
-    def get_data(self, sd=None, ed=None, fields=None):
-        logging.info('Getting df from sheet: {}'.format(self.sheet_id))
-        self.get_client()
-        url = self.create_url()
-        r = self.client.get(url)
-        response = r.json()
+    def parse_sheets_response(self, response):
         if 'values' in response:
             self.df = pd.DataFrame(response['values'])
             logging.info('Data received, returning dataframe.')
         else:
             logging.warning('Values not in response: {}'.format(response))
+            self.df = pd.DataFrame()
+        return self.df
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        logging.info('Getting df from sheet: {}'.format(self.sheet_id))
+        self.parse_fields(fields)
+        self.get_client()
+        url = self.create_url()
+        r = self.client.get(url)
+        response = r.json()
+        self.df = self.parse_response(response)
         return self.df
 
     def create_presentation(self, presentation_name=None):
@@ -172,3 +194,26 @@ class GsApi(object):
         }
         response = self.client.post(url=url, json=body, headers=headers)
         return response
+
+    def parse_google_doc(self, r):
+        if self.body_str not in r:
+            logging.warning('Body not in response {}.'.format(r))
+            return pd.DataFrame()
+        r = r[self.body_str][self.cont_str]
+        paragraph = []
+        new_paragraph = {}
+        for x in r:
+            if self.para_str in x:
+                tc = x[self.para_str]['elements'][0]['textRun'][self.cont_str]
+                if tc == '\n':
+                    paragraph.append(new_paragraph)
+                    new_paragraph = {}
+                    continue
+                else:
+                    if new_paragraph:
+                        new_paragraph[self.cont_str] += tc
+                    else:
+                        new_paragraph['header'] = tc.strip('\n')
+                        new_paragraph[self.cont_str] = ''
+        self.df = pd.DataFrame(paragraph)
+        return self.df

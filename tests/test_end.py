@@ -43,7 +43,7 @@ class TestEndToEnd:
     def test_load_config(self, load_config):
         config_cols = [vm.ImportConfig.key, vm.ImportConfig.account_id,
                        vm.ImportConfig.filter, vm.ImportConfig.name,
-                       vmc.startdate, vmc.enddate]
+                       vmc.startdate, vmc.enddate, vmc.apifields]
         assert config_cols == load_config.columns.to_list()
 
     def test_config_to_vm(self, load_config):
@@ -60,6 +60,8 @@ class TestEndToEnd:
             vk = 'API_{}_{}'.format(*vk_parts)
             assert vk in matrix.vm_df[vmc.vendorkey].values
             matrix.vm_change_on_key(vk, vmc.enddate, x[vmc.enddate])
+            if x[vmc.apifields]:
+                matrix.vm_change_on_key(vk, vmc.apifields, x[vmc.apifields])
         matrix.write()
 
     def test_run_processor(self):
