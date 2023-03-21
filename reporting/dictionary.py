@@ -632,7 +632,7 @@ class DictConstantConfig(object):
 
 class DictTranslationConfig(object):
     def __init__(self):
-        self.csv_path = os.path.join(csv_path, 'Translational/')
+        self.csv_path = os.path.join(csv_path, dctc.filepath_tran_config)
         utl.dir_check(self.csv_path)
         self.df = pd.DataFrame()
 

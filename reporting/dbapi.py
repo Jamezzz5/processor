@@ -236,7 +236,7 @@ class DbApi(object):
         if self.campaign_id:
             campaign_filters = [
                 {'type': 'FILTER_MEDIA_PLAN',
-                 'value': x} for x in self.campaign_id.split(',')]
+                 'value': x} for x in str(self.campaign_id).split(',')]
             params['filters'].extend(campaign_filters)
         return params
 

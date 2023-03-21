@@ -176,6 +176,9 @@ def net_cost_calculation(df):
 
 def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
     df = utl.data_to_type(df, float_col=[p_cost])
+    for col in [p_cost, vmc.cost]:
+        if col not in df.columns:
+            df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
     nc_pnc = df[df[dctc.UNC] != True]
     nc_pnc = nc_pnc.groupby(p_col)[p_cost, n_cost].sum()
