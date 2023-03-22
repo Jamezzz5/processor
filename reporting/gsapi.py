@@ -18,6 +18,8 @@ class GsApi(object):
     body_str = 'body'
     cont_str = 'content'
     para_str = 'paragraph'
+    head_str = 'header'
+    doc_str = 'Doc'
 
     def __init__(self):
         self.config = None
@@ -71,7 +73,7 @@ class GsApi(object):
     def parse_fields(self, fields):
         if fields:
             for field in fields:
-                if field == 'Doc':
+                if field == self.doc_str:
                     self.google_doc = True
                     self.parse_response = self.parse_google_doc
 
@@ -213,7 +215,7 @@ class GsApi(object):
                     if new_paragraph:
                         new_paragraph[self.cont_str] += tc
                     else:
-                        new_paragraph['header'] = tc.strip('\n')
+                        new_paragraph[self.head_str] = tc.strip('\n')
                         new_paragraph[self.cont_str] = ''
         self.df = pd.DataFrame(paragraph)
         return self.df
