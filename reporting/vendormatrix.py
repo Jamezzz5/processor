@@ -502,7 +502,7 @@ class ImportConfig(object):
             params[self.config_file], key_name)
         file_name = self.get_new_name(search_col=vmc.apifile,
                                       search_val=search_name)
-        if account_id:
+        if account_id or import_key in vmc.no_account_apis:
             self.make_new_config(params, file_name, account_id, import_filter)
         vk = self.add_to_vm(import_key, file_name, start_date, api_fields,
                             key_name)
