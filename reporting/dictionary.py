@@ -389,10 +389,14 @@ class Dict(object):
                 urls = urls.rename(columns={url_col: dctc.CURL})
                 urls = urls.drop(columns=ad_col)
                 urls = urls[urls[dctc.FPN].notna()]
-                self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
-                    self.data_dict[dctc.CURL].eq(0)).fillna(
-                    self.data_dict[dctc.FPN].map(
-                        urls.set_index(dctc.FPN)[dctc.CURL]))
+                try:
+                    self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
+                        self.data_dict[dctc.CURL].eq(0)).fillna(
+                        self.data_dict[dctc.FPN].map(
+                            urls.set_index(dctc.FPN)[dctc.CURL]))
+                except pd.core.indexes.base.InvalidIndexError as e:
+                    msg = 'Could not add creative urls error: {}'.format(e)
+                    logging.warning(msg)
 
     def write(self, df=None):
         logging.debug('Writing {}'.format(self.filename))
