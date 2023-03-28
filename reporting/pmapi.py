@@ -16,9 +16,11 @@ class PmApi(object):
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
 
-    def __init__(self):
+    def __init__(self, headless=True):
         self.sw = None
         self.browser = None
+        self.base_window = None
+        self.headless = headless
         self.config_file = None
         self.username = None
         self.password = None
@@ -27,6 +29,7 @@ class PmApi(object):
         self.pm_title = None
         self.publisher = None
         self.ispot_title = None
+        self.brand_tracker = False
 
     def input_config(self, config):
         logging.info('Loading Pathmatics config file: {}.'.format(config))
@@ -60,29 +63,27 @@ class PmApi(object):
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
-        if fields:
-            if str(fields) != 'nan':
-                self.ispot_title = fields[0].lower()
+        if fields and fields != ['nan']:
+            for field in fields:
+                if field == 'Brand Tracker':
+                    self.brand_tracker = True
+                else:
+                    self.ispot_title = fields.lower()
         return sd, ed
 
     def sign_in(self):
         user_pass = [(self.username, '//*[@id="signin-username"]'),
                      (self.password, '//*[@id=\"signin-password\"]')]
         submit_path = '//*[@id=\"signin-button\"]'
-
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-            self.click_on_xpath(submit_path, sleep=5)
+            self.sw.click_on_xpath(submit_path, sleep=5)
         time.sleep(2)
 
     def find_elem(self, xpath):
         elem = self.browser.find_element_by_xpath(xpath)
         return elem
-
-    def click_on_xpath(self, xpath, sleep=2):
-        self.find_elem(xpath).click()
-        time.sleep(sleep)
 
     def search_title(self):
         self.browser.implicitly_wait(10)
@@ -92,16 +93,16 @@ class PmApi(object):
         time.sleep(10)
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
-        self.click_on_xpath(title_result)
+        self.sw.click_on_xpath(title_result)
         title_result = self.browser.find_element_by_xpath(
             "//*[@class='entity-name']")
         logging.info('Getting data for {}.'.format(title_result.text))
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
-        self.click_on_xpath(cal_button_xpath)
+        self.sw.click_on_xpath(cal_button_xpath)
         custom_date_xpath = '//*[@id="date-filter-menu"]/div/div[1]/div[10]'
-        self.click_on_xpath(custom_date_xpath)
+        self.sw.click_on_xpath(custom_date_xpath)
 
     def delete_contents(self, date_path):
         elem = self.find_elem(date_path)
@@ -123,7 +124,7 @@ class PmApi(object):
         for date_info in start_end:
             self.change_dates(date_info[0], date_info[1])
         done_path = '//*[@id="date-filter-menu-date-picker-button"]/a/span'
-        self.click_on_xpath(done_path)
+        self.sw.click_on_xpath(done_path)
 
     def create_report(self, sd, ed):
         self.search_title()
@@ -132,14 +133,14 @@ class PmApi(object):
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
         try:
-            self.click_on_xpath(export_xpath)
+            self.sw.click_on_xpath(export_xpath)
         except ex.NoSuchElementException:
             logging.error('No data for title. Aborting.')
             sys.exit(0)
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
-        self.click_on_xpath(xlsx_path)
+        self.sw.click_on_xpath(xlsx_path)
         download_xpath = '//*[@id="pick-export-options"]'
-        self.click_on_xpath(download_xpath)
+        self.sw.click_on_xpath(download_xpath)
 
     @staticmethod
     def get_url(html):
@@ -304,17 +305,18 @@ class PmApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.sw = utl.SeleniumBrowser()
-        self.browser = self.sw.browser
         sd, ed = self.get_data_default_check(sd, ed, fields)
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
+        self.base_window = self.browser.window_handles[0]
         self.sw.go_to_url(self.base_url)
         self.sign_in()
         self.create_report(sd, ed)
         self.export_to_csv()
-        creative_df = self.create_creatives_df()
+        if self.brand_tracker:
+            creative_df = pd.DataFrame()
+        else:
+            creative_df = self.create_creatives_df()
         df = self.get_file_as_df(self.temp_path, creative_df, ed)
-        self.quit()
+        self.sw.quit()
         return df
-
-    def quit(self):
-        self.browser.quit()

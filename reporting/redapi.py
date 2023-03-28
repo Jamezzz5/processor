@@ -190,26 +190,17 @@ class RedApi(object):
             self.sw.click_on_xpath(xpath, sleep=1)
 
     def click_grouped_metrics(self):
-        for x in range(2, 6):
-            metric_xpath = (
-                '/html/body/div[8]/div/div/div/div/div/div[2]/div[2]/div/'
-                'ul/li[{}]/div[1]/div/button/div/div/label/i'.format(x))
-            try:
-                self.sw.click_on_xpath(metric_xpath, sleep=1)
-            except ex.NoSuchElementException as e:
-                logging.warning(
-                    'Could not click update trying another selector.'
-                    '  Error: {}'.format(e))
-                metric_xpath = metric_xpath.replace('body/div[8', 'body/div[7')
-                self.sw.click_on_xpath(metric_xpath, sleep=1)
+        xpath = '//button[contains(normalize-space(), "All metrics")]'
+        elems = self.sw.browser.find_elements_by_xpath(xpath)
+        for elem in elems[1:]:
+            elem.click()
 
-    def set_metrics(self, base_xpath):
+    def set_metrics(self):
         logging.info('Setting metrics.')
-        metric_button_xpath = 'button/div'
-        metric_xpath = base_xpath + metric_button_xpath
+        metric_xpath = '//p[text()="{}"]'.format('Metrics')
         self.sw.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
-        apply_button_xpath = '//div[text()="Apply"]'
+        apply_button_xpath = '//p[text()="Apply"]'
         self.sw.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self):
@@ -239,7 +230,7 @@ class RedApi(object):
         base_app_xpath = self.get_base_xpath()
         self.set_breakdowns()
         self.set_dates(sd, ed, base_xpath=base_app_xpath)
-        self.set_metrics(base_xpath=base_app_xpath)
+        self.set_metrics()
         self.export_to_csv()
 
     def change_account(self):
