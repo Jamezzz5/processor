@@ -1088,7 +1088,12 @@ class CheckPackageCapping(AnalyzeBase):
         temp_package_cap -> column name we are capping on from raw file
         'plan_net_temp -> how much we cap,taken from raw file
         """
-        df = df[[temp_package_cap, self.plan_net_temp, vmc.cost]]
+        cols = [temp_package_cap, self.plan_net_temp, vmc.cost]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if any(missing_cols):
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df[cols]
         df = df.groupby([temp_package_cap])
         df = df.apply(lambda x:
                       0 if x[self.plan_net_temp].sum() == 0
@@ -1134,8 +1139,13 @@ class CheckPackageCapping(AnalyzeBase):
         if there are more vendors than there are caps, raise a warning
         return df of packages with multiple vendors associated
         """
-        df = df[[dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
-                 self.plan_net_temp, vmc.cost]]
+        cols = [dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
+                self.plan_net_temp, vmc.cost]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if any(missing_cols):
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df[cols]
         try:
             df = df.groupby([temp_package_cap, dctc.VEN])
         except ValueError as e:

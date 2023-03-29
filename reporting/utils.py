@@ -16,6 +16,8 @@ raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
+preview_path = './ad_previews/'
+preview_config = 'preview_config.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
@@ -122,7 +124,11 @@ def string_to_date(my_string):
             ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
-        return dt.datetime.strptime(my_string, '%Y%m%d')
+        try:
+            return dt.datetime.strptime(my_string, '%Y%m%d')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif len(my_string) == 8 and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
     elif my_string == '0' or my_string == '0.0':
@@ -496,6 +502,13 @@ class SeleniumWrapper(object):
         if went_to_url:
             self.browser.save_screenshot(file_name)
 
+    def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
+        logging.info('Getting screenshot from {} and '
+                     'saving to {}.'.format(url, file_name))
+        self.go_to_url(url, sleep=10)
+        elem = self.browser.find_element_by_xpath(xpath)
+        elem.screenshot(file_name)
+
     def get_all_iframes(self, url=None):
         if url:
             self.go_to_url(url)
@@ -545,3 +558,41 @@ class SeleniumWrapper(object):
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
+
+
+def copy_file(old_file, new_file, attempt=1, max_attempts=100):
+    try:
+        shutil.copy(old_file, new_file)
+    except PermissionError as e:
+        logging.warning('Could not copy {}: {}'.format(old_file, e))
+    except OSError as e:
+        attempt += 1
+        if attempt > max_attempts:
+            msg = 'Exceeded after {} attempts not copying {} {}'.format(
+                max_attempts, old_file, e)
+            logging.warning(msg)
+        else:
+            logging.warning('Attempt {}: could not copy {} due to OSError '
+                            'retrying in 60s: {}'.format(attempt, old_file, e))
+            time.sleep(60)
+            copy_file(old_file, new_file, attempt=attempt,
+                      max_attempts=max_attempts)
+
+
+def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
+    old_files = os.listdir(old_path)
+    for idx, file_name in enumerate(old_files):
+        if log:
+            logging.info(int((int(idx) / int(len(old_files))) * 100))
+        old_file = os.path.join(old_path, file_name)
+        new_file = os.path.join(new_path, file_name)
+        if os.path.isfile(old_file):
+            if os.path.exists(new_file) and not overwrite:
+                continue
+            else:
+                copy_file(old_file, new_file)
+        elif os.path.isdir(old_file):
+            if not os.path.exists(new_file):
+                os.mkdir(new_file)
+            copy_tree_no_overwrite(old_file, new_file, log=False,
+                                   overwrite=overwrite)
