@@ -114,6 +114,7 @@ class NzApi(object):
             response = requests.get(url, params=params, headers=header)
         else:
             response = None
+        time.sleep(1)
         return response
 
     def create_header(self):
