@@ -61,8 +61,17 @@ class NzApi(object):
         url, params = self.parse_fields(sd, ed, fields)
         self.r = self.make_request('get', url, params=params,
                                    header=header)
-        self.df = pd.DataFrame(self.r.json())
+        self.df = self.get_df_from_response(self.r)
         return self.df
+
+    @staticmethod
+    def get_df_from_response(response):
+        if 'message' in response.json():
+            logging.error('Unexpected Error {}'.format(response.json()))
+            return pd.DataFrame()
+        logging.info('Successful response. Returning dataframe.')
+        df = pd.DataFrame(response.json())
+        return df
 
     @staticmethod
     def get_data_default_check(sd, ed):
