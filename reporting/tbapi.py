@@ -167,7 +167,8 @@ class TabApi(object):
             logging.warning('Tableau api not configured, it was not refreshed.')
 
     def get_tsc_auth(self):
-        tableau_auth = tsc.TableauAuth(self.username, self.password, self.site)
+        tableau_auth = tsc.PersonalAccessTokenAuth(self.username, self.password,
+                                                   self.site)
         server = tsc.Server('https://us-east-1.online.tableau.com',
                             use_server_version=True)
         return tableau_auth, server
