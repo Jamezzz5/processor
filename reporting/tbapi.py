@@ -231,8 +231,11 @@ class TabApi(object):
 
     def create_publish_hyper(self, db, table_name='auto_processor'):
         self.create_hyper(db, table_name)
-        self.publish_object(
-            db, object_name=table_name, object_type='datasource')
+        try:
+            self.publish_object(
+                db, object_name=table_name, object_type='datasource')
+        except tsc.server.endpoint.exceptions.ServerResponseError as e:
+            logging.warning('Could not publish due to error: \n{}'.format(e))
 
     def download_workbook(self, workbook_name='auto_template'):
         tableau_auth, server = self.get_tsc_auth()
