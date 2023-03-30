@@ -65,8 +65,8 @@ class TabApi(object):
         self.headers = {'Content-Type': 'application/json',
                         'Accept': 'application/json'}
         data = {"credentials": {
-                "name": self.username,
-                "password": self.password,
+                "personalAccessTokenName": self.username,
+                "personalAccessTokenSecret": self.password,
                 "site": {"contentUrl": self.site}}}
         url = self.create_url('auth/signin')
         r = self.make_request(url, 'post', resp_key='credentials',
