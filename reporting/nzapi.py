@@ -92,7 +92,7 @@ class NzApi(object):
         if self.country_filter:
             params['geo_type'] = 'markets'
             params['markets'] = self.country_filter.split(',')
-        url = self.base_url + engage_url + category_url
+        url = '{}{}{}'.format(self.base_url, engage_url, category_url)
         return url, params
 
     def make_request(self, method, url, params=None, body=None, header=None):
@@ -120,6 +120,6 @@ class NzApi(object):
     def create_header(self):
         header = {
             'Accept': 'application/json',
-            'Authorization': 'Bearer ' + self.api_key,
+            'Authorization': 'Bearer {}'.format(self.api_key),
         }
         return header
