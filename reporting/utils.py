@@ -349,7 +349,7 @@ def give_df_default_format(df, columns=None):
         if 'Cost' in col or col[:2] == 'CP':
             format_map = '${:,.2f}'.format
         elif 'VCR' in col or col[-2:] == 'TR':
-            format_map = '{:,.3f}%'.format
+            format_map = '{:,.2%}'.format
         else:
             format_map = '{:,.0f}'.format
         df[col] = df[col].map(format_map)
