@@ -5,10 +5,12 @@ import time
 import shutil
 import logging
 import pandas as pd
+import numpy as np
 import datetime as dt
 import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
+import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 
 config_path = 'config/'
@@ -18,6 +20,7 @@ dict_path = 'dictionaries/'
 backup_path = 'backup/'
 preview_path = './ad_previews/'
 preview_config = 'preview_config.csv'
+db_df_trans_config = 'db_df_translation.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
@@ -338,15 +341,30 @@ def add_dummy_header(df, header_len, location='head'):
 
 
 def give_df_default_format(df, columns=None):
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.fillna(0)
     if not columns:
         columns = df.columns
     for col in columns:
         if 'Cost' in col or col[:2] == 'CP':
             format_map = '${:,.2f}'.format
+        elif 'VCR' in col or col[-2:] == 'TR':
+            format_map = '{:,.3f}%'.format
         else:
             format_map = '{:,.0f}'.format
         df[col] = df[col].map(format_map)
     return df
+
+
+def db_df_translation(columns=None, proc_dir='', reverse=False):
+    if not columns:
+        return []
+    df = pd.read_csv(os.path.join(proc_dir, config_path, db_df_trans_config))
+    if reverse:
+        translation = dict(zip(df[exc.translation_db], df[exc.translation_df]))
+    else:
+        translation = dict(zip(df[exc.translation_df], df[exc.translation_db]))
+    return {x: translation[x] if x in translation else x for x in columns}
 
 
 def rename_duplicates(old):
