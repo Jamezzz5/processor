@@ -69,6 +69,15 @@ class Analyze(object):
     analysis_dict_large_param_2 = 'Largest'
     analysis_dict_only_param_2 = 'Only'
     fixes_to_run = False
+    topline_metrics = [[cal.TOTAL_COST], [cal.NCF],
+                       [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
+                       [vmc.views], [vmc.views100, 'VCR'],
+                       [vmc.landingpage, 'CPLPV'], [vmc.btnclick, 'CPBC'],
+                       [vmc.purchase, 'CPA']]
+    topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
+                             vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
+                             vmc.landingpage,  vmc.btnclick, vmc.purchase,
+                             'CPLPV', 'CPBC', 'CPA', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
         self.analysis_dict = []
@@ -333,13 +342,14 @@ class Analyze(object):
     def get_table_without_format(self, data_filter=None, group=dctc.CAM):
         group = [group]
         metrics = []
-        potential_metrics = [[cal.TOTAL_COST], [cal.NCF],
-                             [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
-                             [vmc.landingpage, 'CPLP'], [vmc.btnclick, 'CPBC'],
-                             [vmc.purchase, 'CPP']]
-        for metric in potential_metrics:
+        kpis = self.get_kpis()
+        for metric in self.topline_metrics:
             if metric[0] in self.df.columns:
                 metrics += metric
+        if kpis:
+            metrics += list(kpis.keys())
+            metrics += [value for values in kpis.values() for value in values]
+            metrics = list(set(metrics))
         df = self.generate_df_table(group=group, metrics=metrics,
                                     data_filter=data_filter)
         return df
@@ -347,6 +357,8 @@ class Analyze(object):
     def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):
         df = self.get_table_without_format(data_filter, group)
         df = self.give_df_default_format(df)
+        final_cols = [x for x in self.topline_metrics_final if x in df.columns]
+        df = df[final_cols]
         df = df.transpose()
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
@@ -449,28 +461,8 @@ class Analyze(object):
             self.evaluate_df_kpi_smallest_largest(df[0], kpi, split, filter_col,
                                                   filter_val, df[1])
 
-    def evaluate_on_kpi(self, kpi):
-        kpi_formula = [
-            self.vc.calculations[x] for x in self.vc.calculations
-            if self.vc.calculations[x][self.vc.metric_name] == kpi]
-        if kpi_formula:
-            kpi_cols = kpi_formula[0][self.vc.formula][::2]
-            metrics = kpi_cols + [kpi]
-            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
-            if missing_cols:
-                msg = 'Missing columns could not evaluate {}'.format(kpi)
-                logging.warning(msg)
-                self.add_to_analysis_dict(key_col=self.kpi_col,
-                                          message=msg, param=kpi)
-                return False
-        elif kpi not in self.df.columns:
-            msg = 'Unknown KPI: {}'.format(kpi)
-            logging.warning(msg)
-            self.add_to_analysis_dict(key_col=self.kpi_col,
-                                      message=msg, param=kpi)
-            return False
-        else:
-            metrics = [kpi]
+    def evaluate_on_kpi(self, kpi, formula):
+        metrics = [kpi] + formula
         group = [dctc.CAM, dctc.KPI]
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=dctc.VEN)
         self.explain_lowest_kpi_for_vendor(
@@ -478,10 +470,38 @@ class Analyze(object):
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=vmc.date)
         self.calculate_kpi_trend(kpi, group, metrics)
 
-    def evaluate_on_kpis(self):
+    def get_kpis(self, write=False):
+        kpis = {}
         if dctc.KPI in self.df.columns:
             for kpi in self.df[dctc.KPI].unique():
-                self.evaluate_on_kpi(kpi)
+                kpi_formula = [
+                    self.vc.calculations[x] for x in self.vc.calculations
+                    if self.vc.calculations[x][self.vc.metric_name] == kpi]
+                if kpi_formula:
+                    kpi_cols = kpi_formula[0][self.vc.formula][::2]
+                    missing_cols = [
+                        x for x in kpi_cols if x not in self.df.columns]
+                    if missing_cols:
+                        msg = 'Missing columns could not evaluate {}'.format(
+                            kpi)
+                        logging.warning(msg)
+                        if write:
+                            self.add_to_analysis_dict(key_col=self.kpi_col,
+                                                      message=msg, param=kpi)
+                    else:
+                        kpis[kpi] = kpi_cols
+                elif kpi not in self.df.columns:
+                    msg = 'Unknown KPI: {}'.format(kpi)
+                    logging.warning(msg)
+                else:
+                    kpis[kpi] = []
+            return kpis
+
+    def evaluate_on_kpis(self):
+        kpis = self.get_kpis(write=True)
+        if kpis:
+            for kpi, formula in kpis.items():
+                self.evaluate_on_kpi(kpi, formula)
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -560,7 +580,9 @@ class Analyze(object):
                                   message=missing_msg, data=mdf.to_dict())
 
     def flag_errant_metrics(self):
-        df = self.get_table_without_format(group=dctc.VEN)
+        metrics = [vmc.impressions, vmc.clicks, 'CTR']
+        metrics = [metric for metric in metrics if metric in self.df.columns]
+        df = self.generate_df_table(group=[dctc.VEN, dctc.CAM], metrics=metrics)
         if df.empty:
             logging.warning('Dataframe empty, could not determine flags.')
             return False
@@ -569,6 +591,7 @@ class Analyze(object):
         thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
         for metric_name, threshold_dict in thresholds.items():
             edf = df.copy()
+            edf = edf.reset_index().set_index(dctc.VEN)
             edf[threshold_col] = edf.index.map(threshold_dict).fillna(
                 threshold_dict[all_threshold])
             edf = edf[edf['CTR'] > edf[threshold_col]]
@@ -2255,9 +2278,10 @@ class ValueCalc(object):
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Purchase', 'Net Cost Final/Impressions',
-                   'Video Views 100/Video Views', 'Net Cost Final/Video Views']
+                   'Net Cost Final/Video Views 100',
+                   'Net Cost Final/Landing Page', 'Net Cost Final/Purchase',
+                   'Net Cost Final/Impressions', 'Video Views 100/Video Views',
+                   'Net Cost Final/Video Views']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
@@ -2281,23 +2305,18 @@ class ValueCalc(object):
              self.calculations[x][self.metric_name] == metric_name][0]
         return f
 
-    def calculate_all_metrics(self, metric_names, df=None, db_translate=None):
-        if db_translate:
-            tdf = pd.read_csv(os.path.join('config', 'db_df_translation.csv'))
-            db_translate = dict(
-                zip(tdf[exc.translation_df], tdf[exc.translation_db]))
+    def calculate_all_metrics(self, metric_names, df=None, db_translate=False):
         for metric_name in metric_names:
             df = self.calculate_metric(metric_name, df,
                                        db_translate=db_translate)
         return df
 
-    def calculate_metric(self, metric_name, df=None, db_translate=None):
+    def calculate_metric(self, metric_name, df=None, db_translate=False):
         col = metric_name
         formula = self.get_metric_formula(metric_name)
         current_op = None
         if db_translate:
-            formula = [db_translate[x] if x in formula[::2] else x
-                       for x in formula]
+            formula = list(utl.db_df_translation(formula).values())
         for item in formula:
             if item.lower() == 'impressions' and 'Clicks' not in formula:
                 df[item] = df[item] / 1000
