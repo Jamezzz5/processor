@@ -77,10 +77,10 @@ class Analyze(object):
         self.matrix = matrix
         self.vc = ValueCalc()
         self.class_list = [
-            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
+            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
 
@@ -209,38 +209,6 @@ class Analyze(object):
         end_dates = start_end_dates[plan_names + [dctc.ED]]
         return start_dates, end_dates
 
-    def check_raw_file_update_time(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            if vmc.filename not in source.p:
-                continue
-            file_name = source.p[vmc.filename]
-            if os.path.exists(file_name):
-                t = os.path.getmtime(file_name)
-                last_update = dt.datetime.fromtimestamp(t)
-                if last_update.date() == dt.datetime.today().date():
-                    update_tier = 'Today'
-                elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
-                    update_tier = 'Within A Week'
-                else:
-                    update_tier = 'Greater Than One Week'
-            else:
-                last_update = 'Does Not Exist'
-                update_tier = 'Never'
-            data_dict = {'source': [source.key], 'update_time': [last_update],
-                         'update_tier': [update_tier]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
-        if df.empty:
-            return False
-        df['update_time'] = df['update_time'].astype('U')
-        update_msg = 'Raw File update times and tiers are as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
-        self.add_to_analysis_dict(key_col=self.raw_file_update_col,
-                                  message=update_msg, data=df.to_dict())
-
     def get_plan_names(self):
         plan_names = self.matrix.vendor_set(vm.plan_key)
         if not plan_names:
@@ -306,7 +274,7 @@ class Analyze(object):
 
     # noinspection PyUnresolvedReferences
     @staticmethod
-    def make_heat_map(df, cost_cols=None, percent_cols=None):
+    def make_heat_map(df, cost_cols=None):
         fig, axs = sns.plt.subplots(ncols=len(df.columns),
                                     gridspec_kw={'hspace': 0, 'wspace': 0})
         for idx, col in enumerate(df.columns):
@@ -885,8 +853,11 @@ class Analyze(object):
         return True
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
-                              split_col=None, filter_col=None, filter_val=None):
-        item = [x for x in self.analysis_dict
+                              split_col=None, filter_col=None, filter_val=None,
+                              analysis_dict=None):
+        if not analysis_dict:
+            analysis_dict = self.analysis_dict
+        item = [x for x in analysis_dict
                 if x[self.analysis_dict_key_col] == key]
         if param:
             item = [x for x in item if x[self.analysis_dict_param_col] == param]
@@ -912,7 +883,6 @@ class Analyze(object):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
-        self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
         self.get_metrics_by_vendor_key()
@@ -924,11 +894,44 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
-    def do_analysis_and_fix_processor(self, pre_run=False):
+    def get_new_files(self):
+        cu = CheckRawFileUpdateTime(self)
+        cu.do_analysis()
+        new = self.find_in_analysis_dict(key=self.raw_file_update_col)
+        if not new:
+            logging.warning('Could not find update times.')
+            return False
+        new = pd.DataFrame(new[0]['data'])
+        if os.path.exists(self.analysis_dict_file_name):
+            with open(self.analysis_dict_file_name, 'r') as f:
+                old = json.load(f)
+            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
+                                             analysis_dict=old)
+            old = pd.DataFrame(old[0]['data'])
+        else:
+            logging.warning('No analysis dict assuming all new sources.')
+            old = new.copy()
+            old[cu.update_tier_col] = cu.update_tier_never
+        df = new.merge(old, how='left', on=vmc.vendorkey)
+        df = df[df['{}_y'.format(cu.update_tier_col)] == cu.update_tier_never]
+        df = df[df['{}_x'.format(cu.update_tier_col)] != cu.update_tier_never]
+        new_sources = df[vmc.vendorkey].to_list()
+        return new_sources
+
+    def do_analysis_and_fix_processor(self, pre_run=False, first_run=False,
+                                      new_files=False):
+        new_file_check = []
+        if new_files:
+            new_file_check = self.get_new_files()
+            if not new_file_check:
+                return self.fixes_to_run
         for analysis_class in self.class_list:
             if analysis_class.fix:
-                if (pre_run and analysis_class.pre_run) or not pre_run:
-                    analysis_class(self).do_and_fix_analysis()
+                is_pre_run = pre_run and analysis_class.pre_run
+                is_new_file = new_files and analysis_class.new_files
+                if is_pre_run or first_run or is_new_file:
+                    analysis_class(self).do_and_fix_analysis(
+                        only_new_files=new_files, new_file_list=new_file_check)
         return self.fixes_to_run
 
 
@@ -936,6 +939,7 @@ class AnalyzeBase(object):
     name = ''
     fix = False
     pre_run = False
+    new_files = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -952,13 +956,18 @@ class AnalyzeBase(object):
         logging.warning('{} function not implemented for: {}'.format(
             func_name, self.name))
 
-    def do_and_fix_analysis(self):
+    def do_and_fix_analysis(self, only_new_files=False, new_file_list=None):
         self.do_analysis()
         aly_dict = self.aly.find_in_analysis_dict(self.name)
         if (len(aly_dict) > 0 and 'data' in aly_dict[0]
                 and len(aly_dict[0]['data']) > 0):
+            aly_dict = aly_dict[0]['data']
+            if only_new_files:
+                df = pd.DataFrame(aly_dict)
+                df = df[df[vmc.vendorkey].isin(new_file_list)]
+                aly_dict = df.to_dict(orient='records')
             self.aly.fixes_to_run = True
-            self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
+            self.fix_analysis(pd.DataFrame(aly_dict))
 
     def add_to_analysis_dict(self, df, msg):
         self.aly.add_to_analysis_dict(
@@ -968,6 +977,7 @@ class AnalyzeBase(object):
 class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
     fix = True
+    new_files = True
 
     @staticmethod
     def get_vendor_list():
@@ -1251,6 +1261,7 @@ class CheckPackageCapping(AnalyzeBase):
 class FindPlacementNameCol(AnalyzeBase):
     name = Analyze.placement_col
     fix = True
+    new_files = True
 
     @staticmethod
     def do_analysis_on_data_source(source, df):
@@ -1405,6 +1416,7 @@ class CheckColumnNames(AnalyzeBase):
     name = Analyze.raw_columns
     fix = True
     pre_run = True
+    new_files = True
 
     def do_analysis(self):
         """
@@ -2116,6 +2128,50 @@ class GetServingAlerts(AnalyzeBase):
             logging.info('{}\n{}'.format(msg, df))
         self.aly.add_to_analysis_dict(key_col=self.aly.adserving_alert,
                                       message=msg, data=df.to_dict())
+
+
+class CheckRawFileUpdateTime(AnalyzeBase):
+    name = Analyze.raw_file_update_col
+    update_tier_today = 'Today'
+    update_tier_week = 'Within A Week'
+    update_tier_greater_week = 'Greater Than One Week'
+    update_tier_never = 'Never'
+    update_time_col = 'update_time'
+    update_tier_col = 'update_tier'
+    last_update_does_not_exist = 'Does Not Exist'
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            if vmc.filename not in source.p:
+                continue
+            file_name = source.p[vmc.filename]
+            if os.path.exists(file_name):
+                t = os.path.getmtime(file_name)
+                last_update = dt.datetime.fromtimestamp(t)
+                if last_update.date() == dt.datetime.today().date():
+                    update_tier = self.update_tier_today
+                elif last_update.date() > (
+                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                    update_tier = self.update_tier_week
+                else:
+                    update_tier = self.update_tier_greater_week
+            else:
+                last_update = self.last_update_does_not_exist
+                update_tier = self.update_tier_never
+            data_dict = {vmc.vendorkey: [source.key],
+                         self.update_time_col: [last_update],
+                         self.update_tier_col: [update_tier]}
+            df = df.append(pd.DataFrame(data_dict),
+                           ignore_index=True, sort=False)
+        if df.empty:
+            return False
+        df[self.update_time_col] = df[self.update_time_col].astype('U')
+        update_msg = 'Raw File update times and tiers are as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=update_msg, data=df.to_dict())
 
 
 class GetDailyPacingAlerts(AnalyzeBase):
