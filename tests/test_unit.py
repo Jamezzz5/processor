@@ -627,14 +627,15 @@ class TestAnalyze:
         assert df.equals(match_df)
 
     def test_perfect_file(self):
-        file_name = 'raw_data/lines_test.csv'
+        file_name = 'lines_test.csv'
         r_df = pd.DataFrame({'Client': ['foo', 'bar'],
                              'Placement': ['bax', 'bla'],
                              'Campaign': ['qax', 'sna']})
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['Placement']}
+                    dctc.FPN: ['Placement'],
+                    vmc.firstrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
@@ -642,6 +643,21 @@ class TestAnalyze:
         os.remove(file_name)
         assert not df.empty
         assert df.equals(match_df)
+
+    def test_perfect_file_second_line(self):
+        file_name = 'lines_test.csv'
+        r_df = pd.DataFrame({'Unnamed 1': ['Client', 'Sega'],
+                             'Unnamed 2': ['Campaign', 'Launch'],
+                             'Unnamed 3': ['Creative', '2x2']})
+        r_df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    dctc.FPN: ['Campaign'],
+                    vmc.firstrow: '1'}
+        cbl = az.FindBlankLines(az.Analyze())
+        check = cbl.check_perfect_first_line(r_df, ['Campaign'], 1)
+        os.remove(file_name)
+        assert check
 
     def test_missing_fpn_cols(self):
         file_name = 'raw_data/lines_test.csv'

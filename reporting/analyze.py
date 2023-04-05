@@ -7,6 +7,7 @@ import operator
 import tarfile
 import numpy as np
 import pandas as pd
+import pandas.api.types
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
@@ -126,8 +127,8 @@ class Analyze(object):
             logging.warning('Df does not have cols {}'.format(miss_cols))
             return False
         df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
-                                          else x[vmc.cost].sum() /
-                                          x[dctc.PNC].sum())
+        else x[vmc.cost].sum() /
+             x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
             delivery_msg = 'Nothing has delivered in full.'
@@ -223,7 +224,7 @@ class Analyze(object):
                 if last_update.date() == dt.datetime.today().date():
                     update_tier = 'Today'
                 elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                        dt.datetime.today() - dt.timedelta(days=7)).date():
                     update_tier = 'Within A Week'
                 else:
                     update_tier = 'Greater Than One Week'
@@ -657,17 +658,17 @@ class Analyze(object):
             if max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
-                         max_date, sd))
+                    max_date, sd))
                 msg = (False, msg)
             elif min_date > ed:
                 msg = ('First day in raw file {} is less than end date {}.\n'
                        'Result will be blank.  Change end date.'.format(
-                         min_date, ed))
+                    min_date, ed))
                 msg = (False, msg)
             else:
                 msg = ('Some or all data in raw file with date range {} - {} '
                        'falls between start and end dates {} - {}'.format(
-                         sd, ed, min_date, max_date))
+                    sd, ed, min_date, max_date))
                 msg = (True, msg)
         cd[vmc.startdate][cds_name] = msg
         return cd
@@ -717,7 +718,7 @@ class Analyze(object):
                         msg = (
                             False, 'Old file total {} was greater than new '
                                    'file total {} for col {}'.format(
-                                      old_total, total, col))
+                                old_total, total, col))
                 cd[col][cds_name] = msg
         return cd
 
@@ -866,7 +867,7 @@ class Analyze(object):
                 'Dataframe empty, could not determine missing ad rate.')
             return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
-                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
                 (df[dctc.AR] == 'nan')]
@@ -1074,9 +1075,8 @@ class FindBlankLines(AnalyzeBase):
                       else s for s in place_cols]
         df = utl.import_read_csv(raw_file, nrows=10)
         last_row = df.tail(1)
-        if self.check_perfect_first_line(df, place_cols):
-            l_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 self.new_first_line: ['0']})
+        if self.check_perfect_first_line(df, place_cols,
+                                         int(source.p[vmc.firstrow])):
             return l_df
         for index, row in df.iterrows():
             if any(x in row.values or x in df.columns for x in place_cols):
@@ -1099,10 +1099,12 @@ class FindBlankLines(AnalyzeBase):
         return l_df
 
     @staticmethod
-    def check_perfect_first_line(df, place_cols):
-        if any(any(col.startswith(placement_col) for col in df.columns)
-               for placement_col in place_cols):
-            return True
+    def check_perfect_first_line(df, place_cols, row) -> bool:
+        if row < 0 or row >= len(df):
+            return False
+        row_data = df.iloc[row-1]
+        return any(any(col in str(cell) for col in place_cols) if
+                   isinstance(cell, str) else False for cell in row_data)
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1432,7 +1434,7 @@ class CheckApiDateLength(AnalyzeBase):
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -1506,7 +1508,7 @@ class CheckColumnNames(AnalyzeBase):
             transforms = [x for x in transforms if x.split('::')[0]
                           in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = source.get_raw_df(nrows=first_row+5)
+            tdf = source.get_raw_df(nrows=first_row + 5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
             cols = list(tdf.columns)
