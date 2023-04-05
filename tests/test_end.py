@@ -3,6 +3,7 @@ import shutil
 import pytest
 from main import main
 import reporting.utils as utl
+import reporting.analyze as az
 import reporting.vmcolumns as vmc
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
@@ -24,11 +25,22 @@ def load_config():
                                    overwrite=True)
         if old_path != utl.config_path:
             shutil.rmtree(old_path)
+        else:
+            base_vm = os.path.join(test_path, vm.csv_file)
+            if os.path.exists(base_vm):
+                vm_file = os.path.join(utl.config_path, vm.csv_file)
+                utl.copy_file(base_vm, vm_file)
         if old_path == utl.dict_path:
             new_t = os.path.join(full_new_path, dctc.filepath_tran_config)
             old_t = os.path.join(old_path, dctc.filepath_tran_config)
             utl.dir_check(old_t)
             utl.copy_tree_no_overwrite(new_t, old_t, log=False, overwrite=True)
+            base_td = os.path.join(test_path, dctc.filename_tran_config)
+            if os.path.exists(base_td):
+                td_file = os.path.join(old_t, dctc.filename_tran_config)
+                utl.copy_file(base_td, td_file)
+    if os.path.exists(az.Analyze.analysis_dict_file_name):
+        os.remove(az.Analyze.analysis_dict_file_name)
     yield load_config
     for old_path in [utl.config_path, utl.dict_path, utl.raw_path]:
         utl.dir_check(old_path)

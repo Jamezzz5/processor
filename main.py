@@ -48,7 +48,7 @@ def get_args(arguments=None):
     parser.add_argument('--api', choices=[
         'all', 'fb', 'aw', 'tw', 'ttd', 'ga', 'nb', 'af', 'sc', 'aj', 'dc',
         'rs', 'db', 'vk', 'rc', 'szk', 'red', 'dv', 'adk', 'inn', 'tik', 'amz',
-        'cri', 'pm', 'sam', 'gs', 'qt', 'yv', 'amd', 'ss'])
+        'cri', 'pm', 'sam', 'gs', 'qt', 'yv', 'amd', 'ss', 'nz'])
     parser.add_argument('--ftp', choices=['all', 'sz'])
     parser.add_argument('--dbi', choices=['all', 'dna'])
     parser.add_argument('--s3', choices=['all', 'dna'])
@@ -96,12 +96,16 @@ def main(arguments=None):
         s3 = ih.ImportHandler(args.s3, matrix)
         s3.s3_loop()
     if not args.noprocess:
+        if args.analyze:
+            aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
+            aly.do_analysis_and_fix_processor(new_files=True)
+            matrix = vm.VendorMatrix()
         df = matrix.vm_loop_with_costs(OUTPUT_FILE)
         if args.analyze and not os.path.isfile(
                 os.path.join(utl.config_path, exc.upload_id_file)):
             logging.info('First run - analyzing data.')
             aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-            fixes_to_run = aly.do_analysis_and_fix_processor()
+            fixes_to_run = aly.do_analysis_and_fix_processor(first_run=True)
             if fixes_to_run:
                 logging.info('Fixes applied, rerunning processor.')
                 matrix = vm.VendorMatrix()
