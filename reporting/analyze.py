@@ -1665,6 +1665,8 @@ class CheckDoubleCounting(AnalyzeBase):
         df = self.aly.generate_df_table(groups, metrics, sort=None,
                                         data_filter=None, df=df)
         df.reset_index(inplace=True)
+        if df.empty:
+            return df
         sdf = self.count_unique_placements(df, self.total_placement_count)
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
         df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
