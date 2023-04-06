@@ -581,7 +581,9 @@ class Analyze(object):
 
     def flag_errant_metrics(self):
         metrics = [vmc.impressions, vmc.clicks, 'CTR']
-        metrics = [metric for metric in metrics if metric in self.df.columns]
+        if [metric for metric in metrics[:2] if metric not in self.df.columns]:
+            logging.warning('Missing metric, could not determine flags.')
+            return False
         df = self.generate_df_table(group=[dctc.VEN, dctc.CAM], metrics=metrics)
         if df.empty:
             logging.warning('Dataframe empty, could not determine flags.')
