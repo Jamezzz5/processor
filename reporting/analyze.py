@@ -1177,7 +1177,7 @@ class CheckPackageCapping(AnalyzeBase):
         cols = [dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
                 self.plan_net_temp, vmc.cost]
         missing_cols = [x for x in cols if x not in df.columns]
-        if any(missing_cols):
+        if any(missing_cols) or df.empty:
             logging.warning('Missing columns: {}'.format(missing_cols))
             return pd.DataFrame()
         df = df[cols]
@@ -1186,7 +1186,11 @@ class CheckPackageCapping(AnalyzeBase):
         except ValueError as e:
             logging.warning('ValueError as follows: {}'.format(e))
             return pd.DataFrame()
-        df = df.size().reset_index(name='count')
+        try:
+            df = df.size().reset_index(name='count')
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
         df = df[[temp_package_cap, dctc.VEN]]
         if (temp_package_cap not in df.columns or
                 temp_package_cap not in pdf.columns):
