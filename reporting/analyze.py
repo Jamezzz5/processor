@@ -937,6 +937,9 @@ class Analyze(object):
             logging.warning('No analysis dict assuming all new sources.')
             old = new.copy()
             old[cu.update_tier_col] = cu.update_tier_never
+        if vmc.vendorkey not in old.columns:
+            logging.warning('Old df missing vendor key column.')
+            return []
         df = new.merge(old, how='left', on=vmc.vendorkey)
         df = df[df['{}_y'.format(cu.update_tier_col)] == cu.update_tier_never]
         df = df[df['{}_x'.format(cu.update_tier_col)] != cu.update_tier_never]
