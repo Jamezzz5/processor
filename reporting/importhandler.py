@@ -31,6 +31,7 @@ import reporting.gsapi as gsapi
 import reporting.qtapi as qtapi
 import reporting.yvapi as yvapi
 import reporting.ssapi as ssapi
+import reporting.nzapi as nzapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.export as export
@@ -72,7 +73,8 @@ class ImportHandler(object):
             vmc.api_qt_key: qtapi.QtApi,
             vmc.api_yv_key: yvapi.YvApi,
             vmc.api_amd_key: amzapi.AmzApi,
-            vmc.api_ss_key: ssapi.SsApi
+            vmc.api_ss_key: ssapi.SsApi,
+            vmc.api_nz_key: nzapi.NzApi
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
