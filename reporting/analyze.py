@@ -1979,7 +1979,12 @@ class GetPacingAnalysis(AnalyzeBase):
         average_df = average_df.drop(columns=[vmc.cost])
         start_dates, end_dates = self.aly.get_start_end_dates(
             df, plan_names)
-        df = df.groupby(plan_names)[vmc.cost, dctc.PNC, vmc.AD_COST].sum()
+        cols = [vmc.cost, dctc.PNC, vmc.AD_COST]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if missing_cols:
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df.groupby(plan_names)[cols].sum()
         df = df.reset_index()
         df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
         tdf = df[df[dctc.PNC] > df[vmc.cost]]
