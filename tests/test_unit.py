@@ -732,3 +732,39 @@ class TestAnalyze:
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
         aly.do_all_analysis()
+
+    def test_all_analysis_on_header_df(self):
+        df = pd.DataFrame(columns=[
+            'Button Click', 'Clicks', 'Date', 'Full Placement Name',
+            'Impressions', 'Net Cost', 'Planned Net Cost', 'Purchase', 'Reach',
+            'Revenue', 'Uncapped', 'Vendor Key', 'mpAd', 'mpAd Format',
+            'mpAd Model', 'mpAd Rate', 'mpAd Type', 'mpAge', 'mpAgency',
+            'mpAgency Fees Rate', 'mpBudget', 'mpBuy Model', 'mpBuy Rate',
+            'mpBuy Rate 2', 'mpBuy Rate 3', 'mpBuy Rate 4', 'mpBuy Rate 5',
+            'mpCTA', 'mpCampaign', 'mpCampaign Phase', 'mpCampaign Qualifier',
+            'mpCampaign Timing', 'mpCampaign Type', 'mpCharacter',
+            'mpClickthrough URL', 'mpClient', 'mpCopy', 'mpCountry/Region',
+            'mpCreative', 'mpCreative Description',
+            'mpCreative Length', 'mpCreative Line Item', 'mpCreative Modifier',
+            'mpCreative URL', 'mpData Type 1',
+            'mpData Type 2', 'mpDemographic', 'mpDescription Line 1',
+            'mpDescription Line 2', 'mpDisplay URL',
+            'mpEnd Date', 'mpEnvironment', 'mpFaction', 'mpFormat',
+            'mpFranchise', 'mpGender', 'mpGenre Targeting',
+            'mpGenre Targeting Fine', 'mpHeadline 1', 'mpHeadline 2', 'mpKPI',
+            'mpMedia Channel', 'mpMisc', 'mpMisc 2',
+            'mpMisc 3', 'mpMisc 4', 'mpMisc 5', 'mpMisc 6', 'mpModel Name',
+            'mpModel Type', 'mpPackage Description',
+            'mpPlacement Date', 'mpPlacement Date 2', 'mpPlacement Date 3',
+            'mpPlacement Date 4', 'mpPlacement Date 5',
+            'mpPlacement Description', 'mpPlacement Name', 'mpPlatform',
+            'mpProduct Detail', 'mpProduct Name',
+            'mpRegion', 'mpReporting Fee Model', 'mpReporting Fee Rate',
+            'mpReporting Fee Type', 'mpRetailer',
+            'mpServing', 'mpSize', 'mpStart Date', 'mpTargeting',
+            'mpTargeting Bucket', 'mpTransaction Product',
+            'mpTransaction Product - Broad', 'mpTransaction Product - Fine',
+            'mpVendor', 'mpVendor Type',
+            'mpVerification Fee Model', 'mpVerification Fee Rate', 'PNC FPN'])
+        aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
+        aly.do_all_analysis()
