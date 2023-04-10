@@ -504,7 +504,7 @@ class TestAnalyze:
         cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
-        
+
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
               'mpPackageDesc': ['Under', 'Full', 'Over'],
@@ -608,7 +608,7 @@ class TestAnalyze:
         assert df.equals(match_df)
 
     def test_blank_lines_base(self):
-        file_name = 'raw_data/lines_test.csv'
+        file_name = 'lines_test.csv'
         r_df = pd.DataFrame({'Unnamed 1': ['', '', 'Nonsense', '', 'Advertiser',
                                            'Sega', 'Sega'],
                              'Unnamed 2': ['', '', 'Nonsense', '',
@@ -617,7 +617,9 @@ class TestAnalyze:
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['Placement']}
+                    dctc.FPN: ['Placement'],
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
@@ -635,14 +637,12 @@ class TestAnalyze:
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
                     dctc.FPN: ['Placement'],
-                    vmc.firstrow: '0'}
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
-        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 'new_first_line': ['0']})
         os.remove(file_name)
-        assert not df.empty
-        assert df.equals(match_df)
+        assert df.empty
 
     def test_perfect_file_second_line(self):
         file_name = 'lines_test.csv'
@@ -653,21 +653,26 @@ class TestAnalyze:
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
                     dctc.FPN: ['Campaign'],
-                    vmc.firstrow: '1'}
+                    vmc.firstrow: '1',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        check = cbl.check_perfect_first_line(r_df, ['Campaign'], 1)
+        check = cbl.check_first_line(r_df, ['Campaign'], 1)
+        df = cbl.find_first_row(source)
         os.remove(file_name)
         assert check
+        assert df.empty
 
     def test_missing_fpn_cols(self):
-        file_name = 'raw_data/lines_test.csv'
+        file_name = 'lines_test.csv'
         r_df = pd.DataFrame({'Client': ['foo', 'bar'],
                              'Placement': ['bax', 'bla'],
                              'Campaign': ['qax', 'sna']})
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['Creative']}
+                    dctc.FPN: ['Creative'],
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         os.remove(file_name)
@@ -677,20 +682,24 @@ class TestAnalyze:
         file_name = 'raw_data/does_not_exist.csv'
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['Campaign']}
+                    dctc.FPN: ['Campaign'],
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         assert df.empty
 
     def test_first_line_bad(self):
-        file_name = 'raw_data/lines_test.csv'
+        file_name = 'lines_test.csv'
         r_df = pd.DataFrame({'Unnamed 1': ['Client', 'Sega'],
                              'Unnamed 2': ['Campaign', 'Launch'],
                              'Unnamed 3': ['Creative', '2x2']})
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['Campaign']}
+                    dctc.FPN: ['Campaign'],
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
@@ -700,27 +709,31 @@ class TestAnalyze:
         assert df.equals(match_df)
 
     def test_past_tenth_line(self):
-        file_name = 'raw_data/lines_test.csv'
+        file_name = 'lines_test.csv'
         r_df = pd.DataFrame({'null': ['NaN', 'NaN', 'NaN', 'NaN', 'NaN', 'NaN',
-                                      'NaN', 'NaN', 'NaN', 'NaN' 'Campaign']})
+                                      'NaN', 'NaN', 'NaN', 'NaN', 'Campaign']})
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['Campaign']}
+                    dctc.FPN: ['Campaign'],
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         os.remove(file_name)
         assert df.empty
 
     def test_remove_colons(self):
-        file_name = 'raw_data/lines_test.csv'
+        file_name = 'lines_test.csv'
         r_df = pd.DataFrame({'Unnamed 1': ['Client', 'Sega'],
                              'Unnamed 2': ['Campaign', 'Launch'],
                              'Unnamed 3': ['Creative', '2x2']})
         r_df.to_csv(file_name)
         source = vm.DataSource(vm_rules=None, key='Line_Test')
         source.p = {vmc.filename: file_name,
-                    dctc.FPN: ['::Campaign']}
+                    dctc.FPN: ['::Campaign'],
+                    vmc.firstrow: '0',
+                    vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         df = cbl.find_first_row(source)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
