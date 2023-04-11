@@ -473,32 +473,35 @@ class Analyze(object):
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=vmc.date)
         self.calculate_kpi_trend(kpi, group, metrics)
 
+    def get_kpi(self, kpi, write=False):
+        kpi_cols = []
+        kpi_formula = [
+            self.vc.calculations[x] for x in self.vc.calculations
+            if self.vc.calculations[x][self.vc.metric_name] == kpi]
+        if kpi_formula:
+            kpi_cols = kpi_formula[0][self.vc.formula][::2]
+            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
+            if missing_cols:
+                msg = 'Missing columns could not evaluate {}'.format(kpi)
+                logging.warning(msg)
+                kpi = False
+                if write:
+                    self.add_to_analysis_dict(key_col=self.kpi_col,
+                                              message=msg, param=kpi)
+        elif kpi not in self.df.columns:
+            msg = 'Unknown KPI: {}'.format(kpi)
+            logging.warning(msg)
+            kpi = False
+        return kpi, kpi_cols
+
     def get_kpis(self, write=False):
         kpis = {}
         if dctc.KPI in self.df.columns:
             for kpi in self.df[dctc.KPI].unique():
-                kpi_formula = [
-                    self.vc.calculations[x] for x in self.vc.calculations
-                    if self.vc.calculations[x][self.vc.metric_name] == kpi]
-                if kpi_formula:
-                    kpi_cols = kpi_formula[0][self.vc.formula][::2]
-                    missing_cols = [
-                        x for x in kpi_cols if x not in self.df.columns]
-                    if missing_cols:
-                        msg = 'Missing columns could not evaluate {}'.format(
-                            kpi)
-                        logging.warning(msg)
-                        if write:
-                            self.add_to_analysis_dict(key_col=self.kpi_col,
-                                                      message=msg, param=kpi)
-                    else:
-                        kpis[kpi] = kpi_cols
-                elif kpi not in self.df.columns:
-                    msg = 'Unknown KPI: {}'.format(kpi)
-                    logging.warning(msg)
-                else:
-                    kpis[kpi] = []
-            return kpis
+                kpi, kpi_cols = self.get_kpi(kpi, write)
+                if kpi:
+                    kpis[kpi] = kpi_cols
+        return kpis
 
     def evaluate_on_kpis(self):
         kpis = self.get_kpis(write=True)
