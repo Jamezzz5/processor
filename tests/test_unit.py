@@ -621,7 +621,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                  'new_first_line': ['5']})
         os.remove(file_name)
@@ -640,7 +641,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         os.remove(file_name)
         assert df.empty
 
@@ -657,7 +659,8 @@ class TestAnalyze:
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
         check = cbl.check_first_line(r_df, ['Campaign'], 1)
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         os.remove(file_name)
         assert check
         assert df.empty
@@ -674,7 +677,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         os.remove(file_name)
         assert df.empty
 
@@ -686,7 +690,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         assert df.empty
 
     def test_first_line_bad(self):
@@ -701,7 +706,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                  'new_first_line': ['1']})
         os.remove(file_name)
@@ -719,7 +725,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         os.remove(file_name)
         assert df.empty
 
@@ -735,7 +742,8 @@ class TestAnalyze:
                     vmc.firstrow: '0',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        df = cbl.find_first_row(source)
+        df = pd.DataFrame()
+        df = cbl.find_first_row(source, df)
         match_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                  'new_first_line': ['1']})
         os.remove(file_name)

@@ -87,10 +87,10 @@ class Analyze(object):
         self.matrix = matrix
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
+            # CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
+            # CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            # CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            # GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
             FindBlankLines]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
@@ -907,16 +907,16 @@ class Analyze(object):
             json.dump(self.analysis_dict, fp)
 
     def do_all_analysis(self):
-        self.backup_files()
-        self.check_delivery(self.df)
-        self.check_plan_error(self.df)
-        self.generate_topline_and_weekly_metrics()
-        self.evaluate_on_kpis()
-        self.get_metrics_by_vendor_key()
-        self.find_missing_metrics()
-        self.flag_errant_metrics()
-        self.find_missing_serving()
-        self.find_missing_ad_rate()
+        # self.backup_files()
+        # self.check_delivery(self.df)
+        # self.check_plan_error(self.df)
+        # self.generate_topline_and_weekly_metrics()
+        # self.evaluate_on_kpis()
+        # self.get_metrics_by_vendor_key()
+        # self.find_missing_metrics()
+        # self.flag_errant_metrics()
+        # self.find_missing_serving()
+        # self.find_missing_ad_rate()
         for analysis_class in self.class_list:
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
@@ -1092,7 +1092,7 @@ class FindBlankLines(AnalyzeBase):
     fix = True
     new_first_line = 'new_first_line'
 
-    def find_first_row(self, source):
+    def find_first_row(self, source, df):
         """
         finds the first row in a raw file where any column in FPN appears
         loops through only first 10 rows in case of major error
@@ -1102,8 +1102,7 @@ class FindBlankLines(AnalyzeBase):
             vendor key and new_first_row
         returns empty df otherwise
         """
-        new_first_row = -1
-        l_df = pd.DataFrame()
+        l_df = df
         if vmc.filename not in source.p:
             return l_df
         raw_file = source.p[vmc.filename]
@@ -1113,25 +1112,14 @@ class FindBlankLines(AnalyzeBase):
         df = utl.import_read_csv(raw_file, nrows=10)
         df = utl.first_last_adj(
             df, source.p[vmc.firstrow], source.p[vmc.lastrow])
-        last_row = df.tail(1)
         for index, row in df.iterrows():
             if self.check_first_line(df, place_cols, index):
-                new_first_row = index
+                new_first_row = str(index)
+                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                          self.new_first_line: [new_first_row]})
+                l_df = l_df.append(pd.DataFrame(data_dict),
+                                   ignore_index=True, sort=False)
                 break
-        if last_row.index >= new_first_row >= 0:
-            new_first_row = str(new_first_row)
-            l_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 self.new_first_line: [new_first_row]})
-            delivery_msg = "Uploaded file first row may be incorrect"
-            msg1 = "Vendor Key: "
-            msg2 = "File: "
-            msg3 = "Suggested new first row: "
-            logging.info('{}\n{}{}\n{}{}\n{}{}'.format(
-                delivery_msg, msg1, source.key, msg2, raw_file, msg3,
-                new_first_row))
-            self.aly.add_to_analysis_dict(key_col=self.name,
-                                          message=delivery_msg,
-                                          data=l_df.to_dict())
         return l_df
 
     @staticmethod
@@ -1144,10 +1132,18 @@ class FindBlankLines(AnalyzeBase):
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
         for source in data_sources:
-            self.find_first_row(source)
+            df = self.find_first_row(source, df)
+        if df.empty:
+            msg = 'All first rows correct'
+        else:
+            msg = 'Suggested new first row(s):'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
 
-    def fix_analysis_for_data_source(self, source, write=None):
+    def fix_analysis_for_data_source(self, source, write=True):
         """
         Plugs in new first line from aly dict to the VM
         source -> data source from aly dict (created from find_first_row)
@@ -1164,7 +1160,7 @@ class FindBlankLines(AnalyzeBase):
     def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
-            self.fix_analysis_for_data_source(x, False)
+            self.fix_analysis_for_data_source(x, write=write)
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
