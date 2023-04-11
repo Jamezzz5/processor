@@ -375,12 +375,13 @@ class Analyze(object):
         df = df.sort_values(vmc.date).reset_index(drop=True).reset_index()
         df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
         fit = np.polyfit(df['index'], df[kpi], deg=1)
+        format_map = utl.get_default_format(kpi)
         if fit[0] > 0:
             trend = 'increasing'
         else:
             trend = 'decreasing'
-        msg = ('The KPI {} is {} at a rate of {:,.3f} units per day'
-               ' when given linear fit').format(kpi, trend, abs(fit[0]))
+        msg = ('The KPI {} is {} at a rate of {} per day when given '
+               'linear fit').format(kpi, trend, format_map(abs(fit[0])))
         logging.info(msg)
         df['fit'] = fit[0] * df['index'] + fit[1]
         df[vmc.date] = df[vmc.date].dt.strftime('%Y-%m-%d')
@@ -424,7 +425,9 @@ class Analyze(object):
         format_df = self.give_df_default_format(df, columns=[kpi])
         if split == vmc.date:
             df[split] = df[split].dt.strftime('%Y-%m-%d')
-        split_values = ', '.join(str(x) for x in df[split].values)
+        split_values = ['{} ({})'.format(x, y) for x, y in
+                        format_df[[split, kpi]].values]
+        split_values = ', '.join(split_values)
         msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
             small_large, kpi, split, split_values)
         if filter_col:
@@ -937,6 +940,9 @@ class Analyze(object):
             logging.warning('No analysis dict assuming all new sources.')
             old = new.copy()
             old[cu.update_tier_col] = cu.update_tier_never
+        if vmc.vendorkey not in old.columns:
+            logging.warning('Old df missing vendor key column.')
+            return []
         df = new.merge(old, how='left', on=vmc.vendorkey)
         df = df[df['{}_y'.format(cu.update_tier_col)] == cu.update_tier_never]
         df = df[df['{}_x'.format(cu.update_tier_col)] != cu.update_tier_never]
@@ -1177,7 +1183,7 @@ class CheckPackageCapping(AnalyzeBase):
         cols = [dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
                 self.plan_net_temp, vmc.cost]
         missing_cols = [x for x in cols if x not in df.columns]
-        if any(missing_cols):
+        if any(missing_cols) or df.empty:
             logging.warning('Missing columns: {}'.format(missing_cols))
             return pd.DataFrame()
         df = df[cols]
@@ -1186,7 +1192,11 @@ class CheckPackageCapping(AnalyzeBase):
         except ValueError as e:
             logging.warning('ValueError as follows: {}'.format(e))
             return pd.DataFrame()
-        df = df.size().reset_index(name='count')
+        try:
+            df = df.size().reset_index(name='count')
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
         df = df[[temp_package_cap, dctc.VEN]]
         if (temp_package_cap not in df.columns or
                 temp_package_cap not in pdf.columns):
@@ -1599,6 +1609,7 @@ class CheckFlatSpends(AnalyzeBase):
                 rdf[self.error_col] = self.missing_rate_error
                 df = df[df[dctc.PD] <= dt.datetime.today()]
                 if not df.empty:
+                    test = None
                     cdf = df[df['_merge'] == 'both']
                     cdf = cdf.iloc[:, :-1]
                     cdf = cdf[cdf[self.first_click_col] != cdf[dctc.PD]]
@@ -1975,7 +1986,12 @@ class GetPacingAnalysis(AnalyzeBase):
         average_df = average_df.drop(columns=[vmc.cost])
         start_dates, end_dates = self.aly.get_start_end_dates(
             df, plan_names)
-        df = df.groupby(plan_names)[vmc.cost, dctc.PNC, vmc.AD_COST].sum()
+        cols = [vmc.cost, dctc.PNC, vmc.AD_COST]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if missing_cols:
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df.groupby(plan_names)[cols].sum()
         df = df.reset_index()
         df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
         tdf = df[df[dctc.PNC] > df[vmc.cost]]
