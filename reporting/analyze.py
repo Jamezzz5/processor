@@ -1113,9 +1113,11 @@ class FindBlankLines(AnalyzeBase):
         df = utl.import_read_csv(raw_file, nrows=10)
         df = utl.first_last_adj(
             df, source.p[vmc.firstrow], source.p[vmc.lastrow])
-        for index, row in df.iterrows():
-            if self.check_first_line(df, place_cols, index):
-                new_first_row = str(index)
+        for idx in range(len(df)):
+            tdf = utl.first_last_adj(df, idx, 0)
+            check = [x for x in place_cols if x in tdf.columns]
+            if check and idx > 0:
+                new_first_row = str(idx)
                 data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
                                           self.new_first_line: [new_first_row]})
                 l_df = l_df.append(pd.DataFrame(data_dict),
@@ -1123,21 +1125,13 @@ class FindBlankLines(AnalyzeBase):
                 break
         return l_df
 
-    @staticmethod
-    def check_first_line(df, place_cols, row) -> bool:
-        if row < 0 or row >= len(df):
-            return False
-        row_data = df.iloc[row - 1]
-        return any(any(col in str(cell) for col in place_cols) if
-                   isinstance(cell, str) else False for cell in row_data)
-
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
             df = self.find_first_row(source, df)
         if df.empty:
-            msg = 'All first rows correct'
+            msg = 'All first rows seem correct'
         else:
             msg = 'Suggested new first row(s):'
         logging.info('{}\n{}'.format(msg, df.to_string()))

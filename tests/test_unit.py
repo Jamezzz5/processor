@@ -658,11 +658,9 @@ class TestAnalyze:
                     vmc.firstrow: '1',
                     vmc.lastrow: '0'}
         cbl = az.FindBlankLines(az.Analyze())
-        check = cbl.check_first_line(r_df, ['Campaign'], 1)
         df = pd.DataFrame()
         df = cbl.find_first_row(source, df)
         os.remove(file_name)
-        assert check
         assert df.empty
 
     def test_missing_fpn_cols(self):
