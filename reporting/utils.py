@@ -362,9 +362,10 @@ def give_df_default_format(df, columns=None):
 
 
 def db_df_translation(columns=None, proc_dir='', reverse=False):
-    if not columns:
-        return []
-    df = pd.read_csv(os.path.join(proc_dir, config_path, db_df_trans_config))
+    df = import_read_csv(
+        os.path.join(proc_dir, config_path, db_df_trans_config))
+    if not columns or df.empty:
+        return {}
     if reverse:
         translation = dict(zip(df[exc.translation_db], df[exc.translation_df]))
     else:
