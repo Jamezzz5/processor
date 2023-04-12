@@ -1612,7 +1612,6 @@ class CheckFlatSpends(AnalyzeBase):
                 rdf[self.error_col] = self.missing_rate_error
                 df = df[df[dctc.PD] <= dt.datetime.today()]
                 if not df.empty:
-                    test = None
                     cdf = df[df['_merge'] == 'both']
                     cdf = cdf.iloc[:, :-1]
                     cdf = cdf[cdf[self.first_click_col] != cdf[dctc.PD]]
