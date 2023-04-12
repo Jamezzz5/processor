@@ -1090,7 +1090,7 @@ class CheckAutoDictOrder(AnalyzeBase):
 class FindBlankLines(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
-    pre_run = True
+    new_files = True
     new_first_line = 'new_first_line'
 
     def find_first_row(self, source, df):
