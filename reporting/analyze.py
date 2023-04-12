@@ -87,10 +87,10 @@ class Analyze(object):
         self.matrix = matrix
         self.vc = ValueCalc()
         self.class_list = [
-            # CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            # CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            # CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            # GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
+            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
+            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
             FindBlankLines]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
@@ -907,16 +907,16 @@ class Analyze(object):
             json.dump(self.analysis_dict, fp)
 
     def do_all_analysis(self):
-        # self.backup_files()
-        # self.check_delivery(self.df)
-        # self.check_plan_error(self.df)
-        # self.generate_topline_and_weekly_metrics()
-        # self.evaluate_on_kpis()
-        # self.get_metrics_by_vendor_key()
-        # self.find_missing_metrics()
-        # self.flag_errant_metrics()
-        # self.find_missing_serving()
-        # self.find_missing_ad_rate()
+        self.backup_files()
+        self.check_delivery(self.df)
+        self.check_plan_error(self.df)
+        self.generate_topline_and_weekly_metrics()
+        self.evaluate_on_kpis()
+        self.get_metrics_by_vendor_key()
+        self.find_missing_metrics()
+        self.flag_errant_metrics()
+        self.find_missing_serving()
+        self.find_missing_ad_rate()
         for analysis_class in self.class_list:
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
