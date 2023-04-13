@@ -1116,7 +1116,9 @@ class FindBlankLines(AnalyzeBase):
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
             check = [x for x in place_cols if x in tdf.columns]
-            if check and idx > 0:
+            if check:
+                if idx == 0:
+                    break
                 new_first_row = str(idx)
                 data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
                                           self.new_first_line: [new_first_row]})
