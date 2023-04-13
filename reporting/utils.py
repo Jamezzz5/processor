@@ -340,26 +340,32 @@ def add_dummy_header(df, header_len, location='head'):
     return df
 
 
+def get_default_format(col):
+    if 'Cost' in col or col[:2] == 'CP':
+        format_map = '${:,.2f}'.format
+    elif 'VCR' in col or col[-2:] == 'TR':
+        format_map = '{:,.2%}'.format
+    else:
+        format_map = '{:,.0f}'.format
+    return format_map
+
+
 def give_df_default_format(df, columns=None):
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.fillna(0)
     if not columns:
         columns = df.columns
     for col in columns:
-        if 'Cost' in col or col[:2] == 'CP':
-            format_map = '${:,.2f}'.format
-        elif 'VCR' in col or col[-2:] == 'TR':
-            format_map = '{:,.2%}'.format
-        else:
-            format_map = '{:,.0f}'.format
+        format_map = get_default_format(col)
         df[col] = df[col].map(format_map)
     return df
 
 
 def db_df_translation(columns=None, proc_dir='', reverse=False):
-    if not columns:
-        return []
-    df = pd.read_csv(os.path.join(proc_dir, config_path, db_df_trans_config))
+    df = import_read_csv(
+        os.path.join(proc_dir, config_path, db_df_trans_config))
+    if not columns or df.empty:
+        return {}
     if reverse:
         translation = dict(zip(df[exc.translation_db], df[exc.translation_df]))
     else:
