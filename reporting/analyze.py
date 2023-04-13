@@ -375,12 +375,13 @@ class Analyze(object):
         df = df.sort_values(vmc.date).reset_index(drop=True).reset_index()
         df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
         fit = np.polyfit(df['index'], df[kpi], deg=1)
+        format_map = utl.get_default_format(kpi)
         if fit[0] > 0:
             trend = 'increasing'
         else:
             trend = 'decreasing'
-        msg = ('The KPI {} is {} at a rate of {:,.3f} units per day'
-               ' when given linear fit').format(kpi, trend, abs(fit[0]))
+        msg = ('The KPI {} is {} at a rate of {} per day when given '
+               'linear fit').format(kpi, trend, format_map(abs(fit[0])))
         logging.info(msg)
         df['fit'] = fit[0] * df['index'] + fit[1]
         df[vmc.date] = df[vmc.date].dt.strftime('%Y-%m-%d')
@@ -424,7 +425,9 @@ class Analyze(object):
         format_df = self.give_df_default_format(df, columns=[kpi])
         if split == vmc.date:
             df[split] = df[split].dt.strftime('%Y-%m-%d')
-        split_values = ', '.join(str(x) for x in df[split].values)
+        split_values = ['{} ({})'.format(x, y) for x, y in
+                        format_df[[split, kpi]].values]
+        split_values = ', '.join(split_values)
         msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
             small_large, kpi, split, split_values)
         if filter_col:
@@ -470,32 +473,35 @@ class Analyze(object):
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=vmc.date)
         self.calculate_kpi_trend(kpi, group, metrics)
 
+    def get_kpi(self, kpi, write=False):
+        kpi_cols = []
+        kpi_formula = [
+            self.vc.calculations[x] for x in self.vc.calculations
+            if self.vc.calculations[x][self.vc.metric_name] == kpi]
+        if kpi_formula:
+            kpi_cols = kpi_formula[0][self.vc.formula][::2]
+            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
+            if missing_cols:
+                msg = 'Missing columns could not evaluate {}'.format(kpi)
+                logging.warning(msg)
+                kpi = False
+                if write:
+                    self.add_to_analysis_dict(key_col=self.kpi_col,
+                                              message=msg, param=kpi)
+        elif kpi not in self.df.columns:
+            msg = 'Unknown KPI: {}'.format(kpi)
+            logging.warning(msg)
+            kpi = False
+        return kpi, kpi_cols
+
     def get_kpis(self, write=False):
         kpis = {}
         if dctc.KPI in self.df.columns:
             for kpi in self.df[dctc.KPI].unique():
-                kpi_formula = [
-                    self.vc.calculations[x] for x in self.vc.calculations
-                    if self.vc.calculations[x][self.vc.metric_name] == kpi]
-                if kpi_formula:
-                    kpi_cols = kpi_formula[0][self.vc.formula][::2]
-                    missing_cols = [
-                        x for x in kpi_cols if x not in self.df.columns]
-                    if missing_cols:
-                        msg = 'Missing columns could not evaluate {}'.format(
-                            kpi)
-                        logging.warning(msg)
-                        if write:
-                            self.add_to_analysis_dict(key_col=self.kpi_col,
-                                                      message=msg, param=kpi)
-                    else:
-                        kpis[kpi] = kpi_cols
-                elif kpi not in self.df.columns:
-                    msg = 'Unknown KPI: {}'.format(kpi)
-                    logging.warning(msg)
-                else:
-                    kpis[kpi] = []
-            return kpis
+                kpi, kpi_cols = self.get_kpi(kpi, write)
+                if kpi:
+                    kpis[kpi] = kpi_cols
+        return kpis
 
     def evaluate_on_kpis(self):
         kpis = self.get_kpis(write=True)
