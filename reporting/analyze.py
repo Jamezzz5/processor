@@ -2327,8 +2327,9 @@ class ValueCalc(object):
 
     def calculate_all_metrics(self, metric_names, df=None, db_translate=False):
         for metric_name in metric_names:
-            df = self.calculate_metric(metric_name, df,
-                                       db_translate=db_translate)
+            if metric_name in self.metric_names:
+                df = self.calculate_metric(metric_name, df,
+                                           db_translate=db_translate)
         return df
 
     def calculate_metric(self, metric_name, df=None, db_translate=False):
