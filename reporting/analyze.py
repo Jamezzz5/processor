@@ -1123,6 +1123,8 @@ class FindBlankLines(AnalyzeBase):
         place_cols = [s.strip('::') if s.startswith('::')
                       else s for s in place_cols]
         df = utl.import_read_csv(raw_file, nrows=10)
+        if df.empty:
+            return l_df
         df = utl.first_last_adj(
             df, source.p[vmc.firstrow], source.p[vmc.lastrow])
         for idx in range(len(df)):
