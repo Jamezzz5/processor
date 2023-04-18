@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import openai
 import shutil
 import logging
 import operator
@@ -12,7 +13,6 @@ import datetime as dt
 import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-import reporting.expcolumns as exc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
@@ -80,11 +80,15 @@ class Analyze(object):
                              vmc.landingpage, vmc.btnclick, vmc.purchase,
                              'CPLPV', 'CPBC', 'CPA', cal.NCF, cal.TOTAL_COST]
 
-    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
+    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
+                 load_chat=False, chat_path=utl.config_path):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
+        self.load_chat = load_chat
+        self.chat_path = chat_path
+        self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
             CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
@@ -94,6 +98,8 @@ class Analyze(object):
             FindBlankLines]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
+        if self.load_chat:
+            self.chat = AliChat(config_path=self.chat_path)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -2405,8 +2411,9 @@ class ValueCalc(object):
 
     def calculate_all_metrics(self, metric_names, df=None, db_translate=False):
         for metric_name in metric_names:
-            df = self.calculate_metric(metric_name, df,
-                                       db_translate=db_translate)
+            if metric_name in self.metric_names:
+                df = self.calculate_metric(metric_name, df,
+                                           db_translate=db_translate)
         return df
 
     def calculate_metric(self, metric_name, df=None, db_translate=False):
@@ -2432,3 +2439,33 @@ class ValueCalc(object):
                     df[item] = 0
                 df[col] = df[item]
         return df
+
+
+class AliChat(object):
+    def __init__(self, config_name='openai.json', config_path='reporting'):
+        self.config_name = config_name
+        self.config_path = config_path
+        self.config = self.load_config(self.config_name, self.config_path)
+
+    @staticmethod
+    def load_config(config_name='openai.json', config_path='reporting'):
+        file_name = os.path.join(config_path, config_name)
+        try:
+            with open(file_name, 'r') as f:
+                config = json.load(f)
+        except IOError:
+            logging.error('{} not found.'.format(file_name))
+        return config
+
+    def get_response(self, message):
+        openai.api_key = self.config['SECRET_KEY']
+        prompt = f"User: {message}\nAI:"
+        response = openai.Completion.create(
+            engine="text-davinci-002",
+            prompt=prompt,
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        )
+        return response.choices[0].text.strip()

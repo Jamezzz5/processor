@@ -17,3 +17,4 @@ tableauhyperapi==0.0.14751
 tableaudocumentapi==0.9
 filelock==3.4.1
 pytest==7.0.0
+openai==0.8.0
