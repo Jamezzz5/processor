@@ -112,8 +112,7 @@ class RcApi(object):
             tdf = pd.DataFrame(r.json()['data'])
             tdf = tdf[tdf['impressions'] != '0']
             tdf['Date'] = date
-
-            self.df = self.df.append(tdf, ignore_index=True)
+            self.df = pd.concat([self.df, tdf], ignore_index=True)
 
     def request_error(self):
         logging.warning('Unknown error: {}'.format(self.r.text))

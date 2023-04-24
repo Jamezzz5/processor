@@ -217,7 +217,7 @@ class ScApi(object):
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
             tdf['Campaign Name'] = cid
-            self.df = self.df.append(tdf, sort=True)
+            self.df = pd.concat([self.df, tdf], sort=True)
         else:
             self.request_error(sd, ed, cid, fields)
 
@@ -246,16 +246,15 @@ class ScApi(object):
         for ad_data in data:
             if self.report_dimension:
                 other_keys = ['start_time', 'end_time']
-                tdf = pd.io.json.json_normalize(ad_data['timeseries'],
-                                                'dimension_stats',
-                                                other_keys)
+                tdf = pd.json_normalize(
+                    ad_data['timeseries'], 'dimension_stats', other_keys)
             elif self.granularity:
                 tdf = pd.DataFrame(ad_data['stats'], index=[0])
             else:
                 tdf = pd.DataFrame(ad_data['timeseries'])  # type: pd.DataFrame
                 tdf = pd.concat([tdf, tdf['stats'].apply(pd.Series)], axis=1)
             tdf['id'] = ad_data['id']  # type: pd.DataFrame
-            df = df.append(tdf, sort=True)
+            df = pd.concat([df, tdf], sort=True)
         if 'spend' in df.columns:
             df['spend'] = df['spend'] / 1000000
         df = df.reset_index()

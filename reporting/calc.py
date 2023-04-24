@@ -181,7 +181,7 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
             df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
     nc_pnc = df[df[dctc.UNC] != True]
-    nc_pnc = nc_pnc.groupby(p_col)[p_cost, n_cost].sum()
+    nc_pnc = nc_pnc.groupby(p_col)[[p_cost, n_cost]].sum()
     nc_pnc = nc_pnc[nc_pnc[p_cost] > 0]
     if p_cost not in nc_pnc.columns:
         nc_pnc[p_cost] = 0
@@ -297,7 +297,7 @@ class MetricCap(object):
         logging.info('Calculating metric cap from: '
                      '{}'.format(c[self.file_name]))
         pdf = self.get_cap_file(c)
-        df = df.append(pdf, sort=True)
+        df = pd.concat([df, pdf], sort=True)
         df = net_cost_final_calculation(df, p_col=c[self.proc_dim],
                                         p_cost=self.temp_metric)
         df = df[~df[dctc.FPN].isnull()]

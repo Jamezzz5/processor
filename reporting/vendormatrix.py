@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import yaml
 import urllib
@@ -252,7 +251,8 @@ class VendorMatrix(object):
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
-            self.df = self.df.append(self.tdf, ignore_index=True, sort=True)
+            self.df = pd.concat([self.df, self.tdf], ignore_index=True,
+                                sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csv_path):
@@ -438,8 +438,8 @@ class ImportConfig(object):
         df[vmc.startdate] = start_date
         if api_fields:
             df[vmc.apifields] = api_fields
-        self.matrix_df = self.matrix_df.append(df, ignore_index=True,
-                                               sort=False)
+        self.matrix_df = pd.concat(
+            [self.matrix_df, df], ignore_index=True, sort=False)
         return df[vmc.vendorkey][0]
 
     def add_import_to_vm(self, import_key, account_id, import_filter=None,
@@ -967,7 +967,7 @@ def df_single_transform(df, transform):
             tdf.columns = tdf.loc[0]
             tdf = tdf.iloc[1:]
             tdf[header_col_name] = x
-            ndf = ndf.append(tdf)
+            ndf = pd.concat([ndf, tdf])
         df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
     if transform_type == 'Melt':

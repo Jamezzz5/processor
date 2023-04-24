@@ -356,7 +356,7 @@ class AmzApi(object):
                 if 'impressions' in df.columns:
                     df = df.loc[(df['impressions'] > 0)]
                 df['Date'] = report_id_dict['date']
-                self.df = self.df.append(df, ignore_index=True)
+                self.df = pd.concat([self.df, df], ignore_index=True)
             self.report_ids = [
                 x for x in self.report_ids if x['report_id'] != report_id]
             report_id_dict['complete'] = True

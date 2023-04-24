@@ -91,7 +91,7 @@ class S3(object):
             key_date = boto.utils.parse_ts(key.last_modified)
             if ed <= key_date >= sd:
                 tdf = self.get_file_as_df(key)
-                self.df = self.df.append(tdf)
+                self.df = pd.concat([self.df, tdf])
         return self.df
 
     def get_client(self):

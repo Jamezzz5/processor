@@ -265,7 +265,8 @@ class TestDictionary:
             df[col] = [string.ascii_lowercase[i]]
         output = self.dic.auto_combine(df, self.mock_rc_auto)
         expected = pd.DataFrame(expected_data)
-        pd.testing.assert_frame_equal(output, expected, check_like=True)
+        pd.testing.assert_frame_equal(output, expected, check_like=True,
+                                      check_column_type=False)
 
 
 class TestAnalyze:

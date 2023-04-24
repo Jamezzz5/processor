@@ -42,7 +42,7 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
-def import_read_csv(filename, path=None, file_check=True, error_bad=True,
+def import_read_csv(filename, path=None, file_check=True, error_bad='error',
                     empty_df=False, nrows=None):
     sheet_names = []
     if sheet_name_splitter in filename:
@@ -64,14 +64,15 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
         read_func = pd.read_excel
     else:
         read_func = pd.read_csv
+        kwargs['encoding'] = 'utf-8'
+        kwargs['on_bad_lines'] = error_bad
     try:
-        df = read_func(filename, encoding='utf-8',
-                       error_bad_lines=error_bad, **kwargs)
-    except pd.io.common.CParserError:
-        df = read_func(filename, sep=None, engine='python', **kwargs)
+        df = read_func(filename, **kwargs)
     except UnicodeDecodeError:
-        df = read_func(filename, encoding='iso-8859-1', **kwargs)
-    except pd.io.common.EmptyDataError:
+        if 'encoding' in kwargs:
+            kwargs['encoding'] = 'iso-8859-1'
+        df = read_func(filename, **kwargs)
+    except pd.errors.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         if empty_df:
             df = pd.DataFrame()
@@ -334,9 +335,9 @@ def add_dummy_header(df, header_len, location='head'):
     cols = df.columns
     dummy_df = pd.DataFrame(data=[cols] * header_len, columns=cols)
     if location == 'head':
-        df = dummy_df.append(df).reset_index(drop=True)
+        df = pd.concat([dummy_df, df]).reset_index(drop=True)
     elif location == 'foot':
-        df = df.append(dummy_df).reset_index(drop=True)
+        df = pd.concat([df, dummy_df]).reset_index(drop=True)
     return df
 
 

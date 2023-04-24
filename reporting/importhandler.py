@@ -119,7 +119,7 @@ class ImportHandler(object):
                                     end_date - dt.timedelta(days=api_merge))
         api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
                                         start_date, end_date)
-        df = df.append(api_df, ignore_index=True).reset_index(drop=True)
+        df = pd.concat([df, api_df], ignore_index=True).reset_index(drop=True)
         df = utl.add_dummy_header(df, first_row)
         df = utl.add_dummy_header(df, last_row, location='foot')
         return df
