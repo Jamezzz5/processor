@@ -1104,7 +1104,6 @@ class FindBlankLines(AnalyzeBase):
     fix = True
     new_files = True
     new_first_line = 'new_first_line'
-    new_last_line = 'new_last_line'
 
     def find_first_row(self, source, df):
         """
@@ -1124,12 +1123,9 @@ class FindBlankLines(AnalyzeBase):
         place_cols = [s.strip('::') if s.startswith('::')
                       else s for s in place_cols]
         old_first_row = int(source.p[vmc.firstrow])
-        last_row = source.p[vmc.lastrow]
         df = utl.import_read_csv(raw_file, nrows=10)
         if df.empty:
             return l_df
-        if self.check_total_row_exists(source, df):
-            last_row = '1'
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
             check = [x for x in place_cols if x in tdf.columns]
@@ -1138,39 +1134,11 @@ class FindBlankLines(AnalyzeBase):
                     break
                 new_first_row = str(idx)
                 data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
-                                          self.new_first_line: [new_first_row],
-                                          self.new_last_line: [last_row]})
+                                          self.new_first_line: [new_first_row]})
                 l_df = l_df.append(pd.DataFrame(data_dict),
                                    ignore_index=True, sort=False)
                 break
         return l_df
-
-    @staticmethod
-    def check_total_row_exists(source, df):
-        """
-        Sums all impressions and clicks in every row except last
-        compares to the values in last row
-        if equal returns True
-        """
-        # if vmc.filename not in source.p:
-        #     return None
-        # raw_file = source.p[vmc.filename]
-        # df = utl.import_read_csv(raw_file)
-        # if df.empty:
-        #     return None
-        click_col = source.p[vmc.clicks]
-        imp_col = source.p[vmc.impressions]
-        try:
-            df = df[[click_col, imp_col]]
-        except KeyError:
-            logging.debug("clicks or impressions may be missing or mislabeled")
-            return None
-        col_sums = df.iloc[:-1, :].sum()
-        totals_row = df.iloc[-1, :]
-        if (col_sums == totals_row).all():
-            return True
-        else:
-            return False
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1192,15 +1160,10 @@ class FindBlankLines(AnalyzeBase):
         """
         vk = source[vmc.vendorkey]
         new_first_line = source[self.new_first_line]
-        new_last_line = source[self.new_last_line]
         if int(new_first_line) > 0:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.firstrow, new_first_line))
             self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
-        if int(new_last_line) > 0:
-            logging.info('Changing {} {} to {}'.format(
-                vk, vmc.lastrow, new_last_line))
-            self.aly.matrix.vm_change_on_key(vk, vmc.lastrow, new_last_line)
         if write:
             self.aly.matrix.write()
 
