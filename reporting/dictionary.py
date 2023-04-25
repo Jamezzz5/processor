@@ -92,7 +92,7 @@ class Dict(object):
             error = self.auto_combine(error, rc_auto)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
-            self.data_dict = self.data_dict.append(error, sort=True)
+            self.data_dict = pd.concat([self.data_dict, error], sort=True)
             self.data_dict = self.data_dict[dctc.COLS]
             err.dic = self
             err.reset()
@@ -394,7 +394,7 @@ class Dict(object):
                         self.data_dict[dctc.CURL].eq(0)).fillna(
                         self.data_dict[dctc.FPN].map(
                             urls.set_index(dctc.FPN)[dctc.CURL]))
-                except pd.core.indexes.base.InvalidIndexError as e:
+                except pd.errors.InvalidIndexError as e:
                     msg = 'Could not add creative urls error: {}'.format(e)
                     logging.warning(msg)
 

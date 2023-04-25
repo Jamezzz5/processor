@@ -576,14 +576,16 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.vendor_metrics,
                                   message=update_msg,
                                   data=format_df.T.to_dict())
-        mdf = pd.DataFrame()
+        mdf = []
         for col in df.columns:
             missing_metrics = df[df[col] == 0][col].index.to_list()
             if missing_metrics:
                 miss_dict = {dctc.VEN: col,
                              self.missing_metrics: missing_metrics}
-                mdf = mdf.append(pd.DataFrame(miss_dict),
-                                 ignore_index=True, sort=False)
+                if mdf is None:
+                    mdf = []
+                mdf.append(miss_dict)
+        mdf = pd.DataFrame(mdf)
         if mdf.empty:
             missing_msg = 'No vendors have missing metrics.'
             logging.info('{}'.format(missing_msg))
@@ -1056,18 +1058,19 @@ class CheckAutoDictOrder(AnalyzeBase):
                 new_order = source.p[vmc.autodicord][diff:]
             else:
                 new_order = (diff * -1) * [dctc.MIS] + source.p[vmc.autodicord]
-            data_dict = {vmc.vendorkey: [source.key],
-                         self.name: [new_order]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+            data_dict = {vmc.vendorkey: source.key, self.name: new_order}
+            if df is None:
+                df = []
+            df.append(data_dict)
         return df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         ven_list = self.get_vendor_list()
         for ds in data_sources:
             df = self.do_analysis_on_data_source(ds, df, ven_list)
+        df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
         else:
@@ -1204,7 +1207,7 @@ class CheckPackageCapping(AnalyzeBase):
                 c = cap_file.config[cfg]
             if c and os.path.isfile(c[cal.MetricCap().file_name]):
                 pdf = cap_file.get_cap_file(c)
-                df = df.append(pdf)
+                df = pd.concat([df, pdf], ignore_index=True)
                 temp_package_cap = c[cap_file.proc_dim]
                 return df, temp_package_cap, c, pdf, cap_file
 
@@ -1405,7 +1408,7 @@ class FindPlacementNameCol(AnalyzeBase):
                 return df
             tdf = tdf.applymap(
                 lambda x: str(x).count('_')).apply(lambda x: sum(x))
-            max_col = tdf.idxmax(axis=1)
+            max_col = tdf.idxmax()
             max_exists = max_col in tdf
             p_exists = p_col in tdf
             no_p_check = (not p_exists and max_exists)
@@ -1416,15 +1419,15 @@ class FindPlacementNameCol(AnalyzeBase):
                 data_dict = {vmc.vendorkey: [source.key],
                              'Current Placement Col': p_col,
                              'Suggested Col': max_col}
-                df = df.append(pd.DataFrame(data_dict),
-                               ignore_index=True, sort=False)
+                df.append(data_dict)
         return df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         for source in data_sources:
             df = self.do_analysis_on_data_source(source, df)
+        df = pd.DataFrame(df)
         if df.empty:
             msg = ('Placement Name columns look correct. '
                    'No columns w/ more breakouts.')
@@ -1527,7 +1530,7 @@ class CheckApiDateLength(AnalyzeBase):
                 idx, vmc.vendorkey][idx[0]].replace('API_', '')
             old_ed = new_sd - dt.timedelta(days=1)
             df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
-            df = df.append(ndf).reset_index(drop=True)
+            df = pd.concat([df, ndf]).reset_index(drop=True)
         self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
@@ -1547,7 +1550,7 @@ class CheckColumnNames(AnalyzeBase):
         missing active metrics.
         """
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        data = []
         for source in data_sources:
             if vmc.firstrow not in source.p:
                 continue
@@ -1566,12 +1569,12 @@ class CheckColumnNames(AnalyzeBase):
                 for c in v:
                     if c not in cols:
                         missing_cols.append({k: c})
-            data_dict = {vmc.vendorkey: [source.key], self.name: [cols],
-                         'missing': [missing_cols]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+            data_dict = {vmc.vendorkey: source.key, self.name: cols,
+                         'missing': missing_cols}
+            data.append(data_dict)
+        df = pd.DataFrame(data)
         update_msg = 'Columns and missing columns by key as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        logging.info('{}\n{}'.format(update_msg, df))
         self.add_to_analysis_dict(df=df, msg=update_msg)
 
     def fix_analysis(self, aly_dict, write=True):
@@ -1673,7 +1676,7 @@ class CheckFlatSpends(AnalyzeBase):
                     (df[dctc.BM] == cal.BM_FLAT2)]
         if not df.empty:
             pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
-            tdf = df.groupby(pk_groups).sum()
+            tdf = df.groupby(pk_groups).sum(numeric_only=True)
             tdf.reset_index(inplace=True)
             tdf = tdf[tdf[cal.NCF] == 0]
             df = df.merge(tdf[pk_groups], how='right')
@@ -1686,7 +1689,7 @@ class CheckFlatSpends(AnalyzeBase):
                     return pd.DataFrame()
                 tdf = tdf.drop(columns=[cal.NCF])
                 tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
-                df = df.groupby(pn_groups).sum()
+                df = df.groupby(pn_groups).sum(numeric_only=True)
                 df.reset_index(inplace=True)
                 df = utl.data_to_type(df, date_col=[dctc.PD])
                 df = self.merge_first_click_date(df, tdf, pn_groups)
@@ -1704,8 +1707,8 @@ class CheckFlatSpends(AnalyzeBase):
                     ndf = df[df['_merge'] == 'left_only']
                     ndf = ndf.drop(columns=['_merge'])
                     ndf[self.error_col] = self.missing_clicks_error
-                    df = cdf.append(rdf, sort=False)
-                    df = df.append(ndf, sort=False)
+                    df = pd.concat([cdf, rdf], ignore_index=True)
+                    df = pd.concat([df, ndf], ignore_index=True)
                     df = df.reset_index(drop=True)
                     df = df.dropna(how='all')
                     df = df.fillna('')
@@ -1750,17 +1753,16 @@ class CheckFlatSpends(AnalyzeBase):
                 try:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN], 0]]
+                              aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
-                    tdf = tdf.append(row, ignore_index=True, sort=False)
+                    tdf = pd.concat([tdf, row], ignore_index=True)
                 except AssertionError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
-                    tdf = tdf.append(row, ignore_index=True, sort=False)
-        translation_df = translation_df.append(
-            tdf, ignore_index=True, sort=False)
+                    tdf = pd.concat([tdf, row], ignore_index=True)
+        translation_df = pd.concat([translation_df, tdf], ignore_index=True)
         if write:
             translation.write(translation_df, dctc.filename_tran_config)
         return tdf
@@ -2272,7 +2274,7 @@ class CheckRawFileUpdateTime(AnalyzeBase):
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         for source in data_sources:
             if vmc.filename not in source.p:
                 continue
@@ -2290,11 +2292,11 @@ class CheckRawFileUpdateTime(AnalyzeBase):
             else:
                 last_update = self.last_update_does_not_exist
                 update_tier = self.update_tier_never
-            data_dict = {vmc.vendorkey: [source.key],
-                         self.update_time_col: [last_update],
-                         self.update_tier_col: [update_tier]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+            data_dict = {vmc.vendorkey: source.key,
+                         self.update_time_col: last_update,
+                         self.update_tier_col: update_tier}
+            df.append(data_dict)
+        df = pd.DataFrame(df)
         if df.empty:
             return False
         df[self.update_time_col] = df[self.update_time_col].astype('U')

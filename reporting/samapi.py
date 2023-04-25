@@ -148,7 +148,7 @@ class SamApi(object):
         if report_url:
             logging.info('Found report url, downloading.')
             self.df = utl.import_read_csv(report_url[0], file_check=False,
-                                          error_bad=False)
+                                          error_bad='warn')
         else:
             logging.warning('Report does not exist.')
             self.df = pd.DataFrame()

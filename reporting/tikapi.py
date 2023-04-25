@@ -204,7 +204,7 @@ class TikApi(object):
             for col in ['dimensions', 'metrics']:
                 tdf = pd.DataFrame(df[col].to_list())
                 df = df.join(tdf)
-            self.df = self.df.append(df, ignore_index=True)
+            self.df = pd.concat([self.df, df], ignore_index=True)
             page_rem = r.json()['data']['page_info']['total_page']
             if x >= page_rem:
                 break
