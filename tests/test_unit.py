@@ -272,26 +272,27 @@ class TestDictionary:
 class TestCalc:
     def test_calculate_cost(self):
         df = pd.DataFrame({
-            dctc.CAM: ['c1', 'c1', 'c1', 'c1', 'c1'],
-            dctc.VEN: ['v1', 'v1', 'v1', 'v2', 'v2'],
-            dctc.BM: [cal.BM_CPM, cal.BM_CPC, '', '', ''],
-            vmc.cost: [0.0, 0.0, 1000.0, 1000.0, 0.0],
-            dctc.PNC: [0.0, 0.0, 0.0, 0.0, 500.0],
-            dctc.UNC: [True, True, True, False, False]
+            dctc.CAM: ['c1', 'c1', 'c1', 'c1', 'c1', 'c1'],
+            dctc.VEN: ['v1', 'v1', 'v1', 'v2', 'v2', 'v1'],
+            dctc.BM: [cal.BM_CPM, cal.BM_CPC, '', '', '', cal.BM_FLAT],
+            vmc.cost: [0.0, 0.0, 1000.0, 1000.0, 0.0, 0.0],
+            dctc.PNC: [0.0, 0.0, 0.0, 0.0, 500.0, 0.0],
+            dctc.UNC: [True, True, True, False, False, True]
         })
         con_col = [(vmc.date, '1/1/23'), (dctc.PN, 'pn'), (dctc.FPN, 'fpn'),
-                   (dctc.BR, 3.0),(vmc.impressions, 1000.0), (vmc.clicks, 10.0),
-                   (dctc.PKD, 'pkd')]
+                   (dctc.BR, 3.0), (vmc.impressions, 1000.0),
+                   (vmc.clicks, 10.0), (dctc.PKD, 'pkd'), (dctc.PD, '1/1/23')]
         for col in con_col:
             df[col[0]] = col[1]
         df[dctc.PFPN] = df[dctc.CAM] + '_' + df[dctc.VEN]
         df[dctc.UNC] = df[dctc.UNC].astype(object)
-        edf = df.copy()
-        edf[vmc.cost] = [3.0, 30.0, 1000.0, 1000.0, 0.0]
-        edf[cal.NCF] = [3.0, 30.0, 1000.0, 500.0, 0.0]
+        edf = df.copy(deep=True)
+        edf[vmc.cost] = [3.0, 30.0, 1000.0, 1000.0, 0.0, 3.0]
+        edf[cal.NCF] = [3.0, 30.0, 1000.0, 500.0, 0.0, 3.0]
         df = cal.calculate_cost(df)
-        edf = edf.reindex(sorted(df.columns), axis=1)
+        edf = edf.reindex(sorted(edf.columns), axis=1)
         df = df.reindex(sorted(df.columns), axis=1)
+        df = df[[x for x in edf.columns]]
         assert pd.testing.assert_frame_equal(df, edf) is None
 
 
