@@ -1337,7 +1337,7 @@ class FindPlacementNameCol(AnalyzeBase):
                        tdf[max_col] >= (tdf[p_col] + 9)
                        and 75 <= tdf[max_col] <= 105)
             if no_p_check or p_check:
-                data_dict = {vmc.vendorkey: [source.key],
+                data_dict = {vmc.vendorkey: source.key,
                              'Current Placement Col': p_col,
                              'Suggested Col': max_col}
                 df.append(data_dict)
@@ -1520,9 +1520,9 @@ class CheckColumnNames(AnalyzeBase):
                 logging.info('Placement name missing for {}.  '
                              'Attempting to find.'.format(vk))
                 fnc = FindPlacementNameCol(self.aly)
-                tdf = fnc.do_analysis_on_data_source(source, pd.DataFrame())
-                if not tdf.empty:
-                    tdf = tdf.to_dict(orient='records')[0]
+                tdf = fnc.do_analysis_on_data_source(source, [])
+                if tdf:
+                    tdf = tdf[0]
                     for col in [vmc.placement, vmc.fullplacename]:
                         fnc.fix_analysis_for_data_source(tdf, True, col)
                     self.matrix = vm.VendorMatrix(display_log=False)
