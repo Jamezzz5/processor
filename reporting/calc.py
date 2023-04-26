@@ -66,7 +66,8 @@ def clicks_by_place_date(df):
     df_cpd = df.loc[df[dctc.BM].isin([
         BM_FLAT, BM_FLAT2, BM_FLATIMP, BM_FLATCOUNT])]
     if not df_cpd.empty:
-        df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
+        metrics = [vmc.impressions, vmc.clicks]
+        df_cpd = (df_cpd.groupby([PLACE_DATE])[metrics]
                   .apply(lambda x: x / x.astype(float).sum()))
         df_cpd.columns = [IMP_PD, CLI_PD]
         df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
