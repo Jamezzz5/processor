@@ -113,7 +113,7 @@ class TtdApi(object):
     def get_df_from_response(self, r):
         try:
             self.df = pd.read_csv(io.StringIO(r.content.decode('utf-8')))
-        except pd.io.common.EmptyDataError:
+        except pd.errors.EmptyDataError:
             logging.warning('Report is empty, returning blank df.')
             self.df = pd.DataFrame()
         except UnicodeDecodeError:
