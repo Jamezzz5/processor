@@ -97,10 +97,11 @@ class YtdApi(object):
 
     def make_request(self, url, method='GET', attempt=1, **kwargs):
         self.get_client()
+        r = None
         try:
             r = self.client.request(method=method, url=url, **kwargs)
         except requests.exceptions.ConnectionError as e:
-            if attempt > 10:
+            if attempt > 3:
                 logging.warning('Unable to resolve Connection Error. {}'
                                 .format(e))
                 return None
@@ -110,23 +111,7 @@ class YtdApi(object):
                 attempt += 1
                 time.sleep(30)
                 r = self.make_request(url, method, attempt=attempt, **kwargs)
-        if r.status_code != 200:
-            self.request_error(r)
-            return None
         return r
-
-    @staticmethod
-    def request_error(response):
-        reason = None
-        if 'error' in response.json():
-            reason = response.json()['error']['errors'][0]['reason']
-        if response.status_code == 403 and reason == 'quotaExceeded':
-            logging.warning(
-                'Daily quota exceeded. Queries will be available again at '
-                'midnight PT.')
-        else:
-            logging.warning('Request error. {}'
-                            .format(response.text))
 
     @staticmethod
     def get_data_default_check(sd, ed):
@@ -179,11 +164,16 @@ class YtdApi(object):
     def data_to_df(response):
         df = pd.DataFrame()
         date_col = 'snippet.publishedAt'
-        if response:
-            df = pd.io.json.json_normalize(response.json()['items'])
-        if date_col in df.columns:
-            df = utl.data_to_type(df, date_col=[date_col])
-            df[date_col] = df[date_col].dt.date
+        if not response:
+            return df
+        json_response = response.json()
+        if 'error' in json_response:
+            logging.warning('Request error. {}'.format(json_response))
+        else:
+            df = pd.json_normalize(json_response['items'])
+            if date_col in df.columns:
+                df = utl.data_to_type(df, date_col=[date_col])
+                df[date_col] = df[date_col].dt.date
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -210,5 +200,5 @@ class YtdApi(object):
         df = self.data_to_df(r)
         ids = []
         if id_col in df.columns:
-            ids = list(df[id_col])
+            ids = df[id_col].to_list()
         return ids
