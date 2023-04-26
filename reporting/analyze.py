@@ -1108,7 +1108,7 @@ class CheckPackageCapping(AnalyzeBase):
     plan_net_temp = 'Planned Net Cost - TEMP'
     net_cost_capped = 'Net Cost (Capped)'
     pre_run = True
-    fix = True
+    fix = False
 
     def initialize_cap_file(self):
         """
@@ -1120,17 +1120,11 @@ class CheckPackageCapping(AnalyzeBase):
         cap_file -> MetricCap() object
         """
         df = self.aly.df
-        df = cal.net_cost_calculation(df)
-        c = None
-        if cal.MetricCap().config:
-            cap_file = cal.MetricCap()
-            for cfg in cap_file.config:
-                c = cap_file.config[cfg]
-            if c and os.path.isfile(c[cal.MetricCap().file_name]):
-                pdf = cap_file.get_cap_file(c)
-                df = pd.concat([df, pdf], ignore_index=True)
-                temp_package_cap = c[cap_file.proc_dim]
-                return df, temp_package_cap, c, pdf, cap_file
+        df = cal.net_cost_calculation(df).reset_index(drop=True)
+        cap_file = cal.MetricCap()
+        df = cap_file.apply_all_caps(df, final_calculation=False)
+        temp_package_cap = cap_file.c[cap_file.proc_dim]
+        return df, temp_package_cap, cap_file.c, cap_file.pdf, cap_file
 
     def check_package_cap(self, df, temp_package_cap):
         """
@@ -1252,24 +1246,24 @@ class CheckPackageCapping(AnalyzeBase):
             t_df[dctc.DICT_COL_VALUE] = df[temp_package_cap]
             for temp_package_cap in df[[temp_package_cap]]:
                 df[temp_package_cap] = df[temp_package_cap] + '-' + df[dctc.VEN]
-                df[self.net_cost_capped] = pdf[self.plan_net_temp]
-            df = df[[temp_package_cap, self.net_cost_capped]]
-            df.replace(to_replace=np.NaN,
-                       value=df.loc[0],
-                       inplace=True)
+                df[c[cap_file.file_metric]] = pdf[self.plan_net_temp]
+            df = df[[temp_package_cap, c[cap_file.file_metric]]]
+            df = df.fillna(0)
             path = c[cap_file.file_name]
+            print(pdf)
+            print(df)
+            df = pd.concat([pdf, df])
             df.to_csv(path, index=False, encoding='utf-8')
-            t_df[dctc.DICT_COL_NVALUE] = df[temp_package_cap]
+            t_df[dctc.DICT_COL_NVALUE] = df[temp_package_cap].copy()
             t_df[dctc.DICT_COL_FNC] = 'Select::mpVendor'
             t_df = t_df[[dctc.DICT_COL_NAME, dctc.DICT_COL_VALUE,
                          dctc.DICT_COL_NVALUE, dctc.DICT_COL_FNC,
                          dctc.DICT_COL_SEL]]
             if write:
-                tc = dct.DictTranslationConfig().csv_path
                 translation = dct.DictTranslationConfig()
-                trans_dict = pd.read_csv(tc + dctc.filename_tran_config)
-                trans_dict = trans_dict.append(t_df)
-                translation.write(trans_dict, dctc.filename_tran_config)
+                translation.read(dctc.filename_tran_config)
+                translation.df = pd.concat([translation.df, t_df])
+                translation.write(translation.df, dctc.filename_tran_config)
                 fix_msg = 'Automatically changing capped package names:'
                 logging.info('{}\n{}'.format(fix_msg, t_df))
             return t_df
@@ -1337,7 +1331,7 @@ class FindPlacementNameCol(AnalyzeBase):
                        tdf[max_col] >= (tdf[p_col] + 9)
                        and 75 <= tdf[max_col] <= 105)
             if no_p_check or p_check:
-                data_dict = {vmc.vendorkey: [source.key],
+                data_dict = {vmc.vendorkey: source.key,
                              'Current Placement Col': p_col,
                              'Suggested Col': max_col}
                 df.append(data_dict)
@@ -1520,9 +1514,9 @@ class CheckColumnNames(AnalyzeBase):
                 logging.info('Placement name missing for {}.  '
                              'Attempting to find.'.format(vk))
                 fnc = FindPlacementNameCol(self.aly)
-                tdf = fnc.do_analysis_on_data_source(source, pd.DataFrame())
-                if not tdf.empty:
-                    tdf = tdf.to_dict(orient='records')[0]
+                tdf = fnc.do_analysis_on_data_source(source, [])
+                if tdf:
+                    tdf = tdf[0]
                     for col in [vmc.placement, vmc.fullplacename]:
                         fnc.fix_analysis_for_data_source(tdf, True, col)
                     self.matrix = vm.VendorMatrix(display_log=False)
@@ -1632,7 +1626,8 @@ class CheckFlatSpends(AnalyzeBase):
                     df = pd.concat([df, ndf], ignore_index=True)
                     df = df.reset_index(drop=True)
                     df = df.dropna(how='all')
-                    df = df.fillna('')
+                    if not df.empty:
+                        df = df.fillna('')
         df = utl.data_to_type(df, str_col=[dctc.PD, self.first_click_col])
         return df
 
