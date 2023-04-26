@@ -160,8 +160,7 @@ class YtdApi(object):
                                              fields_url, id_url)
         return full_url
 
-    @staticmethod
-    def data_to_df(response):
+    def data_to_df(self, response):
         df = pd.DataFrame()
         date_col = 'snippet.publishedAt'
         if not response:
@@ -174,6 +173,10 @@ class YtdApi(object):
             if date_col in df.columns:
                 df = utl.data_to_type(df, date_col=[date_col])
                 df[date_col] = df[date_col].dt.date
+                if self.query_type == 'channel':
+                    df['Date'] = dt.date.today()
+                else:
+                    df = df.rename(columns={date_col: 'Date'})
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
