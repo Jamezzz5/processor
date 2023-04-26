@@ -175,7 +175,7 @@ class YvApi(object):
             "reportOption": {
                 "timezone": "America/Los_Angeles",
                 "currency": 4,
-                "dimensionTypeIds": [4, 5, 8, 34, 39],
+                "dimensionTypeIds": [4, 5, 6, 7, 8, 34, 39],
                 "metricTypeIds": [1, 2, 23, 25, 26, 27, 28,
                                   29, 44, 109, 110, 138],
                 "accountIds": [self.advertiser]
