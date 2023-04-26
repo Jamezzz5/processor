@@ -1,5 +1,5 @@
-pandas==0.24.2
-Numpy==1.19.5
+numpy==1.24.2
+pandas==2.0.0
 facebook_business==14.0.0
 oauth2==1.9.0.post1
 psycopg2-binary==2.8.5
@@ -17,3 +17,5 @@ tableauhyperapi==0.0.14751
 tableaudocumentapi==0.9
 filelock==3.4.1
 pytest==7.0.0
+openai==0.8.0
+openpyxl==3.1.2

@@ -66,7 +66,8 @@ def clicks_by_place_date(df):
     df_cpd = df.loc[df[dctc.BM].isin([
         BM_FLAT, BM_FLAT2, BM_FLATIMP, BM_FLATCOUNT])]
     if not df_cpd.empty:
-        df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
+        metrics = [vmc.impressions, vmc.clicks]
+        df_cpd = (df_cpd.groupby([PLACE_DATE])[metrics]
                   .apply(lambda x: x / x.astype(float).sum()))
         df_cpd.columns = [IMP_PD, CLI_PD]
         df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
@@ -176,9 +177,12 @@ def net_cost_calculation(df):
 
 def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
     df = utl.data_to_type(df, float_col=[p_cost])
+    for col in [p_cost, vmc.cost]:
+        if col not in df.columns:
+            df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
     nc_pnc = df[df[dctc.UNC] != True]
-    nc_pnc = nc_pnc.groupby(p_col)[p_cost, n_cost].sum()
+    nc_pnc = nc_pnc.groupby(p_col)[[p_cost, n_cost]].sum()
     nc_pnc = nc_pnc[nc_pnc[p_cost] > 0]
     if p_cost not in nc_pnc.columns:
         nc_pnc[p_cost] = 0
@@ -294,7 +298,7 @@ class MetricCap(object):
         logging.info('Calculating metric cap from: '
                      '{}'.format(c[self.file_name]))
         pdf = self.get_cap_file(c)
-        df = df.append(pdf, sort=True)
+        df = pd.concat([df, pdf], sort=True)
         df = net_cost_final_calculation(df, p_col=c[self.proc_dim],
                                         p_cost=self.temp_metric)
         df = df[~df[dctc.FPN].isnull()]

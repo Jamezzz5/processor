@@ -220,7 +220,7 @@ class DbApi(object):
         if report_url:
             logging.info('Found report url, downloading.')
             self.df = utl.import_read_csv(report_url, file_check=False,
-                                          error_bad=False)
+                                          error_bad='warn')
         else:
             logging.warning('Report does not exist.  Create it.')
             sys.exit(0)
@@ -236,7 +236,7 @@ class DbApi(object):
         if self.campaign_id:
             campaign_filters = [
                 {'type': 'FILTER_MEDIA_PLAN',
-                 'value': x} for x in self.campaign_id.split(',')]
+                 'value': x} for x in str(self.campaign_id).split(',')]
             params['filters'].extend(campaign_filters)
         return params
 

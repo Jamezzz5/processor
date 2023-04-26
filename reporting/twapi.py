@@ -11,15 +11,19 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-import pandas.io.json as pdjson
 from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
+user_field = 'USER_STATS'
+conversion_field = 'CONVERSIONS'
 configpath = utl.config_path
 
 base_url = 'https://ads-api.twitter.com'
+standard_base_url = 'https://api.twitter.com/1.1'
+user_url = '/users/lookup.json?'
+status_url = '/statuses/lookup.json?'
 reqdformat = '%Y-%m-%dT%H:%M:%SZ'
 
 colspend = 'billed_charge_local_micro'
@@ -72,6 +76,11 @@ mobile_conversions = ['mobile_conversion_spent_credits',
                       'mobile_conversion_site_visits',
                       'mobile_conversion_purchases']
 
+user_fields = ['id', 'name', 'screen_name', 'location', 'description',
+               'followers_count', 'friends_count', 'listed_count',
+               'favourites_count', 'verified', 'statuses_count',
+               'withheld_in_countries']
+
 
 class TwApi(object):
     def __init__(self):
@@ -92,6 +101,7 @@ class TwApi(object):
         self.adid_dict = None
         self.promoted_account_id_dict = None
         self.tweet_dict = None
+        self.usernames = None
         self.async_requests = []
         self.v = 11
 
@@ -125,8 +135,7 @@ class TwApi(object):
         self.access_token_secret = self.config['ACCESS_TOKEN_SECRET']
         self.account_id = self.config['ACCOUNT_ID']
         self.config_list = [self.consumer_key, self.consumer_secret,
-                            self.access_token, self.access_token_secret,
-                            self.account_id]
+                            self.access_token, self.access_token_secret]
         if 'CAMPAIGN_FILTER' in self.config:
             self.campaign_filter = self.config['CAMPAIGN_FILTER']
 
@@ -197,6 +206,17 @@ class TwApi(object):
                                         sd, params)
         return id_dict
 
+    def get_user_stats(self, usernames):
+        url = standard_base_url + user_url
+        data = self.request(url, params={'screen_name': usernames})
+        logging.info('Getting user data for {}'.format(usernames))
+        if 'errors' in data:
+            logging.warning('Error in response: {}'.format(data))
+            return pd.DataFrame()
+        users_df = pd.DataFrame(data)
+        users_df = users_df[user_fields]
+        return users_df
+
     def get_ids(self, entity, eid, name, parent, sd=None, parent_filter=None,
                 ad_name=None):
         original_parent_filter = parent_filter
@@ -262,17 +282,22 @@ class TwApi(object):
         self.tweet_dict = self.get_ids('tweets', 'id',
                                        'full_text', 'id', ad_name='name')
 
-    @staticmethod
-    def get_data_default_check(sd, ed, fields):
+    def get_data_default_check(self, sd, ed, fields):
+        request_fields = def_fields
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None:
             ed = dt.datetime.today() - dt.timedelta(days=1)
         if fields is None:
-            fields = def_fields
-        else:
-            fields = def_fields + conv_fields
-        return sd, ed, fields
+            return sd, ed, request_fields
+        for field in fields:
+            if field == conversion_field:
+                request_fields = def_fields + conv_fields
+            elif user_field in field:
+                split_field = field.split(':')
+                if len(split_field) > 1:
+                    self.usernames = split_field[1]
+        return sd, ed, request_fields
 
     def create_stats_url(self, fields=None, ids=None, sd=None, ed=None,
                          entity='PROMOTED_TWEET', placement='ALL_ON_TWITTER',
@@ -313,6 +338,12 @@ class TwApi(object):
         self.reset_dicts()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         sd, ed = self.get_date_info(sd, ed)
+        if self.usernames:
+            self.df = self.get_user_stats(usernames=self.usernames)
+            self.df[coldate] = dt.date.today()
+            return self.df
+        self.config_list.append(self.account_id)
+        self.check_config()
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
         if async_request:
@@ -359,8 +390,8 @@ class TwApi(object):
                                           async_request=async_request)
                 if not async_request:
                     df = self.clean_df(df)
-                    self.df = self.df.append(
-                        df, sort=True).reset_index(drop=True)
+                    self.df = pd.concat(
+                        [self.df, df], sort=True).reset_index(drop=True)
         return self.df
 
     def get_df_for_date_synchronous(self, ids, fields, sd, ed, date,
@@ -373,15 +404,16 @@ class TwApi(object):
 
     def convert_response_to_df(self, data, date, df):
         self.dates = self.get_dates(date)
-        id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
-        id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
+        id_df = pd.json_normalize(data[jsondata], [jsonidd], [colcid])
+        col_names = {x: x.replace('metrics.', '') for x in id_df.columns}
+        id_df = id_df.rename(columns=col_names)
         for col in mobile_conversions + web_conversions:
             if col in id_df.columns:
                 col_df = id_df[col].apply(pd.Series)
                 col_df.columns = ['{} - {}'.format(col, col_1)
                                   for col_1 in col_df.columns]
                 id_df = pd.concat([id_df, col_df], axis=1)
-        df = df.append(id_df, sort=True)
+        df = pd.concat([df, id_df], sort=True)
         return df
 
     def make_request_for_date_asynchronous(self, ids, fields, sd, ed,
@@ -483,7 +515,7 @@ class TwApi(object):
         df = self.convert_response_to_df(
             data=response_data, date=cur_job.date, df=df)
         df = self.clean_df(df)
-        self.df = self.df.append(df, sort=True).reset_index(drop=True)
+        self.df = pd.concat([self.df, df], sort=True).reset_index(drop=True)
         cur_job.completed = True
 
     @staticmethod
@@ -566,9 +598,10 @@ class TwApi(object):
         id_dict = {}
         tids = [tweet_ids[x:x + 100] for x in range(0, len(tweet_ids), 100)]
         for tid in tids:
-            url = ('https://api.twitter.com/1.1/statuses/lookup.json?'
+            url = ('{}{}'
                    'id={}&include_card_uri=true'
-                   .format(','.join([str(x) for x in tid])))
+                   .format(standard_base_url, status_url,
+                           ','.join([str(x) for x in tid])))
             d = self.request(url)
             for x in d:
                 if 'card_uri' in x:
@@ -621,7 +654,8 @@ class TwApi(object):
         for col in mobile_conversions + web_conversions:
             if col in df.columns:
                 df = utl.col_removal(df, 'API_Twitter', [col], warn=False)
-        df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
+        df = utl.col_removal(df, '', [jsonmet, jsonseg], warn=False)
+        df = df.set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
         ndf = utl.data_to_type(ndf, str_col=[colcid], int_col=[coldate])
         for col in df.columns:

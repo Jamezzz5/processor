@@ -226,6 +226,7 @@ api_yv_key = 'YahooVerizon'
 api_amd_key = 'AmazonDsp'
 api_mp_key = 'MediaPlan'
 api_ss_key = 'Screenshot'
+api_nz_key = 'NewZoo'
 api_ytd_key = 'YoutubeData'
 api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
@@ -233,7 +234,11 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_red_key, api_dv_key, api_raw_key, api_adk_key, api_inn_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
-            api_mp_key, api_ss_key, api_ytd_key]
+            api_mp_key, api_ss_key, api_nz_key, api_ytd_key]
+test_apis = [api_dc_key, api_fb_key]
+r_cols = ['Field', 'Result', 'Success']
+preview_apis = [api_fb_key]
+no_account_apis = [api_tw_key]
 
 api_translation = {
     api_aw_key: 'aw',
@@ -265,6 +270,7 @@ api_translation = {
     api_yv_key: 'yv',
     api_amd_key: 'amd',
     api_ss_key: 'ss',
+    api_nz_key: 'nz',
     api_ytd_key: 'ytd'
 }
 
@@ -296,7 +302,8 @@ api_partner_name_translation = {
     api_gs_key: ['Googlesheets'],
     api_qt_key: ['Quantcast'],
     api_yv_key: ['Yahoo', 'Verizon'],
-    api_amd_key: ['Amazon DSP']
+    api_amd_key: ['Amazon DSP'],
+    api_nz_key: ['NewZoo']
 }
 
 output_file = 'Raw Data Output.csv'

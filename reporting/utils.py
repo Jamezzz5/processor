@@ -5,10 +5,12 @@ import time
 import shutil
 import logging
 import pandas as pd
+import numpy as np
 import datetime as dt
 import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
+import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 
 config_path = 'config/'
@@ -16,6 +18,9 @@ raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
 dict_path = 'dictionaries/'
 backup_path = 'backup/'
+preview_path = './ad_previews/'
+preview_config = 'preview_config.csv'
+db_df_trans_config = 'db_df_translation.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
@@ -37,7 +42,7 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
-def import_read_csv(filename, path=None, file_check=True, error_bad=True,
+def import_read_csv(filename, path=None, file_check=True, error_bad='error',
                     empty_df=False, nrows=None):
     sheet_names = []
     if sheet_name_splitter in filename:
@@ -59,14 +64,15 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
         read_func = pd.read_excel
     else:
         read_func = pd.read_csv
+        kwargs['encoding'] = 'utf-8'
+        kwargs['on_bad_lines'] = error_bad
     try:
-        df = read_func(filename, encoding='utf-8',
-                       error_bad_lines=error_bad, **kwargs)
-    except pd.io.common.CParserError:
-        df = read_func(filename, sep=None, engine='python', **kwargs)
+        df = read_func(filename, **kwargs)
     except UnicodeDecodeError:
-        df = read_func(filename, encoding='iso-8859-1', **kwargs)
-    except pd.io.common.EmptyDataError:
+        if 'encoding' in kwargs:
+            kwargs['encoding'] = 'iso-8859-1'
+        df = read_func(filename, **kwargs)
+    except pd.errors.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         if empty_df:
             df = pd.DataFrame()
@@ -122,7 +128,11 @@ def string_to_date(my_string):
             ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
-        return dt.datetime.strptime(my_string, '%Y%m%d')
+        try:
+            return dt.datetime.strptime(my_string, '%Y%m%d')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif len(my_string) == 8 and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
     elif my_string == '0' or my_string == '0.0':
@@ -325,22 +335,43 @@ def add_dummy_header(df, header_len, location='head'):
     cols = df.columns
     dummy_df = pd.DataFrame(data=[cols] * header_len, columns=cols)
     if location == 'head':
-        df = dummy_df.append(df).reset_index(drop=True)
+        df = pd.concat([dummy_df, df]).reset_index(drop=True)
     elif location == 'foot':
-        df = df.append(dummy_df).reset_index(drop=True)
+        df = pd.concat([df, dummy_df]).reset_index(drop=True)
     return df
+
+
+def get_default_format(col):
+    if 'Cost' in col or col[:2] == 'CP':
+        format_map = '${:,.2f}'.format
+    elif 'VCR' in col or col[-2:] == 'TR':
+        format_map = '{:,.2%}'.format
+    else:
+        format_map = '{:,.0f}'.format
+    return format_map
 
 
 def give_df_default_format(df, columns=None):
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.fillna(0)
     if not columns:
         columns = df.columns
     for col in columns:
-        if 'Cost' in col or col[:2] == 'CP':
-            format_map = '${:,.2f}'.format
-        else:
-            format_map = '{:,.0f}'.format
+        format_map = get_default_format(col)
         df[col] = df[col].map(format_map)
     return df
+
+
+def db_df_translation(columns=None, proc_dir='', reverse=False):
+    df = import_read_csv(
+        os.path.join(proc_dir, config_path, db_df_trans_config))
+    if not columns or df.empty:
+        return {}
+    if reverse:
+        translation = dict(zip(df[exc.translation_db], df[exc.translation_df]))
+    else:
+        translation = dict(zip(df[exc.translation_df], df[exc.translation_db]))
+    return {x: translation[x] if x in translation else x for x in columns}
 
 
 def rename_duplicates(old):
@@ -492,8 +523,16 @@ class SeleniumWrapper(object):
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        self.go_to_url(url)
-        self.browser.save_screenshot(file_name)
+        went_to_url = self.go_to_url(url)
+        if went_to_url:
+            self.browser.save_screenshot(file_name)
+
+    def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
+        logging.info('Getting screenshot from {} and '
+                     'saving to {}.'.format(url, file_name))
+        self.go_to_url(url, sleep=10)
+        elem = self.browser.find_element_by_xpath(xpath)
+        elem.screenshot(file_name)
 
     def get_all_iframes(self, url=None):
         if url:
@@ -535,6 +574,8 @@ class SeleniumWrapper(object):
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
             elem.send_keys(item[0])
+            if 'selectized' in elem_xpath:
+                elem.send_keys(u'\ue007')
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
@@ -542,3 +583,41 @@ class SeleniumWrapper(object):
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
+
+
+def copy_file(old_file, new_file, attempt=1, max_attempts=100):
+    try:
+        shutil.copy(old_file, new_file)
+    except PermissionError as e:
+        logging.warning('Could not copy {}: {}'.format(old_file, e))
+    except OSError as e:
+        attempt += 1
+        if attempt > max_attempts:
+            msg = 'Exceeded after {} attempts not copying {} {}'.format(
+                max_attempts, old_file, e)
+            logging.warning(msg)
+        else:
+            logging.warning('Attempt {}: could not copy {} due to OSError '
+                            'retrying in 60s: {}'.format(attempt, old_file, e))
+            time.sleep(60)
+            copy_file(old_file, new_file, attempt=attempt,
+                      max_attempts=max_attempts)
+
+
+def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
+    old_files = os.listdir(old_path)
+    for idx, file_name in enumerate(old_files):
+        if log:
+            logging.info(int((int(idx) / int(len(old_files))) * 100))
+        old_file = os.path.join(old_path, file_name)
+        new_file = os.path.join(new_path, file_name)
+        if os.path.isfile(old_file):
+            if os.path.exists(new_file) and not overwrite:
+                continue
+            else:
+                copy_file(old_file, new_file)
+        elif os.path.isdir(old_file):
+            if not os.path.exists(new_file):
+                os.mkdir(new_file)
+            copy_tree_no_overwrite(old_file, new_file, log=False,
+                                   overwrite=overwrite)

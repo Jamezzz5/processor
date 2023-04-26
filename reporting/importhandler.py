@@ -8,6 +8,7 @@ import reporting.awapi as awapi
 import reporting.twapi as twapi
 import reporting.gaapi as gaapi
 import reporting.nbapi as nbapi
+import reporting.afapi as afapi
 import reporting.scapi as scapi
 import reporting.ajapi as ajapi
 import reporting.dcapi as dcapi
@@ -30,12 +31,13 @@ import reporting.gsapi as gsapi
 import reporting.qtapi as qtapi
 import reporting.yvapi as yvapi
 import reporting.ssapi as ssapi
+import reporting.nzapi as nzapi
 import reporting.ytdapi as ytdapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
-import reporting.afapi as afapi
 import reporting.export as export
 import reporting.vmcolumns as vmc
+import reporting.vendormatrix as vm
 import reporting.utils as utl
 
 
@@ -43,6 +45,39 @@ class ImportHandler(object):
     def __init__(self, args, matrix):
         self.args = args
         self.matrix = matrix
+        self.class_list = {
+            vmc.api_fb_key: fbapi.FbApi,
+            vmc.api_aw_key: awapi.AwApi,
+            vmc.api_tw_key: twapi.TwApi,
+            vmc.api_ttd_key: ttdapi.TtdApi,
+            vmc.api_ga_key: gaapi.GaApi,
+            vmc.api_nb_key: nbapi.NbApi,
+            vmc.api_af_key: afapi.AfApi,
+            vmc.api_sc_key: scapi.ScApi,
+            vmc.api_aj_key: ajapi.AjApi,
+            vmc.api_dc_key: dcapi.DcApi,
+            vmc.api_db_key: dbapi.DbApi,
+            vmc.api_vk_key: vkapi.VkApi,
+            vmc.api_rs_key: rsapi.RsApi,
+            vmc.api_rc_key: rcapi.RcApi,
+            vmc.api_szk_key: szkapi.SzkApi,
+            vmc.api_red_key: redapi.RedApi,
+            vmc.api_dv_key: dvapi.DvApi,
+            vmc.api_adk_key: adkapi.AdkApi,
+            vmc.api_inn_key: innapi.InnApi,
+            vmc.api_tik_key: tikapi.TikApi,
+            vmc.api_amz_key: amzapi.AmzApi,
+            vmc.api_cri_key: criapi.CriApi,
+            vmc.api_pm_key: pmapi.PmApi,
+            vmc.api_sam_key: samapi.SamApi,
+            vmc.api_gs_key: gsapi.GsApi,
+            vmc.api_qt_key: qtapi.QtApi,
+            vmc.api_yv_key: yvapi.YvApi,
+            vmc.api_amd_key: amzapi.AmzApi,
+            vmc.api_ss_key: ssapi.SsApi,
+            vmc.api_nz_key: nzapi.NzApi,
+            vmc.api_ytd_key: ytdapi.YtdApi
+        }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
                last_row=None, date_col=None, start_date=None, end_date=None):
@@ -86,7 +121,7 @@ class ImportHandler(object):
                                     end_date - dt.timedelta(days=api_merge))
         api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
                                         start_date, end_date)
-        df = df.append(api_df, ignore_index=True).reset_index(drop=True)
+        df = pd.concat([df, api_df], ignore_index=True).reset_index(drop=True)
         df = utl.add_dummy_header(df, first_row)
         df = utl.add_dummy_header(df, last_row, location='foot')
         return df
@@ -159,39 +194,33 @@ class ImportHandler(object):
         """Loops through all APIs and makes function call to retrieve data.
 
         """
-        apis = [('fb', self.matrix.api_fb_key, fbapi.FbApi),
-                ('aw', self.matrix.api_aw_key, awapi.AwApi),
-                ('tw', self.matrix.api_tw_key, twapi.TwApi),
-                ('ttd', self.matrix.api_ttd_key, ttdapi.TtdApi),
-                ('ga', self.matrix.api_ga_key, gaapi.GaApi),
-                ('nb', self.matrix.api_nb_key, nbapi.NbApi),
-                ('af', self.matrix.api_af_key, afapi.AfApi),
-                ('sc', self.matrix.api_sc_key, scapi.ScApi),
-                ('aj', self.matrix.api_aj_key, ajapi.AjApi),
-                ('dc', self.matrix.api_dc_key, dcapi.DcApi),
-                ('db', self.matrix.api_db_key, dbapi.DbApi),
-                ('vk', self.matrix.api_vk_key, vkapi.VkApi),
-                ('rs', self.matrix.api_rs_key, rsapi.RsApi),
-                ('rc', self.matrix.api_rc_key, rcapi.RcApi),
-                ('szk', self.matrix.api_szk_key, szkapi.SzkApi),
-                ('red', self.matrix.api_red_key, redapi.RedApi),
-                ('dv', self.matrix.api_dv_key, dvapi.DvApi),
-                ('adk', self.matrix.api_adk_key, adkapi.AdkApi),
-                ('inn', self.matrix.api_inn_key, innapi.InnApi),
-                ('tik', self.matrix.api_tik_key, tikapi.TikApi),
-                ('amz', self.matrix.api_amz_key, amzapi.AmzApi),
-                ('cri', self.matrix.api_cri_key, criapi.CriApi),
-                ('pm', self.matrix.api_pm_key, pmapi.PmApi),
-                ('sam', self.matrix.api_sam_key, samapi.SamApi),
-                ('gs', self.matrix.api_gs_key, gsapi.GsApi),
-                ('qt', self.matrix.api_qt_key, qtapi.QtApi),
-                ('yv', self.matrix.api_yv_key, yvapi.YvApi),
-                ('amd', self.matrix.api_amd_key, amzapi.AmzApi),
-                ('ss', self.matrix.api_ss_key, ssapi.SsApi),
-                ('ytd', self.matrix.api_ytd_key, ytdapi.YtdApi)]
-        for api in apis:
-            if self.arg_check(api[0]) and api[1]:
-                self.api_calls(api[1], api[2]())
+        for key, api in self.class_list.items():
+            if (self.arg_check(vmc.api_translation[key]) and
+                    self.matrix.vks[key]):
+                self.api_calls(self.matrix.vks[key], api())
+
+    def test_api_calls(self, key_list):
+        """Makes an API Call to Test Connection
+
+        Keyword arguments:
+        key_list -- list of Vendormatrix keys to test
+        """
+        import_config = vm.ImportConfig()
+        import_config.import_vm()
+        df = pd.DataFrame()
+        for vk in key_list:
+            data_source = self.matrix.get_data_source(vk=vk)
+            config_name = str(data_source.params[import_config.config_file])
+            api_type = vk.split('_')[1]
+            api_class = self.class_list[api_type]()
+            ic_df = import_config.df.loc[
+                import_config.df[import_config.key] == api_type]
+            acc_col = ic_df.iloc[0][import_config.account_id]
+            camp_col = ic_df.iloc[0][import_config.filter]
+            acc_pre = ic_df.iloc[0][import_config.account_id_pre]
+            api_class.input_config(config_name)
+            df = api_class.test_connection(acc_col, camp_col, acc_pre)
+        return df
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:

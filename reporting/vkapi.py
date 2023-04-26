@@ -148,7 +148,7 @@ class VkApi(object):
             tdf = stats[col].apply(pd.Series)
             tdf = tdf.drop(0, axis=1)
             tdf = tdf.dropna(how='all')
-            df = df.append(tdf)
+            df = pd.concat([df, tdf])
         df = df.join(ids)
         df = df.reset_index(drop=True)
         return df

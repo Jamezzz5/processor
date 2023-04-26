@@ -133,7 +133,7 @@ class InnApi(object):
             logging.info('Attempting to get report {} of {}'
                          ''.format(idx + 1, len(self.response_tokens)))
             df = self.check_and_get_report(resp_token)
-            self.df = self.df.append(df, ignore_index=True)
+            self.df = pd.concat([self.df, df], ignore_index=True)
             self.df = self.filter_df_on_campaign(self.df)
         return self.df
 

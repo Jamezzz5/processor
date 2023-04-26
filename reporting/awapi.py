@@ -131,7 +131,7 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
-    version = 10
+    version = 13
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
@@ -235,7 +235,7 @@ class AwApi(object):
                 df[column] = (df[column] * 100).round(2)
                 df['{} - Percent'.format(column)] = df[column]
                 df[column] = ((df[column] / 100) *
-                              df[self.rb.views.display_name].astype(np.float))
+                              df[self.rb.views.display_name].astype(float))
         return df
 
     def find_correct_login_customer_id(self, report):
@@ -371,7 +371,7 @@ class AwApi(object):
                 logging.info('Parsing results page: {} of {}'.format(
                     idx + 1, total_pages))
                 results = page['results']
-                tdf = pd.io.json.json_normalize(results)
+                tdf = pd.json_normalize(results)
                 replace_dict = {x.return_name: x.display_name for x in fields}
                 tdf = tdf.rename(columns=replace_dict)
                 tdf = self.filter_on_campaign(tdf)

@@ -8,6 +8,8 @@ import requests
 import pandas as pd
 from io import StringIO
 import reporting.utils as utl
+import reporting.vendormatrix as matrix
+import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -17,7 +19,7 @@ base_url = 'https://www.googleapis.com/dfareporting'
 class DcApi(object):
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
-        'date', 'placementId', 'creative', 'ad', 'creativeId']
+        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId']
     default_metrics = [
         'impressions', 'clicks', 'clickRate',
         'activeViewViewableImpressions',
@@ -37,6 +39,9 @@ class DcApi(object):
         'Site (CM360)': 'Site (DCM)', 'DV360 Cost USD': 'DBM Cost USD',
         'DV360 Cost (Account Currency)': 'DBM Cost (Account Currency)'
     }
+    report_path = 'reports/'
+    ad_path = 'advertisers/'
+    camp_path = 'campaigns/'
 
     def __init__(self):
         self.config = None
@@ -53,7 +58,7 @@ class DcApi(object):
         self.config_list = None
         self.client = None
         self.date_range = None
-        self.version = '3.5'
+        self.version = '4'
         self.df = pd.DataFrame()
         self.r = None
 
@@ -84,9 +89,13 @@ class DcApi(object):
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.usr_id]
         if 'advertiser_id' in self.config:
-            self.advertiser_id = self.config['advertiser_id'].replace(' ', '')
+            self.advertiser_id = self.remove_space(self.config['advertiser_id'])
         if 'campaign_id' in self.config:
-            self.campaign_id = self.config['campaign_id'].replace(' ', '')
+            self.campaign_id = self.remove_space(self.config['campaign_id'])
+
+    @staticmethod
+    def remove_space(val):
+        return str(val).replace(' ', '')
 
     def check_config(self):
         for item in self.config_list:
@@ -126,10 +135,9 @@ class DcApi(object):
         user_url = '{}{}{}'.format(base_url, vers_url, usr_url)
         return user_url
 
-    def create_url(self):
+    def create_url(self, arg, path=report_path):
         user_url = self.create_user_url()
-        report_url = 'reports/{}'.format(self.report_id)
-        full_url = (user_url + report_url)
+        full_url = (user_url + path + str(arg))
         return full_url
 
     def parse_fields(self, sd, ed, fields):
@@ -206,7 +214,7 @@ class DcApi(object):
             return False
 
     def get_files_url(self):
-        full_url = self.create_url()
+        full_url = self.create_url(self.report_id)
         self.r = self.make_request('{}/run'.format(full_url), 'post')
         if not self.r:
             logging.warning('No files URL returning.')
@@ -258,7 +266,7 @@ class DcApi(object):
         if self.report_id:
             return True
         report = self.create_report_params()
-        full_url = self.create_url()
+        full_url = self.create_url(self.report_id)
         self.r = self.make_request(full_url, method='post', body=report)
         if not self.r:
             return False
@@ -341,3 +349,36 @@ class DcApi(object):
     def rename_cols(self):
         self.df.iloc[0] = self.df.iloc[0].replace(self.col_rename_dict)
         return self.df
+
+    def test_connection(self, acc_col, camp_col, pre_col):
+        success_msg = 'SUCCESS -- ID:'
+        failure_msg = 'FAILURE:'
+        self.get_client()
+        if self.campaign_id is None:
+            self.campaign_id = ''
+        campaign_ids = self.campaign_id.split(',')
+        results = []
+        query_url = self.create_url(self.advertiser_id, self.ad_path)
+        r = self.client.get(url=query_url)
+        if r.status_code == 200:
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
+                   True]
+            results.append(row)
+        else:
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, r['error']['message']]),
+                   False]
+            results.append(row)
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        for campaign in campaign_ids:
+            query_url = self.create_url(campaign, self.camp_path)
+            r = self.client.get(url=query_url)
+            if r.status_code == 200:
+                row = [camp_col, ' '.join([success_msg, str(campaign)]), True]
+                results.append(row)
+            else:
+                r = r.json()
+                row = [camp_col, ' '.join([failure_msg, r['error']['message']]),
+                       False]
+                results.append(row)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)

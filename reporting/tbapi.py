@@ -65,8 +65,8 @@ class TabApi(object):
         self.headers = {'Content-Type': 'application/json',
                         'Accept': 'application/json'}
         data = {"credentials": {
-                "name": self.username,
-                "password": self.password,
+                "personalAccessTokenName": self.username,
+                "personalAccessTokenSecret": self.password,
                 "site": {"contentUrl": self.site}}}
         url = self.create_url('auth/signin')
         r = self.make_request(url, 'post', resp_key='credentials',
@@ -167,7 +167,8 @@ class TabApi(object):
             logging.warning('Tableau api not configured, it was not refreshed.')
 
     def get_tsc_auth(self):
-        tableau_auth = tsc.TableauAuth(self.username, self.password, self.site)
+        tableau_auth = tsc.PersonalAccessTokenAuth(self.username, self.password,
+                                                   self.site)
         server = tsc.Server('https://us-east-1.online.tableau.com',
                             use_server_version=True)
         return tableau_auth, server
@@ -231,8 +232,11 @@ class TabApi(object):
 
     def create_publish_hyper(self, db, table_name='auto_processor'):
         self.create_hyper(db, table_name)
-        self.publish_object(
-            db, object_name=table_name, object_type='datasource')
+        try:
+            self.publish_object(
+                db, object_name=table_name, object_type='datasource')
+        except tsc.server.endpoint.exceptions.ServerResponseError as e:
+            logging.warning('Could not publish due to error: \n{}'.format(e))
 
     def download_workbook(self, workbook_name='auto_template'):
         tableau_auth, server = self.get_tsc_auth()

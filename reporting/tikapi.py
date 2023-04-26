@@ -12,18 +12,38 @@ config_path = utl.config_path
 
 
 class TikApi(object):
-    base_url = 'https://ads.tiktok.com'
-    ad_url = '/open_api/v1.2/ad/get/'
-    ad_report_url = '/open_api/v1.2/reports/ad/get/'
-    dimensions = ['COUNTRY', 'DAY', 'ID']
-    metrics = ['click_cnt', 'conversion_cost', 'conversion_rate', 'convert_cnt',
-               'ctr', 'show_cnt', 'stat_cost', 'time_attr_convert_cnt',
-               'play_duration_2s', 'play_duration_6s', 'play_over',
-               'play_third_quartile', 'play_midpoint', 'play_first_quartile',
-               'total_play', 'ad_comment', 'ad_like', 'ad_share',
-               'ad_home_visited', 'show_uv', 'frequency',
-               'time_attr_on_web_register', 'time_attr_shopping',
-               'time_attr_view']
+    version = 'v1.3'
+    base_url = 'https://business-api.tiktok.com/open_api/'
+    ad_url = '/ad/get/'
+    ad_report_url = '/report/integrated/get/'
+    new_date = 'stat_time_day'
+    old_date = 'stat_datetime'
+    dimensions = ['stat_time_day', 'ad_id']
+    metrics = {'clicks': 'click_cnt',
+               'cost_per_conversion': 'conversion_cost',
+               'conversion_rate': 'conversion_rate',
+               'conversion': 'convert_cnt',
+               'ctr': 'ctr',
+               'impressions': 'show_cnt',
+               'spend': 'stat_cost',
+               'video_watched_2s': 'play_duration_2s',
+               'video_watched_6s': 'play_duration_6s',
+               'video_views_p100': 'play_over',
+               'video_views_p75': 'play_third_quartile',
+               'video_views_p50': 'play_midpoint',
+               'video_views_p25': 'play_first_quartile',
+               'video_play_actions': 'total_play',
+               'comments': 'ad_comment',
+               'likes': 'ad_like',
+               'shares': 'ad_share',
+               'frequency': 'frequency',
+               'real_time_app_install': 'real_time_app_install',
+               'app_install': 'app_install',
+               'registration': 'registration',
+               'purchase': 'purchase',
+               'checkout': 'checkout',
+               'view_content': 'view_content',
+               'offline_shopping_events': 'offline_shopping_events'}
 
     def __init__(self):
         self.config = None
@@ -34,7 +54,6 @@ class TikApi(object):
         self.ad_id_list = []
         self.config_list = None
         self.headers = None
-        self.version = '2'
         self.df = pd.DataFrame()
         self.r = None
 
@@ -70,7 +89,8 @@ class TikApi(object):
                 sys.exit(0)
 
     def set_headers(self):
-        self.headers = {'Access-Token': self.access_token}
+        self.headers = {'Access-Token': self.access_token,
+                        'Content-Type': 'application/json'}
 
     def make_request(self, url, method, headers=None, json_body=None, data=None,
                      params=None, attempt=1):
@@ -124,9 +144,10 @@ class TikApi(object):
     def get_ad_ids(self):
         logging.info('Getting ad ids.')
         self.set_headers()
-        url = self.base_url + self.ad_url
+        url = self.base_url + self.version + self.ad_url
         params = {'advertiser_id': self.advertiser_id,
                   'page': 1,
+                  'page_size': 1000,
                   'filtering': json.dumps(
                       {'primary_status': 'STATUS_ALL',
                        'status': 'AD_STATUS_ALL'})}
@@ -159,14 +180,15 @@ class TikApi(object):
         return ad_ids, r
 
     def request_and_get_data(self, sd, ed):
-        url = self.base_url + self.ad_report_url
-        params = {'advertiser_id': self.advertiser_id, 'start_date': sd,
+        url = self.base_url + self.version + self.ad_report_url
+        params = {'advertiser_id': self.advertiser_id,
+                  'report_type': 'BASIC',
+                  'data_level': 'AUCTION_AD',
+                  'start_date': sd,
                   'end_date': ed,
-                  'fields': json.dumps(self.metrics),
-                  'group_by': json.dumps(['STAT_GROUP_BY_FIELD_ID',
-                                          'STAT_GROUP_BY_FIELD_STAT_TIME']),
-                  'page_size': 1000,
-                  'filtering': json.dumps({'primary_status': 'STATUS_ALL'})}
+                  'metrics': json.dumps(list(self.metrics.keys())),
+                  'dimensions': json.dumps(self.dimensions),
+                  'page_size': 1000}
         for x in range(1, 1000):
             logging.info('Getting data from {} to {}.  Page #{}.'
                          ''.format(sd, ed, x))
@@ -179,7 +201,10 @@ class TikApi(object):
                                 '{}'.format(r.json()))
                 return self.df
             df = pd.DataFrame(r.json()['data']['list'])
-            self.df = self.df.append(df, ignore_index=True)
+            for col in ['dimensions', 'metrics']:
+                tdf = pd.DataFrame(df[col].to_list())
+                df = df.join(tdf)
+            self.df = pd.concat([self.df, df], ignore_index=True)
             page_rem = r.json()['data']['page_info']['total_page']
             if x >= page_rem:
                 break
@@ -187,6 +212,9 @@ class TikApi(object):
                          ''.format(page_rem - x))
         self.df = self.df.merge(pd.DataFrame(self.ad_id_list), on='ad_id',
                                 how='left')
+        cols = self.metrics.copy()
+        cols[self.new_date] = self.old_date
+        self.df = self.df.rename(columns=cols)
         logging.info('Data successfully pulled.  Returning df.')
         return self.df
 

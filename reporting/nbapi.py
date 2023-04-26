@@ -133,7 +133,7 @@ class NbApi(object):
     def get_raw_data(self):
         self.df = pd.DataFrame()
         tdf = self.data_to_df(self.r)
-        self.df = self.df.append(tdf)
+        self.df = pd.concat([self.df, tdf])
         self.df = self.df.rename(columns=metric_col_name_dic)
         self.df['Topic ID'] = 'Netbase Topic: ' + str(self.topic_id)
 

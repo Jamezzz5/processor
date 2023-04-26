@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import openai
 import shutil
 import logging
 import operator
@@ -12,7 +13,6 @@ import datetime as dt
 import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-import reporting.expcolumns as exc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
@@ -49,6 +49,11 @@ class Analyze(object):
     missing_flat = 'missing_flat'
     missing_serving = 'missing_serving'
     missing_ad_rate = 'missing_ad_rate'
+    package_cap = 'package_cap'
+    package_vendor = 'package_vendor'
+    package_vendor_good = 'package_vendor_good'
+    package_vendor_bad = 'package_vendor_bad'
+    cap_name = 'cap_name'
     change_auto_order = 'change_auto_order'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
@@ -64,20 +69,35 @@ class Analyze(object):
     analysis_dict_large_param_2 = 'Largest'
     analysis_dict_only_param_2 = 'Only'
     fixes_to_run = False
+    topline_metrics = [[cal.TOTAL_COST], [cal.NCF],
+                       [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
+                       [vmc.views], [vmc.views100, 'VCR'],
+                       [vmc.landingpage, 'CPLPV'], [vmc.btnclick, 'CPBC'],
+                       [vmc.purchase, 'CPA']]
+    topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
+                             vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
+                             vmc.landingpage,  vmc.btnclick, vmc.purchase,
+                             'CPLPV', 'CPBC', 'CPA', cal.NCF, cal.TOTAL_COST]
 
-    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
+    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
+                 load_chat=False, chat_path=utl.config_path):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
+        self.load_chat = load_chat
+        self.chat_path = chat_path
+        self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts]
+            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
+            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
+        if self.load_chat:
+            self.chat = AliChat(config_path=self.chat_path)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -204,38 +224,6 @@ class Analyze(object):
         end_dates = start_end_dates[plan_names + [dctc.ED]]
         return start_dates, end_dates
 
-    def check_raw_file_update_time(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            if vmc.filename not in source.p:
-                continue
-            file_name = source.p[vmc.filename]
-            if os.path.exists(file_name):
-                t = os.path.getmtime(file_name)
-                last_update = dt.datetime.fromtimestamp(t)
-                if last_update.date() == dt.datetime.today().date():
-                    update_tier = 'Today'
-                elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
-                    update_tier = 'Within A Week'
-                else:
-                    update_tier = 'Greater Than One Week'
-            else:
-                last_update = 'Does Not Exist'
-                update_tier = 'Never'
-            data_dict = {'source': [source.key], 'update_time': [last_update],
-                         'update_tier': [update_tier]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
-        if df.empty:
-            return False
-        df['update_time'] = df['update_time'].astype('U')
-        update_msg = 'Raw File update times and tiers are as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
-        self.add_to_analysis_dict(key_col=self.raw_file_update_col,
-                                  message=update_msg, data=df.to_dict())
-
     def get_plan_names(self):
         plan_names = self.matrix.vendor_set(vm.plan_key)
         if not plan_names:
@@ -301,7 +289,7 @@ class Analyze(object):
 
     # noinspection PyUnresolvedReferences
     @staticmethod
-    def make_heat_map(df, cost_cols=None, percent_cols=None):
+    def make_heat_map(df, cost_cols=None):
         fig, axs = sns.plt.subplots(ncols=len(df.columns),
                                     gridspec_kw={'hspace': 0, 'wspace': 0})
         for idx, col in enumerate(df.columns):
@@ -360,13 +348,14 @@ class Analyze(object):
     def get_table_without_format(self, data_filter=None, group=dctc.CAM):
         group = [group]
         metrics = []
-        potential_metrics = [[cal.TOTAL_COST], [cal.NCF],
-                             [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
-                             [vmc.landingpage, 'CPLP'], [vmc.btnclick, 'CPBC'],
-                             [vmc.purchase, 'CPP']]
-        for metric in potential_metrics:
+        kpis = self.get_kpis()
+        for metric in self.topline_metrics:
             if metric[0] in self.df.columns:
                 metrics += metric
+        if kpis:
+            metrics += list(kpis.keys())
+            metrics += [value for values in kpis.values() for value in values]
+            metrics = list(set(metrics))
         df = self.generate_df_table(group=group, metrics=metrics,
                                     data_filter=data_filter)
         return df
@@ -374,6 +363,8 @@ class Analyze(object):
     def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):
         df = self.get_table_without_format(data_filter, group)
         df = self.give_df_default_format(df)
+        final_cols = [x for x in self.topline_metrics_final if x in df.columns]
+        df = df[final_cols]
         df = df.transpose()
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
@@ -390,12 +381,13 @@ class Analyze(object):
         df = df.sort_values(vmc.date).reset_index(drop=True).reset_index()
         df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
         fit = np.polyfit(df['index'], df[kpi], deg=1)
+        format_map = utl.get_default_format(kpi)
         if fit[0] > 0:
             trend = 'increasing'
         else:
             trend = 'decreasing'
-        msg = ('The KPI {} is {} at a rate of {:,.3f} units per day'
-               ' when given linear fit').format(kpi, trend, abs(fit[0]))
+        msg = ('The KPI {} is {} at a rate of {} per day when given '
+               'linear fit').format(kpi, trend, format_map(abs(fit[0])))
         logging.info(msg)
         df['fit'] = fit[0] * df['index'] + fit[1]
         df[vmc.date] = df[vmc.date].dt.strftime('%Y-%m-%d')
@@ -439,7 +431,9 @@ class Analyze(object):
         format_df = self.give_df_default_format(df, columns=[kpi])
         if split == vmc.date:
             df[split] = df[split].dt.strftime('%Y-%m-%d')
-        split_values = ', '.join(str(x) for x in df[split].values)
+        split_values = ['{} ({})'.format(x, y) for x, y in
+                        format_df[[split, kpi]].values]
+        split_values = ', '.join(split_values)
         msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
             small_large, kpi, split, split_values)
         if filter_col:
@@ -476,28 +470,8 @@ class Analyze(object):
             self.evaluate_df_kpi_smallest_largest(df[0], kpi, split, filter_col,
                                                   filter_val, df[1])
 
-    def evaluate_on_kpi(self, kpi):
-        kpi_formula = [
-            self.vc.calculations[x] for x in self.vc.calculations
-            if self.vc.calculations[x][self.vc.metric_name] == kpi]
-        if kpi_formula:
-            kpi_cols = kpi_formula[0][self.vc.formula][::2]
-            metrics = kpi_cols + [kpi]
-            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
-            if missing_cols:
-                msg = 'Missing columns could not evaluate {}'.format(kpi)
-                logging.warning(msg)
-                self.add_to_analysis_dict(key_col=self.kpi_col,
-                                          message=msg, param=kpi)
-                return False
-        elif kpi not in self.df.columns:
-            msg = 'Unknown KPI: {}'.format(kpi)
-            logging.warning(msg)
-            self.add_to_analysis_dict(key_col=self.kpi_col,
-                                      message=msg, param=kpi)
-            return False
-        else:
-            metrics = [kpi]
+    def evaluate_on_kpi(self, kpi, formula):
+        metrics = [kpi] + formula
         group = [dctc.CAM, dctc.KPI]
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=dctc.VEN)
         self.explain_lowest_kpi_for_vendor(
@@ -505,10 +479,41 @@ class Analyze(object):
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=vmc.date)
         self.calculate_kpi_trend(kpi, group, metrics)
 
-    def evaluate_on_kpis(self):
+    def get_kpi(self, kpi, write=False):
+        kpi_cols = []
+        kpi_formula = [
+            self.vc.calculations[x] for x in self.vc.calculations
+            if self.vc.calculations[x][self.vc.metric_name] == kpi]
+        if kpi_formula:
+            kpi_cols = kpi_formula[0][self.vc.formula][::2]
+            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
+            if missing_cols:
+                msg = 'Missing columns could not evaluate {}'.format(kpi)
+                logging.warning(msg)
+                kpi = False
+                if write:
+                    self.add_to_analysis_dict(key_col=self.kpi_col,
+                                              message=msg, param=kpi)
+        elif kpi not in self.df.columns:
+            msg = 'Unknown KPI: {}'.format(kpi)
+            logging.warning(msg)
+            kpi = False
+        return kpi, kpi_cols
+
+    def get_kpis(self, write=False):
+        kpis = {}
         if dctc.KPI in self.df.columns:
             for kpi in self.df[dctc.KPI].unique():
-                self.evaluate_on_kpi(kpi)
+                kpi, kpi_cols = self.get_kpi(kpi, write)
+                if kpi:
+                    kpis[kpi] = kpi_cols
+        return kpis
+
+    def evaluate_on_kpis(self):
+        kpis = self.get_kpis(write=True)
+        if kpis:
+            for kpi, formula in kpis.items():
+                self.evaluate_on_kpi(kpi, formula)
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -569,14 +574,16 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.vendor_metrics,
                                   message=update_msg,
                                   data=format_df.T.to_dict())
-        mdf = pd.DataFrame()
+        mdf = []
         for col in df.columns:
             missing_metrics = df[df[col] == 0][col].index.to_list()
             if missing_metrics:
                 miss_dict = {dctc.VEN: col,
                              self.missing_metrics: missing_metrics}
-                mdf = mdf.append(pd.DataFrame(miss_dict),
-                                 ignore_index=True, sort=False)
+                if mdf is None:
+                    mdf = []
+                mdf.append(miss_dict)
+        mdf = pd.DataFrame(mdf)
         if mdf.empty:
             missing_msg = 'No vendors have missing metrics.'
             logging.info('{}'.format(missing_msg))
@@ -587,7 +594,11 @@ class Analyze(object):
                                   message=missing_msg, data=mdf.to_dict())
 
     def flag_errant_metrics(self):
-        df = self.get_table_without_format(group=dctc.VEN)
+        metrics = [vmc.impressions, vmc.clicks, 'CTR']
+        if [metric for metric in metrics[:2] if metric not in self.df.columns]:
+            logging.warning('Missing metric, could not determine flags.')
+            return False
+        df = self.generate_df_table(group=[dctc.VEN, dctc.CAM], metrics=metrics)
         if df.empty:
             logging.warning('Dataframe empty, could not determine flags.')
             return False
@@ -596,6 +607,7 @@ class Analyze(object):
         thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
         for metric_name, threshold_dict in thresholds.items():
             edf = df.copy()
+            edf = edf.reset_index().set_index(dctc.VEN)
             edf[threshold_col] = edf.index.map(threshold_dict).fillna(
                 threshold_dict[all_threshold])
             edf = edf[edf['CTR'] > edf[threshold_col]]
@@ -880,8 +892,11 @@ class Analyze(object):
         return True
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
-                              split_col=None, filter_col=None, filter_val=None):
-        item = [x for x in self.analysis_dict
+                              split_col=None, filter_col=None, filter_val=None,
+                              analysis_dict=None):
+        if not analysis_dict:
+            analysis_dict = self.analysis_dict
+        item = [x for x in analysis_dict
                 if x[self.analysis_dict_key_col] == key]
         if param:
             item = [x for x in item if x[self.analysis_dict_param_col] == param]
@@ -907,7 +922,6 @@ class Analyze(object):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
-        self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
         self.get_metrics_by_vendor_key()
@@ -919,11 +933,47 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
-    def do_analysis_and_fix_processor(self, pre_run=False):
+    def get_new_files(self):
+        cu = CheckRawFileUpdateTime(self)
+        cu.do_analysis()
+        new = self.find_in_analysis_dict(key=self.raw_file_update_col)
+        if not new:
+            logging.warning('Could not find update times.')
+            return False
+        new = pd.DataFrame(new[0]['data'])
+        if os.path.exists(self.analysis_dict_file_name):
+            with open(self.analysis_dict_file_name, 'r') as f:
+                old = json.load(f)
+            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
+                                             analysis_dict=old)
+            old = pd.DataFrame(old[0]['data'])
+        else:
+            logging.warning('No analysis dict assuming all new sources.')
+            old = new.copy()
+            old[cu.update_tier_col] = cu.update_tier_never
+        if vmc.vendorkey not in old.columns:
+            logging.warning('Old df missing vendor key column.')
+            return []
+        df = new.merge(old, how='left', on=vmc.vendorkey)
+        df = df[df['{}_y'.format(cu.update_tier_col)] == cu.update_tier_never]
+        df = df[df['{}_x'.format(cu.update_tier_col)] != cu.update_tier_never]
+        new_sources = df[vmc.vendorkey].to_list()
+        return new_sources
+
+    def do_analysis_and_fix_processor(self, pre_run=False, first_run=False,
+                                      new_files=False):
+        new_file_check = []
+        if new_files:
+            new_file_check = self.get_new_files()
+            if not new_file_check:
+                return self.fixes_to_run
         for analysis_class in self.class_list:
             if analysis_class.fix:
-                if (pre_run and analysis_class.pre_run) or not pre_run:
-                    analysis_class(self).do_and_fix_analysis()
+                is_pre_run = pre_run and analysis_class.pre_run
+                is_new_file = new_files and analysis_class.new_files
+                if is_pre_run or first_run or is_new_file:
+                    analysis_class(self).do_and_fix_analysis(
+                        only_new_files=new_files, new_file_list=new_file_check)
         return self.fixes_to_run
 
 
@@ -931,6 +981,7 @@ class AnalyzeBase(object):
     name = ''
     fix = False
     pre_run = False
+    new_files = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -947,13 +998,18 @@ class AnalyzeBase(object):
         logging.warning('{} function not implemented for: {}'.format(
             func_name, self.name))
 
-    def do_and_fix_analysis(self):
+    def do_and_fix_analysis(self, only_new_files=False, new_file_list=None):
         self.do_analysis()
         aly_dict = self.aly.find_in_analysis_dict(self.name)
         if (len(aly_dict) > 0 and 'data' in aly_dict[0]
                 and len(aly_dict[0]['data']) > 0):
+            aly_dict = aly_dict[0]['data']
+            if only_new_files:
+                df = pd.DataFrame(aly_dict)
+                df = df[df[vmc.vendorkey].isin(new_file_list)]
+                aly_dict = df.to_dict(orient='records')
             self.aly.fixes_to_run = True
-            self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
+            self.fix_analysis(pd.DataFrame(aly_dict))
 
     def add_to_analysis_dict(self, df, msg):
         self.aly.add_to_analysis_dict(
@@ -963,13 +1019,16 @@ class AnalyzeBase(object):
 class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
     fix = True
+    new_files = True
 
     @staticmethod
     def get_vendor_list():
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
-        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         ven_list = []
+        if dctc.DICT_COL_NAME not in tc.df.columns:
+            return ven_list
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
@@ -997,18 +1056,19 @@ class CheckAutoDictOrder(AnalyzeBase):
                 new_order = source.p[vmc.autodicord][diff:]
             else:
                 new_order = (diff * -1) * [dctc.MIS] + source.p[vmc.autodicord]
-            data_dict = {vmc.vendorkey: [source.key],
-                         self.name: [new_order]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+            data_dict = {vmc.vendorkey: source.key, self.name: new_order}
+            if df is None:
+                df = []
+            df.append(data_dict)
         return df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         ven_list = self.get_vendor_list()
         for ds in data_sources:
             df = self.do_analysis_on_data_source(ds, df, ven_list)
+        df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
         else:
@@ -1040,9 +1100,215 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
+class CheckPackageCapping(AnalyzeBase):
+    name = Analyze.package_cap
+    cap_name = Analyze.cap_name
+    package_vendor_good = 'Package_Vendor_Good'
+    package_vendor_bad = 'Package_Vendor_Bad'
+    plan_net_temp = 'Planned Net Cost - TEMP'
+    net_cost_capped = 'Net Cost (Capped)'
+    pre_run = True
+    fix = True
+
+    def initialize_cap_file(self):
+        """
+        gets Cap Config file and the file to be capped
+        df -> raw data appended with cap file (will later be grouped cleaner)
+        temp_package_cap -> the column name to be capped on, stated in cap file
+        c -> config file
+        pdf -> cap file data
+        cap_file -> MetricCap() object
+        """
+        df = self.aly.df
+        df = cal.net_cost_calculation(df)
+        c = None
+        if cal.MetricCap().config:
+            cap_file = cal.MetricCap()
+            for cfg in cap_file.config:
+                c = cap_file.config[cfg]
+            if c and os.path.isfile(c[cal.MetricCap().file_name]):
+                pdf = cap_file.get_cap_file(c)
+                df = pd.concat([df, pdf], ignore_index=True)
+                temp_package_cap = c[cap_file.proc_dim]
+                return df, temp_package_cap, c, pdf, cap_file
+
+    def check_package_cap(self, df, temp_package_cap):
+        """
+        Checks if a package used for capping has reached or exceeded its cap
+        Prints to logfile
+
+        Make sure cap file exists, set as pdf and append to our dataframe
+        temp_package_cap -> column name we are capping on from raw file
+        'plan_net_temp -> how much we cap,taken from raw file
+        """
+        cols = [temp_package_cap, self.plan_net_temp, vmc.cost]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if any(missing_cols):
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df[cols]
+        df = df.groupby([temp_package_cap])
+        df = df.apply(lambda x:
+                      0 if x[self.plan_net_temp].sum() == 0
+                      else x[vmc.cost].sum() / x[self.plan_net_temp].sum())
+        f_df = df[df >= 1]
+        if f_df.empty:
+            delivery_msg = 'No Packages have exceeded their cap'
+            logging.info(delivery_msg)
+            self.aly.add_to_analysis_dict(
+                key_col=self.cap_name,
+                param=self.aly.under_delivery_col,
+                message=delivery_msg)
+            return f_df
+        else:
+            del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
+            delivery_msg = 'The following packages have delivered in full: '
+            logging.info('{}\n{}'.format(delivery_msg, del_p))
+            data = del_p.reset_index().rename(columns={0: 'Cap'})
+            self.aly.add_to_analysis_dict(
+                key_col=self.cap_name,
+                param=self.aly.full_delivery_col,
+                message=delivery_msg,
+                data=data.to_dict())
+            o_df = f_df[f_df > 1.5]
+            if not o_df.empty:
+                del_p = o_df.apply(lambda x:
+                                   "{0:.2f}%".format(x * 100))
+                delivery_msg = 'The following packages have over-delivered:'
+                logging.info('{}\n{}'.format(delivery_msg, del_p))
+                data = del_p.reset_index().rename(columns={0: 'Cap'})
+                self.aly.add_to_analysis_dict(
+                    key_col=self.cap_name,
+                    param=self.aly.over_delivery_col,
+                    message=delivery_msg,
+                    data=data.to_dict())
+            return data
+
+    def check_package_vendor(self, df, temp_package_cap, pdf):
+        """
+        Warns if the package cap file will affect multiple vendors
+        creates dataframe grouped by cap and vendor
+        counts unique members,
+        if there are more vendors than there are caps, raise a warning
+        return df of packages with multiple vendors associated
+        """
+        cols = [dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
+                self.plan_net_temp, vmc.cost]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if any(missing_cols) or df.empty:
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df[cols]
+        try:
+            df = df.groupby([temp_package_cap, dctc.VEN])
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
+        try:
+            df = df.size().reset_index(name='count')
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
+        df = df[[temp_package_cap, dctc.VEN]]
+        if (temp_package_cap not in df.columns or
+                temp_package_cap not in pdf.columns):
+            return pd.DataFrame()
+        df = df[df[temp_package_cap].isin(pdf[temp_package_cap])]
+        df = df[df.duplicated(subset=temp_package_cap, keep=False)]
+        if not df.empty:
+            delivery_msg = ('One or more of the packages you are capping on is '
+                            'associated with multiple vendors')
+            logging.warning('{}\n{}'.format(delivery_msg, df))
+            self.aly.add_to_analysis_dict(key_col=self.name,
+                                          param=self.aly.package_vendor_bad,
+                                          message=delivery_msg,
+                                          data=df.to_dict())
+            return df
+        else:
+            delivery_msg = "All packages are capping on a single vendor"
+            logging.info('{}\n{}'.format(delivery_msg, df))
+            self.aly.add_to_analysis_dict(key_col=self.name,
+                                          param=self.aly.package_vendor_good,
+                                          message=delivery_msg,
+                                          data=df.to_dict())
+            return df
+
+    def fix_package_vendor(self, temp_package_cap, c, pdf, cap_file,
+                           write=None, aly_dict=None):
+        """
+        Takes in capped packages that are associated with more than one vendor
+        Changes their names to be unique
+        Translates all instances in dictionaries to match
+        """
+        df = aly_dict
+        if not df.empty:
+            t_df = pd.DataFrame({dctc.DICT_COL_NAME: [],
+                                 dctc.DICT_COL_VALUE: [],
+                                 dctc.DICT_COL_NVALUE: [],
+                                 dctc.DICT_COL_FNC: [],
+                                 dctc.DICT_COL_SEL: [], 'index': []})
+            t_df[dctc.DICT_COL_SEL] = df[dctc.VEN]
+            t_df[dctc.DICT_COL_NAME] = temp_package_cap
+            t_df[dctc.DICT_COL_VALUE] = df[temp_package_cap]
+            for temp_package_cap in df[[temp_package_cap]]:
+                df[temp_package_cap] = df[temp_package_cap] + '-' + df[dctc.VEN]
+                df[self.net_cost_capped] = pdf[self.plan_net_temp]
+            df = df[[temp_package_cap, self.net_cost_capped]]
+            df.replace(to_replace=np.NaN,
+                       value=df.loc[0],
+                       inplace=True)
+            path = c[cap_file.file_name]
+            df.to_csv(path, index=False, encoding='utf-8')
+            t_df[dctc.DICT_COL_NVALUE] = df[temp_package_cap]
+            t_df[dctc.DICT_COL_FNC] = 'Select::mpVendor'
+            t_df = t_df[[dctc.DICT_COL_NAME, dctc.DICT_COL_VALUE,
+                         dctc.DICT_COL_NVALUE, dctc.DICT_COL_FNC,
+                         dctc.DICT_COL_SEL]]
+            if write:
+                tc = dct.DictTranslationConfig().csv_path
+                translation = dct.DictTranslationConfig()
+                trans_dict = pd.read_csv(tc + dctc.filename_tran_config)
+                trans_dict = trans_dict.append(t_df)
+                translation.write(trans_dict, dctc.filename_tran_config)
+                fix_msg = 'Automatically changing capped package names:'
+                logging.info('{}\n{}'.format(fix_msg, t_df))
+            return t_df
+
+    def do_analysis(self):
+        try:
+            df, temp_package_cap, c, pdf, cap_file = self.initialize_cap_file()
+        except TypeError:
+            logging.debug("cap config file is missing")
+            return None
+        except AttributeError:
+            logging.debug("one of the files may be empty")
+            return None
+        except KeyError:
+            logging.debug("mpPlacement name does not exist")
+            return None
+        self.check_package_cap(df, temp_package_cap)
+        self.check_package_vendor(df, temp_package_cap, pdf)
+
+    def fix_analysis(self, aly_dict, write=True):
+        try:
+            df, temp_package_cap, c, pdf, cap_file = self.initialize_cap_file()
+        except TypeError:
+            logging.debug("cap config file is missing")
+            return None
+        except AttributeError:
+            logging.debug("one of the files may be empty")
+            return None
+        except KeyError:
+            logging.debug("mpPlacement name does not exist")
+            return None
+        self.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
+                                write=write, aly_dict=aly_dict)
+
+
 class FindPlacementNameCol(AnalyzeBase):
     name = Analyze.placement_col
     fix = True
+    new_files = True
 
     @staticmethod
     def do_analysis_on_data_source(source, df):
@@ -1063,7 +1329,7 @@ class FindPlacementNameCol(AnalyzeBase):
                 return df
             tdf = tdf.applymap(
                 lambda x: str(x).count('_')).apply(lambda x: sum(x))
-            max_col = tdf.idxmax(axis=1)
+            max_col = tdf.idxmax()
             max_exists = max_col in tdf
             p_exists = p_col in tdf
             no_p_check = (not p_exists and max_exists)
@@ -1074,15 +1340,15 @@ class FindPlacementNameCol(AnalyzeBase):
                 data_dict = {vmc.vendorkey: [source.key],
                              'Current Placement Col': p_col,
                              'Suggested Col': max_col}
-                df = df.append(pd.DataFrame(data_dict),
-                               ignore_index=True, sort=False)
+                df.append(data_dict)
         return df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         for source in data_sources:
             df = self.do_analysis_on_data_source(source, df)
+        df = pd.DataFrame(df)
         if df.empty:
             msg = ('Placement Name columns look correct. '
                    'No columns w/ more breakouts.')
@@ -1185,7 +1451,7 @@ class CheckApiDateLength(AnalyzeBase):
                 idx, vmc.vendorkey][idx[0]].replace('API_', '')
             old_ed = new_sd - dt.timedelta(days=1)
             df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
-            df = df.append(ndf).reset_index(drop=True)
+            df = pd.concat([df, ndf]).reset_index(drop=True)
         self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
@@ -1197,6 +1463,7 @@ class CheckColumnNames(AnalyzeBase):
     name = Analyze.raw_columns
     fix = True
     pre_run = True
+    new_files = True
 
     def do_analysis(self):
         """
@@ -1204,7 +1471,7 @@ class CheckColumnNames(AnalyzeBase):
         missing active metrics.
         """
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        data = []
         for source in data_sources:
             if vmc.firstrow not in source.p:
                 continue
@@ -1223,12 +1490,12 @@ class CheckColumnNames(AnalyzeBase):
                 for c in v:
                     if c not in cols:
                         missing_cols.append({k: c})
-            data_dict = {vmc.vendorkey: [source.key], self.name: [cols],
-                         'missing': [missing_cols]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+            data_dict = {vmc.vendorkey: source.key, self.name: cols,
+                         'missing': missing_cols}
+            data.append(data_dict)
+        df = pd.DataFrame(data)
         update_msg = 'Columns and missing columns by key as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        logging.info('{}\n{}'.format(update_msg, df))
         self.add_to_analysis_dict(df=df, msg=update_msg)
 
     def fix_analysis(self, aly_dict, write=True):
@@ -1330,7 +1597,7 @@ class CheckFlatSpends(AnalyzeBase):
                     (df[dctc.BM] == cal.BM_FLAT2)]
         if not df.empty:
             pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
-            tdf = df.groupby(pk_groups).sum()
+            tdf = df.groupby(pk_groups).sum(numeric_only=True)
             tdf.reset_index(inplace=True)
             tdf = tdf[tdf[cal.NCF] == 0]
             df = df.merge(tdf[pk_groups], how='right')
@@ -1343,7 +1610,7 @@ class CheckFlatSpends(AnalyzeBase):
                     return pd.DataFrame()
                 tdf = tdf.drop(columns=[cal.NCF])
                 tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
-                df = df.groupby(pn_groups).sum()
+                df = df.groupby(pn_groups).sum(numeric_only=True)
                 df.reset_index(inplace=True)
                 df = utl.data_to_type(df, date_col=[dctc.PD])
                 df = self.merge_first_click_date(df, tdf, pn_groups)
@@ -1361,8 +1628,8 @@ class CheckFlatSpends(AnalyzeBase):
                     ndf = df[df['_merge'] == 'left_only']
                     ndf = ndf.drop(columns=['_merge'])
                     ndf[self.error_col] = self.missing_clicks_error
-                    df = cdf.append(rdf, sort=False)
-                    df = df.append(ndf, sort=False)
+                    df = pd.concat([cdf, rdf], ignore_index=True)
+                    df = pd.concat([df, ndf], ignore_index=True)
                     df = df.reset_index(drop=True)
                     df = df.dropna(how='all')
                     df = df.fillna('')
@@ -1407,17 +1674,16 @@ class CheckFlatSpends(AnalyzeBase):
                 try:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN], 0]]
+                              aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
-                    tdf = tdf.append(row, ignore_index=True, sort=False)
+                    tdf = pd.concat([tdf, row], ignore_index=True)
                 except AssertionError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
-                    tdf = tdf.append(row, ignore_index=True, sort=False)
-        translation_df = translation_df.append(
-            tdf, ignore_index=True, sort=False)
+                    tdf = pd.concat([tdf, row], ignore_index=True)
+        translation_df = pd.concat([translation_df, tdf], ignore_index=True)
         if write:
             translation.write(translation_df, dctc.filename_tran_config)
         return tdf
@@ -1457,6 +1723,8 @@ class CheckDoubleCounting(AnalyzeBase):
         df = self.aly.generate_df_table(groups, metrics, sort=None,
                                         data_filter=None, df=df)
         df.reset_index(inplace=True)
+        if df.empty:
+            return df
         sdf = self.count_unique_placements(df, self.total_placement_count)
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
         df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
@@ -1728,7 +1996,12 @@ class GetPacingAnalysis(AnalyzeBase):
         average_df = average_df.drop(columns=[vmc.cost])
         start_dates, end_dates = self.aly.get_start_end_dates(
             df, plan_names)
-        df = df.groupby(plan_names)[vmc.cost, dctc.PNC, vmc.AD_COST].sum()
+        cols = [vmc.cost, dctc.PNC, vmc.AD_COST]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if missing_cols:
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df.groupby(plan_names)[cols].sum()
         df = df.reset_index()
         df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
         tdf = df[df[dctc.PNC] > df[vmc.cost]]
@@ -1910,6 +2183,50 @@ class GetServingAlerts(AnalyzeBase):
                                       message=msg, data=df.to_dict())
 
 
+class CheckRawFileUpdateTime(AnalyzeBase):
+    name = Analyze.raw_file_update_col
+    update_tier_today = 'Today'
+    update_tier_week = 'Within A Week'
+    update_tier_greater_week = 'Greater Than One Week'
+    update_tier_never = 'Never'
+    update_time_col = 'update_time'
+    update_tier_col = 'update_tier'
+    last_update_does_not_exist = 'Does Not Exist'
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = []
+        for source in data_sources:
+            if vmc.filename not in source.p:
+                continue
+            file_name = source.p[vmc.filename]
+            if os.path.exists(file_name):
+                t = os.path.getmtime(file_name)
+                last_update = dt.datetime.fromtimestamp(t)
+                if last_update.date() == dt.datetime.today().date():
+                    update_tier = self.update_tier_today
+                elif last_update.date() > (
+                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                    update_tier = self.update_tier_week
+                else:
+                    update_tier = self.update_tier_greater_week
+            else:
+                last_update = self.last_update_does_not_exist
+                update_tier = self.update_tier_never
+            data_dict = {vmc.vendorkey: source.key,
+                         self.update_time_col: last_update,
+                         self.update_tier_col: update_tier}
+            df.append(data_dict)
+        df = pd.DataFrame(df)
+        if df.empty:
+            return False
+        df[self.update_time_col] = df[self.update_time_col].astype('U')
+        update_msg = 'Raw File update times and tiers are as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=update_msg, data=df.to_dict())
+
+
 class GetDailyPacingAlerts(AnalyzeBase):
     name = Analyze.placement_col
     fix = False
@@ -1989,9 +2306,10 @@ class ValueCalc(object):
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Purchase', 'Net Cost Final/Impressions',
-                   'Video Views 100/Video Views', 'Net Cost Final/Video Views']
+                   'Net Cost Final/Video Views 100',
+                   'Net Cost Final/Landing Page', 'Net Cost Final/Purchase',
+                   'Net Cost Final/Impressions', 'Video Views 100/Video Views',
+                   'Net Cost Final/Video Views']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
@@ -2015,23 +2333,19 @@ class ValueCalc(object):
              self.calculations[x][self.metric_name] == metric_name][0]
         return f
 
-    def calculate_all_metrics(self, metric_names, df=None, db_translate=None):
-        if db_translate:
-            tdf = pd.read_csv(os.path.join('config', 'db_df_translation.csv'))
-            db_translate = dict(
-                zip(tdf[exc.translation_df], tdf[exc.translation_db]))
+    def calculate_all_metrics(self, metric_names, df=None, db_translate=False):
         for metric_name in metric_names:
-            df = self.calculate_metric(metric_name, df,
-                                       db_translate=db_translate)
+            if metric_name in self.metric_names:
+                df = self.calculate_metric(metric_name, df,
+                                           db_translate=db_translate)
         return df
 
-    def calculate_metric(self, metric_name, df=None, db_translate=None):
+    def calculate_metric(self, metric_name, df=None, db_translate=False):
         col = metric_name
         formula = self.get_metric_formula(metric_name)
         current_op = None
         if db_translate:
-            formula = [db_translate[x] if x in formula[::2] else x
-                       for x in formula]
+            formula = list(utl.db_df_translation(formula).values())
         for item in formula:
             if item.lower() == 'impressions' and 'Clicks' not in formula:
                 df[item] = df[item] / 1000
@@ -2049,3 +2363,33 @@ class ValueCalc(object):
                     df[item] = 0
                 df[col] = df[item]
         return df
+
+
+class AliChat(object):
+    def __init__(self, config_name='openai.json', config_path='reporting'):
+        self.config_name = config_name
+        self.config_path = config_path
+        self.config = self.load_config(self.config_name, self.config_path)
+
+    @staticmethod
+    def load_config(config_name='openai.json', config_path='reporting'):
+        file_name = os.path.join(config_path, config_name)
+        try:
+            with open(file_name, 'r') as f:
+                config = json.load(f)
+        except IOError:
+            logging.error('{} not found.'.format(file_name))
+        return config
+
+    def get_response(self, message):
+        openai.api_key = self.config['SECRET_KEY']
+        prompt = f"User: {message}\nAI:"
+        response = openai.Completion.create(
+            engine="text-davinci-002",
+            prompt=prompt,
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        )
+        return response.choices[0].text.strip()

@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import yaml
 import urllib
@@ -31,36 +30,39 @@ class VendorMatrix(object):
         self.vm = None
         self.vm_df = pd.DataFrame()
         self.vl = []
-        self.api_fb_key = []
-        self.api_aw_key = []
-        self.api_tw_key = []
-        self.api_ttd_key = []
-        self.api_ga_key = []
-        self.api_nb_key = []
-        self.api_af_key = []
-        self.api_sc_key = []
-        self.api_aj_key = []
-        self.api_dc_key = []
-        self.api_rs_key = []
-        self.api_db_key = []
-        self.api_vk_key = []
-        self.api_rc_key = []
-        self.api_szk_key = []
-        self.api_red_key = []
-        self.api_dv_key = []
-        self.api_adk_key = []
-        self.api_inn_key = []
-        self.api_tik_key = []
-        self.api_amz_key = []
-        self.api_cri_key = []
-        self.api_pm_key = []
-        self.api_sam_key = []
-        self.api_gs_key = []
-        self.api_qt_key = []
-        self.api_yv_key = []
-        self.api_amd_key = []
-        self.api_ss_key = []
-        self.api_ytd_key = []
+        self.vks = {
+            vmc.api_fb_key: [],
+            vmc.api_aw_key: [],
+            vmc.api_tw_key: [],
+            vmc.api_ttd_key: [],
+            vmc.api_ga_key: [],
+            vmc.api_nb_key: [],
+            vmc.api_af_key: [],
+            vmc.api_sc_key: [],
+            vmc.api_aj_key: [],
+            vmc.api_dc_key: [],
+            vmc.api_rs_key: [],
+            vmc.api_db_key: [],
+            vmc.api_vk_key: [],
+            vmc.api_rc_key: [],
+            vmc.api_szk_key: [],
+            vmc.api_red_key: [],
+            vmc.api_dv_key: [],
+            vmc.api_adk_key: [],
+            vmc.api_inn_key: [],
+            vmc.api_tik_key: [],
+            vmc.api_amz_key: [],
+            vmc.api_cri_key: [],
+            vmc.api_pm_key: [],
+            vmc.api_sam_key: [],
+            vmc.api_gs_key: [],
+            vmc.api_qt_key: [],
+            vmc.api_yv_key: [],
+            vmc.api_amd_key: [],
+            vmc.api_ss_key: [],
+            vmc.api_nz_key: [],
+            vmc.api_ytd_key: []
+        }
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -124,66 +126,8 @@ class VendorMatrix(object):
         for vk in self.vl:
             vk_split = {vk: vk.split('_')}
             if vk_split[vk][0] == 'API':
-                if vk_split[vk][1] == vmc.api_aw_key:
-                    self.api_aw_key.append(vk)
-                if vk_split[vk][1] == vmc.api_fb_key:
-                    self.api_fb_key.append(vk)
-                if vk_split[vk][1] == vmc.api_tw_key:
-                    self.api_tw_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ttd_key:
-                    self.api_ttd_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ga_key:
-                    self.api_ga_key.append(vk)
-                if vk_split[vk][1] == vmc.api_nb_key:
-                    self.api_nb_key.append(vk)
-                if vk_split[vk][1] == vmc.api_af_key:
-                    self.api_af_key.append(vk)
-                if vk_split[vk][1] == vmc.api_sc_key:
-                    self.api_sc_key.append(vk)
-                if vk_split[vk][1] == vmc.api_aj_key:
-                    self.api_aj_key.append(vk)
-                if vk_split[vk][1] == vmc.api_dc_key:
-                    self.api_dc_key.append(vk)
-                if vk_split[vk][1] == vmc.api_rs_key:
-                    self.api_rs_key.append(vk)
-                if vk_split[vk][1] == vmc.api_db_key:
-                    self.api_db_key.append(vk)
-                if vk_split[vk][1] == vmc.api_vk_key:
-                    self.api_vk_key.append(vk)
-                if vk_split[vk][1] == vmc.api_rc_key:
-                    self.api_rc_key.append(vk)
-                if vk_split[vk][1] == vmc.api_szk_key:
-                    self.api_szk_key.append(vk)
-                if vk_split[vk][1] == vmc.api_red_key:
-                    self.api_red_key.append(vk)
-                if vk_split[vk][1] == vmc.api_dv_key:
-                    self.api_dv_key.append(vk)
-                if vk_split[vk][1] == vmc.api_adk_key:
-                    self.api_adk_key.append(vk)
-                if vk_split[vk][1] == vmc.api_inn_key:
-                    self.api_inn_key.append(vk)
-                if vk_split[vk][1] == vmc.api_tik_key:
-                    self.api_tik_key.append(vk)
-                if vk_split[vk][1] == vmc.api_amz_key:
-                    self.api_amz_key.append(vk)
-                if vk_split[vk][1] == vmc.api_cri_key:
-                    self.api_cri_key.append(vk)
-                if vk_split[vk][1] == vmc.api_pm_key:
-                    self.api_pm_key.append(vk)
-                if vk_split[vk][1] == vmc.api_sam_key:
-                    self.api_sam_key.append(vk)
-                if vk_split[vk][1] == vmc.api_gs_key:
-                    self.api_gs_key.append(vk)
-                if vk_split[vk][1] == vmc.api_qt_key:
-                    self.api_qt_key.append(vk)
-                if vk_split[vk][1] == vmc.api_yv_key:
-                    self.api_yv_key.append(vk)
-                if vk_split[vk][1] == vmc.api_amd_key:
-                    self.api_amd_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ss_key:
-                    self.api_ss_key.append(vk)
-                if vk_split[vk][1] == vmc.api_ytd_key:
-                    self.api_ytd_key.append(vk)
+                if vk_split[vk][1] in self.vks.keys():
+                    self.vks[vk_split[vk][1]].append(vk)
             if vk_split[vk][0] == 'FTP':
                 if vk_split[vk][1] == 'Sizmek':
                     self.ftp_sz_key.append(vk)
@@ -308,7 +252,8 @@ class VendorMatrix(object):
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
-            self.df = self.df.append(self.tdf, ignore_index=True, sort=True)
+            self.df = pd.concat([self.df, self.tdf], ignore_index=True,
+                                sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csv_path):
@@ -344,6 +289,7 @@ class ImportConfig(object):
     account_id_parent = 'ID Parent'
     account_id_pre = 'ID Pre'
     file_name = 'import_config.csv'
+    name = 'name'
     file_path = utl.config_path
 
     def __init__(self, matrix=None, default_param_ic=None, base_path=None):
@@ -493,8 +439,8 @@ class ImportConfig(object):
         df[vmc.startdate] = start_date
         if api_fields:
             df[vmc.apifields] = api_fields
-        self.matrix_df = self.matrix_df.append(df, ignore_index=True,
-                                               sort=False)
+        self.matrix_df = pd.concat(
+            [self.matrix_df, df], ignore_index=True, sort=False)
         return df[vmc.vendorkey][0]
 
     def add_import_to_vm(self, import_key, account_id, import_filter=None,
@@ -504,7 +450,7 @@ class ImportConfig(object):
             params[self.config_file], key_name)
         file_name = self.get_new_name(search_col=vmc.apifile,
                                       search_val=search_name)
-        if account_id:
+        if account_id or import_key in vmc.no_account_apis:
             self.make_new_config(params, file_name, account_id, import_filter)
         vk = self.add_to_vm(import_key, file_name, start_date, api_fields,
                             key_name)
@@ -522,7 +468,7 @@ class ImportConfig(object):
                     self.update_import(import_dict, cur_import)
                 else:
                     key_name = 'API_{}_{}'.format(cur_import[self.key],
-                                                  cur_import['name'])
+                                                  cur_import[self.name])
                     drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
                                               key_name].copy()
                     drop_idx = drop_idx.index.values[0]
@@ -541,7 +487,7 @@ class ImportConfig(object):
             import_filter = import_dict[self.filter]
             start_date = import_dict[vmc.startdate]
             api_fields = import_dict[vmc.apifields]
-            key_name = import_dict['name']
+            key_name = import_dict[self.name]
             vk = self.add_import_to_vm(import_key, account_id, import_filter,
                                        start_date, api_fields, key_name)
             vks.append(vk)
@@ -555,11 +501,11 @@ class ImportConfig(object):
         up_idx = up_idx.index.values[0]
         for col in [vmc.startdate, vmc.apifields]:
             self.matrix_df.loc[up_idx, col] = import_dict[col]
-        if import_dict['name'] != old_import_dict['name']:
+        if import_dict[self.name] != old_import_dict[self.name]:
             for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
                 self.matrix_df.loc[up_idx, col] = \
                     self.matrix_df.loc[up_idx, col].replace(
-                        old_import_dict['name'], import_dict['name'])
+                        old_import_dict[self.name], import_dict[self.name])
         file_name = self.matrix_df.loc[up_idx, vmc.apifile]
         if not ((import_dict[self.account_id] ==
                  old_import_dict[self.account_id]) and
@@ -599,7 +545,7 @@ class ImportConfig(object):
             self.filter: filter_val,
             vmc.startdate: start_date,
             vmc.apifields: api_fields,
-            'name': api_key_name
+            self.name: api_key_name
         }
         return import_dict
 
@@ -786,7 +732,7 @@ class DataSource(object):
         return error
 
     def get_and_merge_dictionary(self, df):
-        dic = dct.Dict(self.p[vmc.filenamedict])
+        dic = dct.Dict(self.p[vmc.filenamedict], self.key, df)
         err = er.ErrorReport(df, dic, self.p[vmc.placement],
                              self.p[vmc.filenameerror])
         rc = dct.RelationalConfig()
@@ -846,8 +792,9 @@ class DataSource(object):
             ic = ImportConfig(matrix=matrix)
         current_imports = ic.get_current_imports(matrix=True)
         for x in current_imports:
-            possible_keys = ['{}{}_{}'.format(import_type, x['Key'], x['name']),
-                             '{}{}{}'.format(import_type, x['Key'], x['name'])]
+            name_part = [import_type, x[ImportConfig.key], x[ImportConfig.name]]
+            vk_formats = ['{}{}_{}', '{}{}{}']
+            possible_keys = [y.format(*name_part) for y in vk_formats]
             if self.key in possible_keys:
                 self.ic_params = x
                 return self.ic_params
@@ -1021,7 +968,7 @@ def df_single_transform(df, transform):
             tdf.columns = tdf.loc[0]
             tdf = tdf.iloc[1:]
             tdf[header_col_name] = x
-            ndf = ndf.append(tdf)
+            ndf = pd.concat([ndf, tdf])
         df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
     if transform_type == 'Melt':
