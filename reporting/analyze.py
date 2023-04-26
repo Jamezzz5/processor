@@ -1522,7 +1522,7 @@ class CheckColumnNames(AnalyzeBase):
                     self.matrix = vm.VendorMatrix(display_log=False)
                     source = self.matrix.get_data_source(vk)
                     cad = CheckAutoDictOrder(self.aly)
-                    tdf = cad.do_analysis_on_data_source(source, pd.DataFrame())
+                    tdf = cad.do_analysis_on_data_source(source, [])
                     if not tdf.empty:
                         tdf = tdf.to_dict(orient='records')[0]
                         cad.fix_analysis_for_data_source(tdf, True)
@@ -1626,8 +1626,11 @@ class CheckFlatSpends(AnalyzeBase):
                     df = pd.concat([df, ndf], ignore_index=True)
                     df = df.reset_index(drop=True)
                     df = df.dropna(how='all')
-                    if not df.empty:
-                        df = df.fillna('')
+                    for col in df.columns:
+                        try:
+                            df[col] = df[col].fillna('')
+                        except TypeError as e:
+                            logging.warning('Error for {}: {}'.format(col, e))
         df = utl.data_to_type(df, str_col=[dctc.PD, self.first_click_col])
         return df
 
