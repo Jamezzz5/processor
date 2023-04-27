@@ -1523,6 +1523,7 @@ class CheckColumnNames(AnalyzeBase):
                     source = self.matrix.get_data_source(vk)
                     cad = CheckAutoDictOrder(self.aly)
                     tdf = cad.do_analysis_on_data_source(source, [])
+                    tdf = pd.DataFrame(tdf)
                     if not tdf.empty:
                         tdf = tdf.to_dict(orient='records')[0]
                         cad.fix_analysis_for_data_source(tdf, True)
