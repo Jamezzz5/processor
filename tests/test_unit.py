@@ -81,7 +81,8 @@ class TestUtils:
         nat_list = ['0', '1/32/22', '30/11/22', '2022-1-32', '29269885']
         str_list = ['1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
                     '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
-                    'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22']
+                    'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22',
+                    '2022-01-01 00:00:00']
         str_list = nat_list + str_list
         float_list = [str(x) for x in range(len(str_list))]
         df_dict = {str_col: str_list, float_col: float_list,

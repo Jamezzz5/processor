@@ -152,6 +152,9 @@ def string_to_date(my_string):
     elif (('-' in my_string) and (my_string[:2] == '20') and
           len(my_string) == 10):
         return dt.datetime.strptime(my_string, '%Y-%m-%d')
+    elif ((len(my_string) == 19) and (my_string[:2] == '20') and
+          ('-' in my_string) and (':' in my_string)):
+        return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
     else:
         return my_string
 
