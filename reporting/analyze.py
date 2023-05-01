@@ -1143,6 +1143,33 @@ class FindBlankLines(AnalyzeBase):
                 break
         return l_df
 
+    @staticmethod
+    def check_total_row_exists(source, df):
+        """
+        Sums all impressions and clicks in every row except last
+        compares to the values in last row
+        if equal returns True
+        """
+        if vmc.filename not in source.p:
+            return None
+        raw_file = source.p[vmc.filename]
+        df = utl.import_read_csv(raw_file)
+        if df.empty:
+            return None
+        active_metrics = source.get_active_metrics()
+        active_metrics = [x for x in active_metrics if x in df.columns]
+        try:
+            df = df[[active_metrics]]
+        except KeyError:
+            logging.debug("active metrics may be missing or mislabeled")
+            return None
+        col_sums = df.iloc[:-1, :].sum()
+        totals_row = df.iloc[-1, :]
+        if (col_sums == totals_row).all():
+            return True
+        else:
+            return False
+
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
