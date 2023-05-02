@@ -95,7 +95,7 @@ class Analyze(object):
             CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
             CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
             GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
-            FindBlankLines]
+            CheckFirstRow]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1102,7 +1102,7 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
-class FindBlankLines(AnalyzeBase):
+class CheckFirstRow(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
     new_files = True
@@ -1138,37 +1138,9 @@ class FindBlankLines(AnalyzeBase):
                 new_first_row = str(idx)
                 data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
                                           self.new_first_line: [new_first_row]})
-                l_df = l_df.append(pd.DataFrame(data_dict),
-                                   ignore_index=True, sort=False)
+                l_df = pd.concat([data_dict, l_df], ignore_index=True)
                 break
         return l_df
-
-    @staticmethod
-    def check_total_row_exists(source, df):
-        """
-        Sums all impressions and clicks in every row except last
-        compares to the values in last row
-        if equal returns True
-        """
-        if vmc.filename not in source.p:
-            return None
-        raw_file = source.p[vmc.filename]
-        df = utl.import_read_csv(raw_file)
-        if df.empty:
-            return None
-        active_metrics = source.get_active_metrics()
-        active_metrics = [x for x in active_metrics if x in df.columns]
-        try:
-            df = df[[active_metrics]]
-        except KeyError:
-            logging.debug("active metrics may be missing or mislabeled")
-            return None
-        col_sums = df.iloc[:-1, :].sum()
-        totals_row = df.iloc[-1, :]
-        if (col_sums == totals_row).all():
-            return True
-        else:
-            return False
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1176,9 +1148,9 @@ class FindBlankLines(AnalyzeBase):
         for source in data_sources:
             df = self.find_first_row(source, df)
         if df.empty:
-            msg = 'All first rows seem correct'
+            msg = 'All first and last rows seem correct'
         else:
-            msg = 'Suggested new first row(s):'
+            msg = 'Suggested new row adjustments:'
         logging.info('{}\n{}'.format(msg, df.to_string()))
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
