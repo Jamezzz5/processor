@@ -624,3 +624,9 @@ def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
                 os.mkdir(new_file)
             copy_tree_no_overwrite(old_file, new_file, log=False,
                                    overwrite=overwrite)
+
+
+def lower_words_from_str(word_str):
+    words = re.findall(r"[\w']+|[.,!?;]", word_str)
+    words = [x.lower() for x in words]
+    return words

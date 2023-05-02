@@ -2365,6 +2365,9 @@ class ValueCalc(object):
 
 
 class AliChat(object):
+    openai_msg = 'I had trouble understanding but the openai gpt response is:'
+    found_model_msg = 'Here are some links:'
+
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
         self.config_path = config_path
@@ -2380,7 +2383,7 @@ class AliChat(object):
             logging.error('{} not found.'.format(file_name))
         return config
 
-    def get_response(self, message):
+    def get_openai_response(self, message):
         openai.api_key = self.config['SECRET_KEY']
         prompt = f"User: {message}\nAI:"
         response = openai.Completion.create(
@@ -2392,3 +2395,57 @@ class AliChat(object):
             temperature=0.5,
         )
         return response.choices[0].text.strip()
+
+    @staticmethod
+    def index_db_model_by_word(db_model):
+        word_idx = {}
+        db_all = db_model.query.all()
+        for obj in db_all:
+            words = utl.lower_words_from_str(obj.name)
+            for word in words:
+                if word in word_idx:
+                    word_idx[word].append(obj.id)
+                else:
+                    word_idx[word] = [obj.id]
+        return word_idx
+
+    def convert_model_ids_to_message(self, db_model, model_ids):
+        message = self.found_model_msg + '<br>'
+        html_response = ''
+        for idx, model_id in enumerate(model_ids):
+            obj = db_model.query.get(model_id)
+            html_response += """
+                {}.  <a href="{}" target="_blank">{}</a><br>
+                """.format(idx + 1, obj.get_url(), obj.name)
+        return message, html_response
+
+    def search_db_models(self, db_model, message):
+        response = None
+        html_response = None
+        word_idx = self.index_db_model_by_word(db_model)
+        words = utl.lower_words_from_str(message)
+        model_ids = {}
+        for word in words:
+            if word in word_idx:
+                new_model_ids = word_idx[word]
+                for new_model_id in new_model_ids:
+                    if new_model_id in model_ids:
+                        model_ids[new_model_id] += 1
+                    else:
+                        model_ids[new_model_id] = 1
+        if model_ids:
+            response, html_response = self.convert_model_ids_to_message(
+                db_model, model_ids)
+        return response, html_response
+
+    def get_response(self, message, models_to_search=None):
+        response = None
+        html_response = None
+        if models_to_search:
+            for db_model in models_to_search:
+                response, html_response = self.search_db_models(db_model,
+                                                                message)
+        if not response:
+            response = self.get_openai_response(message)
+            response = '{}\n{}'.format(self.openai_msg, response)
+        return response, html_response
