@@ -1328,8 +1328,6 @@ class CheckPackageCapping(AnalyzeBase):
             df = df[[temp_package_cap, c[cap_file.file_metric]]]
             df = df.fillna(0)
             path = c[cap_file.file_name]
-            print(pdf)
-            print(df)
             df = pd.concat([pdf, df])
             df.to_csv(path, index=False, encoding='utf-8')
             t_df[dctc.DICT_COL_NVALUE] = df[temp_package_cap].copy()
@@ -1705,6 +1703,8 @@ class CheckFlatSpends(AnalyzeBase):
                     df = pd.concat([df, ndf], ignore_index=True)
                     df = df.reset_index(drop=True)
                     df = df.dropna(how='all')
+                    df_cols = [x for x in df.columns if x != '_merge']
+                    df = df[df_cols]
                     for col in df.columns:
                         try:
                             df[col] = df[col].fillna('')
