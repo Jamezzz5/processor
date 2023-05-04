@@ -2367,10 +2367,13 @@ class ValueCalc(object):
 class AliChat(object):
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
     found_model_msg = 'Here are some links:'
+    create_success_msg = 'The object has been successfully created: '
 
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
         self.config_path = config_path
+        self.db = None
+        self.current_user = None
         self.config = self.load_config(self.config_name, self.config_path)
 
     @staticmethod
@@ -2409,8 +2412,8 @@ class AliChat(object):
                     word_idx[word] = [obj.id]
         return word_idx
 
-    def convert_model_ids_to_message(self, db_model, model_ids):
-        message = self.found_model_msg + '<br>'
+    def convert_model_ids_to_message(self, db_model, model_ids, message=''):
+        message = message + '<br>'
         html_response = ''
         for idx, model_id in enumerate(model_ids):
             obj = db_model.query.get(model_id)
@@ -2419,9 +2422,7 @@ class AliChat(object):
                 """.format(idx + 1, obj.get_url(), obj.name)
         return message, html_response
 
-    def search_db_models(self, db_model, message):
-        response = None
-        html_response = None
+    def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
         words = utl.lower_words_from_str(message)
         model_ids = {}
@@ -2435,16 +2436,73 @@ class AliChat(object):
                         model_ids[new_model_id] = 1
         if model_ids:
             response, html_response = self.convert_model_ids_to_message(
-                db_model, model_ids)
+                db_model, model_ids, self.found_model_msg)
         return response, html_response
 
-    def get_response(self, message, models_to_search=None):
+    @staticmethod
+    def db_model_name_in_message(message, db_model):
+        words = utl.lower_words_from_str(message)
+        db_model_name = db_model.get_name_list()
+        in_message = utl.is_list_in_list(db_model_name, words)
+        return in_message
+
+    def create_db_model(self, db_model, message, response, html_response):
+        create_words = ['create', 'make', 'new']
+        words = utl.lower_words_from_str(message)
+        is_create = utl.is_list_in_list(create_words, words)
+        if is_create:
+            name_words = ['named', 'called', 'name', 'title']
+            name = [words[idx + 1] for idx, x in enumerate(words) if
+                    x in name_words]
+            new_model = db_model(name=name[0], user_id=self.current_user.id)
+            self.db.session.add(new_model)
+            self.db.session.commit()
+            db_model_child = new_model.get_children()
+            child_list = db_model_child.get_name_list()
+            child_name = [x for x in words if x in child_list]
+            if not child_name:
+                child_name = child_list
+            new_child = db_model_child()
+            new_child.set_from_form({'name': child_name[0]}, new_model)
+            self.db.session.add(new_child)
+            self.db.session.commit()
+            db_model_g_child = new_child.get_children()
+            partner_list, partner_type_list = db_model_g_child.get_name_list()
+            p_list = [x for x in partner_list if
+                      x[next(iter(partner_list[0]))].lower() in words]
+            for g_child in p_list:
+                new_g_child = db_model_g_child()
+                new_g_child.set_from_form(g_child, new_child)
+                self.db.session.add(new_g_child)
+                self.db.session.commit()
+            response, html_response = self.convert_model_ids_to_message(
+                db_model, [new_model.id], self.create_success_msg)
+        return response, html_response
+
+    def db_model_response_functions(self, db_model, message):
+        response = False
+        html_response = False
+        model_functions = [self.create_db_model, self.search_db_models]
+        args = [db_model, message, response, html_response]
+        for model_func in model_functions:
+            response, html_response = model_func(*args)
+            if response:
+                break
+        return response, html_response
+
+    def get_response(self, message, models_to_search=None, db=None,
+                     current_user=None):
+        self.db = db
+        self.current_user = current_user
         response = None
         html_response = None
         if models_to_search:
             for db_model in models_to_search:
-                response, html_response = self.search_db_models(db_model,
-                                                                message)
+                in_message = self.db_model_name_in_message(message, db_model)
+                if in_message:
+                    response, html_response = self.db_model_response_functions(
+                        db_model, message)
+                    break
         if not response:
             response = self.get_openai_response(message)
             response = '{}\n{}'.format(self.openai_msg, response)

@@ -630,3 +630,22 @@ def lower_words_from_str(word_str):
     words = re.findall(r"[\w']+|[.,!?;]", word_str)
     words = [x.lower() for x in words]
     return words
+
+
+def index_words_from_list(word_list, word_idx, obj_to_append):
+    if not word_idx:
+        word_idx = {}
+    for word in word_list:
+        if word in word_idx:
+            word_idx[word].append(obj_to_append)
+        else:
+            word_idx[word] = [obj_to_append]
+    return word_idx
+
+
+def is_list_in_list(first_list, second_list):
+    in_list = False
+    name_in_list = [x for x in first_list if x in second_list]
+    if name_in_list:
+        in_list = True
+    return in_list
