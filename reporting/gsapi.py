@@ -20,6 +20,7 @@ class GsApi(object):
     para_str = 'paragraph'
     head_str = 'header'
     doc_str = 'Doc'
+    text_format = 'NORMAL_TEXT'
 
     def __init__(self):
         self.config = None
@@ -219,3 +220,100 @@ class GsApi(object):
                         new_paragraph[self.cont_str] = ''
         self.df = pd.DataFrame(paragraph)
         return self.df
+
+    def create_google_doc(self, title=None):
+        logging.info('Creating GSlides Presentation: {}'.format(title))
+        body = {
+            "title": title,
+        }
+        response = self.client.post(url=self.docs_url, json=body)
+        response = response.json()
+        doc_id = response["documentId"]
+        self.add_permissions(doc_id)
+        return doc_id
+
+    @staticmethod
+    def get_format_req(start_ind=1, end_ind=1, style=text_format):
+        format_req = {
+            "updateParagraphStyle": {
+                "range": {
+                    "startIndex": start_ind,
+                    "endIndex": end_ind
+                },
+                "paragraphStyle": {
+                    "namedStyleType": style
+                },
+                "fields": "namedStyleType"
+            }
+        }
+        return format_req
+
+    @staticmethod
+    def fill_row(row, index):
+        row_requests = []
+        for cell in row:
+            if not str(cell).strip():
+                cell = '0'
+            row_requests.append({
+                "insertText":
+                    {
+                        "text": str(cell).strip(),
+                        "location":
+                            {
+                                "index": index
+                            }
+                    }
+            })
+            index += len(str(cell).strip()) + 2
+        index += 1
+        return row_requests, index
+
+    def add_table(self, data, index):
+        if not data:
+            return index
+        table_requests = [{'insertTable': {
+            'rows': len(data) + 1,
+            'columns': len(data[0]),
+            'endOfSegmentLocation': {
+                'segmentId': ''
+            }
+        }}]
+        index += 4
+        column_req, index = self.fill_row(data[0].keys(), index)
+        table_requests.append(column_req)
+        for row in data:
+            row_request, index = self.fill_row(row.values(), index)
+            table_requests += row_request
+        return table_requests, index - 1
+
+    def add_text(self, doc_id, text_json=None, index=1, newline=True):
+        logging.info('Adding text to doc.')
+        url = self.docs_url + "/" + doc_id + ":batchUpdate"
+        headers = {"Content-Type": "application/json"}
+        request = []
+        format_request = []
+        for item in text_json:
+            text = item['message']
+            if not text:
+                continue
+            if newline:
+                text += '\n'
+            request.append({
+                'insertText': {
+                    'location': {
+                        'index': index,
+                    },
+                    'text': text
+                }
+            })
+            style = item['format'] if 'format' in item else self.text_format
+            end_ind = index + len(text) - 1
+            format_request.append(self.get_format_req(index, end_ind, style))
+            index += len(text)
+            if 'data' in item:
+                table_req, index = self.add_table(item['data'], index=index)
+                request += table_req
+        request += format_request
+        body = {"requests": request}
+        response = self.client.post(url=url, json=body, headers=headers)
+        return response, body
