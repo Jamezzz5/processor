@@ -197,10 +197,10 @@ class RedApi(object):
 
     def set_metrics(self):
         logging.info('Setting metrics.')
-        metric_xpath = '//a[text()="{}"]'.format('Metrics')
+        metric_xpath = '//div[text()="{}"]'.format('Metrics')
         self.sw.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
-        apply_button_xpath = '//*[text()="Apply"]'
+        apply_button_xpath = '//div[text()="Apply"]'
         self.sw.click_on_xpath(apply_button_xpath)
 
     def export_to_csv(self):
