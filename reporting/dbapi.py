@@ -10,7 +10,7 @@ import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
-base_url = 'https://www.googleapis.com/doubleclickbidmanager/v1.1'
+base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 
 
 class DbApi(object):
@@ -44,6 +44,7 @@ class DbApi(object):
         self.refresh_url = None
         self.advertiser_id = None
         self.campaign_id = None
+        self.query_id = None
         self.report_id = None
         self.config_list = None
         self.client = None
@@ -124,12 +125,18 @@ class DbApi(object):
 
     @staticmethod
     def create_query_url():
-        query_url = '{}/query'.format(base_url)
+        query_url = '{}/queries'.format(base_url)
         return query_url
+
+    def create_run_url(self):
+        query_url = self.create_query_url()
+        full_url = '{}/{}:run'.format(query_url, self.query_id)
+        return full_url
 
     def create_url(self):
         query_url = self.create_query_url()
-        full_url = '{}/{}'.format(query_url, self.report_id)
+        full_url = '{}/{}/reports/{}'.format(query_url, self.query_id,
+                                             self.report_id)
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -137,6 +144,7 @@ class DbApi(object):
         if not report_created:
             logging.warning('Report was not created, check for errors.')
             return pd.DataFrame()
+        self.run_report()
         self.get_raw_data()
         self.check_empty_df()
         self.remove_footer()
@@ -158,27 +166,21 @@ class DbApi(object):
         self.parse_fields(sd, ed, fields)
         query_url = self.create_query_url()
         params = self.create_report_params()
-        metadata = self.create_report_metadata()
+        metadata = self.create_report_metadata(sd, ed)
         body = {
-            'kind': 'doubleclickbidmanager#query',
             'metadata': metadata,
             'params': params,
             'schedule': {
                 'frequency': 'ONE_TIME'},
-            "reportDataStartTimeMs": self.start_time,
-            "reportDataEndTimeMs": self.end_time,
-            "timezoneCode": 'America/Los_Angeles'
         }
         self.r = self.make_request(query_url, method='post', body=body)
         if 'queryId' not in self.r.json():
             logging.warning('queryId not in response:{}'.format(self.r.json()))
             return False
-        self.report_id = self.r.json()['queryId']
+        self.query_id = self.r.json()['queryId']
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
-        logging.info(
-            'Report created -- ID: {}. Pausing for 30s.'.format(self.report_id))
-        time.sleep(30)
+        logging.info('Query created -- ID: {}.'.format(self.query_id))
         return True
 
     def make_request(self, url, method, body=None):
@@ -204,35 +206,40 @@ class DbApi(object):
                 self.r = self.client.post(url)
         return self.r
 
-    def get_raw_data(self):
-        full_url = self.create_url()
-        self.r = self.make_request(full_url, method='post')
+    def run_report(self):
+        run_url = self.create_run_url()
         for x in range(1, 101):
-            self.r = self.make_request(full_url, method='get')
+            self.r = self.make_request(run_url, method='post')
             if 'metadata' in self.r.json().keys():
+                self.report_id = self.r.json()['key']['reportId']
                 break
             else:
                 logging.warning('Rate limit exceeded. Pausing. '
                                 'Response: {}'.format(self.r.json()))
                 time.sleep(60)
-        report_url = (self.r.json()['metadata']
-                      ['googleCloudStoragePathForLatestReport'])
-        if report_url:
-            logging.info('Found report url, downloading.')
-            self.df = utl.import_read_csv(report_url, file_check=False,
-                                          error_bad='warn')
-        else:
-            logging.warning('Report does not exist.  Create it.')
-            sys.exit(0)
+
+    def get_raw_data(self):
+        for x in range(1, 101):
+            full_url = self.create_url()
+            self.r = self.make_request(full_url, method='get')
+            if 'googleCloudStoragePath' in self.r.json()['metadata']:
+                report_url = (
+                    self.r.json()['metadata']['googleCloudStoragePath'])
+                logging.info('Found report url, downloading.')
+                self.df = utl.import_read_csv(report_url, file_check=False,
+                                              error_bad='warn')
+                return self.df
+            logging.info('Report unavailable.  Attempt {}.  '
+                         'Response: {}'.format(x, self.r.json()))
+            time.sleep(15)
 
     def create_report_params(self):
         params = {
             'filters': [{'type': 'FILTER_ADVERTISER',
                          'value': self.advertiser_id}],
             'groupBys': self.default_groups,
-            'includeInviteData': True,
             'metrics': self.default_metrics,
-            'type': 'TYPE_GENERAL'}
+            'type': 'STANDARD'}
         if self.campaign_id:
             campaign_filters = [
                 {'type': 'FILTER_MEDIA_PLAN',
@@ -240,11 +247,23 @@ class DbApi(object):
             params['filters'].extend(campaign_filters)
         return params
 
-    def create_report_metadata(self):
+    def create_report_metadata(self, sd, ed):
         report_name = '{}_{}_report'.format(
             self.advertiser_id, self.campaign_id)
         metadata = {
-            'dataRange': 'CUSTOM_DATES',
+            'dataRange': {
+                "range": "CUSTOM_DATES",
+                "customStartDate": {
+                    "year": sd.year,
+                    "month": sd.month,
+                    "day": sd.day
+                },
+                "customEndDate": {
+                    "year": ed.year,
+                    "month": ed.month,
+                    "day": ed.day
+                }
+            },
             'format': 'CSV',
             'title': report_name}
         return metadata
