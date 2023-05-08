@@ -271,6 +271,7 @@ class GsApi(object):
     def add_table(self, data, index):
         if not data:
             return index
+        start_ind = index
         table_requests = [{'insertTable': {
             'rows': len(data) + 1,
             'columns': len(data[0]),
@@ -284,6 +285,8 @@ class GsApi(object):
         for row in data:
             row_request, index = self.fill_row(row.values(), index)
             table_requests += row_request
+        table_requests.append(self.get_format_req(start_ind, index-1,
+                                                  self.text_format))
         return table_requests, index - 1
 
     def add_text(self, doc_id, text_json=None, index=1, newline=True):
