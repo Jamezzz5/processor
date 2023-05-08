@@ -779,6 +779,64 @@ class TestAnalyze:
         assert not df.empty
         assert df.equals(match_df)
 
+    def test_totals_exist(self):
+        file_name = 'lines_test.csv'
+        df = pd.DataFrame({'Clicks': [5, 4, 3, 2, 1, 15],
+                           'Imps': [10, 9, 8, 7, 6, 40]})
+        df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    vmc.clicks: 'Clicks',
+                    vmc.impressions: 'Imps',
+                    vmc.lastrow: '0'}
+        source.params = {vmc.clicks: 'Clicks',
+                         vmc.impressions: 'Imps'}
+        cbl = az.CheckLastRow(az.Analyze())
+        check_total = pd.DataFrame()
+        check_total = cbl.check_total_row_exists(source, check_total)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_last_line': ['1']})
+        os.remove(file_name)
+        assert check_total.equals(match_df)
+
+    def test_no_totals(self):
+        file_name = 'lines_test.csv'
+        df = pd.DataFrame({'Clicks': [5, 4, 3, 2, 1, 10],
+                           'Imps': [10, 9, 8, 7, 6, 40]})
+        df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    vmc.clicks: 'Clicks',
+                    vmc.impressions: 'Imps',
+                    vmc.lastrow: '0'}
+        source.params = {vmc.clicks: 'Clicks',
+                         vmc.impressions: 'Imps'}
+        cbl = az.CheckLastRow(az.Analyze())
+        check_total = pd.DataFrame()
+        check_total = cbl.check_total_row_exists(source, check_total)
+        match_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                 'new_last_line': ['0']})
+        os.remove(file_name)
+        assert check_total.empty
+
+    def test_wrong_metrics(self):
+        file_name = 'lines_test.csv'
+        df = pd.DataFrame({'Click': [5, 4, 3, 2, 1, 10],
+                           'Imps': [10, 9, 8, 7, 6, 40]})
+        df.to_csv(file_name)
+        source = vm.DataSource(vm_rules=None, key='Line_Test')
+        source.p = {vmc.filename: file_name,
+                    vmc.clicks: 'Clicks',
+                    vmc.impressions: 'Impressions',
+                    vmc.lastrow: '0'}
+        source.params = {vmc.clicks: 'Clicks',
+                         vmc.impressions: 'Impressions'}
+        cbl = az.CheckLastRow(az.Analyze())
+        check_total = pd.DataFrame()
+        check_total = cbl.check_total_row_exists(source, check_total)
+        os.remove(file_name)
+        assert check_total.empty
+
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
         aly.do_all_analysis()
