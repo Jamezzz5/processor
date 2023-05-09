@@ -2442,9 +2442,30 @@ class AliChat(object):
     @staticmethod
     def db_model_name_in_message(message, db_model):
         words = utl.lower_words_from_str(message)
-        db_model_name = db_model.get_name_list()
+        db_model_name = db_model.get_model_name_list()
         in_message = utl.is_list_in_list(db_model_name, words)
         return in_message
+
+    def get_parent_for_db_model(self, db_model, words):
+        parent = db_model.get_parent()
+        g_parent = parent.get_parent()
+        gg_parent = g_parent.get_parent()
+        prev_model = None
+        for parent_model in [gg_parent, g_parent, parent]:
+            model_name_list = parent_model.get_model_name_list()
+            name = utl.get_next_value_from_list(words, model_name_list)
+            if not name:
+                name_list = parent_model.get_name_list()
+                name = utl.get_dict_values_from_list(words, name_list)
+                if name:
+                    name = [name[0][next(iter(name[0]))]]
+                else:
+                    name = parent_model.get_default_name()
+            new_model = parent_model()
+            new_model.set_from_form({'name': name[0]}, prev_model)
+            new_model = new_model.check_and_add()
+            prev_model = new_model
+        return prev_model
 
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
@@ -2452,9 +2473,12 @@ class AliChat(object):
         is_create = utl.is_list_in_list(create_words, words)
         if is_create:
             name_words = ['named', 'called', 'name', 'title']
-            name = [words[idx + 1] for idx, x in enumerate(words) if
-                    x in name_words]
-            new_model = db_model(name=name[0], user_id=self.current_user.id)
+            name = utl.get_next_value_from_list(words, name_words)
+            parent_model = self.get_parent_for_db_model(db_model, words)
+            new_model = db_model()
+            name = new_model.get_first_unique_name(name[0])
+            new_model.set_from_form({'name': name}, parent_model,
+                                    self.current_user.id)
             self.db.session.add(new_model)
             self.db.session.commit()
             db_model_child = new_model.get_children()
@@ -2468,9 +2492,16 @@ class AliChat(object):
             self.db.session.commit()
             db_model_g_child = new_child.get_children()
             partner_list, partner_type_list = db_model_g_child.get_name_list()
-            p_list = [x for x in partner_list if
-                      x[next(iter(partner_list[0]))].lower() in words]
+            p_list = utl.get_dict_values_from_list(words, partner_list)
             for g_child in p_list:
+                lower_name = g_child[next(iter(g_child))].lower()
+                post_words = words[words.index(lower_name):]
+                cost = [x for x in post_words if any(y.isdigit() for y in x)]
+                if cost:
+                    cost = cost[0].replace('k', '000')
+                else:
+                    cost = 0
+                g_child['total_budget'] = cost
                 new_g_child = db_model_g_child()
                 new_g_child.set_from_form(g_child, new_child)
                 self.db.session.add(new_g_child)
