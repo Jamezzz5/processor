@@ -73,11 +73,11 @@ class Analyze(object):
                        [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
                        [vmc.views], [vmc.views100, 'VCR'],
                        [vmc.landingpage, 'CPLPV'], [vmc.btnclick, 'CPBC'],
-                       [vmc.purchase, 'CPA']]
+                       [vmc.purchase, 'CPP']]
     topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
                              vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
                              vmc.landingpage,  vmc.btnclick, vmc.purchase,
-                             'CPLPV', 'CPBC', 'CPA', cal.NCF, cal.TOTAL_COST]
+                             'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
                  load_chat=False, chat_path=utl.config_path):
@@ -490,10 +490,10 @@ class Analyze(object):
             if missing_cols:
                 msg = 'Missing columns could not evaluate {}'.format(kpi)
                 logging.warning(msg)
-                kpi = False
                 if write:
                     self.add_to_analysis_dict(key_col=self.kpi_col,
                                               message=msg, param=kpi)
+                kpi = False
         elif kpi not in self.df.columns:
             msg = 'Unknown KPI: {}'.format(kpi)
             logging.warning(msg)
