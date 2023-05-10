@@ -60,7 +60,8 @@ class VendorMatrix(object):
             vmc.api_yv_key: [],
             vmc.api_amd_key: [],
             vmc.api_ss_key: [],
-            vmc.api_nz_key: []
+            vmc.api_nz_key: [],
+            vmc.api_ytd_key: []
         }
         self.ftp_sz_key = []
         self.db_dna_key = []
