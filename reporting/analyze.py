@@ -2420,6 +2420,7 @@ class AliChat(object):
             html_response += """
                 {}.  <a href="{}" target="_blank">{}</a><br>
                 """.format(idx + 1, obj.get_url(), obj.name)
+            html_response += '<br>{}'.format(obj.get_table_elem())
         return message, html_response
 
     def search_db_models(self, db_model, message, response, html_response):
@@ -2446,7 +2447,8 @@ class AliChat(object):
         in_message = utl.is_list_in_list(db_model_name, words)
         return in_message
 
-    def get_parent_for_db_model(self, db_model, words):
+    @staticmethod
+    def get_parent_for_db_model(db_model, words):
         parent = db_model.get_parent()
         g_parent = parent.get_parent()
         gg_parent = g_parent.get_parent()
