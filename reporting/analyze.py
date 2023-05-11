@@ -2412,7 +2412,8 @@ class AliChat(object):
                     word_idx[word] = [obj.id]
         return word_idx
 
-    def convert_model_ids_to_message(self, db_model, model_ids, message=''):
+    @staticmethod
+    def convert_model_ids_to_message(db_model, model_ids, message=''):
         message = message + '<br>'
         html_response = ''
         for idx, model_id in enumerate(model_ids):
@@ -2444,7 +2445,7 @@ class AliChat(object):
     def db_model_name_in_message(message, db_model):
         words = utl.lower_words_from_str(message)
         db_model_name = db_model.get_model_name_list()
-        in_message = utl.is_list_in_list(db_model_name, words)
+        in_message = utl.is_list_in_list(db_model_name, words, True)
         return in_message
 
     @staticmethod
@@ -2537,6 +2538,10 @@ class AliChat(object):
                         db_model, message)
                     break
         if not response:
+            response, html_response = self.search_db_models(
+                models_to_search[0], message, response, html_response)
+        if not response:
             response = self.get_openai_response(message)
             response = '{}\n{}'.format(self.openai_msg, response)
+            html_response = ''
         return response, html_response

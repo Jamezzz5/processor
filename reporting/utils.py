@@ -643,9 +643,13 @@ def index_words_from_list(word_list, word_idx, obj_to_append):
     return word_idx
 
 
-def is_list_in_list(first_list, second_list):
+def is_list_in_list(first_list, second_list, contains=False):
     in_list = False
-    name_in_list = [x for x in first_list if x in second_list]
+    if contains:
+        name_in_list = [x for x in first_list if
+                        x in second_list or [y for y in second_list if x in y]]
+    else:
+        name_in_list = [x for x in first_list if x in second_list]
     if name_in_list:
         in_list = True
     return in_list
