@@ -2477,6 +2477,8 @@ class AliChat(object):
         if is_create:
             name_words = ['named', 'called', 'name', 'title']
             name = utl.get_next_value_from_list(words, name_words)
+            if not name:
+                name = [self.current_user.username]
             parent_model = self.get_parent_for_db_model(db_model, words)
             new_model = db_model()
             name = new_model.get_first_unique_name(name[0])
