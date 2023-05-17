@@ -7,6 +7,9 @@ import operator
 import calendar
 import pandas as pd
 import datetime as dt
+
+import selenium.common.exceptions
+
 import reporting.utils as utl
 import selenium.common.exceptions as ex
 
@@ -80,6 +83,10 @@ class RedApi(object):
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
                 self.sw.click_on_xpath("//a[text()='Log In']")
+        try:
+            self.sw.browser.switch_to_alert().accept()
+        except selenium.common.exceptions.NoAlertPresentException as e:
+            logging.info('No alert: {}'.format(e))
         user_pass = [(self.username, '//*[@id="loginUsername"]'),
                      (self.password, '//*[@id="loginPassword"]')]
         for item in user_pass:

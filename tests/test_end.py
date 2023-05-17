@@ -82,10 +82,11 @@ class TestEndToEnd:
         matrix.write()
 
     def test_run_processor(self):
-        main('--analyze')
+        main('--api all --analyze')
 
     def test_check_results(self):
-        group_cols = [dctc.CAM, dctc.VEN, dctc.COU, dctc.ENV]
+        group_cols = [vmc.vendorkey, vmc.date, dctc.CAM, dctc.VEN, dctc.COU,
+                      dctc.ENV]
         metric_cols = [vmc.impressions, vmc.clicks, vmc.cost]
         df = pd.read_csv(vmc.output_file)
         df = df.groupby(group_cols)[metric_cols].sum().reset_index()
