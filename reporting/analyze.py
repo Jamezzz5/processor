@@ -2413,7 +2413,8 @@ class AliChat(object):
         return word_idx
 
     @staticmethod
-    def convert_model_ids_to_message(db_model, model_ids, message=''):
+    def convert_model_ids_to_message(db_model, model_ids, message='',
+                                     html_table=False, table_name=''):
         message = message + '<br>'
         html_response = ''
         for idx, model_id in enumerate(model_ids):
@@ -2421,8 +2422,29 @@ class AliChat(object):
             html_response += """
                 {}.  <a href="{}" target="_blank">{}</a><br>
                 """.format(idx + 1, obj.get_url(), obj.name)
-            html_response += '<br>{}'.format(obj.get_table_elem())
+            if html_table:
+                table_elem = obj.get_table_elem(table_name)
+                html_response += '<br>{}'.format(table_elem)
         return message, html_response
+
+    @staticmethod
+    def check_db_model_table(db_model, words, model_ids):
+        table_response = ''
+        tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
+        cur_model = db_model.query.get(next(iter(model_ids)))
+        cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
+        for table in tables:
+            t_list = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', table)
+            t_list = [x.lower() for x in t_list]
+            model_name = db_model.get_model_name_list()
+            table_match = [
+                x for x in t_list if x.lower() in words and
+                                     x.lower() not in model_name and
+                                     x.lower() not in cur_model_name]
+            if table_match:
+                table_response = table
+                break
+        return table_response
 
     def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
@@ -2437,8 +2459,13 @@ class AliChat(object):
                     else:
                         model_ids[new_model_id] = 1
         if model_ids:
+            max_value = max(model_ids.values())
+            model_ids = {k: v for k, v in model_ids.items() if v == max_value}
+            table_name = self.check_db_model_table(db_model, words, model_ids)
+            table_bool = True if table_name else False
             response, html_response = self.convert_model_ids_to_message(
-                db_model, model_ids, self.found_model_msg)
+                db_model, model_ids, self.found_model_msg, table_bool,
+                table_name)
         return response, html_response
 
     @staticmethod
@@ -2512,7 +2539,7 @@ class AliChat(object):
                 self.db.session.add(new_g_child)
                 self.db.session.commit()
             response, html_response = self.convert_model_ids_to_message(
-                db_model, [new_model.id], self.create_success_msg)
+                db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
 
     def db_model_response_functions(self, db_model, message):
