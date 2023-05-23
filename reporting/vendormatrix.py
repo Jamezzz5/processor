@@ -511,7 +511,8 @@ class ImportConfig(object):
                  old_import_dict[self.account_id]) and
                 (import_dict[self.filter] == old_import_dict[self.filter])):
             params = self.get_default_params(import_dict[self.key])
-            if import_dict[self.account_id]:
+            if (import_dict[self.account_id]
+                    or import_dict[self.key] in vmc.no_account_apis):
                 self.make_new_config(params, file_name,
                                      import_dict[self.account_id],
                                      import_dict[self.filter])

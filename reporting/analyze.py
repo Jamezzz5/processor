@@ -55,6 +55,7 @@ class Analyze(object):
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
     change_auto_order = 'change_auto_order'
+    brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
