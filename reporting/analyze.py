@@ -934,6 +934,24 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
+    def load_old_raw_file_dict(self, new, cu):
+        old = None
+        if os.path.exists(self.analysis_dict_file_name):
+            try:
+                with open(self.analysis_dict_file_name, 'r') as f:
+                    old = json.load(f)
+            except json.decoder.JSONDecodeError as e:
+                logging.warning('Json error assuming new sources: {}'.format(e))
+        if old:
+            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
+                                             analysis_dict=old)
+            old = pd.DataFrame(old[0]['data'])
+        else:
+            logging.warning('No analysis dict assuming all new sources.')
+            old = new.copy()
+            old[cu.update_tier_col] = cu.update_tier_never
+        return old
+
     def get_new_files(self):
         cu = CheckRawFileUpdateTime(self)
         cu.do_analysis()
@@ -942,16 +960,7 @@ class Analyze(object):
             logging.warning('Could not find update times.')
             return False
         new = pd.DataFrame(new[0]['data'])
-        if os.path.exists(self.analysis_dict_file_name):
-            with open(self.analysis_dict_file_name, 'r') as f:
-                old = json.load(f)
-            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
-                                             analysis_dict=old)
-            old = pd.DataFrame(old[0]['data'])
-        else:
-            logging.warning('No analysis dict assuming all new sources.')
-            old = new.copy()
-            old[cu.update_tier_col] = cu.update_tier_never
+        old = self.load_old_raw_file_dict(new, cu)
         if vmc.vendorkey not in old.columns:
             logging.warning('Old df missing vendor key column.')
             return []
