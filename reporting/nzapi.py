@@ -11,9 +11,10 @@ import reporting.utils as utl
 
 class NzApi(object):
     config_path = utl.config_path
-    base_url = "https://api.newzoo.com/public"
-    engagement_url = "/engagement"
+    base_url = 'https://api.newzoo.com/public'
+    engagement_url = '/engagement'
     games_url = '/games/data'
+    viewership_url = '/viewership'
 
     def __init__(self):
         self.config = None
@@ -58,19 +59,37 @@ class NzApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
         header = self.create_header()
-        url, params = self.parse_fields(sd, ed, fields)
-        self.r = self.make_request('get', url, params=params,
-                                   header=header)
-        self.df = self.get_df_from_response(self.r)
+        request_list = self.parse_fields(sd, ed, fields)
+        for req in request_list:
+            name, url, params = req
+            self.r = self.make_request('get', url, params=params,
+                                       header=header)
+            df = self.get_df_from_response(self.r, name)
+            if self.df.empty:
+                self.df = df
+            else:
+                self.df = self.df.merge(df, how='outer')
         return self.df
 
     @staticmethod
-    def get_df_from_response(response):
-        if 'message' in response.json():
-            logging.error('Unexpected Error {}'.format(response.json()))
-            return pd.DataFrame()
+    def get_df_from_response(response, name):
+        df = pd.DataFrame()
+        translation_dict = {}
+        data = response.json()
+        if 'message' in data:
+            logging.error('Unexpected Error {}'.format(data))
+            return df
+        if name == 'viewership':
+            data = response.json()['data']
+            translation_dict = {'timestamp': 'date', 'rank': 'viewership_rank',
+                                'rank_change': 'viewership_rank_change'}
+        if data:
+            list_cols = [col for col in data[0] if type(data[0][col]) == list]
+            df = pd.DataFrame(data)
+            for col in list_cols:
+                df[col] = df[col].apply(tuple)
+            df = df.rename(columns=translation_dict)
         logging.info('Successful response. Returning dataframe.')
-        df = pd.DataFrame(response.json())
         return df
 
     @staticmethod
@@ -81,19 +100,30 @@ class NzApi(object):
             ed = dt.datetime.today()
         return sd, ed
 
-    def parse_fields(self, sd, ed, fields):
+    def parse_fields(self, sd, ed, fields=None):
         engage_url = self.engagement_url
         category_url = self.games_url
-        params = {
+        name = 'default'
+        default_params = {
             'start_date': sd.strftime("%Y-%m-%d"),
             'end_date': ed.strftime("%Y-%m-%d"),
-            'games': [self.game_title]
+            'games': self.game_title.split(',')
         }
         if self.country_filter:
-            params['geo_type'] = 'markets'
-            params['markets'] = self.country_filter.split(',')
+            default_params['geo_type'] = 'markets'
+            default_params['markets'] = self.country_filter.split(',')
         url = '{}{}{}'.format(self.base_url, engage_url, category_url)
-        return url, params
+        request_list = [(name, url, default_params)]
+        if fields:
+            for field in fields:
+                if field == 'Viewership':
+                    engage_url = self.viewership_url
+                    name = 'viewership'
+                else:
+                    continue
+                url = '{}{}{}'.format(self.base_url, engage_url, category_url)
+                request_list.append((name, url, default_params))
+        return request_list
 
     def make_request(self, method, url, params=None, body=None, header=None):
         try:

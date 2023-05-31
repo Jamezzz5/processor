@@ -55,6 +55,7 @@ class Analyze(object):
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
     change_auto_order = 'change_auto_order'
+    brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -73,11 +74,11 @@ class Analyze(object):
                        [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
                        [vmc.views], [vmc.views100, 'VCR'],
                        [vmc.landingpage, 'CPLPV'], [vmc.btnclick, 'CPBC'],
-                       [vmc.purchase, 'CPA']]
+                       [vmc.purchase, 'CPP']]
     topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
                              vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
                              vmc.landingpage,  vmc.btnclick, vmc.purchase,
-                             'CPLPV', 'CPBC', 'CPA', cal.NCF, cal.TOTAL_COST]
+                             'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
                  load_chat=False, chat_path=utl.config_path):
@@ -490,10 +491,10 @@ class Analyze(object):
             if missing_cols:
                 msg = 'Missing columns could not evaluate {}'.format(kpi)
                 logging.warning(msg)
-                kpi = False
                 if write:
                     self.add_to_analysis_dict(key_col=self.kpi_col,
                                               message=msg, param=kpi)
+                kpi = False
         elif kpi not in self.df.columns:
             msg = 'Unknown KPI: {}'.format(kpi)
             logging.warning(msg)
@@ -933,6 +934,24 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
+    def load_old_raw_file_dict(self, new, cu):
+        old = None
+        if os.path.exists(self.analysis_dict_file_name):
+            try:
+                with open(self.analysis_dict_file_name, 'r') as f:
+                    old = json.load(f)
+            except json.decoder.JSONDecodeError as e:
+                logging.warning('Json error assuming new sources: {}'.format(e))
+        if old:
+            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
+                                             analysis_dict=old)
+            old = pd.DataFrame(old[0]['data'])
+        else:
+            logging.warning('No analysis dict assuming all new sources.')
+            old = new.copy()
+            old[cu.update_tier_col] = cu.update_tier_never
+        return old
+
     def get_new_files(self):
         cu = CheckRawFileUpdateTime(self)
         cu.do_analysis()
@@ -941,16 +960,7 @@ class Analyze(object):
             logging.warning('Could not find update times.')
             return False
         new = pd.DataFrame(new[0]['data'])
-        if os.path.exists(self.analysis_dict_file_name):
-            with open(self.analysis_dict_file_name, 'r') as f:
-                old = json.load(f)
-            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
-                                             analysis_dict=old)
-            old = pd.DataFrame(old[0]['data'])
-        else:
-            logging.warning('No analysis dict assuming all new sources.')
-            old = new.copy()
-            old[cu.update_tier_col] = cu.update_tier_never
+        old = self.load_old_raw_file_dict(new, cu)
         if vmc.vendorkey not in old.columns:
             logging.warning('Old df missing vendor key column.')
             return []
@@ -2412,7 +2422,9 @@ class AliChat(object):
                     word_idx[word] = [obj.id]
         return word_idx
 
-    def convert_model_ids_to_message(self, db_model, model_ids, message=''):
+    @staticmethod
+    def convert_model_ids_to_message(db_model, model_ids, message='',
+                                     html_table=False, table_name=''):
         message = message + '<br>'
         html_response = ''
         for idx, model_id in enumerate(model_ids):
@@ -2420,7 +2432,29 @@ class AliChat(object):
             html_response += """
                 {}.  <a href="{}" target="_blank">{}</a><br>
                 """.format(idx + 1, obj.get_url(), obj.name)
+            if html_table:
+                table_elem = obj.get_table_elem(table_name)
+                html_response += '<br>{}'.format(table_elem)
         return message, html_response
+
+    @staticmethod
+    def check_db_model_table(db_model, words, model_ids):
+        table_response = ''
+        tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
+        cur_model = db_model.query.get(next(iter(model_ids)))
+        cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
+        for table in tables:
+            t_list = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', table)
+            t_list = [x.lower() for x in t_list]
+            model_name = db_model.get_model_name_list()
+            table_match = [
+                x for x in t_list if x.lower() in words and
+                                     x.lower() not in model_name and
+                                     x.lower() not in cur_model_name]
+            if table_match:
+                table_response = table
+                break
+        return table_response
 
     def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
@@ -2435,16 +2469,43 @@ class AliChat(object):
                     else:
                         model_ids[new_model_id] = 1
         if model_ids:
+            max_value = max(model_ids.values())
+            model_ids = {k: v for k, v in model_ids.items() if v == max_value}
+            table_name = self.check_db_model_table(db_model, words, model_ids)
+            table_bool = True if table_name else False
             response, html_response = self.convert_model_ids_to_message(
-                db_model, model_ids, self.found_model_msg)
+                db_model, model_ids, self.found_model_msg, table_bool,
+                table_name)
         return response, html_response
 
     @staticmethod
     def db_model_name_in_message(message, db_model):
         words = utl.lower_words_from_str(message)
-        db_model_name = db_model.get_name_list()
-        in_message = utl.is_list_in_list(db_model_name, words)
+        db_model_name = db_model.get_model_name_list()
+        in_message = utl.is_list_in_list(db_model_name, words, True)
         return in_message
+
+    @staticmethod
+    def get_parent_for_db_model(db_model, words):
+        parent = db_model.get_parent()
+        g_parent = parent.get_parent()
+        gg_parent = g_parent.get_parent()
+        prev_model = None
+        for parent_model in [gg_parent, g_parent, parent]:
+            model_name_list = parent_model.get_model_name_list()
+            name = utl.get_next_value_from_list(words, model_name_list)
+            if not name:
+                name_list = parent_model.get_name_list()
+                name = utl.get_dict_values_from_list(words, name_list)
+                if name:
+                    name = [name[0][next(iter(name[0]))]]
+                else:
+                    name = parent_model.get_default_name()
+            new_model = parent_model()
+            new_model.set_from_form({'name': name[0]}, prev_model)
+            new_model = new_model.check_and_add()
+            prev_model = new_model
+        return prev_model
 
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
@@ -2452,9 +2513,14 @@ class AliChat(object):
         is_create = utl.is_list_in_list(create_words, words)
         if is_create:
             name_words = ['named', 'called', 'name', 'title']
-            name = [words[idx + 1] for idx, x in enumerate(words) if
-                    x in name_words]
-            new_model = db_model(name=name[0], user_id=self.current_user.id)
+            name = utl.get_next_value_from_list(words, name_words)
+            if not name:
+                name = [self.current_user.username]
+            parent_model = self.get_parent_for_db_model(db_model, words)
+            new_model = db_model()
+            name = new_model.get_first_unique_name(name[0])
+            new_model.set_from_form({'name': name}, parent_model,
+                                    self.current_user.id)
             self.db.session.add(new_model)
             self.db.session.commit()
             db_model_child = new_model.get_children()
@@ -2468,15 +2534,22 @@ class AliChat(object):
             self.db.session.commit()
             db_model_g_child = new_child.get_children()
             partner_list, partner_type_list = db_model_g_child.get_name_list()
-            p_list = [x for x in partner_list if
-                      x[next(iter(partner_list[0]))].lower() in words]
+            p_list = utl.get_dict_values_from_list(words, partner_list)
             for g_child in p_list:
+                lower_name = g_child[next(iter(g_child))].lower()
+                post_words = words[words.index(lower_name):]
+                cost = [x for x in post_words if any(y.isdigit() for y in x)]
+                if cost:
+                    cost = cost[0].replace('k', '000')
+                else:
+                    cost = 0
+                g_child['total_budget'] = cost
                 new_g_child = db_model_g_child()
                 new_g_child.set_from_form(g_child, new_child)
                 self.db.session.add(new_g_child)
                 self.db.session.commit()
             response, html_response = self.convert_model_ids_to_message(
-                db_model, [new_model.id], self.create_success_msg)
+                db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
 
     def db_model_response_functions(self, db_model, message):
@@ -2504,6 +2577,10 @@ class AliChat(object):
                         db_model, message)
                     break
         if not response:
+            response, html_response = self.search_db_models(
+                models_to_search[0], message, response, html_response)
+        if not response:
             response = self.get_openai_response(message)
             response = '{}\n{}'.format(self.openai_msg, response)
+            html_response = ''
         return response, html_response

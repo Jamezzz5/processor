@@ -60,7 +60,8 @@ class VendorMatrix(object):
             vmc.api_yv_key: [],
             vmc.api_amd_key: [],
             vmc.api_ss_key: [],
-            vmc.api_nz_key: []
+            vmc.api_nz_key: [],
+            vmc.api_ytd_key: []
         }
         self.ftp_sz_key = []
         self.db_dna_key = []
@@ -510,7 +511,8 @@ class ImportConfig(object):
                  old_import_dict[self.account_id]) and
                 (import_dict[self.filter] == old_import_dict[self.filter])):
             params = self.get_default_params(import_dict[self.key])
-            if import_dict[self.account_id]:
+            if (import_dict[self.account_id]
+                    or import_dict[self.key] in vmc.no_account_apis):
                 self.make_new_config(params, file_name,
                                      import_dict[self.account_id],
                                      import_dict[self.filter])
