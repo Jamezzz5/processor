@@ -1,6 +1,7 @@
 import os
 import shutil
 import pytest
+import pandas as pd
 from main import main
 import reporting.utils as utl
 import reporting.analyze as az
@@ -39,6 +40,10 @@ def load_config():
             if os.path.exists(base_td):
                 td_file = os.path.join(old_t, dctc.filename_tran_config)
                 utl.copy_file(base_td, td_file)
+        if old_path == utl.raw_path:
+            utl.dir_check(utl.raw_path)
+            test_raw_file = os.path.join(test_path, 'rawfile.csv')
+            utl.copy_file(test_raw_file, utl.raw_path)
     if os.path.exists(az.Analyze.analysis_dict_file_name):
         os.remove(az.Analyze.analysis_dict_file_name)
     yield load_config
@@ -78,3 +83,13 @@ class TestEndToEnd:
 
     def test_run_processor(self):
         main('--api all --analyze')
+
+    def test_check_results(self):
+        group_cols = [vmc.vendorkey, vmc.date, dctc.CAM, dctc.VEN, dctc.COU,
+                      dctc.ENV]
+        metric_cols = [vmc.impressions, vmc.clicks, vmc.cost]
+        df = pd.read_csv(vmc.output_file)
+        df = df.groupby(group_cols)[metric_cols].sum().reset_index()
+        file_name = os.path.join('tests', 'results.csv')
+        rdf = pd.read_csv(file_name)
+        assert pd.testing.assert_frame_equal(df, rdf) is None

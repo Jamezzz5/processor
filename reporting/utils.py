@@ -624,3 +624,54 @@ def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
                 os.mkdir(new_file)
             copy_tree_no_overwrite(old_file, new_file, log=False,
                                    overwrite=overwrite)
+
+
+def lower_words_from_str(word_str):
+    words = re.findall(r"[\w']+|[.,!?;]", word_str)
+    words = [x.lower() for x in words]
+    return words
+
+
+def index_words_from_list(word_list, word_idx, obj_to_append):
+    if not word_idx:
+        word_idx = {}
+    for word in word_list:
+        if word in word_idx:
+            word_idx[word].append(obj_to_append)
+        else:
+            word_idx[word] = [obj_to_append]
+    return word_idx
+
+
+def is_list_in_list(first_list, second_list, contains=False, return_vals=False):
+    in_list = False
+    if contains:
+        name_in_list = [x for x in first_list if
+                        x in second_list or [y for y in second_list if x in y]]
+    else:
+        name_in_list = [x for x in first_list if x in second_list]
+    if name_in_list:
+        in_list = True
+        if return_vals:
+            in_list = name_in_list
+    return in_list
+
+
+def get_next_value_from_list(first_list, second_list):
+    next_values = [first_list[idx + 1] for idx, x in enumerate(first_list) if
+                   x in second_list]
+    return next_values
+
+
+def get_dict_values_from_list(list_search, dict_check):
+    values_in_dict = [x for x in dict_check if
+                      x[next(iter(dict_check[0]))].lower() in list_search]
+    return values_in_dict
+
+
+def check_dict_for_key(dict_to_check, key, missing_return_value=''):
+    if key in dict_to_check:
+        return_value = dict_to_check[key]
+    else:
+        return_value = missing_return_value
+    return return_value

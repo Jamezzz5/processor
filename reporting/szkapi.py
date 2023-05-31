@@ -229,7 +229,15 @@ class SzkApi(object):
                          'Response: {}'.format(attempt + 1, r.json()))
             if r.json()['result']['executionStatus'] == 'FINISHED':
                 logging.info('Report has been generated.')
-                report_dl_url = r.json()['result']['files'][0]['url']
+                report_dl_url = r.json()['result']['files']
+                if report_dl_url:
+                    report_dl_url = report_dl_url[0]['url']
+                else:
+                    logging.warning('No url attempting request directly.')
+                    url = url.replace('executions', 'executions/download')
+                    r = self.make_request(url, method='GET',
+                                          headers=self.headers)
+                    report_dl_url = r.json()['result'][0]['link']
                 break
             elif 'fault' in r.json():
                 logging.warning('Fault in response: {}'.format(r.json()))
