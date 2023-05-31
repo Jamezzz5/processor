@@ -55,7 +55,6 @@ class Analyze(object):
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
     blank_lines = 'blank_lines'
-    check_last_row = 'check_last_row'
     change_auto_order = 'change_auto_order'
     brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
@@ -97,7 +96,7 @@ class Analyze(object):
             CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
             CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
             GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
-            CheckFirstRow, CheckLastRow]
+            CheckFirstRow]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1177,77 +1176,6 @@ class CheckFirstRow(AnalyzeBase):
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.firstrow, new_first_line))
             self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
-        if write:
-            self.aly.matrix.write()
-
-    def fix_analysis(self, aly_dict, write=True):
-        aly_dict = aly_dict.to_dict(orient='records')
-        for x in aly_dict:
-            self.fix_analysis_for_data_source(x, write=write)
-        if write:
-            self.aly.matrix.write()
-        return self.aly.matrix.vm_df
-
-
-class CheckLastRow(AnalyzeBase):
-    name = Analyze.check_last_row
-    new_last_line = 'new_last_line'
-
-    def check_total_row_exists(self, source, df):
-        """
-        Sums all impressions and clicks in every row except last
-        compares to the values in last row
-        if equal returns True
-        """
-        totals_df = df
-        old_last_row = source.p[vmc.lastrow]
-        if int(old_last_row) == 1:
-            return totals_df
-        if vmc.filename not in source.p:
-            return totals_df
-        raw_file = source.p[vmc.filename]
-        df = utl.import_read_csv(raw_file)
-        if df.empty:
-            return totals_df
-        active_metrics = source.get_active_metrics()
-        active_metrics = active_metrics.values()
-        try:
-            active_metrics = [x for x in active_metrics if x in df.columns]
-            df = df[active_metrics]
-        except (KeyError, TypeError) as error:
-            logging.debug(error, "active metrics may be missing or mislabeled")
-            return totals_df
-        if df.empty:
-            return totals_df
-        df = df.round(decimals=2)
-        col_sums = df.iloc[:-1, :].sum()
-        totals_row = df.iloc[-1, :]
-        if (col_sums == totals_row).all():
-            new_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                  self.new_last_line: '1'})
-            totals_df = pd.concat([totals_df, new_df], ignore_index=True)
-        return totals_df
-
-    def do_analysis(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            df = self.check_total_row_exists(source, df)
-        if df.empty:
-            msg = 'All first and last rows seem correct'
-        else:
-            msg = 'Suggested new row adjustments:'
-        logging.info('{}\n{}'.format(msg, df.to_string()))
-        self.aly.add_to_analysis_dict(key_col=self.name,
-                                      message=msg, data=df.to_dict())
-
-    def fix_analysis_for_data_source(self, source, write=True):
-        vk = source[vmc.vendorkey]
-        new_last_line = source[self.new_last_line]
-        if int(new_last_line) > 0:
-            logging.info('Changing {} {} to {}'.format(
-                vk, vmc.lastrow, new_last_line))
-            self.aly.matrix.vm_change_on_key(vk, vmc.lastrow, new_last_line)
         if write:
             self.aly.matrix.write()
 
