@@ -663,9 +663,16 @@ def get_next_value_from_list(first_list, second_list):
     return next_values
 
 
-def get_dict_values_from_list(list_search, dict_check):
-    values_in_dict = [x for x in dict_check if
-                      x[next(iter(dict_check[0]))].lower() in list_search]
+def get_dict_values_from_list(list_search, dict_check, check_dupes=False):
+    values_in_dict = []
+    keys_added = []
+    dict_key = next(iter(dict_check[0]))
+    for x in dict_check:
+        lower_val = x[dict_key].lower()
+        if lower_val in list_search:
+            if (check_dupes and lower_val not in keys_added) or not check_dupes:
+                keys_added.append(lower_val)
+                values_in_dict.append(x)
     return values_in_dict
 
 
