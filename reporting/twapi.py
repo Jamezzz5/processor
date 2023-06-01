@@ -193,9 +193,12 @@ class TwApi(object):
                 or not x[et]]
         if 'data' in data:
             if ad_name:
-                id_dict = {x[eid]: {'parent': x[parent], 'name': x[name],
-                                    'ad_name': x[ad_name]}
-                           for x in data['data']}
+                id_dict = {x[eid]: {
+                    'parent': x[parent],
+                    'name': x[name],
+                    'ad_name': x[ad_name],
+                    'card_uri': x['card_uri'] if 'card_uri' in x else None
+                } for x in data['data']}
             else:
                 id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
                            for x in data['data']}
@@ -596,20 +599,11 @@ class TwApi(object):
         df['ad_name'] = df['ad_name'].fillna('Untitled ad')
         tweet_ids = df['tweetid'].unique()
         id_dict = {}
-        tids = [tweet_ids[x:x + 100] for x in range(0, len(tweet_ids), 100)]
-        for tid in tids:
-            url = ('{}{}'
-                   'id={}&include_card_uri=true'
-                   .format(standard_base_url, status_url,
-                           ','.join([str(x) for x in tid])))
-            d = self.request(url)
-            for x in d:
-                if 'card_uri' in x:
-                    id_dict[str(x['id'])] = {'name': x['text'],
-                                             'Card name': x['card_uri']}
-                else:
-                    id_dict[str(x['id'])] = {'name': x['text'],
-                                             'Card name': None}
+        for tweet_id in tweet_ids:
+            if int(tweet_id) in self.tweet_dict:
+                id_dict[str(tweet_id)] = {
+                    'name': self.tweet_dict[int(tweet_id)]['name'],
+                    'Card name': self.tweet_dict[int(tweet_id)]['card_uri']}
         id_dict['PROMOTED ACCOUNT'] = {'name': 'PROMOTED ACCOUNT'}
         df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
         return df
