@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import json
 import time
 import shutil
 import logging
@@ -682,3 +683,14 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
     else:
         return_value = missing_return_value
     return return_value
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)

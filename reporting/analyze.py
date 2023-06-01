@@ -703,7 +703,7 @@ class Analyze(object):
         file_name = '{}.json'.format(vk)
         file_name = os.path.join(utl.tmp_file_suffix, file_name)
         with open(file_name, 'w') as fp:
-            json.dump(cd, fp)
+            json.dump(cd, fp, cls=utl.NpEncoder)
 
     @staticmethod
     def check_combine_col_totals(cd, df, cds_name, c_cols):
@@ -1496,6 +1496,7 @@ class CheckColumnNames(AnalyzeBase):
                          'missing': missing_cols}
             data.append(data_dict)
         df = pd.DataFrame(data)
+        df = df.fillna('')
         update_msg = 'Columns and missing columns by key as follows:'
         logging.info('{}\n{}'.format(update_msg, df))
         self.add_to_analysis_dict(df=df, msg=update_msg)
@@ -1512,7 +1513,7 @@ class CheckColumnNames(AnalyzeBase):
         aly_dicts = aly_dict.to_dict(orient='records')
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
-                     if x['missing'] and x['raw_file_columns']]
+                     if x['missing'] and x[Analyze.raw_columns]]
         for aly_dict in aly_dicts:
             vk = aly_dict[vmc.vendorkey]
             source = self.matrix.get_data_source(vk)
