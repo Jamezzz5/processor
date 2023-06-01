@@ -879,11 +879,16 @@ class ScriptBuilder(object):
         from_script = '\n'.join(split_from_script)
         return from_script
 
-    def get_full_script(self, filter_col, filter_val, filter_table):
-        base_table = [x for x in self.tables if x.name == 'event'][0]
+    def get_from_script_with_opts(self, base_table, filter_table=''):
         from_script = self.get_from_script(table=base_table)
         from_script = self.append_plan_join(from_script)
-        from_script = self.optimize_from_script(filter_table, from_script)
+        if filter_table:
+            from_script = self.optimize_from_script(filter_table, from_script)
+        return from_script
+
+    def get_full_script(self, filter_col, filter_val, filter_table):
+        base_table = [x for x in self.tables if x.name == 'event'][0]
+        from_script = self.get_from_script_with_opts(base_table, filter_table)
         column_names, sum_columns = self.get_column_names(base_table)
         column_names = ['{}'.format(x) for x in set(column_names)]
         where_clause = "({} = {}::text)".format(filter_col, '%s')
