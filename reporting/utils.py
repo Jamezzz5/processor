@@ -668,7 +668,7 @@ def get_dict_values_from_list(list_search, dict_check, check_dupes=False):
     keys_added = []
     dict_key = next(iter(dict_check[0]))
     for x in dict_check:
-        lower_val = x[dict_key].lower()
+        lower_val = str(x[dict_key]).lower()
         if lower_val in list_search:
             if (check_dupes and lower_val not in keys_added) or not check_dupes:
                 keys_added.append(lower_val)
