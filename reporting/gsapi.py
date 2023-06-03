@@ -23,7 +23,7 @@ class GsApi(object):
     text_format = 'NORMAL_TEXT'
 
     def __init__(self):
-        self.config = None
+        self.config = "gsapi_screenshots.json"
         self.config_file = None
         self.client_id = None
         self.client_secret = None
@@ -285,7 +285,7 @@ class GsApi(object):
         for row in data:
             row_request, index = self.fill_row(row.values(), index)
             table_requests += row_request
-        table_requests.append(self.get_format_req(start_ind, index-1,
+        table_requests.append(self.get_format_req(start_ind, index - 1,
                                                   self.text_format))
         return table_requests, index - 1
 
@@ -296,9 +296,11 @@ class GsApi(object):
         request = []
         format_request = []
         for item in text_json:
-            text = item['message']
-            if not text:
+            if item['selected'] == 'false':
                 continue
+            if 'message' not in item:
+                continue
+            text = item['message']
             if newline:
                 text += '\n'
             request.append({
@@ -314,7 +316,8 @@ class GsApi(object):
             format_request.append(self.get_format_req(index, end_ind, style))
             index += len(text)
             if 'data' in item:
-                table_req, index = self.add_table(item['data'], index=index)
+                table_req, index = self.add_table(item['data']['data'],
+                                                  index=index)
                 request += table_req
         request += format_request
         body = {"requests": request}
