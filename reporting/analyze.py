@@ -92,11 +92,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
-            CheckFirstRow]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
+            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
+            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
+            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
+            CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1116,6 +1116,7 @@ class CheckFirstRow(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
     new_files = True
+    pre_run = True
     new_first_line = 'new_first_line'
 
     def find_first_row(self, source, df):
