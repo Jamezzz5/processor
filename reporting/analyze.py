@@ -92,11 +92,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
-            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
-            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
-            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
-            CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
+            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
+            CheckFirstRow]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
