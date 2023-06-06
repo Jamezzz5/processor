@@ -707,7 +707,7 @@ class Analyze(object):
         file_name = '{}.json'.format(vk)
         file_name = os.path.join(utl.tmp_file_suffix, file_name)
         with open(file_name, 'w') as fp:
-            json.dump(cd, fp)
+            json.dump(cd, fp, cls=utl.NpEncoder)
 
     @staticmethod
     def check_combine_col_totals(cd, df, cds_name, c_cols):
@@ -1489,7 +1489,7 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = list(tdf.columns)
+            cols = cols = [x for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
@@ -1500,6 +1500,7 @@ class CheckColumnNames(AnalyzeBase):
                          'missing': missing_cols}
             data.append(data_dict)
         df = pd.DataFrame(data)
+        df = df.fillna('')
         update_msg = 'Columns and missing columns by key as follows:'
         logging.info('{}\n{}'.format(update_msg, df))
         self.add_to_analysis_dict(df=df, msg=update_msg)
@@ -1516,7 +1517,7 @@ class CheckColumnNames(AnalyzeBase):
         aly_dicts = aly_dict.to_dict(orient='records')
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
-                     if x['missing'] and x['raw_file_columns']]
+                     if x['missing'] and x[Analyze.raw_columns]]
         for aly_dict in aly_dicts:
             vk = aly_dict[vmc.vendorkey]
             source = self.matrix.get_data_source(vk)
@@ -2500,7 +2501,7 @@ class AliChat(object):
             name = utl.get_next_value_from_list(words, model_name_list)
             if not name:
                 name_list = parent_model.get_name_list()
-                name = utl.get_dict_values_from_list(words, name_list)
+                name = utl.get_dict_values_from_list(words, name_list, True)
                 if name:
                     name = [name[0][next(iter(name[0]))]]
                 else:
@@ -2510,6 +2511,13 @@ class AliChat(object):
             new_model = new_model.check_and_add()
             prev_model = new_model
         return prev_model
+
+    @staticmethod
+    def check_children(words, new_g_child):
+        new_model = new_g_child.get_children()
+        if new_model:
+            new_model.check_col_in_words(new_model, words, new_g_child.id)
+            new_model.create_from_rules(new_model, new_g_child.id)
 
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
@@ -2538,7 +2546,7 @@ class AliChat(object):
             self.db.session.commit()
             db_model_g_child = new_child.get_children()
             partner_list, partner_type_list = db_model_g_child.get_name_list()
-            p_list = utl.get_dict_values_from_list(words, partner_list)
+            p_list = utl.get_dict_values_from_list(words, partner_list, True)
             for g_child in p_list:
                 lower_name = g_child[next(iter(g_child))].lower()
                 post_words = words[words.index(lower_name):]
@@ -2552,6 +2560,7 @@ class AliChat(object):
                 new_g_child.set_from_form(g_child, new_child)
                 self.db.session.add(new_g_child)
                 self.db.session.commit()
+                self.check_children(words, new_g_child)
             response, html_response = self.convert_model_ids_to_message(
                 db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
