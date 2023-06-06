@@ -424,32 +424,3 @@ class AwApi(object):
             return 0
         x = str(x).strip('[]')
         return ast.literal_eval(x)
-
-    # def test_connection(self, acc_col, camp_col, acc_pre):
-    #     success_msg = 'SUCCESS -- ID:'
-    #     failure_msg = 'FAILURE:'
-    #     results = []
-    #     headers = self.get_client()
-    #     try:
-    #         r = self.client.get(self.access_url, headers=headers)
-    #     except (ConnectionError, NewConnectionError) as e:
-    #         row = [acc_col, ' '.join([failure_msg, str(self.client_id)]),
-    #                False]
-    #         results.append(row)
-    #         return pd.DataFrame(data=results, columns=vmc.r_cols)
-    #     row = [acc_col, ' '.join([success_msg, str(self.client_id)]),
-    #            True]
-    #     results.append(row)
-    #     if self.campaign_filter:
-    #         df = self.get_data()
-    #         df = df[df['Campaign'].str.contains(str(self.campaign_filter))]
-    #         df = df.reset_index(drop=True)
-    #         if df.empty():
-    #             row = [camp_col, ' '.join([failure_msg,
-    #                                        str(self.campaign_filter)]), False]
-    #             results.append(row)
-    #         else:
-    #             row = [camp_col, ' '.join([success_msg,
-    #                                        str(self.campaign_filter)]), True]
-    #             results.append(row)
-    #     return pd.DataFrame(data=results, columns=vmc.r_cols)
