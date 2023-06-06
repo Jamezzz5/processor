@@ -23,7 +23,8 @@ class GsApi(object):
     text_format = 'NORMAL_TEXT'
 
     def __init__(self):
-        self.config = "gsapi_screenshots.json"
+        self.default_config = "gsapi_screenshots.json"
+        self.config = None
         self.config_file = None
         self.client_id = None
         self.client_secret = None
