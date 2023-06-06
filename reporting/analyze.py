@@ -1691,10 +1691,10 @@ class CheckFlatSpends(AnalyzeBase):
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
-                except AssertionError:
+                except ValueError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN]]]
+                              aly_dict[dctc.PN], 0]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
         translation_df = pd.concat([translation_df, tdf], ignore_index=True)
