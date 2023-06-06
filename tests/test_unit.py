@@ -533,7 +533,7 @@ class TestAnalyze:
         cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
-
+        
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
               'mpPackageDesc': ['Under', 'Full', 'Over'],
