@@ -92,11 +92,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
-            CheckFirstRow]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
+            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
+            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
+            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
+            CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1116,7 +1116,6 @@ class CheckFirstRow(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
     new_files = True
-    pre_run = True
     new_first_line = 'new_first_line'
 
     def find_first_row(self, source, df):
@@ -1179,6 +1178,7 @@ class CheckFirstRow(AnalyzeBase):
             self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
         if write:
             self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
 
     def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='records')
@@ -1186,6 +1186,7 @@ class CheckFirstRow(AnalyzeBase):
             self.fix_analysis_for_data_source(x, write=write)
         if write:
             self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
         return self.aly.matrix.vm_df
 
 
@@ -1425,6 +1426,7 @@ class FindPlacementNameCol(AnalyzeBase):
         return df
 
     def do_analysis(self):
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         df = []
         for source in data_sources:
@@ -1543,7 +1545,7 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = True
+    pre_run = False
     new_files = True
 
     def do_analysis(self):
@@ -1551,6 +1553,7 @@ class CheckColumnNames(AnalyzeBase):
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         data = []
         for source in data_sources:
@@ -1590,6 +1593,7 @@ class CheckColumnNames(AnalyzeBase):
         :returns: the vm as a df
         """
         aly_dicts = aly_dict.to_dict(orient='records')
+        self.matrix = vm.VendorMatrix(display_log=False)
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
                      if x['missing'] and x[Analyze.raw_columns]]
