@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import json
 import time
 import shutil
 import logging
@@ -663,9 +664,16 @@ def get_next_value_from_list(first_list, second_list):
     return next_values
 
 
-def get_dict_values_from_list(list_search, dict_check):
-    values_in_dict = [x for x in dict_check if
-                      x[next(iter(dict_check[0]))].lower() in list_search]
+def get_dict_values_from_list(list_search, dict_check, check_dupes=False):
+    values_in_dict = []
+    keys_added = []
+    dict_key = next(iter(dict_check[0]))
+    for x in dict_check:
+        lower_val = str(x[dict_key]).lower()
+        if lower_val in list_search:
+            if (check_dupes and lower_val not in keys_added) or not check_dupes:
+                keys_added.append(lower_val)
+                values_in_dict.append(x)
     return values_in_dict
 
 
@@ -675,3 +683,14 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
     else:
         return_value = missing_return_value
     return return_value
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)

@@ -54,7 +54,9 @@ class Analyze(object):
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
+    blank_lines = 'blank_lines'
     change_auto_order = 'change_auto_order'
+    brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -90,10 +92,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
+            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
+            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
+            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
+            CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -366,6 +369,10 @@ class Analyze(object):
         final_cols = [x for x in self.topline_metrics_final if x in df.columns]
         df = df[final_cols]
         df = df.transpose()
+        df = df.reindex(final_cols)
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df = df.fillna(0)
+        df = df.reset_index().rename(columns={'index': 'Topline Metrics'})
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
         if data_filter:
@@ -702,7 +709,7 @@ class Analyze(object):
         file_name = '{}.json'.format(vk)
         file_name = os.path.join(utl.tmp_file_suffix, file_name)
         with open(file_name, 'w') as fp:
-            json.dump(cd, fp)
+            json.dump(cd, fp, cls=utl.NpEncoder)
 
     @staticmethod
     def check_combine_col_totals(cd, df, cds_name, c_cols):
@@ -933,6 +940,24 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
+    def load_old_raw_file_dict(self, new, cu):
+        old = None
+        if os.path.exists(self.analysis_dict_file_name):
+            try:
+                with open(self.analysis_dict_file_name, 'r') as f:
+                    old = json.load(f)
+            except json.decoder.JSONDecodeError as e:
+                logging.warning('Json error assuming new sources: {}'.format(e))
+        if old:
+            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
+                                             analysis_dict=old)
+            old = pd.DataFrame(old[0]['data'])
+        else:
+            logging.warning('No analysis dict assuming all new sources.')
+            old = new.copy()
+            old[cu.update_tier_col] = cu.update_tier_never
+        return old
+
     def get_new_files(self):
         cu = CheckRawFileUpdateTime(self)
         cu.do_analysis()
@@ -941,16 +966,7 @@ class Analyze(object):
             logging.warning('Could not find update times.')
             return False
         new = pd.DataFrame(new[0]['data'])
-        if os.path.exists(self.analysis_dict_file_name):
-            with open(self.analysis_dict_file_name, 'r') as f:
-                old = json.load(f)
-            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
-                                             analysis_dict=old)
-            old = pd.DataFrame(old[0]['data'])
-        else:
-            logging.warning('No analysis dict assuming all new sources.')
-            old = new.copy()
-            old[cu.update_tier_col] = cu.update_tier_never
+        old = self.load_old_raw_file_dict(new, cu)
         if vmc.vendorkey not in old.columns:
             logging.warning('Old df missing vendor key column.')
             return []
@@ -1097,6 +1113,84 @@ class CheckAutoDictOrder(AnalyzeBase):
             self.fix_analysis_for_data_source(x, write=write)
         if write:
             self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
+class CheckFirstRow(AnalyzeBase):
+    name = Analyze.blank_lines
+    fix = True
+    new_files = True
+    new_first_line = 'new_first_line'
+
+    def find_first_row(self, source, df):
+        """
+        finds the first row in a raw file where any column in FPN appears
+        loops through only first 10 rows in case of major error
+        source -> an item from the VM
+        new_first_row -> row to be found
+        If first row is incorrect, returns a data frame containing:
+            vendor key and new_first_row
+        returns empty df otherwise
+        """
+        l_df = df
+        if vmc.filename not in source.p:
+            return l_df
+        raw_file = source.p[vmc.filename]
+        place_cols = source.p[dctc.FPN]
+        place_cols = [s.strip('::') if s.startswith('::')
+                      else s for s in place_cols]
+        old_first_row = int(source.p[vmc.firstrow])
+        df = utl.import_read_csv(raw_file, nrows=10)
+        if df.empty:
+            return l_df
+        for idx in range(len(df)):
+            tdf = utl.first_last_adj(df, idx, 0)
+            check = [x for x in place_cols if x in tdf.columns]
+            if check:
+                if idx == old_first_row:
+                    break
+                new_first_row = str(idx)
+                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                          self.new_first_line: [new_first_row]})
+                l_df = pd.concat([data_dict, l_df], ignore_index=True)
+                break
+        return l_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            df = self.find_first_row(source, df)
+        if df.empty:
+            msg = 'All first and last rows seem correct'
+        else:
+            msg = 'Suggested new row adjustments:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        """
+        Plugs in new first line from aly dict to the VM
+        source -> data source from aly dict (created from find_first_row)
+        """
+        vk = source[vmc.vendorkey]
+        new_first_line = source[self.new_first_line]
+        if int(new_first_line) > 0:
+            logging.info('Changing {} {} to {}'.format(
+                vk, vmc.firstrow, new_first_line))
+            self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, write=write)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
         return self.aly.matrix.vm_df
 
 
@@ -1336,6 +1430,7 @@ class FindPlacementNameCol(AnalyzeBase):
         return df
 
     def do_analysis(self):
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         df = []
         for source in data_sources:
@@ -1454,7 +1549,7 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = True
+    pre_run = False
     new_files = True
 
     def do_analysis(self):
@@ -1462,6 +1557,7 @@ class CheckColumnNames(AnalyzeBase):
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         data = []
         for source in data_sources:
@@ -1475,7 +1571,7 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = list(tdf.columns)
+            cols = cols = [x for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
@@ -1486,6 +1582,7 @@ class CheckColumnNames(AnalyzeBase):
                          'missing': missing_cols}
             data.append(data_dict)
         df = pd.DataFrame(data)
+        df = df.fillna('')
         update_msg = 'Columns and missing columns by key as follows:'
         logging.info('{}\n{}'.format(update_msg, df))
         self.add_to_analysis_dict(df=df, msg=update_msg)
@@ -1500,9 +1597,10 @@ class CheckColumnNames(AnalyzeBase):
         :returns: the vm as a df
         """
         aly_dicts = aly_dict.to_dict(orient='records')
+        self.matrix = vm.VendorMatrix(display_log=False)
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
-                     if x['missing'] and x['raw_file_columns']]
+                     if x['missing'] and x[Analyze.raw_columns]]
         for aly_dict in aly_dicts:
             vk = aly_dict[vmc.vendorkey]
             source = self.matrix.get_data_source(vk)
@@ -1676,10 +1774,10 @@ class CheckFlatSpends(AnalyzeBase):
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
-                except AssertionError:
+                except ValueError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN]]]
+                              aly_dict[dctc.PN], 0]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
         translation_df = pd.concat([translation_df, tdf], ignore_index=True)
@@ -2486,7 +2584,7 @@ class AliChat(object):
             name = utl.get_next_value_from_list(words, model_name_list)
             if not name:
                 name_list = parent_model.get_name_list()
-                name = utl.get_dict_values_from_list(words, name_list)
+                name = utl.get_dict_values_from_list(words, name_list, True)
                 if name:
                     name = [name[0][next(iter(name[0]))]]
                 else:
@@ -2496,6 +2594,13 @@ class AliChat(object):
             new_model = new_model.check_and_add()
             prev_model = new_model
         return prev_model
+
+    @staticmethod
+    def check_children(words, new_g_child):
+        new_model = new_g_child.get_children()
+        if new_model:
+            new_model.check_col_in_words(new_model, words, new_g_child.id)
+            new_model.create_from_rules(new_model, new_g_child.id)
 
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
@@ -2524,7 +2629,7 @@ class AliChat(object):
             self.db.session.commit()
             db_model_g_child = new_child.get_children()
             partner_list, partner_type_list = db_model_g_child.get_name_list()
-            p_list = utl.get_dict_values_from_list(words, partner_list)
+            p_list = utl.get_dict_values_from_list(words, partner_list, True)
             for g_child in p_list:
                 lower_name = g_child[next(iter(g_child))].lower()
                 post_words = words[words.index(lower_name):]
@@ -2538,6 +2643,7 @@ class AliChat(object):
                 new_g_child.set_from_form(g_child, new_child)
                 self.db.session.add(new_g_child)
                 self.db.session.commit()
+                self.check_children(words, new_g_child)
             response, html_response = self.convert_model_ids_to_message(
                 db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response

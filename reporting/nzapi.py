@@ -100,27 +100,29 @@ class NzApi(object):
             ed = dt.datetime.today()
         return sd, ed
 
-    def parse_fields(self, sd=None, ed=None, fields=None):
+    def parse_fields(self, sd, ed, fields=None):
         engage_url = self.engagement_url
         category_url = self.games_url
-        params = {
+        name = 'default'
+        default_params = {
             'start_date': sd.strftime("%Y-%m-%d"),
             'end_date': ed.strftime("%Y-%m-%d"),
-            'games': [self.game_title.split(',')]
+            'games': self.game_title.split(',')
         }
         if self.country_filter:
-            params['geo_type'] = 'markets'
-            params['markets'] = self.country_filter.split(',')
+            default_params['geo_type'] = 'markets'
+            default_params['markets'] = self.country_filter.split(',')
         url = '{}{}{}'.format(self.base_url, engage_url, category_url)
-        request_list = [('default', url, params)]
+        request_list = [(name, url, default_params)]
         if fields:
             for field in fields:
                 if field == 'Viewership':
                     engage_url = self.viewership_url
+                    name = 'viewership'
                 else:
                     continue
                 url = '{}{}{}'.format(self.base_url, engage_url, category_url)
-                request_list.append(('viewership', url, params))
+                request_list.append((name, url, default_params))
         return request_list
 
     def make_request(self, method, url, params=None, body=None, header=None):
