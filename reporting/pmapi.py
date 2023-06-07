@@ -85,11 +85,11 @@ class PmApi(object):
         elem = self.browser.find_element_by_xpath(xpath)
         return elem
 
-    def search_title(self):
+    def search_title(self, title):
         self.browser.implicitly_wait(10)
         title_bar = \
             self.browser.find_element_by_xpath('//*[@id=\"omnibox-text\"]')
-        title_bar.send_keys(self.pm_title)
+        title_bar.send_keys(title)
         time.sleep(10)
         title_result = '//*[@id="omnibox-text-menu"]/div/div/div[{}]'\
             .format(self.publisher)
@@ -97,9 +97,15 @@ class PmApi(object):
         title_result = self.browser.find_element_by_xpath(
             "//*[@class='entity-name']")
         logging.info('Getting data for {}.'.format(title_result.text))
+        return title_result.text
 
     def open_calendar(self):
         cal_button_xpath = '//*[@id="dates-filter-button"]/a'
+        pop_up_xpath = '//*[@id="pendo-close-guide-768f0d44"]'
+        try:
+            self.sw.click_on_xpath(pop_up_xpath)
+        except ex.NoSuchElementException:
+            pass
         self.sw.click_on_xpath(cal_button_xpath)
         custom_date_xpath = '//*[@id="date-filter-menu"]/div/div[1]/div[10]'
         self.sw.click_on_xpath(custom_date_xpath)
@@ -126,9 +132,10 @@ class PmApi(object):
         done_path = '//*[@id="date-filter-menu-date-picker-button"]/a/span'
         self.sw.click_on_xpath(done_path)
 
-    def create_report(self, sd, ed):
-        self.search_title()
+    def create_report(self, sd, ed, title):
+        resp_title = self.search_title(title)
         self.set_dates(sd, ed)
+        return resp_title
 
     def export_to_csv(self):
         export_xpath = '//*[@id=\"export-button\"]'
@@ -136,11 +143,12 @@ class PmApi(object):
             self.sw.click_on_xpath(export_xpath)
         except ex.NoSuchElementException:
             logging.error('No data for title. Aborting.')
-            sys.exit(0)
+            return False
         xlsx_path = '//*[@id="export-menu-options"]/div[1]'
         self.sw.click_on_xpath(xlsx_path)
         download_xpath = '//*[@id="pick-export-options"]'
         self.sw.click_on_xpath(download_xpath)
+        return True
 
     @staticmethod
     def get_url(html):
@@ -311,12 +319,19 @@ class PmApi(object):
         self.base_window = self.browser.window_handles[0]
         self.sw.go_to_url(self.base_url)
         self.sign_in()
-        self.create_report(sd, ed)
-        self.export_to_csv()
-        if self.brand_tracker:
-            creative_df = pd.DataFrame()
-        else:
-            creative_df = self.create_creatives_df()
-        df = self.get_file_as_df(self.temp_path, creative_df, ed)
+        df = pd.DataFrame()
+        title_list = self.pm_title.split(',')
+        for title in title_list:
+            resp_title = self.create_report(sd, ed, title)
+            export_success = self.export_to_csv()
+            if not export_success:
+                continue
+            if self.brand_tracker:
+                creative_df = pd.DataFrame()
+            else:
+                creative_df = self.create_creatives_df()
+            tdf = self.get_file_as_df(self.temp_path, creative_df, ed)
+            tdf['Title'] = resp_title
+            df = pd.concat([df, tdf], ignore_index=True)
         self.sw.quit()
         return df
