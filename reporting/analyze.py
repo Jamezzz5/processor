@@ -2463,6 +2463,7 @@ class ValueCalc(object):
 
 
 class AliChat(object):
+    openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
     found_model_msg = 'Here are some links:'
     create_success_msg = 'The object has been successfully created: '
@@ -2531,14 +2532,16 @@ class AliChat(object):
         tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
         cur_model = db_model.query.get(next(iter(model_ids)))
         cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
+        cur_model_name = [x.lower() for x in cur_model_name]
         for table in tables:
             t_list = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', table)
             t_list = [x.lower() for x in t_list]
             model_name = db_model.get_model_name_list()
             table_match = [
-                x for x in t_list if x.lower() in words and
-                                     x.lower() not in model_name and
-                                     x.lower() not in cur_model_name]
+                x for x in t_list if
+                x.lower() in words and
+                x.lower() not in model_name and
+                x.lower() not in cur_model_name]
             if table_match:
                 table_response = table
                 break
@@ -2547,6 +2550,7 @@ class AliChat(object):
     def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
         words = utl.lower_words_from_str(message)
+        words = [x for x in words if x not in db_model.get_model_name_list()]
         model_ids = {}
         for word in words:
             if word in word_idx:
@@ -2659,13 +2663,29 @@ class AliChat(object):
                 break
         return response, html_response
 
+    def format_openai_response(self, message, pre_resp):
+        response = self.get_openai_response(message)
+        response = '{}<br>{}'.format(pre_resp, response)
+        html_response = ''
+        return response, html_response
+
+    def check_if_openai_message(self, message):
+        response = ''
+        html_response = ''
+        open_words = ['openai', 'chatgpt', 'gpt4', 'gpt3']
+        words = utl.lower_words_from_str(message)
+        in_message = utl.is_list_in_list(open_words, words, True)
+        if in_message:
+            response, html_response = self.format_openai_response(
+                message, self.openai_found)
+        return response, html_response
+
     def get_response(self, message, models_to_search=None, db=None,
                      current_user=None):
         self.db = db
         self.current_user = current_user
-        response = None
-        html_response = None
-        if models_to_search:
+        response, html_response = self.check_if_openai_message(message)
+        if not response and models_to_search:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
                 if in_message:
@@ -2673,10 +2693,15 @@ class AliChat(object):
                         db_model, message)
                     break
         if not response:
-            response, html_response = self.search_db_models(
-                models_to_search[0], message, response, html_response)
+            for db_model in models_to_search:
+                r, hr = self.search_db_models(
+                    db_model, message, response, html_response)
+                if r:
+                    response = r
+                    hr = '{}<br>{}'.format(
+                        db_model.get_model_name_list()[0].upper(), hr)
+                    html_response += hr
         if not response:
-            response = self.get_openai_response(message)
-            response = '{}\n{}'.format(self.openai_msg, response)
-            html_response = ''
+            response, html_response = self.format_openai_response(
+                message, self.openai_msg)
         return response, html_response
