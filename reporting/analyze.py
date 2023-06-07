@@ -369,6 +369,10 @@ class Analyze(object):
         final_cols = [x for x in self.topline_metrics_final if x in df.columns]
         df = df[final_cols]
         df = df.transpose()
+        df = df.reindex(final_cols)
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df = df.fillna(0)
+        df = df.reset_index().rename(columns={'index': 'Topline Metrics'})
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
         if data_filter:
@@ -1770,10 +1774,10 @@ class CheckFlatSpends(AnalyzeBase):
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
-                except AssertionError:
+                except ValueError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN]]]
+                              aly_dict[dctc.PN], 0]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
         translation_df = pd.concat([translation_df, tdf], ignore_index=True)
