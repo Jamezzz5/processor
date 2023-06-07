@@ -54,6 +54,7 @@ class Analyze(object):
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
+    blank_lines = 'blank_lines'
     change_auto_order = 'change_auto_order'
     brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
@@ -91,10 +92,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
+            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
+            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
+            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
+            CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1110,6 +1112,84 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
+class CheckFirstRow(AnalyzeBase):
+    name = Analyze.blank_lines
+    fix = True
+    new_files = True
+    new_first_line = 'new_first_line'
+
+    def find_first_row(self, source, df):
+        """
+        finds the first row in a raw file where any column in FPN appears
+        loops through only first 10 rows in case of major error
+        source -> an item from the VM
+        new_first_row -> row to be found
+        If first row is incorrect, returns a data frame containing:
+            vendor key and new_first_row
+        returns empty df otherwise
+        """
+        l_df = df
+        if vmc.filename not in source.p:
+            return l_df
+        raw_file = source.p[vmc.filename]
+        place_cols = source.p[dctc.FPN]
+        place_cols = [s.strip('::') if s.startswith('::')
+                      else s for s in place_cols]
+        old_first_row = int(source.p[vmc.firstrow])
+        df = utl.import_read_csv(raw_file, nrows=10)
+        if df.empty:
+            return l_df
+        for idx in range(len(df)):
+            tdf = utl.first_last_adj(df, idx, 0)
+            check = [x for x in place_cols if x in tdf.columns]
+            if check:
+                if idx == old_first_row:
+                    break
+                new_first_row = str(idx)
+                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                          self.new_first_line: [new_first_row]})
+                l_df = pd.concat([data_dict, l_df], ignore_index=True)
+                break
+        return l_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            df = self.find_first_row(source, df)
+        if df.empty:
+            msg = 'All first and last rows seem correct'
+        else:
+            msg = 'Suggested new row adjustments:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        """
+        Plugs in new first line from aly dict to the VM
+        source -> data source from aly dict (created from find_first_row)
+        """
+        vk = source[vmc.vendorkey]
+        new_first_line = source[self.new_first_line]
+        if int(new_first_line) > 0:
+            logging.info('Changing {} {} to {}'.format(
+                vk, vmc.firstrow, new_first_line))
+            self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, write=write)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+        return self.aly.matrix.vm_df
+
+
 class CheckPackageCapping(AnalyzeBase):
     name = Analyze.package_cap
     cap_name = Analyze.cap_name
@@ -1346,6 +1426,7 @@ class FindPlacementNameCol(AnalyzeBase):
         return df
 
     def do_analysis(self):
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         df = []
         for source in data_sources:
@@ -1464,7 +1545,7 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = True
+    pre_run = False
     new_files = True
 
     def do_analysis(self):
@@ -1472,6 +1553,7 @@ class CheckColumnNames(AnalyzeBase):
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         data = []
         for source in data_sources:
@@ -1511,6 +1593,7 @@ class CheckColumnNames(AnalyzeBase):
         :returns: the vm as a df
         """
         aly_dicts = aly_dict.to_dict(orient='records')
+        self.matrix = vm.VendorMatrix(display_log=False)
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
                      if x['missing'] and x[Analyze.raw_columns]]
