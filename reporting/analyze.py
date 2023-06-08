@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import nltk
 import openai
 import shutil
 import logging
@@ -2549,8 +2550,11 @@ class AliChat(object):
 
     def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
+        nltk.download('stopwords')
+        stop_words = list(nltk.corpus.stopwords.words('english'))
         words = utl.lower_words_from_str(message)
-        words = [x for x in words if x not in db_model.get_model_name_list()]
+        words = [x for x in words if
+                 x not in db_model.get_model_name_list() + stop_words]
         model_ids = {}
         for word in words:
             if word in word_idx:
@@ -2700,6 +2704,8 @@ class AliChat(object):
                     response = r
                     hr = '{}<br>{}'.format(
                         db_model.get_model_name_list()[0].upper(), hr)
+                    if not html_response:
+                        html_response = ''
                     html_response += hr
         if not response:
             response, html_response = self.format_openai_response(
