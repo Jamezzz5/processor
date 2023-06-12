@@ -426,10 +426,11 @@ class AwApi(object):
         return ast.literal_eval(x)
 
     def return_row(self, col, result=False, acc_filter='Account'):
-        msg = 'FAILURE:'
+        msg = 'FAILURE: '
         row = []
         if result:
-            msg = 'SUCCESS -- ID:'
+            msg = 'SUCCESS -- ID: '
+            error_msg = ''
         if acc_filter == 'Account':
             msg_id = str(self.client_customer_id)
             row = [col, ''.join([msg, msg_id]), result]
@@ -475,13 +476,17 @@ class AwApi(object):
         results.append(row)
         if self.campaign_filter:
             df = self.get_only_campaigns()
-            df = df[df['Campaign'].str.contains(str(self.campaign_filter))]
-            df = df.reset_index(drop=True)
             if df.empty:
                 row = self.return_row(camp_col, False, acc_filter='Campaign')
                 results.append(row)
             else:
-                row = self.return_row(camp_col, True, acc_filter='Campaign')
-                results.append(row)
+                df = df[df['Campaign'].str.contains(str(self.campaign_filter))]
+                df = df.reset_index(drop=True)
+                if df.empty:
+                    row = self.return_row(camp_col, False, acc_filter='Campaign')
+                    results.append(row)
+                else:
+                    row = self.return_row(camp_col, True, acc_filter='Campaign')
+                    results.append(row)
         results = pd.DataFrame(data=results, columns=vmc.r_cols)
         return results
