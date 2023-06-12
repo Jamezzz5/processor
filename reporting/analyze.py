@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import nltk
 import openai
 import shutil
 import logging
@@ -54,6 +55,7 @@ class Analyze(object):
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
+    blank_lines = 'blank_lines'
     change_auto_order = 'change_auto_order'
     brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
@@ -91,10 +93,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckColumnNames, FindPlacementNameCol,
-            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
-            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
-            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
+            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
+            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
+            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
+            CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -367,6 +370,10 @@ class Analyze(object):
         final_cols = [x for x in self.topline_metrics_final if x in df.columns]
         df = df[final_cols]
         df = df.transpose()
+        df = df.reindex(final_cols)
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df = df.fillna(0)
+        df = df.reset_index().rename(columns={'index': 'Topline Metrics'})
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
         if data_filter:
@@ -1110,6 +1117,84 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
+class CheckFirstRow(AnalyzeBase):
+    name = Analyze.blank_lines
+    fix = True
+    new_files = True
+    new_first_line = 'new_first_line'
+
+    def find_first_row(self, source, df):
+        """
+        finds the first row in a raw file where any column in FPN appears
+        loops through only first 10 rows in case of major error
+        source -> an item from the VM
+        new_first_row -> row to be found
+        If first row is incorrect, returns a data frame containing:
+            vendor key and new_first_row
+        returns empty df otherwise
+        """
+        l_df = df
+        if vmc.filename not in source.p:
+            return l_df
+        raw_file = source.p[vmc.filename]
+        place_cols = source.p[dctc.FPN]
+        place_cols = [s.strip('::') if s.startswith('::')
+                      else s for s in place_cols]
+        old_first_row = int(source.p[vmc.firstrow])
+        df = utl.import_read_csv(raw_file, nrows=10)
+        if df.empty:
+            return l_df
+        for idx in range(len(df)):
+            tdf = utl.first_last_adj(df, idx, 0)
+            check = [x for x in place_cols if x in tdf.columns]
+            if check:
+                if idx == old_first_row:
+                    break
+                new_first_row = str(idx)
+                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                          self.new_first_line: [new_first_row]})
+                l_df = pd.concat([data_dict, l_df], ignore_index=True)
+                break
+        return l_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            df = self.find_first_row(source, df)
+        if df.empty:
+            msg = 'All first and last rows seem correct'
+        else:
+            msg = 'Suggested new row adjustments:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        """
+        Plugs in new first line from aly dict to the VM
+        source -> data source from aly dict (created from find_first_row)
+        """
+        vk = source[vmc.vendorkey]
+        new_first_line = source[self.new_first_line]
+        if int(new_first_line) > 0:
+            logging.info('Changing {} {} to {}'.format(
+                vk, vmc.firstrow, new_first_line))
+            self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, write=write)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+        return self.aly.matrix.vm_df
+
+
 class CheckPackageCapping(AnalyzeBase):
     name = Analyze.package_cap
     cap_name = Analyze.cap_name
@@ -1346,6 +1431,7 @@ class FindPlacementNameCol(AnalyzeBase):
         return df
 
     def do_analysis(self):
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         df = []
         for source in data_sources:
@@ -1464,7 +1550,7 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = True
+    pre_run = False
     new_files = True
 
     def do_analysis(self):
@@ -1472,6 +1558,7 @@ class CheckColumnNames(AnalyzeBase):
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         data = []
         for source in data_sources:
@@ -1511,6 +1598,7 @@ class CheckColumnNames(AnalyzeBase):
         :returns: the vm as a df
         """
         aly_dicts = aly_dict.to_dict(orient='records')
+        self.matrix = vm.VendorMatrix(display_log=False)
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
                      if x['missing'] and x[Analyze.raw_columns]]
@@ -1687,10 +1775,10 @@ class CheckFlatSpends(AnalyzeBase):
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
-                except AssertionError:
+                except ValueError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN]]]
+                              aly_dict[dctc.PN], 0]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
         translation_df = pd.concat([translation_df, tdf], ignore_index=True)
@@ -2376,6 +2464,7 @@ class ValueCalc(object):
 
 
 class AliChat(object):
+    openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
     found_model_msg = 'Here are some links:'
     create_success_msg = 'The object has been successfully created: '
@@ -2444,14 +2533,16 @@ class AliChat(object):
         tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
         cur_model = db_model.query.get(next(iter(model_ids)))
         cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
+        cur_model_name = [x.lower() for x in cur_model_name]
         for table in tables:
             t_list = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', table)
             t_list = [x.lower() for x in t_list]
             model_name = db_model.get_model_name_list()
             table_match = [
-                x for x in t_list if x.lower() in words and
-                                     x.lower() not in model_name and
-                                     x.lower() not in cur_model_name]
+                x for x in t_list if
+                x.lower() in words and
+                x.lower() not in model_name and
+                x.lower() not in cur_model_name]
             if table_match:
                 table_response = table
                 break
@@ -2459,7 +2550,11 @@ class AliChat(object):
 
     def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
+        nltk.download('stopwords')
+        stop_words = list(nltk.corpus.stopwords.words('english'))
         words = utl.lower_words_from_str(message)
+        words = [x for x in words if
+                 x not in db_model.get_model_name_list() + stop_words]
         model_ids = {}
         for word in words:
             if word in word_idx:
@@ -2572,13 +2667,29 @@ class AliChat(object):
                 break
         return response, html_response
 
+    def format_openai_response(self, message, pre_resp):
+        response = self.get_openai_response(message)
+        response = '{}<br>{}'.format(pre_resp, response)
+        html_response = ''
+        return response, html_response
+
+    def check_if_openai_message(self, message):
+        response = ''
+        html_response = ''
+        open_words = ['openai', 'chatgpt', 'gpt4', 'gpt3']
+        words = utl.lower_words_from_str(message)
+        in_message = utl.is_list_in_list(open_words, words, True)
+        if in_message:
+            response, html_response = self.format_openai_response(
+                message, self.openai_found)
+        return response, html_response
+
     def get_response(self, message, models_to_search=None, db=None,
                      current_user=None):
         self.db = db
         self.current_user = current_user
-        response = None
-        html_response = None
-        if models_to_search:
+        response, html_response = self.check_if_openai_message(message)
+        if not response and models_to_search:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
                 if in_message:
@@ -2586,10 +2697,17 @@ class AliChat(object):
                         db_model, message)
                     break
         if not response:
-            response, html_response = self.search_db_models(
-                models_to_search[0], message, response, html_response)
+            for db_model in models_to_search:
+                r, hr = self.search_db_models(
+                    db_model, message, response, html_response)
+                if r:
+                    response = r
+                    hr = '{}<br>{}'.format(
+                        db_model.get_model_name_list()[0].upper(), hr)
+                    if not html_response:
+                        html_response = ''
+                    html_response += hr
         if not response:
-            response = self.get_openai_response(message)
-            response = '{}\n{}'.format(self.openai_msg, response)
-            html_response = ''
+            response, html_response = self.format_openai_response(
+                message, self.openai_msg)
         return response, html_response
