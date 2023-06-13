@@ -1572,7 +1572,7 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = cols = [x for x in tdf.columns if str(x) != 'nan']
+            cols = [x for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
@@ -2568,10 +2568,13 @@ class AliChat(object):
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
             table_name = self.check_db_model_table(db_model, words, model_ids)
+            edit_made = self.edit_db_model(db_model, words, model_ids)
             table_bool = True if table_name else False
+            response = self.found_model_msg
+            if edit_made:
+                response = '{}<br>{}'.format(edit_made, self.found_model_msg)
             response, html_response = self.convert_model_ids_to_message(
-                db_model, model_ids, self.found_model_msg, table_bool,
-                table_name)
+                db_model, model_ids, response, table_bool, table_name)
         return response, html_response
 
     @staticmethod
@@ -2655,6 +2658,25 @@ class AliChat(object):
             response, html_response = self.convert_model_ids_to_message(
                 db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
+
+    def edit_db_model(self, db_model, words, model_ids):
+        response = ''
+        create_words = ['change', 'edit']
+        is_edit = utl.is_list_in_list(create_words, words)
+        if is_edit:
+            for k, v in db_model.__dict__.items():
+                in_list = utl.is_list_in_list([k], words)
+                if in_list:
+                    cur_model = db_model.query.get(next(iter(model_ids)))
+                    pw = words[words.index(k) + 1:]
+                    pw = [x for x in pw if x not in [cur_model.name]]
+                    new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+                    setattr(cur_model, k, new_val)
+                    self.db.session.commit()
+                    response = 'The {} for {} was changed to {}'.format(
+                        k, cur_model.name, new_val)
+                    break
+        return response
 
     def db_model_response_functions(self, db_model, message):
         response = False
