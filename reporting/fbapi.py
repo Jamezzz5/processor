@@ -7,7 +7,6 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-from datetime import date
 import reporting.utils as utl
 import reporting.awss3 as awss3
 import reporting.gsapi as gsapi
@@ -183,15 +182,10 @@ class FbApi(object):
     def date_check(sd, ed):
         sd = sd.date()
         ed = ed.date()
-        current_date = date.today()
         if sd > ed:
             logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed
-        if ed > current_date:
-            logging.warning('End date greater than todays date. End date '
-                            'was set to todays date.')
-            ed = current_date
         return sd, ed
 
     def get_data(self, sd=None, ed=None, fields=None):
