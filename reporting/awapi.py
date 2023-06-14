@@ -425,32 +425,72 @@ class AwApi(object):
         x = str(x).strip('[]')
         return ast.literal_eval(x)
 
+    def return_row(self, col, result=False, acc_filter='Account'):
+        msg = 'FAILURE: '
+        row = []
+        if result:
+            msg = 'SUCCESS -- ID: '
+        if acc_filter == 'Account':
+            msg_id = str(self.client_customer_id)
+            row = [col, ''.join([msg, msg_id]), result]
+            return row
+        if acc_filter == 'Campaign':
+            msg_id = str(self.campaign_filter)
+            row = [col, ''.join([msg, msg_id]), result]
+            return row
+        return row
+
+    def get_only_campaigns(self):
+        sd = dt.datetime.today()
+        ed = dt.datetime.today()
+        report = {
+            "query": """
+                        SELECT 
+                            campaign.id,
+                            campaign.name
+                        FROM campaign
+                        WHERE segments.date >= '{}'
+                        AND segments.date <= '{}'""".format(
+                sd.strftime('%Y-%m-%d'),
+                ed.strftime('%Y-%m-%d'))}
+        r = self.request_report(report)
+        r = self.check_report(r, report)
+        if not r:
+            logging.warning('No response returning blank df.')
+            return self.df
+        fields = self.parse_fields(fields=None)
+        self.df = self.report_to_df(r, fields)
+        return self.df
+
     def test_connection(self, acc_col, camp_col, acc_pre):
-        success_msg = 'SUCCESS -- ID:'
-        failure_msg = 'FAILURE:'
         results = []
         headers = self.get_client()
         try:
             r = self.client.get(self.access_url, headers=headers)
         except (ConnectionError, NewConnectionError) as e:
-            row = [acc_col, ' '.join([failure_msg, str(self.client_customer_id)]),
-                   False]
+            row = self.return_row(acc_col, False,
+                                  acc_filter='Account')
             results.append(row)
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-        row = [acc_col, ' '.join([success_msg, str(self.client_customer_id)]),
-               True]
+        row = self.return_row(acc_col, True,
+                              acc_filter='Account')
         results.append(row)
         if self.campaign_filter:
-            df = self.get_data()
-            df = df[df['Campaign'].str.contains(str(self.campaign_filter))]
-            df = df.reset_index(drop=True)
+            df = self.get_only_campaigns()
             if df.empty:
-                row = [camp_col, ' '.join([failure_msg,
-                                           str(self.campaign_filter)]), False]
+                row = self.return_row(camp_col, False,
+                                      acc_filter='Campaign')
                 results.append(row)
             else:
-                row = [camp_col, ' '.join([success_msg,
-                                           str(self.campaign_filter)]), True]
-                results.append(row)
+                df = df[df['Campaign'].str.contains(str(self.campaign_filter))]
+                df = df.reset_index(drop=True)
+                if df.empty:
+                    row = self.return_row(camp_col, False,
+                                          acc_filter='Campaign')
+                    results.append(row)
+                else:
+                    row = self.return_row(camp_col, True,
+                                          acc_filter='Campaign')
+                    results.append(row)
         results = pd.DataFrame(data=results, columns=vmc.r_cols)
         return results
