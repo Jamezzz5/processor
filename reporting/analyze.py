@@ -982,15 +982,18 @@ class Analyze(object):
         new_file_check = []
         if new_files:
             new_file_check = self.get_new_files()
-            if not new_file_check:
-                return self.fixes_to_run
+        kwargs = {'only_new_files': new_files,
+                  'new_file_list': new_file_check}
         for analysis_class in self.class_list:
             if analysis_class.fix:
                 is_pre_run = pre_run and analysis_class.pre_run
                 is_new_file = new_files and analysis_class.new_files
+                is_all_files = analysis_class.all_files
+                if new_files and is_all_files:
+                    kwargs['only_new_files'] = False
+                    kwargs['new_file_list'] = []
                 if is_pre_run or first_run or is_new_file:
-                    analysis_class(self).do_and_fix_analysis(
-                        only_new_files=new_files, new_file_list=new_file_check)
+                    analysis_class(self).do_and_fix_analysis(**kwargs)
         return self.fixes_to_run
 
 
@@ -999,6 +1002,7 @@ class AnalyzeBase(object):
     fix = False
     pre_run = False
     new_files = False
+    all_files = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -1121,6 +1125,7 @@ class CheckFirstRow(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
     new_files = True
+    all_files = True
     new_first_line = 'new_first_line'
 
     def find_first_row(self, source, df):
@@ -1550,8 +1555,8 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = False
     new_files = True
+    all_files = True
 
     def do_analysis(self):
         """
