@@ -2664,23 +2664,58 @@ class AliChat(object):
                 db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
 
+    def check_db_model_col(self, db_model, words, cur_model, omit_list=None):
+        response = ''
+        if not omit_list:
+            omit_list = []
+        for k, v in db_model.__dict__.items():
+            check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k)
+            check_words = [x for x in check_words if x]
+            in_list = utl.is_list_in_list(check_words, words, True, True)
+            if in_list:
+                pw = words[words.index(in_list[0]) + 1:]
+                skip_words = [cur_model.name.lower()] + omit_list
+                pw = [x for x in pw if x not in skip_words]
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+                setattr(cur_model, k, new_val)
+                self.db.session.commit()
+                response = 'The {} for {} was changed to {}'.format(
+                    k, cur_model.name, new_val)
+                break
+        return response
+
+    def check_children_for_edit(self, cur_model, words):
+        response = ''
+        children = cur_model.get_current_children()
+        omit_list = [cur_model.name]
+        for child in children:
+            lower_name = child.name.lower()
+            in_words = utl.is_list_in_list([lower_name], words, True)
+            if in_words:
+                response = self.check_db_model_col(
+                    child, words, child, omit_list)
+                break
+            else:
+                g_children = child.get_current_children()
+                omit_list.append(lower_name)
+                for g_child in g_children:
+                    lower_name = g_child.name.lower()
+                    in_words = utl.is_list_in_list([lower_name], words, True)
+                    if in_words:
+                        response = self.check_db_model_col(
+                            g_child, words, g_child, omit_list)
+                        break
+        if not response:
+            response = self.check_db_model_col(cur_model, words, cur_model)
+        return response
+
     def edit_db_model(self, db_model, words, model_ids):
         response = ''
-        create_words = ['change', 'edit']
-        is_edit = utl.is_list_in_list(create_words, words)
+        edit_words = ['change', 'edit', 'adjust', 'alter']
+        is_edit = utl.is_list_in_list(edit_words, words)
         if is_edit:
-            for k, v in db_model.__dict__.items():
-                in_list = utl.is_list_in_list([k], words)
-                if in_list:
-                    cur_model = db_model.query.get(next(iter(model_ids)))
-                    pw = words[words.index(k) + 1:]
-                    pw = [x for x in pw if x not in [cur_model.name]]
-                    new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
-                    setattr(cur_model, k, new_val)
-                    self.db.session.commit()
-                    response = 'The {} for {} was changed to {}'.format(
-                        k, cur_model.name, new_val)
-                    break
+            cur_model = db_model.query.get(next(iter(model_ids)))
+            response = self.check_children_for_edit(cur_model, words)
         return response
 
     def db_model_response_functions(self, db_model, message):
