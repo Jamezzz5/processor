@@ -982,15 +982,18 @@ class Analyze(object):
         new_file_check = []
         if new_files:
             new_file_check = self.get_new_files()
-            if not new_file_check:
-                return self.fixes_to_run
+        kwargs = {'only_new_files': new_files,
+                  'new_file_list': new_file_check}
         for analysis_class in self.class_list:
             if analysis_class.fix:
                 is_pre_run = pre_run and analysis_class.pre_run
                 is_new_file = new_files and analysis_class.new_files
+                is_all_files = analysis_class.all_files
+                if new_files and is_all_files:
+                    kwargs['only_new_files'] = False
+                    kwargs['new_file_list'] = []
                 if is_pre_run or first_run or is_new_file:
-                    analysis_class(self).do_and_fix_analysis(
-                        only_new_files=new_files, new_file_list=new_file_check)
+                    analysis_class(self).do_and_fix_analysis(**kwargs)
         return self.fixes_to_run
 
 
@@ -999,6 +1002,7 @@ class AnalyzeBase(object):
     fix = False
     pre_run = False
     new_files = False
+    all_files = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -1121,6 +1125,7 @@ class CheckFirstRow(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
     new_files = True
+    all_files = True
     new_first_line = 'new_first_line'
 
     def find_first_row(self, source, df):
@@ -1550,8 +1555,8 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = False
     new_files = True
+    all_files = True
 
     def do_analysis(self):
         """
@@ -1572,7 +1577,7 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = cols = [x for x in tdf.columns if str(x) != 'nan']
+            cols = [x for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
@@ -2568,10 +2573,13 @@ class AliChat(object):
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
             table_name = self.check_db_model_table(db_model, words, model_ids)
+            edit_made = self.edit_db_model(db_model, words, model_ids)
             table_bool = True if table_name else False
+            response = self.found_model_msg
+            if edit_made:
+                response = '{}<br>{}'.format(edit_made, self.found_model_msg)
             response, html_response = self.convert_model_ids_to_message(
-                db_model, model_ids, self.found_model_msg, table_bool,
-                table_name)
+                db_model, model_ids, response, table_bool, table_name)
         return response, html_response
 
     @staticmethod
@@ -2655,6 +2663,60 @@ class AliChat(object):
             response, html_response = self.convert_model_ids_to_message(
                 db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
+
+    def check_db_model_col(self, db_model, words, cur_model, omit_list=None):
+        response = ''
+        if not omit_list:
+            omit_list = []
+        for k, v in db_model.__dict__.items():
+            check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k)
+            check_words = [x for x in check_words if x]
+            in_list = utl.is_list_in_list(check_words, words, True, True)
+            if in_list:
+                pw = words[words.index(in_list[0]) + 1:]
+                skip_words = [cur_model.name.lower()] + omit_list
+                pw = [x for x in pw if x not in skip_words]
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+                setattr(cur_model, k, new_val)
+                self.db.session.commit()
+                response = 'The {} for {} was changed to {}'.format(
+                    k, cur_model.name, new_val)
+                break
+        return response
+
+    def check_children_for_edit(self, cur_model, words):
+        response = ''
+        children = cur_model.get_current_children()
+        omit_list = [cur_model.name]
+        for child in children:
+            lower_name = child.name.lower()
+            in_words = utl.is_list_in_list([lower_name], words, True)
+            if in_words:
+                response = self.check_db_model_col(
+                    child, words, child, omit_list)
+                break
+            else:
+                g_children = child.get_current_children()
+                omit_list.append(lower_name)
+                for g_child in g_children:
+                    lower_name = g_child.name.lower()
+                    in_words = utl.is_list_in_list([lower_name], words, True)
+                    if in_words:
+                        response = self.check_db_model_col(
+                            g_child, words, g_child, omit_list)
+                        break
+        if not response:
+            response = self.check_db_model_col(cur_model, words, cur_model)
+        return response
+
+    def edit_db_model(self, db_model, words, model_ids):
+        response = ''
+        edit_words = ['change', 'edit', 'adjust', 'alter']
+        is_edit = utl.is_list_in_list(edit_words, words)
+        if is_edit:
+            cur_model = db_model.query.get(next(iter(model_ids)))
+            response = self.check_children_for_edit(cur_model, words)
+        return response
 
     def db_model_response_functions(self, db_model, message):
         response = False
