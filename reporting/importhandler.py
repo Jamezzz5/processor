@@ -88,13 +88,13 @@ class ImportHandler(object):
         filename -- the name of the file to write to on disk
         """
         utl.dir_check(utl.raw_path)
-        if str(api_merge) != 'nan':
-            api_df = self.merge_df(api_df, filename, date_col, start_date,
-                                   end_date, first_row, last_row, api_merge)
         if '/' in filename:
             full_file = filename
         else:
             full_file = os.path.join(utl.raw_path, filename)
+        if str(api_merge) != 'nan':
+            api_df = self.merge_df(api_df, full_file, date_col, start_date,
+                                   end_date, first_row, last_row, api_merge)
         self.write_df(api_df, full_file)
 
     def write_df(self, api_df, full_file, attempt=0):
@@ -114,9 +114,9 @@ class ImportHandler(object):
 
     def merge_df(self, api_df, filename, date_col, start_date, end_date,
                  first_row, last_row, api_merge):
-        if not os.path.isfile(os.path.join(utl.raw_path, filename)):
+        if not os.path.isfile(filename):
             return api_df
-        df = utl.import_read_csv(filename, utl.raw_path)
+        df = utl.import_read_csv(filename)
         df = self.merge_df_cleaning(df, first_row, last_row, date_col, pd.NaT,
                                     end_date - dt.timedelta(days=api_merge))
         api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
