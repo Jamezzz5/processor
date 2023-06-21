@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import nltk
 import openai
 import shutil
 import logging
@@ -55,6 +56,7 @@ class Analyze(object):
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
     blank_lines = 'blank_lines'
+    check_last_row = 'check_last_row'
     change_auto_order = 'change_auto_order'
     brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
@@ -92,11 +94,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckFirstRow, CheckColumnNames,
-            FindPlacementNameCol, CheckAutoDictOrder, CheckApiDateLength,
-            CheckFlatSpends, CheckDoubleCounting, GetPacingAnalysis,
-            GetDailyDelivery, GetServingAlerts, GetDailyPacingAlerts,
-            CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
+            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
+            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
+            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
+            GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -369,6 +371,10 @@ class Analyze(object):
         final_cols = [x for x in self.topline_metrics_final if x in df.columns]
         df = df[final_cols]
         df = df.transpose()
+        df = df.reindex(final_cols)
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df = df.fillna(0)
+        df = df.reset_index().rename(columns={'index': 'Topline Metrics'})
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
         if data_filter:
@@ -977,15 +983,18 @@ class Analyze(object):
         new_file_check = []
         if new_files:
             new_file_check = self.get_new_files()
-            if not new_file_check:
-                return self.fixes_to_run
+        kwargs = {'only_new_files': new_files,
+                  'new_file_list': new_file_check}
         for analysis_class in self.class_list:
             if analysis_class.fix:
                 is_pre_run = pre_run and analysis_class.pre_run
                 is_new_file = new_files and analysis_class.new_files
+                is_all_files = analysis_class.all_files
+                if new_files and is_all_files:
+                    kwargs['only_new_files'] = False
+                    kwargs['new_file_list'] = []
                 if is_pre_run or first_run or is_new_file:
-                    analysis_class(self).do_and_fix_analysis(
-                        only_new_files=new_files, new_file_list=new_file_check)
+                    analysis_class(self).do_and_fix_analysis(**kwargs)
         return self.fixes_to_run
 
 
@@ -994,6 +1003,7 @@ class AnalyzeBase(object):
     fix = False
     pre_run = False
     new_files = False
+    all_files = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -1116,6 +1126,7 @@ class CheckFirstRow(AnalyzeBase):
     name = Analyze.blank_lines
     fix = True
     new_files = True
+    all_files = True
     new_first_line = 'new_first_line'
 
     def find_first_row(self, source, df):
@@ -1187,6 +1198,77 @@ class CheckFirstRow(AnalyzeBase):
         if write:
             self.aly.matrix.write()
             self.matrix = vm.VendorMatrix(display_log=False)
+        return self.aly.matrix.vm_df
+
+
+class CheckLastRow(AnalyzeBase):
+    name = Analyze.check_last_row
+    new_last_line = 'new_last_line'
+
+    def check_total_row_exists(self, source, df):
+        """
+        Sums all impressions and clicks in every row except last
+        compares to the values in last row
+        if equal returns True
+        """
+        totals_df = df
+        old_last_row = source.p[vmc.lastrow]
+        if int(old_last_row) == 1:
+            return totals_df
+        if vmc.filename not in source.p:
+            return totals_df
+        raw_file = source.p[vmc.filename]
+        df = utl.import_read_csv(raw_file)
+        if df.empty:
+            return totals_df
+        active_metrics = source.get_active_metrics()
+        active_metrics = active_metrics.values()
+        try:
+            active_metrics = [x for x in active_metrics if x in df.columns]
+            df = df[active_metrics]
+        except (KeyError, TypeError) as error:
+            logging.debug(error, "active metrics may be missing or mislabeled")
+            return totals_df
+        if df.empty:
+            return totals_df
+        df = df.round(decimals=2)
+        col_sums = df.iloc[:-1, :].sum()
+        totals_row = df.iloc[-1, :]
+        if (col_sums == totals_row).all():
+            new_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                  self.new_last_line: '1'})
+            totals_df = pd.concat([totals_df, new_df], ignore_index=True)
+        return totals_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            df = self.check_total_row_exists(source, df)
+        if df.empty:
+            msg = 'All last rows seem correct'
+        else:
+            msg = 'Suggested new row adjustments:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        vk = source[vmc.vendorkey]
+        new_last_line = source[self.new_last_line]
+        if int(new_last_line) > 0:
+            logging.info('Changing {} {} to {}'.format(
+                vk, vmc.lastrow, new_last_line))
+            self.aly.matrix.vm_change_on_key(vk, vmc.lastrow, new_last_line)
+        if write:
+            self.aly.matrix.write()
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, write=write)
+        if write:
+            self.aly.matrix.write()
         return self.aly.matrix.vm_df
 
 
@@ -1545,8 +1627,8 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = False
     new_files = True
+    all_files = True
 
     def do_analysis(self):
         """
@@ -1567,7 +1649,7 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = cols = [x for x in tdf.columns if str(x) != 'nan']
+            cols = [x for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
@@ -1770,10 +1852,10 @@ class CheckFlatSpends(AnalyzeBase):
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
-                except AssertionError:
+                except ValueError:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN]]]
+                              aly_dict[dctc.PN], 0]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
                     tdf = pd.concat([tdf, row], ignore_index=True)
         translation_df = pd.concat([translation_df, tdf], ignore_index=True)
@@ -2459,6 +2541,7 @@ class ValueCalc(object):
 
 
 class AliChat(object):
+    openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
     found_model_msg = 'Here are some links:'
     create_success_msg = 'The object has been successfully created: '
@@ -2527,14 +2610,16 @@ class AliChat(object):
         tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
         cur_model = db_model.query.get(next(iter(model_ids)))
         cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
+        cur_model_name = [x.lower() for x in cur_model_name]
         for table in tables:
             t_list = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', table)
             t_list = [x.lower() for x in t_list]
             model_name = db_model.get_model_name_list()
             table_match = [
-                x for x in t_list if x.lower() in words and
-                                     x.lower() not in model_name and
-                                     x.lower() not in cur_model_name]
+                x for x in t_list if
+                x.lower() in words and
+                x.lower() not in model_name and
+                x.lower() not in cur_model_name]
             if table_match:
                 table_response = table
                 break
@@ -2542,7 +2627,11 @@ class AliChat(object):
 
     def search_db_models(self, db_model, message, response, html_response):
         word_idx = self.index_db_model_by_word(db_model)
+        nltk.download('stopwords')
+        stop_words = list(nltk.corpus.stopwords.words('english'))
         words = utl.lower_words_from_str(message)
+        words = [x for x in words if
+                 x not in db_model.get_model_name_list() + stop_words]
         model_ids = {}
         for word in words:
             if word in word_idx:
@@ -2556,10 +2645,13 @@ class AliChat(object):
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
             table_name = self.check_db_model_table(db_model, words, model_ids)
+            edit_made = self.edit_db_model(db_model, words, model_ids)
             table_bool = True if table_name else False
+            response = self.found_model_msg
+            if edit_made:
+                response = '{}<br>{}'.format(edit_made, self.found_model_msg)
             response, html_response = self.convert_model_ids_to_message(
-                db_model, model_ids, self.found_model_msg, table_bool,
-                table_name)
+                db_model, model_ids, response, table_bool, table_name)
         return response, html_response
 
     @staticmethod
@@ -2644,6 +2736,60 @@ class AliChat(object):
                 db_model, [new_model.id], self.create_success_msg, True)
         return response, html_response
 
+    def check_db_model_col(self, db_model, words, cur_model, omit_list=None):
+        response = ''
+        if not omit_list:
+            omit_list = []
+        for k, v in db_model.__dict__.items():
+            check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k)
+            check_words = [x for x in check_words if x]
+            in_list = utl.is_list_in_list(check_words, words, True, True)
+            if in_list:
+                pw = words[words.index(in_list[0]) + 1:]
+                skip_words = [cur_model.name.lower()] + omit_list
+                pw = [x for x in pw if x not in skip_words]
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+                setattr(cur_model, k, new_val)
+                self.db.session.commit()
+                response = 'The {} for {} was changed to {}'.format(
+                    k, cur_model.name, new_val)
+                break
+        return response
+
+    def check_children_for_edit(self, cur_model, words):
+        response = ''
+        children = cur_model.get_current_children()
+        omit_list = [cur_model.name]
+        for child in children:
+            lower_name = child.name.lower()
+            in_words = utl.is_list_in_list([lower_name], words, True)
+            if in_words:
+                response = self.check_db_model_col(
+                    child, words, child, omit_list)
+                break
+            else:
+                g_children = child.get_current_children()
+                omit_list.append(lower_name)
+                for g_child in g_children:
+                    lower_name = g_child.name.lower()
+                    in_words = utl.is_list_in_list([lower_name], words, True)
+                    if in_words:
+                        response = self.check_db_model_col(
+                            g_child, words, g_child, omit_list)
+                        break
+        if not response:
+            response = self.check_db_model_col(cur_model, words, cur_model)
+        return response
+
+    def edit_db_model(self, db_model, words, model_ids):
+        response = ''
+        edit_words = ['change', 'edit', 'adjust', 'alter']
+        is_edit = utl.is_list_in_list(edit_words, words)
+        if is_edit:
+            cur_model = db_model.query.get(next(iter(model_ids)))
+            response = self.check_children_for_edit(cur_model, words)
+        return response
+
     def db_model_response_functions(self, db_model, message):
         response = False
         html_response = False
@@ -2655,13 +2801,29 @@ class AliChat(object):
                 break
         return response, html_response
 
+    def format_openai_response(self, message, pre_resp):
+        response = self.get_openai_response(message)
+        response = '{}<br>{}'.format(pre_resp, response)
+        html_response = ''
+        return response, html_response
+
+    def check_if_openai_message(self, message):
+        response = ''
+        html_response = ''
+        open_words = ['openai', 'chatgpt', 'gpt4', 'gpt3']
+        words = utl.lower_words_from_str(message)
+        in_message = utl.is_list_in_list(open_words, words, True)
+        if in_message:
+            response, html_response = self.format_openai_response(
+                message, self.openai_found)
+        return response, html_response
+
     def get_response(self, message, models_to_search=None, db=None,
                      current_user=None):
         self.db = db
         self.current_user = current_user
-        response = None
-        html_response = None
-        if models_to_search:
+        response, html_response = self.check_if_openai_message(message)
+        if not response and models_to_search:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
                 if in_message:
@@ -2669,10 +2831,17 @@ class AliChat(object):
                         db_model, message)
                     break
         if not response:
-            response, html_response = self.search_db_models(
-                models_to_search[0], message, response, html_response)
+            for db_model in models_to_search:
+                r, hr = self.search_db_models(
+                    db_model, message, response, html_response)
+                if r:
+                    response = r
+                    hr = '{}<br>{}'.format(
+                        db_model.get_model_name_list()[0].upper(), hr)
+                    if not html_response:
+                        html_response = ''
+                    html_response += hr
         if not response:
-            response = self.get_openai_response(message)
-            response = '{}\n{}'.format(self.openai_msg, response)
-            html_response = ''
+            response, html_response = self.format_openai_response(
+                message, self.openai_msg)
         return response, html_response
