@@ -600,6 +600,8 @@ class TwApi(object):
         tweet_ids = df['tweetid'].unique()
         id_dict = {}
         for tweet_id in tweet_ids:
+            if tweet_id == 'PROMOTED ACCOUNT':
+                continue
             if int(tweet_id) in self.tweet_dict:
                 id_dict[str(tweet_id)] = {
                     'name': self.tweet_dict[int(tweet_id)]['name'],
