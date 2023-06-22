@@ -1556,7 +1556,7 @@ class CheckColumnNames(AnalyzeBase):
     name = Analyze.raw_columns
     fix = True
     new_files = True
-    all_files = True
+    # all_files = True
 
     def do_analysis(self):
         """
