@@ -1040,7 +1040,7 @@ class AnalyzeBase(object):
 class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
     fix = True
-    new_files = True
+    # new_files = True
 
     @staticmethod
     def get_vendor_list():
