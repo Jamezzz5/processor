@@ -994,6 +994,7 @@ class Analyze(object):
                     kwargs['new_file_list'] = []
                 if is_pre_run or first_run or is_new_file:
                     analysis_class(self).do_and_fix_analysis(**kwargs)
+                    self.matrix = vm.VendorMatrix(display_log=False)
         return self.fixes_to_run
 
 
@@ -1040,38 +1041,55 @@ class AnalyzeBase(object):
 class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
     fix = True
-    # new_files = True
+    new_files = True
 
     @staticmethod
-    def get_vendor_list():
+    def get_vendor_list(col=dctc.VEN):
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
         if dctc.DICT_COL_NAME not in tc.df.columns:
             return ven_list
-        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == col]
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
-            ven_list = [x for x in ven_list if x not in ['nan', '0']]
+            ven_list = [x for x in ven_list if x not in ['nan', '0', 'None']]
         return ven_list
 
-    def do_analysis_on_data_source(self, source, df, ven_list=None):
+    def do_analysis_on_data_source(self, source, df, ven_list=None,
+                                   cou_list=None):
         if not ven_list:
             ven_list = self.get_vendor_list()
-        tdf = source.get_raw_df()
-        if dctc.FPN not in tdf.columns or tdf.empty:
-            return df
-        tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
-        ven_col_counts = [tdf[col].isin(ven_list).sum()
-                          for col in tdf.columns]
-        max_val = max(ven_col_counts)
-        max_idx = min(
-            [idx for idx, val in enumerate(ven_col_counts) if val == max_val])
+        if not cou_list:
+            cou_list = self.get_vendor_list(dctc.COU)
         auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
                          if dctc.VEN in source.p[vmc.autodicord] else None)
-        if (auto_dict_idx and max_idx != auto_dict_idx and
-                ven_col_counts[max_idx] > 0):
+        if not auto_dict_idx:
+            return df
+        cou_after_ven = source.p[vmc.autodicord][auto_dict_idx + 1] == dctc.COU
+        if not cou_after_ven:
+            return df
+        tdf = source.get_raw_df()
+        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
+                         if dctc.VEN in source.p[vmc.autodicord] else None)
+        if dctc.FPN not in tdf.columns or tdf.empty:
+            return df
+        auto_place = source.p[vmc.autodicplace]
+        if auto_place == dctc.PN:
+            auto_place = source.p[vmc.placement]
+        tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
+        max_idx = 0
+        max_val = 0
+        ven_counts = 0
+        for col in tdf.columns:
+            cou_counts = tdf[col].isin(cou_list).sum()
+            total = ven_counts + cou_counts
+            if total > max_val:
+                max_val = total
+                max_idx = col - 1
+            ven_counts = tdf[col].isin(ven_list).sum()
+        if auto_dict_idx and max_idx != auto_dict_idx and max_val > 0:
             diff = auto_dict_idx - max_idx
             if diff > 0:
                 new_order = source.p[vmc.autodicord][diff:]
@@ -1087,8 +1105,9 @@ class CheckAutoDictOrder(AnalyzeBase):
         data_sources = self.matrix.get_all_data_sources()
         df = []
         ven_list = self.get_vendor_list()
+        cou_list = self.get_vendor_list(dctc.COU)
         for ds in data_sources:
-            df = self.do_analysis_on_data_source(ds, df, ven_list)
+            df = self.do_analysis_on_data_source(ds, df, ven_list, cou_list)
         df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
@@ -1556,7 +1575,7 @@ class CheckColumnNames(AnalyzeBase):
     name = Analyze.raw_columns
     fix = True
     new_files = True
-    # all_files = True
+    all_files = True
 
     def do_analysis(self):
         """
