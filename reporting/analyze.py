@@ -2490,7 +2490,7 @@ class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
     found_model_msg = 'Here are some links:'
-    create_success_msg = 'The object has been successfully created: '
+    create_success_msg = 'The object has been successfully created.  '
 
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
@@ -2636,6 +2636,51 @@ class AliChat(object):
             new_model.check_col_in_words(new_model, words, new_g_child.id)
             new_model.create_from_rules(new_model, new_g_child.id)
 
+    def create_db_model_children(self, cur_model, words):
+        response = ''
+        cur_children = cur_model.get_current_children()
+        db_model_child = cur_model.get_children()
+        child_list = db_model_child.get_name_list()
+        child_name = [x for x in words if x in child_list]
+        if not child_name and not cur_children:
+            child_name = child_list
+        if child_name:
+            new_child = db_model_child()
+            new_child.set_from_form({'name': child_name[0]}, cur_model)
+            self.db.session.add(new_child)
+            self.db.session.commit()
+            msg = 'The {} is named {}.  '.format(
+                db_model_child.__name__, child_name[0])
+            response += msg
+        else:
+            new_child = [x for x in cur_children if x.name in words]
+            if not new_child:
+                new_child = cur_children
+            new_child = new_child[0]
+        db_model_g_child = new_child.get_children()
+        partner_list, partner_type_list = db_model_g_child.get_name_list()
+        p_list = utl.get_dict_values_from_list(words, partner_list, True)
+        if p_list:
+            response += '{}(s) added '.format(db_model_g_child.__name__)
+        for g_child in p_list:
+            g_child_name = g_child[next(iter(g_child))]
+            lower_name = g_child_name.lower()
+            post_words = words[words.index(lower_name):]
+            cost = [x for x in post_words if
+                    any(y.isdigit() for y in x) and x != cur_model.name]
+            if cost:
+                cost = cost[0].replace('k', '000')
+            else:
+                cost = 0
+            g_child['total_budget'] = cost
+            new_g_child = db_model_g_child()
+            new_g_child.set_from_form(g_child, new_child)
+            self.db.session.add(new_g_child)
+            self.db.session.commit()
+            response += '{} ({}) '.format(g_child_name, cost)
+            self.check_children(words, new_g_child)
+        return response
+
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
@@ -2652,34 +2697,10 @@ class AliChat(object):
                                     self.current_user.id)
             self.db.session.add(new_model)
             self.db.session.commit()
-            db_model_child = new_model.get_children()
-            child_list = db_model_child.get_name_list()
-            child_name = [x for x in words if x in child_list]
-            if not child_name:
-                child_name = child_list
-            new_child = db_model_child()
-            new_child.set_from_form({'name': child_name[0]}, new_model)
-            self.db.session.add(new_child)
-            self.db.session.commit()
-            db_model_g_child = new_child.get_children()
-            partner_list, partner_type_list = db_model_g_child.get_name_list()
-            p_list = utl.get_dict_values_from_list(words, partner_list, True)
-            for g_child in p_list:
-                lower_name = g_child[next(iter(g_child))].lower()
-                post_words = words[words.index(lower_name):]
-                cost = [x for x in post_words if any(y.isdigit() for y in x)]
-                if cost:
-                    cost = cost[0].replace('k', '000')
-                else:
-                    cost = 0
-                g_child['total_budget'] = cost
-                new_g_child = db_model_g_child()
-                new_g_child.set_from_form(g_child, new_child)
-                self.db.session.add(new_g_child)
-                self.db.session.commit()
-                self.check_children(words, new_g_child)
+            response = self.create_db_model_children(new_model, words)
+            response = '{}{}'.format(self.create_success_msg, response)
             response, html_response = self.convert_model_ids_to_message(
-                db_model, [new_model.id], self.create_success_msg, True)
+                db_model, [new_model.id], response, True)
         return response, html_response
 
     def check_db_model_col(self, db_model, words, cur_model, omit_list=None):
@@ -2725,14 +2746,16 @@ class AliChat(object):
                         break
         if not response:
             response = self.check_db_model_col(cur_model, words, cur_model)
+        if not response:
+            response = self.create_db_model_children(cur_model, words)
         return response
 
     def edit_db_model(self, db_model, words, model_ids):
         response = ''
-        edit_words = ['change', 'edit', 'adjust', 'alter']
+        edit_words = ['change', 'edit', 'adjust', 'alter', 'add']
         is_edit = utl.is_list_in_list(edit_words, words)
         if is_edit:
-            cur_model = db_model.query.get(next(iter(model_ids)))
+            cur_model = self.db.session.get(db_model, next(iter(model_ids)))
             response = self.check_children_for_edit(cur_model, words)
         return response
 
