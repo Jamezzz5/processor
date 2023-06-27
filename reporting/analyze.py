@@ -94,11 +94,12 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
-            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping]
+            # CheckRawFileUpdateTime, CheckFirstRow,
+            CheckLastRow]
+            # CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
+            # CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
+            # GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
+            # GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1204,6 +1205,9 @@ class CheckFirstRow(AnalyzeBase):
 class CheckLastRow(AnalyzeBase):
     name = Analyze.check_last_row
     new_last_line = 'new_last_line'
+    fix = True
+    new_files = True
+    all_files = True
 
     def check_total_row_exists(self, source, df):
         """
@@ -1213,9 +1217,7 @@ class CheckLastRow(AnalyzeBase):
         """
         totals_df = df
         old_last_row = source.p[vmc.lastrow]
-        if int(old_last_row) == 1:
-            return totals_df
-        if vmc.filename not in source.p:
+        if int(old_last_row) == 1 or vmc.filename not in source.p:
             return totals_df
         raw_file = source.p[vmc.filename]
         df = utl.import_read_csv(raw_file)
@@ -1223,8 +1225,8 @@ class CheckLastRow(AnalyzeBase):
             return totals_df
         active_metrics = source.get_active_metrics()
         active_metrics = active_metrics.values()
+        active_metrics = [x for x in active_metrics if x in df.columns]
         try:
-            active_metrics = [x for x in active_metrics if x in df.columns]
             df = df[active_metrics]
         except (KeyError, TypeError) as error:
             logging.debug(error, "active metrics may be missing or mislabeled")
@@ -1236,12 +1238,15 @@ class CheckLastRow(AnalyzeBase):
         totals_row = df.iloc[-1, :]
         if (col_sums == totals_row).all():
             new_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                  self.new_last_line: '1'})
+                                  self.new_last_line: ['1']})
             totals_df = pd.concat([totals_df, new_df], ignore_index=True)
         return totals_df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
+        data_sources = [ds for ds in data_sources
+                        if 'Rawfile' in ds.p[vmc.vendorkey]
+                        if 'GoogleSheets' in ds.p[vmc.vendorkey]]
         df = pd.DataFrame()
         for source in data_sources:
             df = self.check_total_row_exists(source, df)
