@@ -1065,14 +1065,13 @@ class CheckAutoDictOrder(AnalyzeBase):
             cou_list = self.get_vendor_list(dctc.COU)
         auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
                          if dctc.VEN in source.p[vmc.autodicord] else None)
-        if not auto_dict_idx:
+        auto_order = source.p[vmc.autodicord]
+        if not auto_dict_idx or (len(auto_order) <= (auto_dict_idx + 1)):
             return df
-        cou_after_ven = source.p[vmc.autodicord][auto_dict_idx + 1] == dctc.COU
+        cou_after_ven = auto_order[auto_dict_idx + 1] == dctc.COU
         if not cou_after_ven:
             return df
         tdf = source.get_raw_df()
-        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                         if dctc.VEN in source.p[vmc.autodicord] else None)
         if dctc.FPN not in tdf.columns or tdf.empty:
             return df
         auto_place = source.p[vmc.autodicplace]
@@ -1092,9 +1091,9 @@ class CheckAutoDictOrder(AnalyzeBase):
         if auto_dict_idx and max_idx != auto_dict_idx and max_val > 0:
             diff = auto_dict_idx - max_idx
             if diff > 0:
-                new_order = source.p[vmc.autodicord][diff:]
+                new_order = auto_order[diff:]
             else:
-                new_order = (diff * -1) * [dctc.MIS] + source.p[vmc.autodicord]
+                new_order = (diff * -1) * [dctc.MIS] + auto_order
             data_dict = {vmc.vendorkey: source.key, self.name: new_order}
             if df is None:
                 df = []
