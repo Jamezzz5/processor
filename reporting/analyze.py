@@ -1243,14 +1243,17 @@ class CheckLastRow(AnalyzeBase):
             return totals_df
         active_metrics = source.get_active_metrics()
         active_metrics = active_metrics.values()
+        active_metrics = [item for s_list in active_metrics for item in s_list]
         active_metrics = [x for x in active_metrics if x in df.columns]
         try:
             df = df[active_metrics]
-        except (KeyError, TypeError) as error:
-            logging.debug(error, "active metrics may be missing or mislabeled")
+        except KeyError:
+            logging.debug("active metrics may be missing or mislabeled")
             return totals_df
         if df.empty:
             return totals_df
+        df = df.replace(',', '', regex=True)
+        df = df.apply(pd.to_numeric, errors='coerce')
         df = df.round(decimals=2)
         col_sums = df.iloc[:-1, :].sum()
         totals_row = df.iloc[-1, :]
@@ -1263,8 +1266,8 @@ class CheckLastRow(AnalyzeBase):
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
         data_sources = [ds for ds in data_sources
-                        if 'Rawfile' in ds.p[vmc.vendorkey]
-                        if 'GoogleSheets' in ds.p[vmc.vendorkey]]
+                        if 'Rawfile' in ds.key
+                        or 'GoogleSheets' in ds.key]
         df = pd.DataFrame()
         for source in data_sources:
             df = self.check_total_row_exists(source, df)
