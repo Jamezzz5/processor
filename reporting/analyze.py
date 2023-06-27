@@ -94,12 +94,11 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            # CheckRawFileUpdateTime, CheckFirstRow,
-            CheckLastRow]
-            # CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            # CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            # GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            # GetDailyPacingAlerts, CheckPackageCapping]
+            CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
+            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
+            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
+            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
+            GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1255,9 +1254,9 @@ class CheckLastRow(AnalyzeBase):
         df = df.replace(',', '', regex=True)
         df = df.apply(pd.to_numeric, errors='coerce')
         df = df.round(decimals=2)
-        col_sums = df.iloc[:-1, :].sum()
+        col_sums = df.iloc[:-1, :].sum(min_count=1)
         totals_row = df.iloc[-1, :]
-        if (col_sums == totals_row).all():
+        if col_sums.equals(totals_row):
             new_df = pd.DataFrame({vmc.vendorkey: [source.key],
                                   self.new_last_line: ['1']})
             totals_df = pd.concat([totals_df, new_df], ignore_index=True)
