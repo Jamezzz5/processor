@@ -1228,7 +1228,7 @@ class CheckLastRow(AnalyzeBase):
 
     def check_total_row_exists(self, source, df):
         """
-        Sums all impressions and clicks in every row except last
+        Sums all active metrics in every row except last
         compares to the values in last row
         if equal returns True
         """

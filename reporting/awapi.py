@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 from urllib3.exceptions import ConnectionError, NewConnectionError
 
