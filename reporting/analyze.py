@@ -1059,6 +1059,8 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None):
+        if vmc.autodicord not in source.p:
+            return df
         if not ven_list:
             ven_list = self.get_vendor_list()
         if not cou_list:
