@@ -338,3 +338,20 @@ def calculate_cost(df):
     df = agency_fees_calculation(df)
     df = total_cost_calculation(df)
     return df
+
+
+def calculate_weight_z_score(df, weights_dict):
+    zscore_suffix = '_zscore'
+    means = df.mean(axis=0)
+    stds = df.std(axis=0)
+    zscores = ((df - means) / stds)
+    output_df = df.merge(zscores, left_index=True, right_index=True,
+                         suffixes=("", zscore_suffix)).sort_index(axis=1)
+    for col_type in weights_dict:
+        cols = [col for col in weights_dict[col_type]
+                if col in zscores.columns]
+        weights = pd.Series({k: v for k, v in weights_dict[col_type].items()
+                             if k in zscores.columns})
+        output_df[col_type] = zscores[cols].fillna(0).dot(weights)
+    output_df = output_df.reset_index()
+    return output_df

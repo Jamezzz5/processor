@@ -184,7 +184,8 @@ class DBUpload(object):
         cols = self.dbs.get_cols_for_export(table)
         cols_to_add = []
         other_event_cols = [
-            exc.event_steam_name, exc.event_conv_name, exc.event_plan_name]
+            exc.event_steam_name, exc.event_conv_name, exc.event_plan_name,
+            exc.event_brand_name]
         if exc.event_name in cols and not any(
                 [x in cols for x in other_event_cols]):
             cols_to_add = [x for x in self.dft.real_columns
@@ -707,7 +708,7 @@ class DFTranslation(object):
         self.df[exc.event_name] = (self.df[exc.event_date].astype('U') +
                                    self.df[exc.full_placement_name])
         for col in [exc.plan_name, exc.event_steam_name, exc.event_conv_name,
-                    exc.event_plan_name]:
+                    exc.event_plan_name, exc.event_brand_name]:
             self.df[col] = self.df[exc.event_name]
 
     def slice_for_upload(self, columns):
@@ -811,7 +812,7 @@ class ScriptBuilder(object):
         if not tables:
             return original_from_script
         elif 'all' in tables:
-            tables = ['eventconv', 'eventplan', 'eventsteam']
+            tables = ['eventconv', 'eventplan', 'eventsteam', 'eventbrand']
         from_script = original_from_script
         for table_name in tables:
             table = [x for x in self.tables if x.name == table_name][0]
@@ -886,7 +887,8 @@ class ScriptBuilder(object):
             'plannednetcost', 'plannednetcost'))
         if event_tables:
             if 'all' in event_tables:
-                event_tables = ['eventconv', 'eventplan', 'eventsteam']
+                event_tables = ['eventconv', 'eventplan', 'eventsteam',
+                                'eventbrand']
             append_tables = [x for x in self.tables if x.name in event_tables]
             for table in append_tables:
                 append_columns = [

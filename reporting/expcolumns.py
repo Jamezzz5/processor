@@ -40,6 +40,7 @@ event_name = 'eventname'
 event_steam_name = 'eventsteamname'
 event_conv_name = 'eventconvname'
 event_plan_name = 'eventplanname'
+event_brand_name = 'eventbrandname'
 plan_name = 'planname'
 full_placement_name = 'fullplacementname'
 
