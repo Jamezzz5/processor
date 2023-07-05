@@ -2621,9 +2621,10 @@ class AliChat(object):
         html_response = ''
         for idx, model_id in enumerate(model_ids):
             obj = db_model.query.get(model_id)
-            html_response += """
-                {}.  <a href="{}" target="_blank">{}</a><br>
-                """.format(idx + 1, obj.get_url(), obj.name)
+            if obj:
+                html_response += """
+                    {}.  <a href="{}" target="_blank">{}</a><br>
+                    """.format(idx + 1, obj.get_url(), obj.name)
             if html_table:
                 table_elem = obj.get_table_elem(table_name)
                 html_response += '<br>{}'.format(table_elem)
@@ -2650,7 +2651,7 @@ class AliChat(object):
                 break
         return table_response
 
-    def search_db_models(self, db_model, message, response, html_response):
+    def find_db_model(self, db_model, message):
         word_idx = self.index_db_model_by_word(db_model)
         nltk.download('stopwords')
         stop_words = list(nltk.corpus.stopwords.words('english'))
@@ -2669,6 +2670,11 @@ class AliChat(object):
         if model_ids:
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
+        return model_ids, words
+
+    def search_db_models(self, db_model, message, response, html_response):
+        model_ids, words = self.find_db_model(db_model, message)
+        if model_ids:
             table_name = self.check_db_model_table(db_model, words, model_ids)
             edit_made = self.edit_db_model(db_model, words, model_ids)
             table_bool = True if table_name else False

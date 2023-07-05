@@ -146,6 +146,20 @@ conv7 = 'Conv7'
 conv8 = 'Conv8'
 conv9 = 'Conv9'
 conv10 = 'Conv10'
+media_spend = 'Media Spend'
+youtube_subscribers = 'YouTube Subscribers'
+twitter_followers = 'Twitter Followers'
+twitch_views = 'Twitch Views'
+twitch_viewers = 'Twitch Concurrent Viewers'
+subreddit_members = 'Subreddit Members'
+player_share = 'Player Share'
+nz_awareness = 'NewZoo - Awareness'
+np_score = 'Net Promoter Score'
+coverage = 'Netbase - Coverage'
+month_avg_user = 'Monthly Average Users'
+stickiness = 'Stickiness'
+days_played = 'Days Played'
+play_intent = 'Intent to Play (Non-Players)'
 
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
@@ -175,7 +189,10 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            steam_purchases, steam_activations,
            modelcoefa, modelcoefb, modelcoefc, AD_COST, REP_COST, VER_COST,
            conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
-           conv10]
+           conv10, media_spend, youtube_subscribers, twitter_followers,
+           twitch_views, twitch_viewers, subreddit_members, player_share,
+           nz_awareness, np_score, coverage, month_avg_user, stickiness,
+           days_played, play_intent]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
@@ -184,6 +201,11 @@ datecol = [startdate, enddate]
 datadatecol = [date]
 datafloatcol = datacol[:]
 datafloatcol.remove(date)
+
+brand_cols = [media_spend, youtube_subscribers, twitter_followers,
+              twitch_views, twitch_viewers, subreddit_members,
+              player_share, nz_awareness, np_score, coverage,
+              month_avg_user, stickiness, days_played, play_intent]
 
 filename_true = 'FILENAME-TRUE'
 

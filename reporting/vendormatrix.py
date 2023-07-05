@@ -1043,7 +1043,7 @@ def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
     rules = [col for col in ovm.columns if 'RULE_' in col]
     rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
-    vm = nvm.append(ovm, sort=True)
+    vm = pd.concat([nvm, ovm], sort=True)
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'],
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])

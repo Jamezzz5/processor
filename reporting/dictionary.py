@@ -748,7 +748,7 @@ def dict_update():
         if dctc.FPN not in dic.data_dict.columns:
             continue
         odic = dic.get()
-        df = ndic.append(odic, sort=True)
+        df = pd.concat([ndic, odic], sort=True)
         if 'pncFull Placement Name' in df.columns:
             df[dctc.FPN] = df['pncFull Placement Name']
             df = df[cols]
