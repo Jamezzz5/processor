@@ -2542,9 +2542,10 @@ class AliChat(object):
         html_response = ''
         for idx, model_id in enumerate(model_ids):
             obj = db_model.query.get(model_id)
-            html_response += """
-                {}.  <a href="{}" target="_blank">{}</a><br>
-                """.format(idx + 1, obj.get_url(), obj.name)
+            if obj:
+                html_response += """
+                    {}.  <a href="{}" target="_blank">{}</a><br>
+                    """.format(idx + 1, obj.get_url(), obj.name)
             if html_table:
                 table_elem = obj.get_table_elem(table_name)
                 html_response += '<br>{}'.format(table_elem)
