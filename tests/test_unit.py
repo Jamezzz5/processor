@@ -1128,3 +1128,16 @@ class TestExport():
             base_table, event_tables=event_tables)
         assert set(column_names) == set(expected_col_names)
         assert set(sum_columns) == set(expected_sum_cols)
+
+    @pytest.mark.parametrize(
+        'metrics, expected_tables', [
+            (['impressions', 'clicks'], []),
+            (['impressions', 'clicks', 'conv2', 'plan_clicks'],
+             ['eventconv', 'eventplan'])
+        ],
+        ids=['default', 'conv_plan']
+    )
+    def test_get_active_event_tables(self, metrics, expected_tables):
+        sb = exp.ScriptBuilder()
+        append_tables = sb.get_active_event_tables(metrics)
+        assert set(append_tables) == set(expected_tables)
