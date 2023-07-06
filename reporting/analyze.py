@@ -2278,7 +2278,7 @@ class GetServingAlerts(AnalyzeBase):
         if not plan_names:
             return pd.DataFrame()
         final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
-        if not df.empty:
+        if not df.empty and dctc.VEN in df:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
             df[self.adserving_ratio] = df.apply(
                 lambda row: 0 if row[vmc.cost] == 0
