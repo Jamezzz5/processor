@@ -362,7 +362,10 @@ def give_df_default_format(df, columns=None):
         columns = df.columns
     for col in columns:
         format_map = get_default_format(col)
-        df[col] = df[col].map(format_map)
+        try:
+            df[col] = df[col].map(format_map)
+        except ValueError as e:
+            logging.warning('ValueError: {}'.format(e))
     return df
 
 

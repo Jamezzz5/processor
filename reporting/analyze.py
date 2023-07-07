@@ -994,6 +994,7 @@ class Analyze(object):
                     kwargs['new_file_list'] = []
                 if is_pre_run or first_run or is_new_file:
                     analysis_class(self).do_and_fix_analysis(**kwargs)
+                    self.matrix = vm.VendorMatrix(display_log=False)
         return self.fixes_to_run
 
 
@@ -1043,40 +1044,58 @@ class CheckAutoDictOrder(AnalyzeBase):
     new_files = True
 
     @staticmethod
-    def get_vendor_list():
+    def get_vendor_list(col=dctc.VEN):
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
         if dctc.DICT_COL_NAME not in tc.df.columns:
             return ven_list
-        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == col]
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
-            ven_list = [x for x in ven_list if x not in ['nan', '0']]
+            ven_list = [x for x in ven_list if x not in ['nan', '0', 'None']]
         return ven_list
 
-    def do_analysis_on_data_source(self, source, df, ven_list=None):
+    def do_analysis_on_data_source(self, source, df, ven_list=None,
+                                   cou_list=None):
+        if vmc.autodicord not in source.p:
+            return df
         if not ven_list:
             ven_list = self.get_vendor_list()
+        if not cou_list:
+            cou_list = self.get_vendor_list(dctc.COU)
+        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
+                         if dctc.VEN in source.p[vmc.autodicord] else None)
+        auto_order = source.p[vmc.autodicord]
+        if not auto_dict_idx or (len(auto_order) <= (auto_dict_idx + 1)):
+            return df
+        cou_after_ven = auto_order[auto_dict_idx + 1] == dctc.COU
+        if not cou_after_ven:
+            return df
         tdf = source.get_raw_df()
         if dctc.FPN not in tdf.columns or tdf.empty:
             return df
-        tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
-        ven_col_counts = [tdf[col].isin(ven_list).sum()
-                          for col in tdf.columns]
-        max_val = max(ven_col_counts)
-        max_idx = min(
-            [idx for idx, val in enumerate(ven_col_counts) if val == max_val])
-        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                         if dctc.VEN in source.p[vmc.autodicord] else None)
-        if (auto_dict_idx and max_idx != auto_dict_idx and
-                ven_col_counts[max_idx] > 0):
+        auto_place = source.p[vmc.autodicplace]
+        if auto_place == dctc.PN:
+            auto_place = source.p[vmc.placement]
+        tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
+        max_idx = 0
+        max_val = 0
+        ven_counts = 0
+        for col in tdf.columns:
+            cou_counts = tdf[col].isin(cou_list).sum()
+            total = ven_counts + cou_counts
+            if total > max_val:
+                max_val = total
+                max_idx = col - 1
+            ven_counts = tdf[col].isin(ven_list).sum()
+        if auto_dict_idx and max_idx != auto_dict_idx and max_val > 0:
             diff = auto_dict_idx - max_idx
             if diff > 0:
-                new_order = source.p[vmc.autodicord][diff:]
+                new_order = auto_order[diff:]
             else:
-                new_order = (diff * -1) * [dctc.MIS] + source.p[vmc.autodicord]
+                new_order = (diff * -1) * [dctc.MIS] + auto_order
             data_dict = {vmc.vendorkey: source.key, self.name: new_order}
             if df is None:
                 df = []
@@ -1087,8 +1106,9 @@ class CheckAutoDictOrder(AnalyzeBase):
         data_sources = self.matrix.get_all_data_sources()
         df = []
         ven_list = self.get_vendor_list()
+        cou_list = self.get_vendor_list(dctc.COU)
         for ds in data_sources:
-            df = self.do_analysis_on_data_source(ds, df, ven_list)
+            df = self.do_analysis_on_data_source(ds, df, ven_list, cou_list)
         df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
@@ -1577,7 +1597,7 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = [x for x in tdf.columns if str(x) != 'nan']
+            cols = [str(x) for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
@@ -2258,7 +2278,7 @@ class GetServingAlerts(AnalyzeBase):
         if not plan_names:
             return pd.DataFrame()
         final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
-        if not df.empty:
+        if not df.empty and dctc.VEN in df:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
             df[self.adserving_ratio] = df.apply(
                 lambda row: 0 if row[vmc.cost] == 0
@@ -2472,7 +2492,7 @@ class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
     found_model_msg = 'Here are some links:'
-    create_success_msg = 'The object has been successfully created: '
+    create_success_msg = 'The object has been successfully created.  '
 
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
@@ -2524,9 +2544,10 @@ class AliChat(object):
         html_response = ''
         for idx, model_id in enumerate(model_ids):
             obj = db_model.query.get(model_id)
-            html_response += """
-                {}.  <a href="{}" target="_blank">{}</a><br>
-                """.format(idx + 1, obj.get_url(), obj.name)
+            if obj:
+                html_response += """
+                    {}.  <a href="{}" target="_blank">{}</a><br>
+                    """.format(idx + 1, obj.get_url(), obj.name)
             if html_table:
                 table_elem = obj.get_table_elem(table_name)
                 html_response += '<br>{}'.format(table_elem)
@@ -2553,7 +2574,7 @@ class AliChat(object):
                 break
         return table_response
 
-    def search_db_models(self, db_model, message, response, html_response):
+    def find_db_model(self, db_model, message):
         word_idx = self.index_db_model_by_word(db_model)
         nltk.download('stopwords')
         stop_words = list(nltk.corpus.stopwords.words('english'))
@@ -2572,6 +2593,11 @@ class AliChat(object):
         if model_ids:
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
+        return model_ids, words
+
+    def search_db_models(self, db_model, message, response, html_response):
+        model_ids, words = self.find_db_model(db_model, message)
+        if model_ids:
             table_name = self.check_db_model_table(db_model, words, model_ids)
             edit_made = self.edit_db_model(db_model, words, model_ids)
             table_bool = True if table_name else False
@@ -2618,6 +2644,51 @@ class AliChat(object):
             new_model.check_col_in_words(new_model, words, new_g_child.id)
             new_model.create_from_rules(new_model, new_g_child.id)
 
+    def create_db_model_children(self, cur_model, words):
+        response = ''
+        cur_children = cur_model.get_current_children()
+        db_model_child = cur_model.get_children()
+        child_list = db_model_child.get_name_list()
+        child_name = [x for x in words if x in child_list]
+        if not child_name and not cur_children:
+            child_name = child_list
+        if child_name:
+            new_child = db_model_child()
+            new_child.set_from_form({'name': child_name[0]}, cur_model)
+            self.db.session.add(new_child)
+            self.db.session.commit()
+            msg = 'The {} is named {}.  '.format(
+                db_model_child.__name__, child_name[0])
+            response += msg
+        else:
+            new_child = [x for x in cur_children if x.name in words]
+            if not new_child:
+                new_child = cur_children
+            new_child = new_child[0]
+        db_model_g_child = new_child.get_children()
+        partner_list, partner_type_list = db_model_g_child.get_name_list()
+        p_list = utl.get_dict_values_from_list(words, partner_list, True)
+        if p_list:
+            response += '{}(s) added '.format(db_model_g_child.__name__)
+        for g_child in p_list:
+            g_child_name = g_child[next(iter(g_child))]
+            lower_name = g_child_name.lower()
+            post_words = words[words.index(lower_name):]
+            cost = [x for x in post_words if
+                    any(y.isdigit() for y in x) and x != cur_model.name]
+            if cost:
+                cost = cost[0].replace('k', '000')
+            else:
+                cost = 0
+            g_child['total_budget'] = cost
+            new_g_child = db_model_g_child()
+            new_g_child.set_from_form(g_child, new_child)
+            self.db.session.add(new_g_child)
+            self.db.session.commit()
+            response += '{} ({}) '.format(g_child_name, cost)
+            self.check_children(words, new_g_child)
+        return response
+
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
@@ -2634,34 +2705,10 @@ class AliChat(object):
                                     self.current_user.id)
             self.db.session.add(new_model)
             self.db.session.commit()
-            db_model_child = new_model.get_children()
-            child_list = db_model_child.get_name_list()
-            child_name = [x for x in words if x in child_list]
-            if not child_name:
-                child_name = child_list
-            new_child = db_model_child()
-            new_child.set_from_form({'name': child_name[0]}, new_model)
-            self.db.session.add(new_child)
-            self.db.session.commit()
-            db_model_g_child = new_child.get_children()
-            partner_list, partner_type_list = db_model_g_child.get_name_list()
-            p_list = utl.get_dict_values_from_list(words, partner_list, True)
-            for g_child in p_list:
-                lower_name = g_child[next(iter(g_child))].lower()
-                post_words = words[words.index(lower_name):]
-                cost = [x for x in post_words if any(y.isdigit() for y in x)]
-                if cost:
-                    cost = cost[0].replace('k', '000')
-                else:
-                    cost = 0
-                g_child['total_budget'] = cost
-                new_g_child = db_model_g_child()
-                new_g_child.set_from_form(g_child, new_child)
-                self.db.session.add(new_g_child)
-                self.db.session.commit()
-                self.check_children(words, new_g_child)
+            response = self.create_db_model_children(new_model, words)
+            response = '{}{}'.format(self.create_success_msg, response)
             response, html_response = self.convert_model_ids_to_message(
-                db_model, [new_model.id], self.create_success_msg, True)
+                db_model, [new_model.id], response, True)
         return response, html_response
 
     def check_db_model_col(self, db_model, words, cur_model, omit_list=None):
@@ -2707,14 +2754,16 @@ class AliChat(object):
                         break
         if not response:
             response = self.check_db_model_col(cur_model, words, cur_model)
+        if not response:
+            response = self.create_db_model_children(cur_model, words)
         return response
 
     def edit_db_model(self, db_model, words, model_ids):
         response = ''
-        edit_words = ['change', 'edit', 'adjust', 'alter']
+        edit_words = ['change', 'edit', 'adjust', 'alter', 'add']
         is_edit = utl.is_list_in_list(edit_words, words)
         if is_edit:
-            cur_model = db_model.query.get(next(iter(model_ids)))
+            cur_model = self.db.session.get(db_model, next(iter(model_ids)))
             response = self.check_children_for_edit(cur_model, words)
         return response
 
