@@ -99,6 +99,7 @@ class TwApi(object):
         self.cid_dict = None
         self.asid_dict = None
         self.adid_dict = None
+        self.mcid_dict = None
         self.promoted_account_id_dict = None
         self.tweet_dict = None
         self.usernames = None
@@ -279,6 +280,10 @@ class TwApi(object):
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
                                       'tweet_id', 'line_item_id',
                                       parent_filter=self.asid_dict.keys())
+        self.mcid_dict = self.get_ids(entity='media_creatives', eid='id',
+                                      name='account_media_id',
+                                      parent='line_item_id',
+                                      parent_filter=self.asid_dict.keys())
         self.promoted_account_id_dict = self.get_ids(
             entity='promoted_accounts', eid='id', name='id',
             parent='line_item_id', parent_filter=self.asid_dict.keys())
@@ -365,7 +370,8 @@ class TwApi(object):
                 return pd.DataFrame()
         self.get_all_id_dicts(sd)
         for entity in [('PROMOTED_TWEET', self.adid_dict),
-                       ('PROMOTED_ACCOUNT', self.promoted_account_id_dict)]:
+                       ('PROMOTED_ACCOUNT', self.promoted_account_id_dict),
+                       ('MEDIA_CREATIVE', self.mcid_dict)]:
             entity_name = entity[0]
             entity_dict = entity[1]
             ids_lists = [list(entity_dict.keys())[i:i + 20] for i
@@ -575,11 +581,14 @@ class TwApi(object):
         return date
 
     def add_parents(self, df):
-        for id_key in self.promoted_account_id_dict:
-            current_dict = self.promoted_account_id_dict[id_key]
-            current_dict['name'] = 'PROMOTED ACCOUNT'
-            self.adid_dict[current_dict['parent']] = current_dict
-            self.adid_dict[id_key] = current_dict
+        ad_maps = [('PROMOTED ACCOUNT', self.promoted_account_id_dict),
+                   ('MEDIA CREATIVE', self.mcid_dict)]
+        for entity in ad_maps:
+            for id_key in entity[1]:
+                current_dict = entity[1][id_key]
+                current_dict['name'] = entity[0]
+                self.adid_dict[current_dict['parent']] = current_dict
+                self.adid_dict[id_key] = current_dict
         parent_maps = [[self.adid_dict, 'tweetid'],
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
@@ -600,11 +609,14 @@ class TwApi(object):
         tweet_ids = df['tweetid'].unique()
         id_dict = {}
         for tweet_id in tweet_ids:
+            if tweet_id in ['PROMOTED ACCOUNT', 'MEDIA CREATIVE']:
+                continue
             if int(tweet_id) in self.tweet_dict:
                 id_dict[str(tweet_id)] = {
                     'name': self.tweet_dict[int(tweet_id)]['name'],
                     'Card name': self.tweet_dict[int(tweet_id)]['card_uri']}
         id_dict['PROMOTED ACCOUNT'] = {'name': 'PROMOTED ACCOUNT'}
+        id_dict['MEDIA CREATIVE'] = {'name': 'MEDIA CREATIVE'}
         df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
         return df
 
