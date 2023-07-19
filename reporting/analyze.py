@@ -1060,6 +1060,8 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None):
+        if vmc.autodicord not in source.p:
+            return df
         if not ven_list:
             ven_list = self.get_vendor_list()
         if not cou_list:
@@ -2355,7 +2357,7 @@ class GetServingAlerts(AnalyzeBase):
         if not plan_names:
             return pd.DataFrame()
         final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
-        if not df.empty:
+        if not df.empty and dctc.VEN in df:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
             df[self.adserving_ratio] = df.apply(
                 lambda row: 0 if row[vmc.cost] == 0
