@@ -1267,8 +1267,8 @@ class CheckLastRow(AnalyzeBase):
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
         data_sources = [ds for ds in data_sources
-                        if 'Rawfile' in ds.key
-                        or 'GoogleSheets' in ds.key]
+                        if 'Rawfile' in vmc.vendorkey
+                        or 'GoogleSheets' in vmc.vendorkey]
         df = pd.DataFrame()
         for source in data_sources:
             df = self.check_total_row_exists(source, df)
