@@ -11,6 +11,8 @@ import reporting.dictionary as dct
 import reporting.dictcolumns as dctc
 import reporting.calc as cal
 import reporting.analyze as az
+import reporting.export as exp
+import reporting.expcolumns as exc
 
 
 def func(x):
@@ -662,3 +664,480 @@ class TestAnalyze:
             dctc.PFPN])
         aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
         aly.do_all_analysis()
+
+
+default_col_names = [
+    '"lqadb"."event"."eventname"',
+    '"lqadb"."event"."eventdate"', '"lqadb"."ad"."adname"',
+    '"lqadb"."adformat"."adformatname"',
+    '"lqadb"."adsize"."adsizename"',
+    '"lqadb"."adtype"."adtypename"', '"lqadb"."age"."agename"',
+    '"lqadb"."agency"."agencyname"',
+    '"lqadb"."buymodel"."buymodelname"',
+    '"lqadb"."campaign"."campaignname"',
+    '"lqadb"."campaign"."campaigntype"',
+    '"lqadb"."campaign"."campaignphase"',
+    '"lqadb"."campaign"."campaigntiming"',
+    '"lqadb"."character"."charactername"',
+    '"lqadb"."client"."clientname"',
+    '"lqadb"."copy"."copyname"',
+    '"lqadb"."country"."countryname"',
+    '"lqadb"."creative"."creativename"',
+    '"lqadb"."creativedescription"."creativedescriptionname"',
+    '"lqadb"."creativelength"."creativelengthname"',
+    '"lqadb"."creativelineitem"."creativelineitemname"',
+    '"lqadb"."creativemodifier"."creativemodifiername"',
+    '"lqadb"."cta"."ctaname"',
+    '"lqadb"."datatype1"."datatype1name"',
+    '"lqadb"."datatype2"."datatype2name"',
+    '"lqadb"."demographic"."demographicname"',
+    '"lqadb"."descriptionline1"."descriptionline1name"',
+    '"lqadb"."descriptionline2"."descriptionline2name"',
+    '"lqadb"."displayurl"."displayurlname"',
+    '"lqadb"."environment"."environmentname"',
+    '"lqadb"."faction"."factionname"',
+    '"lqadb"."fullplacement"."fullplacementname"',
+    '"lqadb"."fullplacement"."buyrate"',
+    '"lqadb"."fullplacement"."placementdate"',
+    '"lqadb"."fullplacement"."startdate"',
+    '"lqadb"."fullplacement"."enddate"',
+    '"lqadb"."gender"."gendername"',
+    '"lqadb"."genretargeting"."genretargetingname"',
+    '"lqadb"."genretargetingfine"."genretargetingfinename"',
+    '"lqadb"."headline1"."headline1name"',
+    '"lqadb"."headline2"."headline2name"',
+    '"lqadb"."kpi"."kpiname"',
+    '"lqadb"."mediachannel"."mediachannelname"',
+    '"lqadb"."packagedescription"."packagedescriptionname"',
+    '"lqadb"."placement"."placementname"',
+    '"lqadb"."placementdescription"."placementdescriptionname"',
+    '"lqadb"."platform"."platformname"',
+    '"lqadb"."product"."productname"',
+    '"lqadb"."product"."productdetail"',
+    '"lqadb"."region"."regionname"',
+    '"lqadb"."retailer"."retailername"',
+    '"lqadb"."serving"."servingname"',
+    '"lqadb"."targeting"."targetingname"',
+    '"lqadb"."targetingbucket"."targetingbucketname"',
+    '"lqadb"."transactionproduct"."transactionproductname"',
+    '"lqadb"."transactionproductbroad"."transactionproductbroadname"',
+    '"lqadb"."transactionproductfine"."transactionproductfinename"',
+    '"lqadb"."upload"."uploadname"',
+    '"lqadb"."upload"."datastartdate"',
+    '"lqadb"."upload"."dataenddate"',
+    '"lqadb"."upload"."lastuploaddate"',
+    '"lqadb"."vendor"."vendorname"',
+    '"lqadb"."vendortype"."vendortypename"'
+]
+
+default_sum_cols = [
+    'SUM("lqadb"."event"."impressions") AS "impressions"',
+    'SUM("lqadb"."event"."clicks") AS "clicks"',
+    'SUM("lqadb"."event"."netcost") AS "netcost"',
+    'SUM("lqadb"."event"."adservingcost") AS "adservingcost"',
+    'SUM("lqadb"."event"."agencyfees") AS "agencyfees"',
+    'SUM("lqadb"."event"."totalcost") AS "totalcost"',
+    'SUM("lqadb"."event"."videoviews") AS "videoviews"',
+    'SUM("lqadb"."event"."videoviews25") AS "videoviews25"',
+    'SUM("lqadb"."event"."videoviews50") AS "videoviews50"',
+    'SUM("lqadb"."event"."videoviews75") AS "videoviews75"',
+    'SUM("lqadb"."event"."videoviews100") AS "videoviews100"',
+    'SUM("lqadb"."event"."landingpage") AS "landingpage"',
+    'SUM("lqadb"."event"."homepage") AS "homepage"',
+    'SUM("lqadb"."event"."buttonclick") AS "buttonclick"',
+    'SUM("lqadb"."event"."purchase") AS "purchase"',
+    'SUM("lqadb"."event"."signup") AS "signup"',
+    'SUM("lqadb"."event"."gameplayed") AS "gameplayed"',
+    'SUM("lqadb"."event"."gameplayed3") AS "gameplayed3"',
+    'SUM("lqadb"."event"."gameplayed6") AS "gameplayed6"',
+    'SUM("lqadb"."event"."landingpage_pi") AS "landingpage_pi"',
+    'SUM("lqadb"."event"."landingpage_pc") AS "landingpage_pc"',
+    'SUM("lqadb"."event"."homepage_pi") AS "homepage_pi"',
+    'SUM("lqadb"."event"."homepage_pc") AS "homepage_pc"',
+    'SUM("lqadb"."event"."buttonclick_pi") AS "buttonclick_pi"',
+    'SUM("lqadb"."event"."buttonclick_pc") AS "buttonclick_pc"',
+    'SUM("lqadb"."event"."purchase_pi") AS "purchase_pi"',
+    'SUM("lqadb"."event"."purchase_pc") AS "purchase_pc"',
+    'SUM("lqadb"."event"."signup_pi") AS "signup_pi"',
+    'SUM("lqadb"."event"."signup_pc") AS "signup_pc"',
+    'SUM("lqadb"."event"."gameplayed_pi") AS "gameplayed_pi"',
+    'SUM("lqadb"."event"."gameplayed_pc") AS "gameplayed_pc"',
+    'SUM("lqadb"."event"."gameplayed3_pi") AS "gameplayed3_pi"',
+    'SUM("lqadb"."event"."gameplayed3_pc") AS "gameplayed3_pc"',
+    'SUM("lqadb"."event"."gameplayed6_pi") AS "gameplayed6_pi"',
+    'SUM("lqadb"."event"."gameplayed6_pc") AS "gameplayed6_pc"',
+    'SUM("lqadb"."event"."reach") AS "reach"',
+    'SUM("lqadb"."event"."frequency") AS "frequency"',
+    'SUM("lqadb"."event"."engagements") AS "engagements"',
+    'SUM("lqadb"."event"."likes") AS "likes"',
+    'SUM("lqadb"."event"."revenue") AS "revenue"',
+    'SUM("lqadb"."event"."newuser") AS "newuser"',
+    'SUM("lqadb"."event"."activeuser") AS "activeuser"',
+    'SUM("lqadb"."event"."download") AS "download"',
+    'SUM("lqadb"."event"."login") AS "login"',
+    'SUM("lqadb"."event"."newuser_pi") AS "newuser_pi"',
+    'SUM("lqadb"."event"."activeuser_pi") AS "activeuser_pi"',
+    'SUM("lqadb"."event"."download_pi") AS "download_pi"',
+    'SUM("lqadb"."event"."login_pi") AS "login_pi"',
+    'SUM("lqadb"."event"."newuser_pc") AS "newuser_pc"',
+    'SUM("lqadb"."event"."activeuser_pc") AS "activeuser_pc"',
+    'SUM("lqadb"."event"."download_pc") AS "download_pc"',
+    'SUM("lqadb"."event"."login_pc") AS "login_pc"',
+    'SUM("lqadb"."event"."retention_day1") AS "retention_day1"',
+    'SUM("lqadb"."event"."retention_day3") AS "retention_day3"',
+    'SUM("lqadb"."event"."retention_day7") AS "retention_day7"',
+    'SUM("lqadb"."event"."retention_day14") AS "retention_day14"',
+    'SUM("lqadb"."event"."retention_day30") AS "retention_day30"',
+    'SUM("lqadb"."event"."retention_day60") AS "retention_day60"',
+    'SUM("lqadb"."event"."retention_day90") AS "retention_day90"',
+    'SUM("lqadb"."event"."retention_day120") AS "retention_day120"',
+    'SUM("lqadb"."event"."total_user") AS "total_user"',
+    'SUM("lqadb"."event"."paying_user") AS "paying_user"',
+    'SUM("lqadb"."event"."transaction") AS "transaction"',
+    'SUM("lqadb"."event"."match_played") AS "match_played"',
+    'SUM("lqadb"."event"."sm_totalbuzz") AS "sm_totalbuzz"',
+    'SUM("lqadb"."event"."sm_totalbuzzpost") AS "sm_totalbuzzpost"',
+    'SUM("lqadb"."event"."sm_totalreplies") AS "sm_totalreplies"',
+    'SUM("lqadb"."event"."sm_totalreposts") AS "sm_totalreposts"',
+    'SUM("lqadb"."event"."sm_originalposts") AS "sm_originalposts"',
+    'SUM("lqadb"."event"."sm_impressions") AS "sm_impressions"',
+    'SUM("lqadb"."event"."sm_positivesentiment") AS "sm_positivesentiment"',
+    'SUM("lqadb"."event"."sm_negativesentiment") AS "sm_negativesentiment"',
+    'SUM("lqadb"."event"."sm_passion") AS "sm_passion"',
+    'SUM("lqadb"."event"."sm_uniqueauthors") AS "sm_uniqueauthors"',
+    'SUM("lqadb"."event"."sm_strongemotion") AS "sm_strongemotion"',
+    'SUM("lqadb"."event"."sm_weakemotion") AS "sm_weakemotion"',
+    'SUM("lqadb"."event"."transaction_revenue") AS "transaction_revenue"',
+    'SUM("lqadb"."event"."revenue_userstart") AS "revenue_userstart"',
+    'SUM("lqadb"."event"."revenue_userstart_30day") AS "revenue_userstart_30day"',
+    'SUM("lqadb"."event"."reportingcost") AS "reportingcost"',
+    'SUM("lqadb"."event"."trueviewviews") AS "trueviewviews"',
+    'SUM("lqadb"."event"."fb3views") AS "fb3views"',
+    'SUM("lqadb"."event"."fb10views") AS "fb10views"',
+    'SUM("lqadb"."event"."dcmservicefee") AS "dcmservicefee"',
+    'SUM("lqadb"."event"."view_imps") AS "view_imps"',
+    'SUM("lqadb"."event"."view_tot_imps") AS "view_tot_imps"',
+    'SUM("lqadb"."event"."view_fraud") AS "view_fraud"',
+    'SUM("lqadb"."event"."ga_sessions") AS "ga_sessions"',
+    'SUM("lqadb"."event"."ga_goal1") AS "ga_goal1"',
+    'SUM("lqadb"."event"."ga_goal2") AS "ga_goal2"',
+    'SUM("lqadb"."event"."ga_pageviews") AS "ga_pageviews"',
+    'SUM("lqadb"."event"."ga_bounces") AS "ga_bounces"',
+    'SUM("lqadb"."event"."comments") AS "comments"',
+    'SUM("lqadb"."event"."shares") AS "shares"',
+    'SUM("lqadb"."event"."reactions") AS "reactions"',
+    'SUM("lqadb"."event"."checkout") AS "checkout"',
+    'SUM("lqadb"."event"."checkoutpi") AS "checkoutpi"',
+    'SUM("lqadb"."event"."checkoutpc") AS "checkoutpc"',
+    'SUM("lqadb"."event"."reach-campaign") AS "reach-campaign"',
+    'SUM("lqadb"."event"."reach-date") AS "reach-date"',
+    'SUM("lqadb"."event"."reach_campaign") AS "reach_campaign"',
+    'SUM("lqadb"."event"."reach_date") AS "reach_date"',
+    'SUM("lqadb"."event"."ga_timeonpage") AS "ga_timeonpage"',
+    'SUM("lqadb"."event"."signup_ss") AS "signup_ss"',
+    'SUM("lqadb"."event"."landingpage_ss") AS "landingpage_ss"',
+    'SUM("lqadb"."event"."view_monitored_imps") AS "view_monitored_imps"',
+    'SUM("lqadb"."event"."verificationcost") AS "verificationcost"',
+    'SUM("lqadb"."event"."videoplays") AS "videoplays"',
+    'SUM("lqadb"."event"."ad_recallers") AS "ad_recallers"',
+    'SUM("lqadb"."plan"."plannednetcost") AS "plannednetcost"'
+]
+conv_event_sum_cols = [
+    'SUM("lqadb"."eventconv"."conv1_cpa") AS "conv1_cpa"',
+    'SUM("lqadb"."eventconv"."conv2") AS "conv2"',
+    'SUM("lqadb"."eventconv"."conv3") AS "conv3"',
+    'SUM("lqadb"."eventconv"."conv4") AS "conv4"',
+    'SUM("lqadb"."eventconv"."conv5") AS "conv5"',
+    'SUM("lqadb"."eventconv"."conv6") AS "conv6"',
+    'SUM("lqadb"."eventconv"."conv7") AS "conv7"',
+    'SUM("lqadb"."eventconv"."conv8") AS "conv8"',
+    'SUM("lqadb"."eventconv"."conv9") AS "conv9"',
+    'SUM("lqadb"."eventconv"."conv10") AS "conv10"'
+]
+
+
+class TestExport():
+
+    @pytest.mark.parametrize(
+        'filter_table, event_tables, expected_string', [
+            ('', None,
+             'FROM "lqadb"."event" \nFULL JOIN "lqadb"."fullplacement" ON ('
+             '"lqadb"."event"."fullplacementid" = '
+             '"lqadb"."fullplacement"."fullplacementid") \nLEFT JOIN '
+             '"lqadb"."upload" ON ("lqadb"."event"."uploadid" = '
+             '"lqadb"."upload"."uploadid") \nLEFT JOIN "lqadb"."campaign" ON '
+             '("lqadb"."fullplacement"."campaignid" = '
+             '"lqadb"."campaign"."campaignid") \nLEFT JOIN "lqadb"."vendor" '
+             'ON ("lqadb"."fullplacement"."vendorid" = '
+             '"lqadb"."vendor"."vendorid") \nLEFT JOIN "lqadb"."country" ON '
+             '("lqadb"."fullplacement"."countryid" = '
+             '"lqadb"."country"."countryid") \nLEFT JOIN '
+             '"lqadb"."mediachannel" ON ('
+             '"lqadb"."fullplacement"."mediachannelid" = '
+             '"lqadb"."mediachannel"."mediachannelid") \nLEFT JOIN '
+             '"lqadb"."targeting" ON ("lqadb"."fullplacement"."targetingid" '
+             '= "lqadb"."targeting"."targetingid") \nLEFT JOIN '
+             '"lqadb"."creative" ON ("lqadb"."fullplacement"."creativeid" = '
+             '"lqadb"."creative"."creativeid") \nLEFT JOIN "lqadb"."copy" ON '
+             '("lqadb"."fullplacement"."copyid" = "lqadb"."copy"."copyid") '
+             '\nLEFT JOIN "lqadb"."buymodel" ON ('
+             '"lqadb"."fullplacement"."buymodelid" = '
+             '"lqadb"."buymodel"."buymodelid") \nLEFT JOIN "lqadb"."serving" '
+             'ON ("lqadb"."fullplacement"."servingid" = '
+             '"lqadb"."serving"."servingid") \nLEFT JOIN "lqadb"."retailer" '
+             'ON ("lqadb"."fullplacement"."retailerid" = '
+             '"lqadb"."retailer"."retailerid") \nLEFT JOIN '
+             '"lqadb"."environment" ON ('
+             '"lqadb"."fullplacement"."environmentid" = '
+             '"lqadb"."environment"."environmentid") \nLEFT JOIN '
+             '"lqadb"."kpi" ON ("lqadb"."fullplacement"."kpiid" = '
+             '"lqadb"."kpi"."kpiid") \nLEFT JOIN "lqadb"."faction" ON ('
+             '"lqadb"."fullplacement"."factionid" = '
+             '"lqadb"."faction"."factionid") \nLEFT JOIN "lqadb"."platform" '
+             'ON ("lqadb"."fullplacement"."platformid" = '
+             '"lqadb"."platform"."platformid") \nLEFT JOIN '
+             '"lqadb"."transactionproduct" ON ('
+             '"lqadb"."fullplacement"."transactionproductid" = '
+             '"lqadb"."transactionproduct"."transactionproductid") \nLEFT '
+             'JOIN "lqadb"."placement" ON ('
+             '"lqadb"."fullplacement"."placementid" = '
+             '"lqadb"."placement"."placementid") \nLEFT JOIN '
+             '"lqadb"."placementdescription" ON ('
+             '"lqadb"."fullplacement"."placementdescriptionid" = '
+             '"lqadb"."placementdescription"."placementdescriptionid") '
+             '\nLEFT JOIN "lqadb"."packagedescription" ON ('
+             '"lqadb"."fullplacement"."packagedescriptionid" = '
+             '"lqadb"."packagedescription"."packagedescriptionid") \nLEFT '
+             'JOIN "lqadb"."product" ON ("lqadb"."campaign"."productid" = '
+             '"lqadb"."product"."productid") \nLEFT JOIN "lqadb"."client" ON '
+             '("lqadb"."product"."clientid" = "lqadb"."client"."clientid") '
+             '\nLEFT JOIN "lqadb"."agency" ON ("lqadb"."client"."agencyid" = '
+             '"lqadb"."agency"."agencyid") \nLEFT JOIN "lqadb"."vendortype" '
+             'ON ("lqadb"."vendor"."vendortypeid" = '
+             '"lqadb"."vendortype"."vendortypeid") \nLEFT JOIN '
+             '"lqadb"."region" ON ("lqadb"."country"."regionid" = '
+             '"lqadb"."region"."regionid") \nLEFT JOIN "lqadb"."age" ON ('
+             '"lqadb"."targeting"."ageid" = "lqadb"."age"."ageid") \nLEFT '
+             'JOIN "lqadb"."gender" ON ("lqadb"."targeting"."genderid" = '
+             '"lqadb"."gender"."genderid") \nLEFT JOIN "lqadb"."datatype1" '
+             'ON ("lqadb"."targeting"."datatype1id" = '
+             '"lqadb"."datatype1"."datatype1id") \nLEFT JOIN '
+             '"lqadb"."datatype2" ON ("lqadb"."targeting"."datatype2id" = '
+             '"lqadb"."datatype2"."datatype2id") \nLEFT JOIN '
+             '"lqadb"."targetingbucket" ON ('
+             '"lqadb"."targeting"."targetingbucketid" = '
+             '"lqadb"."targetingbucket"."targetingbucketid") \nLEFT JOIN '
+             '"lqadb"."genretargeting" ON ('
+             '"lqadb"."targeting"."genretargetingid" = '
+             '"lqadb"."genretargeting"."genretargetingid") \nLEFT JOIN '
+             '"lqadb"."genretargetingfine" ON ('
+             '"lqadb"."targeting"."genretargetingfineid" = '
+             '"lqadb"."genretargetingfine"."genretargetingfineid") \nLEFT '
+             'JOIN "lqadb"."demographic" ON ("lqadb"."age"."demographicid" = '
+             '"lqadb"."demographic"."demographicid") \nLEFT JOIN '
+             '"lqadb"."adsize" ON ("lqadb"."creative"."adsizeid" = '
+             '"lqadb"."adsize"."adsizeid") \nLEFT JOIN "lqadb"."adformat" ON '
+             '("lqadb"."creative"."adformatid" = '
+             '"lqadb"."adformat"."adformatid") \nLEFT JOIN "lqadb"."adtype" '
+             'ON ("lqadb"."creative"."adtypeid" = '
+             '"lqadb"."adtype"."adtypeid") \nLEFT JOIN "lqadb"."cta" ON ('
+             '"lqadb"."creative"."ctaid" = "lqadb"."cta"."ctaid") \nLEFT '
+             'JOIN "lqadb"."creativedescription" ON ('
+             '"lqadb"."creative"."creativedescriptionid" = '
+             '"lqadb"."creativedescription"."creativedescriptionid") \nLEFT '
+             'JOIN "lqadb"."character" ON ("lqadb"."creative"."characterid" '
+             '= "lqadb"."character"."characterid") \nLEFT JOIN '
+             '"lqadb"."creativemodifier" ON ('
+             '"lqadb"."creative"."creativemodifierid" = '
+             '"lqadb"."creativemodifier"."creativemodifierid") \nLEFT JOIN '
+             '"lqadb"."creativelineitem" ON ('
+             '"lqadb"."creative"."creativelineitemid" = '
+             '"lqadb"."creativelineitem"."creativelineitemid") \nLEFT JOIN '
+             '"lqadb"."creativelength" ON ('
+             '"lqadb"."creative"."creativelengthid" = '
+             '"lqadb"."creativelength"."creativelengthid") \nLEFT JOIN '
+             '"lqadb"."ad" ON ("lqadb"."copy"."adid" = "lqadb"."ad"."adid") '
+             '\nLEFT JOIN "lqadb"."descriptionline1" ON ('
+             '"lqadb"."copy"."descriptionline1id" = '
+             '"lqadb"."descriptionline1"."descriptionline1id") \nLEFT JOIN '
+             '"lqadb"."descriptionline2" ON ('
+             '"lqadb"."copy"."descriptionline2id" = '
+             '"lqadb"."descriptionline2"."descriptionline2id") \nLEFT JOIN '
+             '"lqadb"."headline1" ON ("lqadb"."copy"."headline1id" = '
+             '"lqadb"."headline1"."headline1id") \nLEFT JOIN '
+             '"lqadb"."headline2" ON ("lqadb"."copy"."headline2id" = '
+             '"lqadb"."headline2"."headline2id") \nLEFT JOIN '
+             '"lqadb"."displayurl" ON ("lqadb"."copy"."displayurlid" = '
+             '"lqadb"."displayurl"."displayurlid") \nLEFT JOIN '
+             '"lqadb"."transactionproductbroad" ON ('
+             '"lqadb"."transactionproduct"."transactionproductbroadid" = '
+             '"lqadb"."transactionproductbroad"."transactionproductbroadid") '
+             '\nLEFT JOIN "lqadb"."transactionproductfine" ON ('
+             '"lqadb"."transactionproduct"."transactionproductfineid" = '
+             '"lqadb"."transactionproductfine"."transactionproductfineid'
+             '")\nFULL JOIN "lqadb"."plan" ON ('
+             '"lqadb"."fullplacement"."fullplacementid" = '
+             '"lqadb"."plan"."fullplacementid")'
+             ),
+            (exc.product_table, None,
+             'FROM "lqadb"."event" \nFULL JOIN "lqadb"."fullplacement" ON ('
+             '"lqadb"."event"."fullplacementid" = '
+             '"lqadb"."fullplacement"."fullplacementid") \nLEFT JOIN '
+             '"lqadb"."upload" ON ("lqadb"."event"."uploadid" = '
+             '"lqadb"."upload"."uploadid") \nLEFT JOIN "lqadb"."campaign" ON '
+             '("lqadb"."fullplacement"."campaignid" = '
+             '"lqadb"."campaign"."campaignid") \nLEFT JOIN "lqadb"."product" '
+             'ON ("lqadb"."campaign"."productid" = '
+             '"lqadb"."product"."productid") \nLEFT JOIN "lqadb"."vendor" ON '
+             '("lqadb"."fullplacement"."vendorid" = '
+             '"lqadb"."vendor"."vendorid") \nLEFT JOIN "lqadb"."country" ON '
+             '("lqadb"."fullplacement"."countryid" = '
+             '"lqadb"."country"."countryid") \nLEFT JOIN '
+             '"lqadb"."mediachannel" ON ('
+             '"lqadb"."fullplacement"."mediachannelid" = '
+             '"lqadb"."mediachannel"."mediachannelid") \nLEFT JOIN '
+             '"lqadb"."targeting" ON ("lqadb"."fullplacement"."targetingid" '
+             '= "lqadb"."targeting"."targetingid") \nLEFT JOIN '
+             '"lqadb"."creative" ON ("lqadb"."fullplacement"."creativeid" = '
+             '"lqadb"."creative"."creativeid") \nLEFT JOIN "lqadb"."copy" ON '
+             '("lqadb"."fullplacement"."copyid" = "lqadb"."copy"."copyid") '
+             '\nLEFT JOIN "lqadb"."buymodel" ON ('
+             '"lqadb"."fullplacement"."buymodelid" = '
+             '"lqadb"."buymodel"."buymodelid") \nLEFT JOIN "lqadb"."serving" '
+             'ON ("lqadb"."fullplacement"."servingid" = '
+             '"lqadb"."serving"."servingid") \nLEFT JOIN "lqadb"."retailer" '
+             'ON ("lqadb"."fullplacement"."retailerid" = '
+             '"lqadb"."retailer"."retailerid") \nLEFT JOIN '
+             '"lqadb"."environment" ON ('
+             '"lqadb"."fullplacement"."environmentid" = '
+             '"lqadb"."environment"."environmentid") \nLEFT JOIN '
+             '"lqadb"."kpi" ON ("lqadb"."fullplacement"."kpiid" = '
+             '"lqadb"."kpi"."kpiid") \nLEFT JOIN "lqadb"."faction" ON ('
+             '"lqadb"."fullplacement"."factionid" = '
+             '"lqadb"."faction"."factionid") \nLEFT JOIN "lqadb"."platform" '
+             'ON ("lqadb"."fullplacement"."platformid" = '
+             '"lqadb"."platform"."platformid") \nLEFT JOIN '
+             '"lqadb"."transactionproduct" ON ('
+             '"lqadb"."fullplacement"."transactionproductid" = '
+             '"lqadb"."transactionproduct"."transactionproductid") \nLEFT '
+             'JOIN "lqadb"."placement" ON ('
+             '"lqadb"."fullplacement"."placementid" = '
+             '"lqadb"."placement"."placementid") \nLEFT JOIN '
+             '"lqadb"."placementdescription" ON ('
+             '"lqadb"."fullplacement"."placementdescriptionid" = '
+             '"lqadb"."placementdescription"."placementdescriptionid") '
+             '\nLEFT JOIN "lqadb"."packagedescription" ON ('
+             '"lqadb"."fullplacement"."packagedescriptionid" = '
+             '"lqadb"."packagedescription"."packagedescriptionid") \nLEFT '
+             'JOIN "lqadb"."client" ON ("lqadb"."product"."clientid" = '
+             '"lqadb"."client"."clientid") \nLEFT JOIN "lqadb"."agency" ON ('
+             '"lqadb"."client"."agencyid" = "lqadb"."agency"."agencyid") '
+             '\nLEFT JOIN "lqadb"."vendortype" ON ('
+             '"lqadb"."vendor"."vendortypeid" = '
+             '"lqadb"."vendortype"."vendortypeid") \nLEFT JOIN '
+             '"lqadb"."region" ON ("lqadb"."country"."regionid" = '
+             '"lqadb"."region"."regionid") \nLEFT JOIN "lqadb"."age" ON ('
+             '"lqadb"."targeting"."ageid" = "lqadb"."age"."ageid") \nLEFT '
+             'JOIN "lqadb"."gender" ON ("lqadb"."targeting"."genderid" = '
+             '"lqadb"."gender"."genderid") \nLEFT JOIN "lqadb"."datatype1" '
+             'ON ("lqadb"."targeting"."datatype1id" = '
+             '"lqadb"."datatype1"."datatype1id") \nLEFT JOIN '
+             '"lqadb"."datatype2" ON ("lqadb"."targeting"."datatype2id" = '
+             '"lqadb"."datatype2"."datatype2id") \nLEFT JOIN '
+             '"lqadb"."targetingbucket" ON ('
+             '"lqadb"."targeting"."targetingbucketid" = '
+             '"lqadb"."targetingbucket"."targetingbucketid") \nLEFT JOIN '
+             '"lqadb"."genretargeting" ON ('
+             '"lqadb"."targeting"."genretargetingid" = '
+             '"lqadb"."genretargeting"."genretargetingid") \nLEFT JOIN '
+             '"lqadb"."genretargetingfine" ON ('
+             '"lqadb"."targeting"."genretargetingfineid" = '
+             '"lqadb"."genretargetingfine"."genretargetingfineid") \nLEFT '
+             'JOIN "lqadb"."demographic" ON ("lqadb"."age"."demographicid" = '
+             '"lqadb"."demographic"."demographicid") \nLEFT JOIN '
+             '"lqadb"."adsize" ON ("lqadb"."creative"."adsizeid" = '
+             '"lqadb"."adsize"."adsizeid") \nLEFT JOIN "lqadb"."adformat" ON '
+             '("lqadb"."creative"."adformatid" = '
+             '"lqadb"."adformat"."adformatid") \nLEFT JOIN "lqadb"."adtype" '
+             'ON ("lqadb"."creative"."adtypeid" = '
+             '"lqadb"."adtype"."adtypeid") \nLEFT JOIN "lqadb"."cta" ON ('
+             '"lqadb"."creative"."ctaid" = "lqadb"."cta"."ctaid") \nLEFT '
+             'JOIN "lqadb"."creativedescription" ON ('
+             '"lqadb"."creative"."creativedescriptionid" = '
+             '"lqadb"."creativedescription"."creativedescriptionid") \nLEFT '
+             'JOIN "lqadb"."character" ON ("lqadb"."creative"."characterid" '
+             '= "lqadb"."character"."characterid") \nLEFT JOIN '
+             '"lqadb"."creativemodifier" ON ('
+             '"lqadb"."creative"."creativemodifierid" = '
+             '"lqadb"."creativemodifier"."creativemodifierid") \nLEFT JOIN '
+             '"lqadb"."creativelineitem" ON ('
+             '"lqadb"."creative"."creativelineitemid" = '
+             '"lqadb"."creativelineitem"."creativelineitemid") \nLEFT JOIN '
+             '"lqadb"."creativelength" ON ('
+             '"lqadb"."creative"."creativelengthid" = '
+             '"lqadb"."creativelength"."creativelengthid") \nLEFT JOIN '
+             '"lqadb"."ad" ON ("lqadb"."copy"."adid" = "lqadb"."ad"."adid") '
+             '\nLEFT JOIN "lqadb"."descriptionline1" ON ('
+             '"lqadb"."copy"."descriptionline1id" = '
+             '"lqadb"."descriptionline1"."descriptionline1id") \nLEFT JOIN '
+             '"lqadb"."descriptionline2" ON ('
+             '"lqadb"."copy"."descriptionline2id" = '
+             '"lqadb"."descriptionline2"."descriptionline2id") \nLEFT JOIN '
+             '"lqadb"."headline1" ON ("lqadb"."copy"."headline1id" = '
+             '"lqadb"."headline1"."headline1id") \nLEFT JOIN '
+             '"lqadb"."headline2" ON ("lqadb"."copy"."headline2id" = '
+             '"lqadb"."headline2"."headline2id") \nLEFT JOIN '
+             '"lqadb"."displayurl" ON ("lqadb"."copy"."displayurlid" = '
+             '"lqadb"."displayurl"."displayurlid") \nLEFT JOIN '
+             '"lqadb"."transactionproductbroad" ON ('
+             '"lqadb"."transactionproduct"."transactionproductbroadid" = '
+             '"lqadb"."transactionproductbroad"."transactionproductbroadid") '
+             '\nLEFT JOIN "lqadb"."transactionproductfine" ON ('
+             '"lqadb"."transactionproduct"."transactionproductfineid" = '
+             '"lqadb"."transactionproductfine"."transactionproductfineid'
+             '")\nFULL JOIN "lqadb"."plan" ON ('
+             '"lqadb"."fullplacement"."fullplacementid" = '
+             '"lqadb"."plan"."fullplacementid")'
+             )
+        ],
+        ids=['default', 'product_filter']
+    )
+    def test_get_from_script_with_opts(self, filter_table, event_tables,
+                                       expected_string):
+        sb = exp.ScriptBuilder()
+        base_table = [x for x in sb.tables if x.name == 'event'][0]
+        from_script = sb.get_from_script_with_opts(
+            base_table, filter_table=filter_table, event_tables=event_tables)
+        assert from_script == expected_string
+
+    @pytest.mark.parametrize(
+        'event_tables, expected_col_names, expected_sum_cols', [
+            (None, default_col_names, default_sum_cols),
+            (['eventconv'], default_col_names,
+             default_sum_cols+conv_event_sum_cols)
+        ],
+        ids=['default', 'conv']
+    )
+    def test_get_column_names(self, event_tables, expected_col_names,
+                              expected_sum_cols):
+        sb = exp.ScriptBuilder()
+        base_table = [x for x in sb.tables if x.name == 'event'][0]
+        from_script = sb.get_from_script_with_opts(
+            base_table, exc.product_table, event_tables=event_tables)
+        column_names, sum_columns = sb.get_column_names(
+            base_table, event_tables=event_tables)
+        assert set(column_names) == set(expected_col_names)
+        assert set(sum_columns) == set(expected_sum_cols)
+
+    @pytest.mark.parametrize(
+        'metrics, expected_tables', [
+            (['impressions', 'clicks'], []),
+            (['impressions', 'clicks', 'conv2', 'plan_clicks'],
+             ['eventconv', 'eventplan'])
+        ],
+        ids=['default', 'conv_plan']
+    )
+    def test_get_active_event_tables(self, metrics, expected_tables):
+        sb = exp.ScriptBuilder()
+        append_tables = sb.get_active_event_tables(metrics)
+        assert set(append_tables) == set(expected_tables)
