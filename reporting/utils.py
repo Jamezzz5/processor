@@ -688,6 +688,17 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
     return return_value
 
 
+def get_next_number_from_list(words, lower_name, cur_model_name):
+    post_words = words[words.index(lower_name):]
+    cost = [x for x in post_words if
+            any(y.isdigit() for y in x) and x != cur_model_name]
+    if cost:
+        cost = cost[0].replace('k', '000')
+    else:
+        cost = 0
+    return cost
+
+
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):

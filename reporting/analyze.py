@@ -2717,11 +2717,13 @@ class AliChat(object):
         return prev_model
 
     @staticmethod
-    def check_children(words, new_g_child):
+    def check_gg_children(words, new_g_child):
+        r = ''
         new_model = new_g_child.get_children()
         if new_model:
-            new_model.check_col_in_words(new_model, words, new_g_child.id)
+            r = new_model.check_col_in_words(new_model, words, new_g_child.id)
             new_model.create_from_rules(new_model, new_g_child.id)
+        return r
 
     def create_db_model_children(self, cur_model, words):
         response = ''
@@ -2752,20 +2754,15 @@ class AliChat(object):
         for g_child in p_list:
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
-            post_words = words[words.index(lower_name):]
-            cost = [x for x in post_words if
-                    any(y.isdigit() for y in x) and x != cur_model.name]
-            if cost:
-                cost = cost[0].replace('k', '000')
-            else:
-                cost = 0
+            cost = utl.get_next_number_from_list(
+                words, lower_name, cur_model.name)
             g_child['total_budget'] = cost
             new_g_child = db_model_g_child()
             new_g_child.set_from_form(g_child, new_child)
             self.db.session.add(new_g_child)
             self.db.session.commit()
             response += '{} ({}) '.format(g_child_name, cost)
-            self.check_children(words, new_g_child)
+            response += self.check_gg_children(words, new_g_child)
         return response
 
     def create_db_model(self, db_model, message, response, html_response):
@@ -2830,6 +2827,8 @@ class AliChat(object):
                     if in_words:
                         response = self.check_db_model_col(
                             g_child, words, g_child, omit_list)
+                        if not response:
+                            response = self.check_gg_children(words, g_child)
                         break
         if not response:
             response = self.check_db_model_col(cur_model, words, cur_model)
