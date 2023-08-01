@@ -2578,6 +2578,7 @@ class AliChat(object):
         self.config_path = config_path
         self.db = None
         self.current_user = None
+        self.models_to_search = None
         self.config = self.load_config(self.config_name, self.config_path)
 
     @staticmethod
@@ -2717,18 +2718,21 @@ class AliChat(object):
         return prev_model
 
     @staticmethod
-    def check_gg_children(words, new_g_child):
+    def check_gg_children(words, new_g_child, total_db=pd.DataFrame()):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
-            r = new_model.check_col_in_words(new_model, words, new_g_child.id)
+            r = new_model.check_col_in_words(new_model, words, new_g_child.id,
+                                             total_db=total_db)
             new_model.create_from_rules(new_model, new_g_child.id)
         return r
 
     def create_db_model_children(self, cur_model, words):
         response = ''
-        cur_children = cur_model.get_current_children()
         db_model_child = cur_model.get_children()
+        if not db_model_child:
+            return response
+        cur_children = cur_model.get_current_children()
         child_list = db_model_child.get_name_list()
         child_name = [x for x in words if x in child_list]
         if not child_name and not cur_children:
@@ -2765,22 +2769,52 @@ class AliChat(object):
             response += self.check_gg_children(words, new_g_child)
         return response
 
+    def create_db_model_from_other(self, db_model, message, other_db_model):
+        model_ids, words = self.find_db_model(db_model, message)
+        if model_ids:
+            cur_model = self.db.session.get(db_model, next(iter(model_ids)))
+            old_model = other_db_model.query.filter_by(
+                name=cur_model.name).first()
+            if old_model:
+                new_model = old_model
+            else:
+                new_model = other_db_model(name=cur_model.name)
+                self.db.session.add(new_model)
+                self.db.session.commit()
+            for k in list(cur_model.__dict__):
+                if (k[0] != '_' and k in other_db_model.__dict__.keys() and
+                        k != 'id'):
+                    v = cur_model.__dict__[k]
+                    setattr(new_model, k, v)
+            self.db.session.commit()
+            args = new_model.get_create_args_from_other(cur_model)
+            new_model.create_object(*args)
+            return new_model
+
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
         is_create = utl.is_list_in_list(create_words, words)
         if is_create:
-            name_words = ['named', 'called', 'name', 'title']
-            name = utl.get_next_value_from_list(words, name_words)
-            if not name:
-                name = [self.current_user.username]
-            parent_model = self.get_parent_for_db_model(db_model, words)
-            new_model = db_model()
-            name = new_model.get_first_unique_name(name[0])
-            new_model.set_from_form({'name': name}, parent_model,
-                                    self.current_user.id)
-            self.db.session.add(new_model)
-            self.db.session.commit()
+            other_db_model = [
+                x for x in self.models_to_search if
+                self.db_model_name_in_message(message, x) and x != db_model]
+            if other_db_model:
+                other_db_model = other_db_model[0]
+                new_model = self.create_db_model_from_other(db_model, message,
+                                                            other_db_model)
+            else:
+                name_words = ['named', 'called', 'name', 'title']
+                name = utl.get_next_value_from_list(words, name_words)
+                if not name:
+                    name = [self.current_user.username]
+                parent_model = self.get_parent_for_db_model(db_model, words)
+                new_model = db_model()
+                name = new_model.get_first_unique_name(name[0])
+                new_model.set_from_form({'name': name}, parent_model,
+                                        self.current_user.id)
+                self.db.session.add(new_model)
+                self.db.session.commit()
             response = self.create_db_model_children(new_model, words)
             response = '{}{}'.format(self.create_success_msg, response)
             response, html_response = self.convert_model_ids_to_message(
@@ -2794,6 +2828,8 @@ class AliChat(object):
         for k, v in db_model.__dict__.items():
             check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k)
             check_words = [x for x in check_words if x]
+            stop_words = list(nltk.corpus.stopwords.words('english'))
+            check_words = [x for x in check_words if x not in stop_words]
             in_list = utl.is_list_in_list(check_words, words, True, True)
             if in_list:
                 pw = words[words.index(in_list[0]) + 1:]
@@ -2877,6 +2913,7 @@ class AliChat(object):
                      current_user=None):
         self.db = db
         self.current_user = current_user
+        self.models_to_search = models_to_search
         response, html_response = self.check_if_openai_message(message)
         if not response and models_to_search:
             for db_model in models_to_search:
