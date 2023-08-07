@@ -87,7 +87,7 @@ class NzApi(object):
             list_cols = [col for col in data[0] if type(data[0][col]) == list]
             df = pd.DataFrame(data)
             for col in list_cols:
-                df[col] = df[col].apply(tuple)
+                df[col] = df[col].apply(sorted).apply(tuple)
             df = df.rename(columns=translation_dict)
         logging.info('Successful response. Returning dataframe.')
         return df
