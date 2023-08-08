@@ -4,6 +4,7 @@ import json
 import time
 import logging
 import requests
+import numpy as np
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -60,6 +61,7 @@ class NzApi(object):
         sd, ed = self.get_data_default_check(sd, ed)
         header = self.create_header()
         request_list = self.parse_fields(sd, ed, fields)
+        self.df = pd.DataFrame()
         for req in request_list:
             name, url, params = req
             self.r = self.make_request('get', url, params=params,
@@ -89,6 +91,7 @@ class NzApi(object):
             for col in list_cols:
                 df[col] = df[col].apply(sorted).apply(tuple)
             df = df.rename(columns=translation_dict)
+            df.fillna(np.nan)
         logging.info('Successful response. Returning dataframe.')
         return df
 
