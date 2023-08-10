@@ -183,7 +183,7 @@ class Dict(object):
                                                          check_cols,
                                                          trail_delim)
                 if not first_col:
-                    if return_missing and check_cols:
+                    if return_missing:
                         if miss not in component_dict[rc_key]:
                             component_dict[rc_key][miss] = []
                         if not lead_delim:

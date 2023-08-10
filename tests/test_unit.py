@@ -152,6 +152,16 @@ class TestDictionary:
                          dctc.GT: ['mpTargeting:::2:::_'],
                          'missing': ['mpTargeting:::1:::_']}},
              True, True, False),
+            ([dctc.TB, dctc.GT],
+             {dctc.TAR: {dctc.TB: [dctc.TB],
+                         dctc.GT: [dctc.GT],
+                         'missing': ['mpTargeting:::1:::_']}},
+             True, True, False),
+            (['mpTargeting:::0:::_', 'mpTargeting:::1:::_'],
+             {dctc.TAR: {dctc.TB: ['mpTargeting:::0:::_'],
+                         dctc.DT1: ['mpTargeting:::1:::_'],
+                         'missing': ['mpTargeting:::2:::_']}},
+             True, True, False),
             (['mpTargeting:::0:::_', 'mpData Type 1:::1:::_',
               'mpTargeting:::2:::_'],
              {dctc.TAR: {dctc.TB: ['mpTargeting:::0:::_'],
@@ -160,7 +170,7 @@ class TestDictionary:
              True, False, True)
         ],
         ids=['empty', 'standard', 'bad_delim', 'no_bad_delim', 'missing',
-             'bad_value']
+             'missing_2', 'missing_3', 'bad_value']
     )
     def test_sort_relation_cols(self, columns, sorted_cols, bad_delim,
                                 missing, bad_value):
@@ -257,10 +267,17 @@ class TestDictionary:
              {dctc.TAR: ['a_b_c'], dctc.MIS: ['d']}),
             (['mpTargeting:::0:::_', 'mpTargeting Bucket:::0:::_',
               'mpTargeting:::2:::_'],
-             {dctc.TAR: ['b_0_c']})
+             {dctc.TAR: ['b_0_c']}),
+            (['mpTargeting Bucket:::0:::_',
+              'mpGenre Targeting:::0:::_'],
+             {dctc.TAR: ['a_0_b']}),
+            ([dctc.TB, dctc.GT],
+             {dctc.TAR: ['a_0_b']}),
+            (['mpTargeting:::0:::_', 'mpTargeting:::1:::_'],
+             {dctc.TAR: ['a_b']})
         ],
         ids=['empty', 'bad_delim', 'missing', 'bad_value', 'non_relation',
-             'duplicate']
+             'duplicate', 'missing_2', 'missing_3', 'standard']
     )
     def test_auto_combine(self, columns, expected_data):
         df = pd.DataFrame()
