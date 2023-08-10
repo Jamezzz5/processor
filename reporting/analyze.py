@@ -2792,11 +2792,12 @@ class AliChat(object):
                 new_model = other_db_model(name=cur_model.name)
                 self.db.session.add(new_model)
                 self.db.session.commit()
-            for k in list(cur_model.__dict__):
-                if (k[0] != '_' and k in other_db_model.__dict__.keys() and
-                        k != 'id'):
-                    v = cur_model.__dict__[k]
-                    setattr(new_model, k, v)
+            cur_model_dict = cur_model.to_dict()
+            for k in list(db_model.__table__.columns):
+                col = k.name
+                if col in other_db_model.__dict__.keys() and col != 'id':
+                    v = cur_model_dict[col]
+                    setattr(new_model, col, v)
             self.db.session.commit()
             args = new_model.get_create_args_from_other(cur_model)
             new_model.create_object(*args)
