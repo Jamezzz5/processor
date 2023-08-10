@@ -329,7 +329,8 @@ class Dict(object):
                                 if k.split(self.comb_key)[0] in rc_keys}
         else:
             translation_dict = {k: v for k, v in translation_dict.items()
-                                if k.split(self.comb_key)[0] in rc_comps}
+                                if k.split(self.comb_key)[0] in rc_comps
+                                and k.split(self.comb_key)[0] not in rc_keys}
         tdf = df.rename(columns=translation_dict)
         return tdf
 
