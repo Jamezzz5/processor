@@ -2835,6 +2835,9 @@ class AliChat(object):
                 self.db.session.commit()
             response = self.create_db_model_children(new_model, words)
             response = '{}{}'.format(self.create_success_msg, response)
+            if hasattr(new_model, 'get_create_prompt'):
+                post_create = new_model.get_create_prompt()
+                response = '{}{}'.format(response, post_create)
             response, html_response = self.convert_model_ids_to_message(
                 db_model, [new_model.id], response, True)
         return response, html_response
@@ -2844,23 +2847,25 @@ class AliChat(object):
         if not omit_list:
             omit_list = []
         match_col_dict = {}
-        for k, v in db_model.__dict__.items():
-            if k == 'id' or k.startswith("_"):
+        stop_words = list(nltk.corpus.stopwords.words('english'))
+        for k in db_model.__table__.columns:
+            if k.name == 'id' or k.foreign_keys:
                 continue
-            check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k)
-            check_words = [x for x in check_words if x]
-            stop_words = list(nltk.corpus.stopwords.words('english'))
-            check_words = [x for x in check_words if x not in stop_words]
+            check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k.name)
+            check_words = [x for x in check_words if x and x not in stop_words]
             in_list = utl.is_list_in_list(check_words, words, True, True)
             if in_list:
-                match_col_dict[k] = in_list
+                match_col_dict[k.name] = in_list
         lengths = {k: len(v) for k, v in match_col_dict.items()}
         max_length = max(lengths.values())
         keys = [k for k, v in lengths.items() if v == max_length]
         for k in keys:
-            in_list = match_col_dict[k]
+            if k in words:
+                in_list = [k]
+            else:
+                in_list = match_col_dict[k]
             pw = words[words.index(in_list[-1]) + 1:]
-            skip_words = [cur_model.name.lower()] + omit_list
+            skip_words = [cur_model.name.lower()] + omit_list + stop_words
             pw = [x for x in pw if x not in skip_words]
             new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
             setattr(cur_model, k, new_val)
@@ -2873,7 +2878,7 @@ class AliChat(object):
     def check_children_for_edit(self, cur_model, words):
         response = ''
         children = cur_model.get_current_children()
-        omit_list = [cur_model.name]
+        omit_list = [cur_model.name, cur_model.__table__.name]
         for child in children:
             lower_name = child.name.lower()
             in_words = utl.is_list_in_list([lower_name], words, True)
