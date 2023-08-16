@@ -183,7 +183,7 @@ class Dict(object):
                                                          check_cols,
                                                          trail_delim)
                 if not first_col:
-                    if return_missing and check_cols:
+                    if return_missing:
                         if miss not in component_dict[rc_key]:
                             component_dict[rc_key][miss] = []
                         if not lead_delim:
@@ -329,7 +329,8 @@ class Dict(object):
                                 if k.split(self.comb_key)[0] in rc_keys}
         else:
             translation_dict = {k: v for k, v in translation_dict.items()
-                                if k.split(self.comb_key)[0] in rc_comps}
+                                if k.split(self.comb_key)[0] in rc_comps
+                                and k.split(self.comb_key)[0] not in rc_keys}
         tdf = df.rename(columns=translation_dict)
         return tdf
 
