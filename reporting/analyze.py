@@ -2733,6 +2733,8 @@ class AliChat(object):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
+            stop_words = list(nltk.corpus.stopwords.words('english'))
+            words = [x for x in words if x not in stop_words and x != 'y']
             r = new_model.check_col_in_words(new_model, words, new_g_child.id,
                                              total_db=total_db)
             new_model.create_from_rules(new_model, new_g_child.id)
@@ -2984,3 +2986,66 @@ class AliChat(object):
             response, html_response = self.format_openai_response(
                 message, self.openai_msg)
         return response, html_response
+
+    def train_tf(self, training_data):
+        import tensorflow as tf
+        vocab = ["<PAD>", "<UNK>"]
+        for message in training_data:
+            words = re.findall(r"[\w']+|[.,!?;]", message[0])
+            for word in words:
+                if word not in vocab:
+                    vocab.append(word)
+        word2idx = {word: idx for idx, word in enumerate(vocab)}
+        model = tf.keras.Sequential([
+            tf.keras.layers.Embedding(len(vocab), 32),
+            tf.keras.layers.GlobalAveragePooling1D(),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(len(vocab), activation="softmax")
+        ])
+        model.compile(
+            optimizer="adam",
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"]
+        )
+        x_train = np.array([
+            [word2idx.get(word, word2idx["<UNK>"]) for word in message.split()]
+            for message, response in training_data
+        ])
+        y_train = np.array([
+            [word2idx.get(word, word2idx["<UNK>"]) for word in response.split()]
+            for message, response in training_data
+        ])
+        model.fit(x_train, y_train, epochs=50)
+        return model
+
+    @staticmethod
+    def train_pt(model, train_loader, val_loader, epochs=10, lr=0.001):
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        for epoch in range(epochs):
+            model.train()
+            train_loss = 0
+            for data, target in train_loader:
+                optimizer.zero_grad()
+                output = model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * data.size(0)
+            train_loss /= len(train_loader.dataset)
+            model.eval()
+            val_loss = 0
+            val_accuracy = 0
+            with torch.no_grad():
+                for data, target in val_loader:
+                    output = model(data)
+                    loss = criterion(output, target)
+                    val_loss += loss.item() * data.size(0)
+                    _, pred = torch.max(output, 1)
+                    val_accuracy += torch.sum(pred == target).item()
+                val_loss /= len(val_loader.dataset)
+                val_accuracy /= len(val_loader.dataset)
+        return model
