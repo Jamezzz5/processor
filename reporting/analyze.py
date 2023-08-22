@@ -2734,7 +2734,7 @@ class AliChat(object):
         new_model = new_g_child.get_children()
         if new_model:
             stop_words = list(nltk.corpus.stopwords.words('english'))
-            words = [x for x in words if x not in stop_words and x != 'y']
+            words = [x for x in words if x not in stop_words or x == 'y']
             r = new_model.check_col_in_words(new_model, words, new_g_child.id,
                                              total_db=total_db)
             new_model.create_from_rules(new_model, new_g_child.id)
