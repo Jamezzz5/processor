@@ -2654,13 +2654,16 @@ class AliChat(object):
                 break
         return table_response
 
-    def find_db_model(self, db_model, message):
+    def find_db_model(self, db_model, message, other_db_model=None):
         word_idx = self.index_db_model_by_word(db_model)
+        message = re.sub(r'[^\w\s]', '', message)
         nltk.download('stopwords')
         stop_words = list(nltk.corpus.stopwords.words('english'))
+        stop_words += db_model.get_model_name_list()
+        if other_db_model:
+            stop_words += other_db_model.get_name_list()
         words = utl.lower_words_from_str(message)
-        words = [x for x in words if
-                 x not in db_model.get_model_name_list() + stop_words]
+        words = [x for x in words if x not in stop_words]
         model_ids = {}
         for word in words:
             if word in word_idx:
