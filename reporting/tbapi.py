@@ -258,6 +258,18 @@ class TabApi(object):
                     logging.info('workbook downloaded to {}'.format(file_path))
                     return file_path
 
+    def download_workbook_with_error_catch(self, wb_name='auto_template'):
+        file_path = ''
+        for x in range(10):
+            try:
+                file_path = self.download_workbook(wb_name)
+                break
+            except tsc.server.endpoint.exceptions.ServerResponseError as e:
+                msg = 'Attempt: {}. Could not download: \n{}'.format(x + 1, e)
+                logging.warning(msg)
+                time.sleep(10)
+        return file_path
+
     @staticmethod
     def change_workbook_datasource(
             workbook_name='auto_template', table_name='auto_processor'):
@@ -268,9 +280,10 @@ class TabApi(object):
     def create_publish_workbook_hyper(self, db, table_name='auto_processor',
                                       wb_name='auto_template', new_wb_name=''):
         self.create_publish_hyper(db, table_name)
-        file_path = self.download_workbook(wb_name)
-        self.change_workbook_datasource(file_path, table_name)
-        new_path = file_path.replace(wb_name, new_wb_name)
-        shutil.copy(file_path, new_path)
-        self.publish_object_with_error_catch(db, object_name=new_wb_name,
-                                             object_type='workbook')
+        file_path = self.download_workbook_with_error_catch(wb_name)
+        if file_path:
+            self.change_workbook_datasource(file_path, table_name)
+            new_path = file_path.replace(wb_name, new_wb_name)
+            shutil.copy(file_path, new_path)
+            self.publish_object_with_error_catch(db, object_name=new_wb_name,
+                                                 object_type='workbook')
