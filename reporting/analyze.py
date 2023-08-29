@@ -738,7 +738,7 @@ class Analyze(object):
 
     @staticmethod
     def get_base_raw_file_dict(ds):
-        cd = {FindBlankLines.new_first_col: {},
+        cd = {CheckFirstRow.new_first_line: {},
               'file_load': {},
               vmc.fullplacename: {},
               vmc.placement: {},
@@ -782,15 +782,15 @@ class Analyze(object):
         cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
-                find_blank = FindBlankLines(Analyze())
-                first_row = find_blank.find_first_row(cds)
+                find_blank = CheckFirstRow(Analyze())
+                first_row = find_blank.find_first_row(cds, pd.DataFrame())
                 if not first_row.empty:
-                    first_row = first_row.iloc[0][find_blank.new_first_col]
+                    first_row = first_row.iloc[0][find_blank.new_first_line]
                     cds.p[vmc.firstrow] = first_row
                 else:
                     first_row = cds.p[vmc.firstrow]
-                cd[find_blank.new_first_col][cds_name] = (
-                    True, 'First Row: {}.'.format(first_row))
+                cd[find_blank.new_first_line][cds_name] = (
+                    True, '{}'.format(first_row))
                 df = cds.get_raw_df()
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
@@ -1206,13 +1206,7 @@ class CheckFirstRow(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    def fix_analysis_for_data_source(self, source, write=True):
-        """
-        Plugs in new first line from aly dict to the VM
-        source -> data source from aly dict (created from find_first_row)
-        """
-        vk = source[vmc.vendorkey]
-        new_first_line = source[self.new_first_line]
+    def adjust_first_row_in_vm(self, vk, new_first_line, write=True):
         if int(new_first_line) > 0:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.firstrow, new_first_line))
@@ -1220,6 +1214,15 @@ class CheckFirstRow(AnalyzeBase):
         if write:
             self.aly.matrix.write()
             self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        """
+        Plugs in new first line from aly dict to the VM
+        source -> data source from aly dict (created from find_first_row)
+        """
+        vk = source[vmc.vendorkey]
+        new_first_line = source[self.new_first_line]
+        self.adjust_first_row_in_vm(vk, new_first_line, write)
 
     def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='records')
@@ -1304,85 +1307,6 @@ class CheckLastRow(AnalyzeBase):
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
             self.fix_analysis_for_data_source(x, write=write)
-        if write:
-            self.aly.matrix.write()
-        return self.aly.matrix.vm_df
-
-
-class FindBlankLines(AnalyzeBase):
-    name = Analyze.blank_lines
-    fix = True
-    pre_run = True
-    new_first_col = 'new_first_line'
-
-    def find_first_row(self, source):
-        """
-        finds the first row in a raw file where all columns in FPN appear
-        loops through only first 10 rows in case of major error
-        source -> an item from the VM
-        If first row is incorrect, returns a data frame containing:
-        vendor key, filename, line to new first row cut off
-        returns empty df otherwise
-        """
-        line = -1
-        l_df = pd.DataFrame()
-        if vmc.filename not in source.p:
-            return l_df
-        raw_file = source.p[vmc.filename]
-        place_cols = source.p[dctc.FPN]
-        try:
-            df = pd.read_csv(raw_file, skip_blank_lines=False)
-        except FileNotFoundError:
-            logging.debug("File: {} could not be found...".format(raw_file))
-            return l_df
-        for index, row in df.head(10).iterrows():
-            if all(x in row.values or x in df.columns for x in place_cols):
-                line = index
-        if len(df.head(10))-1 > line >= 0:
-            line = line + 1
-            l_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                 vmc.filename: [source.p[vmc.filename]],
-                                 'new_first_line': [line]})
-            delivery_msg = "Uploaded file first row may be incorrect"
-            msg2 = "File Name: "
-            msg3 = "Suggested new first row: "
-            logging.info('{}\n{}{}\n{}{}'.format(
-                delivery_msg, msg2, raw_file, msg3, line))
-            self.aly.add_to_analysis_dict(key_col=self.name,
-                                          message=delivery_msg,
-                                          data=l_df.to_dict())
-            return l_df
-        missing_strings = (set(place_cols) -
-                           set(df.head(10).values.flatten()) -
-                           set(df.columns))
-        if missing_strings:
-            logging.warning('Could not find the following cols in'
-                            ' {}: {}'.format(raw_file, missing_strings))
-        return l_df
-
-    def do_analysis(self):
-        data_sources = self.aly.matrix.get_all_data_sources()
-        for source in data_sources:
-            self.find_first_row(source)
-
-    def fix_analysis_for_data_source(self, source, write=None):
-        """
-        Plugs in new first line from aly dict to the VM
-        source -> data source from aly dict (created from find_first_row)
-        """
-        vk = source[vmc.vendorkey]
-        new_first_line = source['new_first_line']
-        logging.info('Changing {} {} to {}'.format(vk,
-                                                   vmc.firstrow,
-                                                   new_first_line))
-        self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
-        if write:
-            self.aly.matrix.write()
-
-    def fix_analysis(self, aly_dict, write=True):
-        aly_dict = aly_dict.to_dict(orient='records')
-        for x in aly_dict:
-            self.fix_analysis_for_data_source(x, False)
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
