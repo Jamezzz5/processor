@@ -65,8 +65,8 @@ class TabApi(object):
         self.headers = {'Content-Type': 'application/json',
                         'Accept': 'application/json'}
         data = {"credentials": {
-                "name": self.username,
-                "password": self.password,
+                "personalAccessTokenName": self.username,
+                "personalAccessTokenSecret": self.password,
                 "site": {"contentUrl": self.site}}}
         url = self.create_url('auth/signin')
         r = self.make_request(url, 'post', resp_key='credentials',
@@ -167,7 +167,8 @@ class TabApi(object):
             logging.warning('Tableau api not configured, it was not refreshed.')
 
     def get_tsc_auth(self):
-        tableau_auth = tsc.TableauAuth(self.username, self.password, self.site)
+        tableau_auth = tsc.PersonalAccessTokenAuth(self.username, self.password,
+                                                   self.site)
         server = tsc.Server('https://us-east-1.online.tableau.com',
                             use_server_version=True)
         return tableau_auth, server
@@ -229,10 +230,23 @@ class TabApi(object):
                 publish_msg, published_obj.name))
             return object_published
 
+    def publish_object_with_error_catch(self, db, object_name,
+                                        object_type='datasource'):
+        for x in range(10):
+            try:
+                self.publish_object(
+                    db, object_name=object_name, object_type=object_type)
+                break
+            except tsc.server.endpoint.exceptions.ServerResponseError as e:
+                msg = 'Attempt: {}.  Could not publish error: \n{}'.format(
+                    x + 1, e)
+                logging.warning(msg)
+                time.sleep(10)
+
     def create_publish_hyper(self, db, table_name='auto_processor'):
         self.create_hyper(db, table_name)
-        self.publish_object(
-            db, object_name=table_name, object_type='datasource')
+        self.publish_object_with_error_catch(db, object_name=table_name,
+                                             object_type='datasource')
 
     def download_workbook(self, workbook_name='auto_template'):
         tableau_auth, server = self.get_tsc_auth()
@@ -244,6 +258,18 @@ class TabApi(object):
                     logging.info('workbook downloaded to {}'.format(file_path))
                     return file_path
 
+    def download_workbook_with_error_catch(self, wb_name='auto_template'):
+        file_path = ''
+        for x in range(10):
+            try:
+                file_path = self.download_workbook(wb_name)
+                break
+            except tsc.server.endpoint.exceptions.ServerResponseError as e:
+                msg = 'Attempt: {}. Could not download: \n{}'.format(x + 1, e)
+                logging.warning(msg)
+                time.sleep(10)
+        return file_path
+
     @staticmethod
     def change_workbook_datasource(
             workbook_name='auto_template', table_name='auto_processor'):
@@ -254,8 +280,10 @@ class TabApi(object):
     def create_publish_workbook_hyper(self, db, table_name='auto_processor',
                                       wb_name='auto_template', new_wb_name=''):
         self.create_publish_hyper(db, table_name)
-        file_path = self.download_workbook(wb_name)
-        self.change_workbook_datasource(file_path, table_name)
-        new_path = file_path.replace(wb_name, new_wb_name)
-        shutil.copy(file_path, new_path)
-        self.publish_object(db, new_wb_name, object_type='workbook')
+        file_path = self.download_workbook_with_error_catch(wb_name)
+        if file_path:
+            self.change_workbook_datasource(file_path, table_name)
+            new_path = file_path.replace(wb_name, new_wb_name)
+            shutil.copy(file_path, new_path)
+            self.publish_object_with_error_catch(db, object_name=new_wb_name,
+                                                 object_type='workbook')

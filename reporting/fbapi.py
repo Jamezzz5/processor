@@ -10,6 +10,8 @@ import datetime as dt
 import reporting.utils as utl
 import reporting.awss3 as awss3
 import reporting.gsapi as gsapi
+import reporting.vendormatrix as matrix
+import reporting.vmcolumns as vmc
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.exceptions import FacebookRequestError,\
@@ -369,7 +371,8 @@ class FbApi(object):
                     complete_job = None
                     time.sleep(30)
                 if complete_job:
-                    self.df = self.df.append(complete_job, ignore_index=True)
+                    self.df = pd.concat([self.df, pd.DataFrame(complete_job)],
+                                        ignore_index=True)
                     fb_request.complete = True
             else:
                 self.async_requests.append(fb_request)
@@ -384,7 +387,7 @@ class FbApi(object):
                 percent = self.get_async_job_percent(async_job)
             complete_job = list(async_job.get_result())
             if complete_job:
-                self.df = self.df.append(complete_job, ignore_index=True)
+                self.df = pd.concat([self.df, complete_job], ignore_index=True)
 
     @staticmethod
     def get_async_job_percent(async_job):
@@ -501,8 +504,46 @@ class FbApi(object):
             dirty_df = dirty_df.drop(col, axis=1)
         dirty_df = dirty_df.apply(pd.to_numeric)
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
-        clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
+        clean_df = clean_df.groupby(
+            clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        results = []
+        self.account = AdAccount(self.act_id)
+        fields = [
+            'name',
+            'objective',
+        ]
+        params = {
+            'effective_status': ['ACTIVE', 'PAUSED'],
+        }
+        try:
+            r = self.account.get_campaigns(fields=fields, params=params)
+        except FacebookRequestError as e:
+            row = [acc_col, ' '.join(['FAILURE:', e._api_error_message]), False]
+            results.append(row)
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        row = [acc_col,
+               ' '.join(['SUCCESS -- ID:', str(self.act_id).strip(acc_pre)]),
+               True]
+        results.append(row)
+        if self.campaign_filter:
+            params['filtering'] = ([{'field': 'campaign.name',
+                                     'operator': 'CONTAIN',
+                                     'value': self.campaign_filter}])
+            r = self.account.get_campaigns(fields=fields, params=params)
+        if r:
+            row = [camp_col, 'SUCCESS -- CAMPAIGNS INCLUDED IF DATA PAST'
+                             ' START DATE:', True]
+            results.append(row)
+            for campaign in r:
+                row = [camp_col, campaign["name"], True]
+                results.append(row)
+        else:
+            row = [camp_col, 'FAILURE: No Campaigns under filter.', False]
+            results.append(row)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
 
 
 class FacebookRequest(object):

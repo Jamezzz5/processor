@@ -158,7 +158,7 @@ class GaApi(object):
         full_url = self.create_url(sd, ed, fields, start_index, metric)
         self.r = self.client.get(full_url)
         tdf = self.data_to_df(self.r)
-        self.df = self.df.append(tdf)
+        self.df = pd.concat([self.df, tdf])
 
     def data_to_df(self, r):
         if 'columnHeaders' not in self.r.json():

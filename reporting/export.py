@@ -184,7 +184,8 @@ class DBUpload(object):
         cols = self.dbs.get_cols_for_export(table)
         cols_to_add = []
         other_event_cols = [
-            exc.event_steam_name, exc.event_conv_name, exc.event_plan_name]
+            exc.event_steam_name, exc.event_conv_name, exc.event_plan_name,
+            exc.event_brand_name]
         if exc.event_name in cols and not any(
                 [x in cols for x in other_event_cols]):
             cols_to_add = [x for x in self.dft.real_columns
@@ -707,7 +708,7 @@ class DFTranslation(object):
         self.df[exc.event_name] = (self.df[exc.event_date].astype('U') +
                                    self.df[exc.full_placement_name])
         for col in [exc.plan_name, exc.event_steam_name, exc.event_conv_name,
-                    exc.event_plan_name]:
+                    exc.event_plan_name, exc.event_brand_name]:
             self.df[col] = self.df[exc.event_name]
 
     def slice_for_upload(self, columns):
@@ -792,6 +793,15 @@ class ScriptBuilder(object):
         metrics = set(metrics)
         return dimensions, metrics
 
+    def get_active_event_tables(self, metrics):
+        event_tables = [x for x in self.tables if 'event' in x.name
+                        and x.name != 'event']
+        append_tables = []
+        for table in event_tables:
+            if any([x.name in metrics for x in table.columns]):
+                append_tables.append(table.name)
+        return append_tables
+
     def append_plan_join(self, original_from_script):
         table = [x for x in self.tables if x.name == 'plan'][0]
         fcs = [x for x in table.columns if x.foreign_keys]
@@ -805,6 +815,27 @@ class ScriptBuilder(object):
         join_script = """\nFULL JOIN {} ON ({} = {})""".format(
             table_name, foreign_relation, table_relation)
         from_script = original_from_script + join_script
+        return from_script
+
+    def append_event_joins(self, original_from_script, tables=None):
+        if not tables:
+            return original_from_script
+        elif 'all' in tables:
+            tables = ['eventconv', 'eventplan', 'eventsteam', 'eventbrand']
+        from_script = original_from_script
+        for table_name in tables:
+            table = [x for x in self.tables if x.name == table_name][0]
+            fcs = [x for x in table.columns if x.foreign_keys]
+            table_name = '"{}"."{}"'.format(table.schema, table.name)
+            fc = fcs[0]
+            fk = [x for x in fc.foreign_keys][0]
+            join_table = '"{}"."{}"'.format(
+                fk.column.table.schema, fk.column.table.name)
+            table_relation = '{}."{}"'.format(table_name, fc.name)
+            foreign_relation = '{}."{}"'.format(join_table, fk.column.name)
+            join_script = """\nLEFT JOIN {} ON ({} = {})""".format(
+                table_name, foreign_relation, table_relation)
+            from_script = from_script + join_script
         return from_script
 
     def get_from_script(self, table, original_from_script=''):
@@ -844,7 +875,7 @@ class ScriptBuilder(object):
             from_script = self.get_from_script(table, from_script)
         return from_script
 
-    def get_column_names(self, base_table):
+    def get_column_names(self, base_table, event_tables=None):
         import decimal
         column_names = []
         tables = [base_table] + [x for x in self.tables
@@ -863,6 +894,19 @@ class ScriptBuilder(object):
         sum_columns.append('SUM("{}"."{}"."{}") AS "{}"'.format(
             'lqadb', 'plan',
             'plannednetcost', 'plannednetcost'))
+        if event_tables:
+            if 'all' in event_tables:
+                event_tables = ['eventconv', 'eventplan', 'eventsteam',
+                                'eventbrand']
+            append_tables = [x for x in self.tables if x.name in event_tables]
+            for table in append_tables:
+                append_columns = [
+                    'SUM("{}"."{}"."{}") AS "{}"'.format(
+                        table.schema, table.name, x.name, x.name)
+                    for x in table.columns
+                    if x.type.python_type == decimal.Decimal
+                ]
+                sum_columns.extend(append_columns)
         return column_names, sum_columns
 
     @staticmethod
@@ -879,11 +923,20 @@ class ScriptBuilder(object):
         from_script = '\n'.join(split_from_script)
         return from_script
 
-    def get_full_script(self, filter_col, filter_val, filter_table):
-        base_table = [x for x in self.tables if x.name == 'event'][0]
+    def get_from_script_with_opts(self, base_table, filter_table='',
+                                  event_tables=None):
         from_script = self.get_from_script(table=base_table)
         from_script = self.append_plan_join(from_script)
-        from_script = self.optimize_from_script(filter_table, from_script)
+        if event_tables:
+            from_script = self.append_event_joins(from_script,
+                                                  tables=event_tables)
+        if filter_table:
+            from_script = self.optimize_from_script(filter_table, from_script)
+        return from_script
+
+    def get_full_script(self, filter_col, filter_val, filter_table):
+        base_table = [x for x in self.tables if x.name == 'event'][0]
+        from_script = self.get_from_script_with_opts(base_table, filter_table)
         column_names, sum_columns = self.get_column_names(base_table)
         column_names = ['{}'.format(x) for x in set(column_names)]
         where_clause = "({} = {}::text)".format(filter_col, '%s')

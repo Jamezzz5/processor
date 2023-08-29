@@ -146,6 +146,20 @@ conv7 = 'Conv7'
 conv8 = 'Conv8'
 conv9 = 'Conv9'
 conv10 = 'Conv10'
+media_spend = 'Media Spend'
+youtube_subscribers = 'YouTube Subscribers'
+twitter_followers = 'Twitter Followers'
+twitch_views = 'Twitch Views'
+twitch_viewers = 'Twitch Concurrent Viewers'
+subreddit_members = 'Subreddit Members'
+player_share = 'Player Share'
+nz_awareness = 'NewZoo - Awareness'
+np_score = 'Net Promoter Score'
+coverage = 'Netbase - Coverage'
+month_avg_user = 'Monthly Average Users'
+stickiness = 'Stickiness'
+days_played = 'Days Played'
+play_intent = 'Intent to Play (Non-Players)'
 
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
@@ -175,7 +189,10 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            steam_purchases, steam_activations,
            modelcoefa, modelcoefb, modelcoefc, AD_COST, REP_COST, VER_COST,
            conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9,
-           conv10]
+           conv10, media_spend, youtube_subscribers, twitter_followers,
+           twitch_views, twitch_viewers, subreddit_members, player_share,
+           nz_awareness, np_score, coverage, month_avg_user, stickiness,
+           days_played, play_intent]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)
@@ -184,6 +201,11 @@ datecol = [startdate, enddate]
 datadatecol = [date]
 datafloatcol = datacol[:]
 datafloatcol.remove(date)
+
+brand_cols = [media_spend, youtube_subscribers, twitter_followers,
+              twitch_views, twitch_viewers, subreddit_members,
+              player_share, nz_awareness, np_score, coverage,
+              month_avg_user, stickiness, days_played, play_intent]
 
 filename_true = 'FILENAME-TRUE'
 
@@ -226,14 +248,19 @@ api_yv_key = 'YahooVerizon'
 api_amd_key = 'AmazonDsp'
 api_mp_key = 'MediaPlan'
 api_ss_key = 'Screenshot'
+api_nz_key = 'NewZoo'
+api_ytd_key = 'YoutubeData'
 api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
             api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
             api_red_key, api_dv_key, api_raw_key, api_adk_key, api_inn_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
-            api_mp_key, api_ss_key]
+            api_mp_key, api_ss_key, api_nz_key, api_ytd_key]
+test_apis = [api_dc_key, api_fb_key, api_aw_key]
+r_cols = ['Field', 'Result', 'Success']
 preview_apis = [api_fb_key]
+no_account_apis = [api_tw_key]
 
 api_translation = {
     api_aw_key: 'aw',
@@ -264,7 +291,9 @@ api_translation = {
     api_qt_key: 'qt',
     api_yv_key: 'yv',
     api_amd_key: 'amd',
-    api_ss_key: 'ss'
+    api_ss_key: 'ss',
+    api_nz_key: 'nz',
+    api_ytd_key: 'ytd'
 }
 
 api_partner_name_translation = {
@@ -295,7 +324,8 @@ api_partner_name_translation = {
     api_gs_key: ['Googlesheets'],
     api_qt_key: ['Quantcast'],
     api_yv_key: ['Yahoo', 'Verizon'],
-    api_amd_key: ['Amazon DSP']
+    api_amd_key: ['Amazon DSP'],
+    api_nz_key: ['NewZoo']
 }
 
 output_file = 'Raw Data Output.csv'

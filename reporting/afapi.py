@@ -109,7 +109,7 @@ class AfApi(object):
         self.df = pd.DataFrame()
         for rt in [True, False]:
             tdf = self.get_raw_data(sd, ed, field, sources, category, rt)
-            self.df = self.df.append(tdf, ignore_index=True, sort=True)
+            self.df = pd.concat([self.df, tdf], ignore_index=True, sort=True)
             time.sleep(60)
         return self.df
 

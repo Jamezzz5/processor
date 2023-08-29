@@ -111,7 +111,7 @@ class AjApi(object):
         self.r = requests.get(full_url, headers=headers, params=params)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)
-            self.df = self.df.append(tdf)
+            self.df = pd.concat([self.df, tdf])
             logging.info('Data downloaded, returning df.')
         else:
             self.request_error()

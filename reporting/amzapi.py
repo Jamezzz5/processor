@@ -128,21 +128,22 @@ class AmzApi(object):
                 self.set_headers()
                 self.base_url = endpoint
                 return True
-            dsp_profile = [x for x in r.json() if 'agency'
-                           in x['accountInfo']['type']]
-            if dsp_profile:
-                dsp_id = str(dsp_profile[0]['profileId'])
-                self.headers['Amazon-Advertising-API-Scope'] = dsp_id
-                url = '{}/dsp/advertisers'.format(endpoint)
-                r = self.make_request(url, method='GET', headers=self.headers)
-                profile = [x for x in r.json()['response'] if
-                           self.advertiser_id in x['advertiserId']]
-                if profile:
-                    self.profile_id = profile[0]['advertiserId']
-                    self.set_headers()
-                    self.base_url = endpoint
-                    self.amazon_dsp = True
-                    return True
+            dsp_profiles = [x for x in r.json() if 'agency'
+                            in x['accountInfo']['type']]
+            if dsp_profiles:
+                for dsp_profile in dsp_profiles:
+                    dsp_id = str(dsp_profile['profileId'])
+                    self.headers['Amazon-Advertising-API-Scope'] = dsp_id
+                    url = '{}/dsp/advertisers'.format(endpoint)
+                    r = self.make_request(url, method='GET', headers=self.headers)
+                    profile = [x for x in r.json()['response'] if
+                               self.advertiser_id in x['advertiserId']]
+                    if profile:
+                        self.profile_id = profile[0]['advertiserId']
+                        self.set_headers()
+                        self.base_url = endpoint
+                        self.amazon_dsp = True
+                        return True
         logging.warning('Could not find the specified profile, check that '
                         'the provided account ID {} is correct and API has '
                         'access.'.format(self.advertiser_id))
@@ -356,7 +357,7 @@ class AmzApi(object):
                 if 'impressions' in df.columns:
                     df = df.loc[(df['impressions'] > 0)]
                 df['Date'] = report_id_dict['date']
-                self.df = self.df.append(df, ignore_index=True)
+                self.df = pd.concat([self.df, df], ignore_index=True)
             self.report_ids = [
                 x for x in self.report_ids if x['report_id'] != report_id]
             report_id_dict['complete'] = True

@@ -92,7 +92,7 @@ class Dict(object):
             error = self.auto_combine(error, rc_auto)
             error = self.auto_split(error)
             error = error.loc[~error[dctc.FPN].isin(self.data_dict[dctc.FPN])]
-            self.data_dict = self.data_dict.append(error, sort=True)
+            self.data_dict = pd.concat([self.data_dict, error], sort=True)
             self.data_dict = self.data_dict[dctc.COLS]
             err.dic = self
             err.reset()
@@ -183,7 +183,7 @@ class Dict(object):
                                                          check_cols,
                                                          trail_delim)
                 if not first_col:
-                    if return_missing and check_cols:
+                    if return_missing:
                         if miss not in component_dict[rc_key]:
                             component_dict[rc_key][miss] = []
                         if not lead_delim:
@@ -329,7 +329,8 @@ class Dict(object):
                                 if k.split(self.comb_key)[0] in rc_keys}
         else:
             translation_dict = {k: v for k, v in translation_dict.items()
-                                if k.split(self.comb_key)[0] in rc_comps}
+                                if k.split(self.comb_key)[0] in rc_comps
+                                and k.split(self.comb_key)[0] not in rc_keys}
         tdf = df.rename(columns=translation_dict)
         return tdf
 
@@ -389,10 +390,14 @@ class Dict(object):
                 urls = urls.rename(columns={url_col: dctc.CURL})
                 urls = urls.drop(columns=ad_col)
                 urls = urls[urls[dctc.FPN].notna()]
-                self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
-                    self.data_dict[dctc.CURL].eq(0)).fillna(
-                    self.data_dict[dctc.FPN].map(
-                        urls.set_index(dctc.FPN)[dctc.CURL]))
+                try:
+                    self.data_dict[dctc.CURL] = self.data_dict[dctc.CURL].mask(
+                        self.data_dict[dctc.CURL].eq(0)).fillna(
+                        self.data_dict[dctc.FPN].map(
+                            urls.set_index(dctc.FPN)[dctc.CURL]))
+                except pd.errors.InvalidIndexError as e:
+                    msg = 'Could not add creative urls error: {}'.format(e)
+                    logging.warning(msg)
 
     def write(self, df=None):
         logging.debug('Writing {}'.format(self.filename))
@@ -632,7 +637,7 @@ class DictConstantConfig(object):
 
 class DictTranslationConfig(object):
     def __init__(self):
-        self.csv_path = os.path.join(csv_path, 'Translational/')
+        self.csv_path = os.path.join(csv_path, dctc.filepath_tran_config)
         utl.dir_check(self.csv_path)
         self.df = pd.DataFrame()
 
@@ -744,7 +749,7 @@ def dict_update():
         if dctc.FPN not in dic.data_dict.columns:
             continue
         odic = dic.get()
-        df = ndic.append(odic, sort=True)
+        df = pd.concat([ndic, odic], sort=True)
         if 'pncFull Placement Name' in df.columns:
             df[dctc.FPN] = df['pncFull Placement Name']
             df = df[cols]
