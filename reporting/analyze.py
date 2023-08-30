@@ -2808,6 +2808,29 @@ class AliChat(object):
             new_model.create_object(*args)
             return new_model
 
+    def pick_db_model_create_from(self, db_model, other_db_model, words,
+                                  message):
+        other_db_model = other_db_model[0]
+        from_words = ['from']
+        is_from = utl.is_list_in_list(from_words, words,
+                                      return_vals=True)
+        db_model_post_from = None
+        if is_from:
+            post_words = words[words.index(is_from[0]) + 1:]
+            for word in post_words:
+                for x in [db_model, other_db_model]:
+                    if word in x.get_model_name_list():
+                        db_model_post_from = x
+                        break
+                if db_model_post_from:
+                    break
+        model_ids, words = self.find_db_model(db_model, message)
+        if not model_ids or db_model_post_from != db_model:
+            hold = other_db_model
+            other_db_model = db_model
+            db_model = hold
+        return db_model, other_db_model
+
     def create_db_model(self, db_model, message, response, html_response):
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
@@ -2817,14 +2840,10 @@ class AliChat(object):
                 x for x in self.models_to_search if
                 self.db_model_name_in_message(message, x) and x != db_model]
             if other_db_model:
-                other_db_model = other_db_model[0]
-                model_ids, words = self.find_db_model(db_model, message)
-                if not model_ids:
-                    hold = other_db_model
-                    other_db_model = db_model
-                    db_model = hold
-                new_model = self.create_db_model_from_other(db_model, message,
-                                                            other_db_model)
+                db_model, other_db_model = self.pick_db_model_create_from(
+                    db_model, other_db_model, words, message)
+                new_model = self.create_db_model_from_other(
+                    db_model, message, other_db_model)
                 db_model = other_db_model
             else:
                 name_words = ['named', 'called', 'name', 'title']
