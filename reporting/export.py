@@ -793,6 +793,15 @@ class ScriptBuilder(object):
         metrics = set(metrics)
         return dimensions, metrics
 
+    def get_active_event_tables(self, metrics):
+        event_tables = [x for x in self.tables if 'event' in x.name
+                        and x.name != 'event']
+        append_tables = []
+        for table in event_tables:
+            if any([x.name in metrics for x in table.columns]):
+                append_tables.append(table.name)
+        return append_tables
+
     def append_plan_join(self, original_from_script):
         table = [x for x in self.tables if x.name == 'plan'][0]
         fcs = [x for x in table.columns if x.foreign_keys]

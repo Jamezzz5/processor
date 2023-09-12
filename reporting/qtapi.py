@@ -13,7 +13,7 @@ config_path = utl.config_path
 class QtApi(object):
 
     base_url = 'https://developers.quantcast.com/api/v1/accounts/'
-    token_url = 'https://www.quantcast.com/oauth2/default/v1/token'
+    token_url = 'https://auth.quantcast.com/oauth2/default/v1/token'
 
     def __init__(self):
         self.config = None
@@ -72,9 +72,10 @@ class QtApi(object):
     def get_token(self):
         logging.info('Retrieving access token')
         token_header = {"Content-Type": "application/x-www-form-urlencoded"}
-        params = (('username', self.username), 
-                  ('password', self.password), 
-                  ('grant_type', 'password'))
+        params = (('client_id', self.username),
+                  ('client_secret', self.password),
+                  ('scope', 'api_access read_reports'),
+                  ('grant_type', 'client_credentials'))
         r = requests.post(self.token_url, data=params, headers=token_header)
         token = r.json()
         logging.info('Access token retrieved')
