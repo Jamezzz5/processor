@@ -13,7 +13,7 @@ config_path = utl.config_path
 class QtApi(object):
 
     base_url = 'https://developers.quantcast.com/api/v1/accounts/'
-    token_url = 'https://www.quantcast.com/oauth2/token'
+    token_url = 'https://www.quantcast.com/oauth2/default/v1/token'
 
     def __init__(self):
         self.config = None
