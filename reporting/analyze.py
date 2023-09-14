@@ -2592,6 +2592,7 @@ class AliChat(object):
         self.db = None
         self.current_user = None
         self.models_to_search = None
+        self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
 
     @staticmethod
@@ -2670,8 +2671,7 @@ class AliChat(object):
     def find_db_model(self, db_model, message, other_db_model=None):
         word_idx = self.index_db_model_by_word(db_model)
         message = re.sub(r'[^\w\s]', '', message)
-        nltk.download('stopwords')
-        stop_words = list(nltk.corpus.stopwords.words('english'))
+        stop_words = self.stop_words.copy()
         stop_words += db_model.get_model_name_list()
         if other_db_model:
             stop_words += other_db_model.get_name_list()
@@ -2744,13 +2744,11 @@ class AliChat(object):
             prev_model = new_model
         return prev_model
 
-    @staticmethod
-    def check_gg_children(words, new_g_child, total_db=pd.DataFrame()):
+    def check_gg_children(self, words, new_g_child, total_db=pd.DataFrame()):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
-            stop_words = list(nltk.corpus.stopwords.words('english'))
-            words = [x for x in words if x not in stop_words or x == 'y']
+            words = [x for x in words if x not in self.stop_words or x == 'y']
             r = new_model.check_col_in_words(new_model, words, new_g_child.id,
                                              total_db=total_db)
             new_model.create_from_rules(new_model, new_g_child.id)
@@ -2758,6 +2756,8 @@ class AliChat(object):
 
     def create_db_model_children(self, cur_model, words):
         response = ''
+        if not cur_model:
+            return response
         db_model_child = cur_model.get_children()
         if not db_model_child:
             return response
@@ -2838,7 +2838,8 @@ class AliChat(object):
                 if db_model_post_from:
                     break
         model_ids, words = self.find_db_model(db_model, message)
-        if not model_ids or db_model_post_from != db_model:
+        if not model_ids or (
+                db_model_post_from and db_model_post_from != db_model):
             hold = other_db_model
             other_db_model = db_model
             db_model = hold
@@ -2884,12 +2885,12 @@ class AliChat(object):
         if not omit_list:
             omit_list = []
         match_col_dict = {}
-        stop_words = list(nltk.corpus.stopwords.words('english'))
         for k in db_model.__table__.columns:
             if k.name == 'id' or k.foreign_keys:
                 continue
             check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k.name)
-            check_words = [x for x in check_words if x and x not in stop_words]
+            check_words = [x for x in check_words
+                           if x and x not in self.stop_words]
             in_list = utl.is_list_in_list(check_words, words, True, True)
             if in_list:
                 match_col_dict[k.name] = in_list
@@ -2902,7 +2903,7 @@ class AliChat(object):
             else:
                 in_list = match_col_dict[k]
             pw = words[words.index(in_list[-1]) + 1:]
-            skip_words = [cur_model.name.lower()] + omit_list + stop_words
+            skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
             new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
             setattr(cur_model, k, new_val)
@@ -2993,11 +2994,19 @@ class AliChat(object):
                 message, self.openai_found)
         return response, html_response
 
+    @staticmethod
+    def get_stop_words():
+        nltk.download('stopwords')
+        stop_words = list(nltk.corpus.stopwords.words('english'))
+        return stop_words
+
     def get_response(self, message, models_to_search=None, db=None,
                      current_user=None):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
+        if not self.stop_words:
+            self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
         if not response and models_to_search:
             for db_model in models_to_search:
