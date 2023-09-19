@@ -90,7 +90,7 @@ class PmApi(object):
         try:
             self.sw.click_on_xpath(pop_up_close_xpath)
         except Exception as e:
-            logging.info('No pop-ups found. Continuing.')
+            logging.info('No pop-ups found. Continuing')
 
 
     def search_title(self, title):
