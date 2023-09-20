@@ -1090,6 +1090,8 @@ class CheckAutoDictOrder(AnalyzeBase):
         auto_place = source.p[vmc.autodicplace]
         if auto_place == dctc.PN:
             auto_place = source.p[vmc.placement]
+        if auto_place not in tdf.columns:
+            return df
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
         max_idx = 0
         max_val = 0
