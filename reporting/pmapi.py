@@ -85,6 +85,14 @@ class PmApi(object):
         elem = self.browser.find_element_by_xpath(xpath)
         return elem
 
+    def close_pop_up(self):
+        pop_up_close_xpath = '//*[@id="pendo-close-guide-8643dd7a"]'
+        try:
+            self.sw.click_on_xpath(pop_up_close_xpath)
+        except Exception as e:
+            logging.info('No pop-ups found. Continuing')
+
+
     def search_title(self, title):
         self.browser.implicitly_wait(10)
         title_bar = \
@@ -319,6 +327,7 @@ class PmApi(object):
         self.base_window = self.browser.window_handles[0]
         self.sw.go_to_url(self.base_url)
         self.sign_in()
+        self.close_pop_up()
         df = pd.DataFrame()
         title_list = self.pm_title.split(',')
         for title in title_list:
