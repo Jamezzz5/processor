@@ -88,7 +88,7 @@ class TabApi(object):
             r = requests.get(url, headers=self.headers)
         else:
             r = requests.post(url, json=json_data, headers=self.headers)
-        if resp_key and resp_key not in r.json():
+        if r and resp_key and resp_key not in r.json():
             logging.warning('Attempt {}, {} not in response: '
                             '{}'.format(attempt, resp_key, r.json()))
             time.sleep(10)
@@ -98,7 +98,7 @@ class TabApi(object):
                                       json_data=json_data, attempt=attempt)
             else:
                 logging.warning('Maximum attempts exceeded - stopping.')
-                sys.exit(0)
+                return False
         return r
 
     def find_datasource(self):

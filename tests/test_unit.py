@@ -113,6 +113,22 @@ class TestUtils:
         assert sw.browser.current_url == test_url
         sw.quit()
 
+    @pytest.mark.parametrize(
+        'sd, ed, expected_output', [
+            (dt.datetime.today(),
+             dt.datetime.today(),
+             (dt.date.today(), dt.date.today())),
+            (dt.datetime.today(),
+             dt.datetime.today() - dt.timedelta(days=1),
+             (dt.date.today() - dt.timedelta(days=1),
+              dt.date.today() - dt.timedelta(days=1)))
+        ],
+        ids=['today', 'bad_sd']
+    )
+    def test_date_check(self, sd, ed, expected_output):
+        output = utl.date_check(sd, ed)
+        assert output == expected_output
+
 
 class TestApis:
     pass
