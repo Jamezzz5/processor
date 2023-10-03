@@ -156,6 +156,9 @@ def string_to_date(my_string):
     elif ((len(my_string) == 19) and (my_string[:2] == '20') and
           ('-' in my_string) and (':' in my_string)):
         return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
+    elif ((len(my_string) == 7 or len(my_string) == 8) and
+          my_string[-4:-2] == '20'):
+        return dt.datetime.strptime(my_string, '%m%d%Y')
     else:
         return my_string
 
@@ -695,6 +698,8 @@ def get_next_number_from_list(words, lower_name, cur_model_name):
     if cost:
         cost = cost[0].replace('k', '000')
     else:
+        cost = 0
+    if any(c.isalpha() for c in str(cost)):
         cost = 0
     return cost
 

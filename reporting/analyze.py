@@ -2786,6 +2786,7 @@ class AliChat(object):
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
         if p_list:
             response += '{}(s) added '.format(db_model_g_child.__name__)
+        total_db = pd.DataFrame()
         for g_child in p_list:
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
@@ -2797,7 +2798,10 @@ class AliChat(object):
             self.db.session.add(new_g_child)
             self.db.session.commit()
             response += '{} ({}) '.format(g_child_name, cost)
-            response += self.check_gg_children(words, new_g_child)
+            if total_db.empty:
+                if hasattr(new_g_child, 'get_children'):
+                    total_db = new_g_child.get_children().get_reporting_db_df()
+            response += self.check_gg_children(words, new_g_child, total_db)
         return response
 
     def create_db_model_from_other(self, db_model, message, other_db_model):
@@ -2813,9 +2817,9 @@ class AliChat(object):
                 self.db.session.add(new_model)
                 self.db.session.commit()
             cur_model_dict = cur_model.to_dict()
-            for k in list(db_model.__table__.columns):
+            for k in list(new_model.__table__.columns):
                 col = k.name
-                if col in other_db_model.__dict__.keys() and col != 'id':
+                if col in cur_model_dict.keys() and col != 'id':
                     v = cur_model_dict[col]
                     setattr(new_model, col, v)
             self.db.session.commit()
@@ -2907,7 +2911,11 @@ class AliChat(object):
             pw = words[words.index(in_list[-1]) + 1:]
             skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
-            new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+            if 'date' in k:
+                new_val = pw[0]
+                new_val = utl.string_to_date(new_val)
+            else:
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
             setattr(cur_model, k, new_val)
             self.db.session.commit()
             response = 'The {} for {} was changed to {}'.format(
@@ -2940,8 +2948,7 @@ class AliChat(object):
                         break
         if not response:
             response = self.check_db_model_col(cur_model, words, cur_model)
-        if not response:
-            response = self.create_db_model_children(cur_model, words)
+        response += self.create_db_model_children(cur_model, words)
         return response
 
     def edit_db_model(self, db_model, words, model_ids):
