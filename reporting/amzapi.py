@@ -305,12 +305,12 @@ class AmzApi(object):
                     return False
         return True
 
-    def make_report_request(self, report_date, report_type, vid):
+    def make_report_request(self, report_date, report_type, vid, attempt=1):
         report_made = False
         report_date_string = dt.datetime.strftime(report_date, '%Y%m%d')
         logging.info(
-            'Requesting report for date: {} type: {} video: {}'.format(
-                report_date_string, report_type, vid))
+            'Requesting report for date: {} type: {} video: {} attempt: {}'
+            .format(report_date_string, report_type, vid, attempt))
         url = self.create_url(report_type=report_type)
         body = {'reportDate': report_date_string,
                 'metrics': ','.join(self.def_metrics)}
@@ -323,9 +323,12 @@ class AmzApi(object):
             if 'code' in r.json() and r.json()['code'] == '406':
                 logging.warning('Could not request date range is too long.')
             else:
-                time.sleep(30)
-                report_made = self.make_report_request(report_date, report_type,
-                                                       vid)
+                if attempt < 10:
+                    time.sleep(30)
+                    attempt += 1
+                    report_made = self.make_report_request(
+                        report_date, report_type, vid, attempt
+                    )
         else:
             report_id = r.json()['reportId']
             self.report_ids.append(
