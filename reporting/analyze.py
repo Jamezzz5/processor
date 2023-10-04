@@ -2594,6 +2594,7 @@ class AliChat(object):
         self.db = None
         self.current_user = None
         self.models_to_search = None
+        self.message = ''
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
 
@@ -2672,13 +2673,8 @@ class AliChat(object):
 
     def find_db_model(self, db_model, message, other_db_model=None):
         word_idx = self.index_db_model_by_word(db_model)
-        message = re.sub(r'[^\w\s]', '', message)
-        stop_words = self.stop_words.copy()
-        stop_words += db_model.get_model_name_list()
-        if other_db_model:
-            stop_words += other_db_model.get_name_list()
-        words = utl.lower_words_from_str(message)
-        words = [x for x in words if x not in stop_words]
+        words = self.remove_stop_words_from_message(
+            message, db_model, other_db_model, remove_punctuation=True)
         model_ids = {}
         for word in words:
             if word in word_idx:
@@ -2708,11 +2704,26 @@ class AliChat(object):
             db_model, model_ids, response, table_bool, table_name)
         return response, html_response
 
+    def remove_stop_words_from_message(
+            self, message, db_model=None, other_db_model=None,
+            remove_punctuation=False):
+        if remove_punctuation:
+            message = re.sub(r'[^\w\s]', '', message)
+        stop_words = self.stop_words.copy()
+        if db_model:
+            stop_words += db_model.get_model_name_list()
+        if other_db_model:
+            stop_words += other_db_model.get_name_list()
+        words = utl.lower_words_from_str(message)
+        words = [x for x in words if x not in stop_words]
+        return words
+
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
         html_response = ''
         model_ids, words = self.find_db_model(db_model, message)
         if model_ids:
+            words = self.remove_stop_words_from_message(message, db_model)
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
         return response, html_response
@@ -2735,11 +2746,12 @@ class AliChat(object):
             name = utl.get_next_value_from_list(words, model_name_list)
             if not name:
                 name_list = parent_model.get_name_list()
-                name = utl.get_dict_values_from_list(words, name_list, True)
-                if name:
-                    name = [name[0][next(iter(name[0]))]]
-                else:
-                    name = parent_model.get_default_name()
+                if name_list:
+                    name = utl.get_dict_values_from_list(words, name_list, True)
+                    if name:
+                        name = [name[0][next(iter(name[0]))]]
+            if not name:
+                name = parent_model.get_default_name()
             new_model = parent_model()
             new_model.set_from_form({'name': name[0]}, prev_model)
             new_model = new_model.check_and_add()
@@ -2750,10 +2762,10 @@ class AliChat(object):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
+            r = 'Checking rules/placements for {}'.format(new_g_child.name)
             words = [x for x in words if x not in self.stop_words or x == 'y']
-            r = new_model.check_col_in_words(new_model, words, new_g_child.id,
-                                             total_db=total_db)
-            new_model.create_from_rules(new_model, new_g_child.id)
+            new_model.check_gg_children(new_model, new_g_child.id, words,
+                                        total_db, r)
         return r
 
     def create_db_model_children(self, cur_model, words):
@@ -2900,9 +2912,11 @@ class AliChat(object):
             in_list = utl.is_list_in_list(check_words, words, True, True)
             if in_list:
                 match_col_dict[k.name] = in_list
+        keys = []
         lengths = {k: len(v) for k, v in match_col_dict.items()}
-        max_length = max(lengths.values())
-        keys = [k for k, v in lengths.items() if v == max_length]
+        if lengths:
+            max_length = max(lengths.values())
+            keys = [k for k, v in lengths.items() if v == max_length]
         for k in keys:
             if k in words:
                 in_list = [k]
@@ -3014,6 +3028,7 @@ class AliChat(object):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
+        self.message = message
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
