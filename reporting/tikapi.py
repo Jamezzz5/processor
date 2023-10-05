@@ -297,7 +297,7 @@ class TikApi(object):
             missing_camps = [ids for ids in campaign_ids
                              if ids not in df[dimensions].to_list()]
             for campaign in missing_camps:
-                row = [camp_col, campaign, True]
+                row = [camp_col, campaign, False]
                 results.append(row)
         return results
 
