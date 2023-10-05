@@ -5,6 +5,9 @@ config_file = 'Config_File'
 translation_file = 'Translation_File'
 schema_file = 'Schema_File'
 default_format = 'Default_Format'
+test_file = 'Test_File'
+
+test_path = 'tests'
 
 table = 'Table'
 pk = 'PK'
