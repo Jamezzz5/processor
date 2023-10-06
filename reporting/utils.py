@@ -691,12 +691,29 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
     return return_value
 
 
-def get_next_number_from_list(words, lower_name, cur_model_name):
+def get_next_number_from_list(words, lower_name, cur_model_name,
+                              last_instance=False):
     post_words = words[words.index(lower_name):]
+    if last_instance:
+        idx = next(i for i in reversed(range(len(post_words)))
+                   if post_words[i] == lower_name)
+        post_words = post_words[idx:]
     cost = [x for x in post_words if
             any(y.isdigit() for y in x) and x != cur_model_name]
     if cost:
-        cost = cost[0].replace('k', '000')
+        if len(cost) > 1:
+            cost_append = ''
+            post_words = post_words[post_words.index(cost[0]):]
+            for x in range(1, len(post_words), 2):
+                two_comb = post_words[x:x + 2]
+                if len(two_comb) > 1 and two_comb[0] == ',':
+                    cost_append += two_comb[1]
+                else:
+                    break
+            cost = [cost[0] + cost_append]
+        cost = cost[0].replace('$', '')
+        cost = cost.replace('k', '000')
+        cost = cost.replace('m', '000000')
     else:
         cost = 0
     if any(c.isalpha() for c in str(cost)):

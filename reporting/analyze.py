@@ -2803,7 +2803,7 @@ class AliChat(object):
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
             cost = utl.get_next_number_from_list(
-                words, lower_name, cur_model.name)
+                words, lower_name, cur_model.name, last_instance=True)
             g_child['total_budget'] = cost
             new_g_child = db_model_g_child()
             new_g_child.set_from_form(g_child, new_child)
