@@ -55,8 +55,9 @@ class ExportHandler(object):
     def export_db(self, exp_key, test=False):
         dbu = DBUpload()
         output_file = exc.test_file if test else exc.output_file
+        config_file = exc.test_config if test else exc.config_file
         upload_success = dbu.upload_to_db(
-            db_file=self.config[exc.config_file][exp_key],
+            db_file=self.config[config_file][exp_key],
             schema_file=self.config[exc.schema_file][exp_key],
             translation_file=self.config[exc.translation_file][exp_key],
             data_file=self.config[output_file][exp_key], test=test)
@@ -151,7 +152,7 @@ class DBUpload(object):
                      test=False):
         self.db = DB(db_file)
         if test:
-            data_file = os.path.join(exc.test_path, exc.test_file)
+            data_file = os.path.join(exc.test_path, data_file)
         logging.info('Uploading {} to {}'.format(data_file, self.db.db))
         self.dbs = DBSchema(schema_file)
         self.dft = DFTranslation(translation_file, data_file, self.db)
