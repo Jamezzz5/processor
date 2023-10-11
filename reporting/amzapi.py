@@ -160,10 +160,6 @@ class AmzApi(object):
     def set_fields(self, fields):
         if fields:
             for field in fields:
-                # if field == 'nan':
-                #     self.report_types = ['sp']
-                # elif field == 'sp':
-                #     self.report_types.append('sp')
                 if field == 'hsa':
                     self.report_types.append('hsa')
 
