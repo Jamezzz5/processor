@@ -2737,11 +2737,16 @@ class AliChat(object):
 
     @staticmethod
     def get_parent_for_db_model(db_model, words):
+        g_parent = None
+        gg_parent = None
         parent = db_model.get_parent()
-        g_parent = parent.get_parent()
-        gg_parent = g_parent.get_parent()
+        if hasattr(parent, 'get_parent'):
+            g_parent = parent.get_parent()
+        if g_parent and hasattr(g_parent, 'get_parent'):
+            gg_parent = g_parent.get_parent()
+        parent_models = [x for x in [gg_parent, g_parent, parent] if x]
         prev_model = None
-        for parent_model in [gg_parent, g_parent, parent]:
+        for parent_model in parent_models:
             model_name_list = parent_model.get_model_name_list()
             name = utl.get_next_value_from_list(words, model_name_list)
             if not name:
@@ -2765,7 +2770,7 @@ class AliChat(object):
             r = 'Checking rules/placements for {}'.format(new_g_child.name)
             words = [x for x in words if x not in self.stop_words or x == 'y']
             new_model.check_gg_children(new_model, new_g_child.id, words,
-                                        total_db, r)
+                                        total_db, r, message=self.message)
         return r
 
     def create_db_model_children(self, cur_model, words):
@@ -2889,7 +2894,8 @@ class AliChat(object):
                                         self.current_user.id)
                 self.db.session.add(new_model)
                 self.db.session.commit()
-            response = self.create_db_model_children(new_model, words)
+            response = self.check_db_model_col(db_model, words, new_model)
+            response += self.create_db_model_children(new_model, words)
             response = '{}{}'.format(self.create_success_msg, response)
             if hasattr(new_model, 'get_create_prompt'):
                 post_create = new_model.get_create_prompt()
@@ -2923,10 +2929,14 @@ class AliChat(object):
             else:
                 in_list = match_col_dict[k]
             pw = words[words.index(in_list[-1]) + 1:]
+            if pw[0] in ['is']:
+                pw = pw[1:]
             skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
             if 'date' in k:
                 new_val = pw[0]
+                if pw[1] in ['/', '-']:
+                    new_val = ''.join(pw[x] for x in range(5))
                 new_val = utl.string_to_date(new_val)
             else:
                 new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()

@@ -634,7 +634,7 @@ def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
 
 
 def lower_words_from_str(word_str):
-    words = re.findall(r"[\w']+|[.,!?;]", word_str)
+    words = re.findall(r"[\w']+|[.,!?;/]", word_str)
     words = [x.lower() for x in words]
     return words
 
