@@ -16,6 +16,8 @@ class TikApi(object):
     version = 'v1.3'
     base_url = 'https://business-api.tiktok.com/open_api/'
     ad_url = '/ad/get/'
+    campaign_url = '/campaign/get/'
+    advertiser_url = '/oauth2/advertiser/get/'
     ad_report_url = '/report/integrated/get/'
     new_date = 'stat_time_day'
     old_date = 'stat_datetime'
@@ -51,9 +53,9 @@ class TikApi(object):
         self.config_file = None
         self.access_token = None
         self.advertiser_id = None
-        # Can comma separate campaign ids
-        self.campaign_id = ""
+        self.campaign_id = None
         self.ad_id_list = []
+        self.campaign_id_list = []
         self.config_list = None
         self.headers = None
         self.params = {'advertiser_id': self.advertiser_id,
@@ -150,20 +152,20 @@ class TikApi(object):
         sd, ed = self.date_check(sd, ed)
         return sd, ed
 
-    def get_ad_ids(self):
+    def get_ids(self, ad=True):
         logging.info('Getting ad ids.')
         self.set_headers()
-        url = self.base_url + self.version + self.ad_url
-        filters = {'primary_status': 'STATUS_ALL',
-                   'status': 'AD_STATUS_ALL'}
-        if self.campaign_id:
-            filters['campaign_ids'] = self.campaign_id.split(",")
+        url = self.base_url + self.version
+        url = url + self.ad_url if ad else url + self.campaign_url
         params = {'advertiser_id': self.advertiser_id,
                   'page': 1,
-                  'page_size': 1000,
-                  'filtering': json.dumps(filters)}
-        ad_ids, r = self.request_ad_id(url, params, [])
-        if r and ad_ids:
+                  'page_size': 1000}
+        filters = {'primary_status': 'STATUS_ALL',
+                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
+        filters = json.dumps(filters)
+        params['filtering'] = filters
+        ids, r = self.request_id(url, params, [], ad_ids=ad)
+        if r and ids:
             total_pages = r.json()['data']['page_info']['total_page']
             for x in range(total_pages - 1):
                 page_num = x + 2
@@ -171,12 +173,13 @@ class TikApi(object):
                 if page_num % 10 == 0:
                     logging.info('Pulling ad_ids page #{} of {}'.format(
                         page_num, total_pages))
-                ad_ids, r = self.request_ad_id(url, params, ad_ids)
-        ad_ids = [ad_ids[x:x + 100] for x in range(0, len(ad_ids), 100)]
+                ids, r = self.request_id(url, params, ids, ad_ids=ad)
+        ids = [ids[x:x + 100] for x in range(0, len(ids), 100)]
         logging.info('Returning all ad ids.')
-        return ad_ids
+        return ids
 
-    def request_ad_id(self, url, params, ad_ids):
+    def request_id(self, url, params, ids, ad_ids=True):
+        key = 'ad_id' if ad_ids else 'campaign_id'
         r = self.make_request(url, method='GET', headers=self.headers,
                               params=params)
         response_data = r.json()['data']
@@ -184,11 +187,14 @@ class TikApi(object):
             logging.warning(
                 'No list in response please make sure accounts '
                 'have been given access:\n {}'.format(r.json()))
-            return ad_ids, r
-        ad_list = response_data['list']
-        self.ad_id_list.extend(ad_list)
-        ad_ids.extend([x['ad_id'] for x in ad_list])
-        return ad_ids, r
+            return ids, r
+        results = response_data['list']
+        if ad_ids:
+            self.ad_id_list.extend(results)
+        else:
+            self.campaign_id_list.extend(results)
+        ids.extend([x[key] for x in results])
+        return ids, r
 
     @staticmethod
     def unpack_nested_dataframe(df):
@@ -201,14 +207,6 @@ class TikApi(object):
         url = self.base_url + self.version + self.ad_report_url
         self.params['start_date'] = sd
         self.params['end_date'] = ed
-        if self.campaign_id:
-            ids = str([int(item) for item in self.campaign_id.split(",")])
-            campaign_filter = [{
-                "field_name": "campaign_ids",
-                "filter_type": "IN",
-                "filter_value": ids
-            }]
-            self.params['filtering'] = json.dumps(campaign_filter)
         for x in range(1, 1000):
             logging.info('Getting data from {} to {}.  Page #{}.'
                          ''.format(sd, ed, x))
@@ -236,6 +234,12 @@ class TikApi(object):
         logging.info('Data successfully pulled.  Returning df.')
         return self.df
 
+    def filter_df_on_campaign(self, df):
+        campaign_col = 'campaign_name'
+        if self.campaign_id:
+            df = utl.filter_df_on_col(df, campaign_col, self.campaign_id)
+        return df
+
     def reset_params(self):
         self.df = pd.DataFrame()
         self.ad_id_list = []
@@ -243,8 +247,9 @@ class TikApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
         self.reset_params()
-        self.get_ad_ids()
+        self.get_ids()
         self.df = self.request_and_get_data(sd, ed)
+        self.df = self.filter_df_on_campaign(self.df)
         return self.df
 
     def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
@@ -275,29 +280,23 @@ class TikApi(object):
             results.append(row)
         return results, r
 
-    def check_campaign_ids(self, df, results, camp_col, success_msg,
-                           failure_msg):
-        dimensions = 'campaign_id'
-        campaign_ids = [camp.strip() for camp in self.campaign_id.split(",")]
-        if (not self.campaign_id or
-                all(ids in df[dimensions].to_list() for ids in campaign_ids)):
+    def check_campaign_ids(self, results, camp_col, success_msg, failure_msg):
+        self.get_ids(ad=False)
+        df = pd.DataFrame(data=self.campaign_id_list)
+        df = self.filter_df_on_campaign(df)
+        campaign_names = df['campaign_name'].to_list()
+        if not self.campaign_id_list:
+            msg = ' '.join([failure_msg, 'No Campaigns Under Advertiser. '
+                                         'Check Active and Permissions.'])
+            row = [camp_col, msg, False]
+            results.append(row)
+        else:
             msg = ' '.join(
                 [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
             row = [camp_col, msg, True]
             results.append(row)
-            ids = campaign_ids if self.campaign_id else df[dimensions].to_list()
-            for campaign in ids:
+            for campaign in campaign_names:
                 row = [camp_col, campaign, True]
-                results.append(row)
-        else:
-            msg = ' '.join(
-                [failure_msg, 'The Following Campaigns Not Under Advertiser:'])
-            row = [camp_col, msg, False]
-            results.append(row)
-            missing_camps = [ids for ids in campaign_ids
-                             if ids not in df[dimensions].to_list()]
-            for campaign in missing_camps:
-                row = [camp_col, campaign, False]
                 results.append(row)
         return results
 
@@ -309,8 +308,6 @@ class TikApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-        df = pd.DataFrame(r.json()['data']['list'])
-        df = self.unpack_nested_dataframe(df)
         results = self.check_campaign_ids(
-            df, results, camp_col, success_msg, failure_msg)
+            results, camp_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
