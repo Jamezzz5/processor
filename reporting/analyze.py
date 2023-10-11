@@ -2712,6 +2712,8 @@ class AliChat(object):
         stop_words = self.stop_words.copy()
         if db_model:
             stop_words += db_model.get_model_name_list()
+            if hasattr(db_model, 'get_model_omit_search_list'):
+                stop_words += db_model.get_model_omit_search_list()
         if other_db_model:
             stop_words += other_db_model.get_name_list()
         words = utl.lower_words_from_str(message)
@@ -2792,6 +2794,7 @@ class AliChat(object):
             self.db.session.commit()
             msg = 'The {} is named {}.  '.format(
                 db_model_child.__name__, child_name[0])
+            self.check_db_model_col(db_model_child, words, new_child)
             response += msg
         else:
             new_child = [x for x in cur_children if x.name in words]
@@ -2814,6 +2817,7 @@ class AliChat(object):
             new_g_child.set_from_form(g_child, new_child)
             self.db.session.add(new_g_child)
             self.db.session.commit()
+            self.check_db_model_col(db_model_g_child, words, new_g_child)
             response += '{} ({}) '.format(g_child_name, cost)
             if total_db.empty:
                 if hasattr(new_g_child, 'get_children'):
@@ -2923,11 +2927,14 @@ class AliChat(object):
         if lengths:
             max_length = max(lengths.values())
             keys = [k for k, v in lengths.items() if v == max_length]
+        if hasattr(db_model, 'get_omit_cols'):
+            keys = [x for x in keys if x not in db_model.get_omit_cols()]
         for k in keys:
             if k in words:
                 in_list = [k]
             else:
                 in_list = match_col_dict[k]
+                in_list = [x for x in in_list if x in words]
             pw = words[words.index(in_list[-1]) + 1:]
             if pw[0] in ['is']:
                 pw = pw[1:]
@@ -2942,9 +2949,9 @@ class AliChat(object):
                 new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
             setattr(cur_model, k, new_val)
             self.db.session.commit()
-            response = 'The {} for {} was changed to {}'.format(
+            response += 'The {} for {} was changed to {}.  '.format(
                 k, cur_model.name, new_val)
-            break
+            words = [x for x in words if x not in in_list]
         return response
 
     def check_children_for_edit(self, cur_model, words):
