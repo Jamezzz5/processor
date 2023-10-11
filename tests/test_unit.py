@@ -129,6 +129,18 @@ class TestUtils:
         output = utl.date_check(sd, ed)
         assert output == expected_output
 
+    def test_get_next_number_from_list(self):
+        lower_name = 'a'
+        cur_model_name = 'b50'
+        next_num = '5000'
+        last_num = ['$10', ',', '000']
+        words = [lower_name, cur_model_name, next_num, lower_name] + last_num
+        num = utl.get_next_number_from_list(words, lower_name, cur_model_name)
+        assert num == next_num
+        num = utl.get_next_number_from_list(words, lower_name, cur_model_name,
+                                            last_instance=True)
+        assert num == ''.join(last_num).replace('$', '').replace(',', '')
+
 
 class TestApis:
     pass

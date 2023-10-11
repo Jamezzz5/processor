@@ -42,8 +42,9 @@ class ExportHandler(object):
 
     def export_item_check_type(self, exp_key):
         if (self.config[exc.export_type][exp_key] == 'DB' and
-           (self.args == 'db' or self.args == 'all')):
-            self.export_db(exp_key)
+           (self.args == 'db' or self.args == 'all' or self.args == 'test')):
+            test = self.args == 'test'
+            self.export_db(exp_key, test=test)
         elif (self.config[exc.export_type][exp_key] == 'FTP' and
               (self.args == 'ftp' or self.args == 'all')):
             self.export_ftp(exp_key)
@@ -51,20 +52,23 @@ class ExportHandler(object):
               (self.args == 's3' or self.args == 'all')):
             self.export_s3(exp_key)
 
-    def export_db(self, exp_key):
+    def export_db(self, exp_key, test=False):
         dbu = DBUpload()
+        output_file = exc.test_file if test else exc.output_file
+        config_file = exc.test_config if test else exc.config_file
         upload_success = dbu.upload_to_db(
-            db_file=self.config[exc.config_file][exp_key],
+            db_file=self.config[config_file][exp_key],
             schema_file=self.config[exc.schema_file][exp_key],
             translation_file=self.config[exc.translation_file][exp_key],
-            data_file=self.config[exc.output_file][exp_key])
+            data_file=self.config[output_file][exp_key], test=test)
         if not upload_success:
             return False
         if exp_key == exc.default_export_db_key:
             filter_val = dbu.dft.df[exc.product_name].drop_duplicates()[0]
             view_name = 'auto_{}'.format(re.sub(r'\W+', '', filter_val).lower())
             self.create_view(dbu, filter_val, view_name)
-            self.update_tableau(dbu.db, view_name)
+            if not test:
+                self.update_tableau(dbu.db, view_name)
         return True
 
     @staticmethod
@@ -144,8 +148,11 @@ class DBUpload(object):
         self.name = None
         self.values = None
 
-    def upload_to_db(self, db_file, schema_file, translation_file, data_file):
+    def upload_to_db(self, db_file, schema_file, translation_file, data_file,
+                     test=False):
         self.db = DB(db_file)
+        if test:
+            data_file = os.path.join(exc.test_path, data_file)
         logging.info('Uploading {} to {}'.format(data_file, self.db.db))
         self.dbs = DBSchema(schema_file)
         self.dft = DFTranslation(translation_file, data_file, self.db)
@@ -391,6 +398,7 @@ class DB(object):
         logging.info('Writing ' + str(len(df)) + ' row(s) to ' + table)
         self.df_to_output(df)
         cur = self.connection.cursor()
+        cur.copy_from(self.output, table=table_path, columns=columns)
         cur.copy_from(self.output, table=table_path, columns=columns)
         self.connection.commit()
         cur.close()

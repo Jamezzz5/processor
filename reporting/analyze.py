@@ -2672,6 +2672,7 @@ class AliChat(object):
         self.db = None
         self.current_user = None
         self.models_to_search = None
+        self.message = ''
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
 
@@ -2750,13 +2751,8 @@ class AliChat(object):
 
     def find_db_model(self, db_model, message, other_db_model=None):
         word_idx = self.index_db_model_by_word(db_model)
-        message = re.sub(r'[^\w\s]', '', message)
-        stop_words = self.stop_words.copy()
-        stop_words += db_model.get_model_name_list()
-        if other_db_model:
-            stop_words += other_db_model.get_name_list()
-        words = utl.lower_words_from_str(message)
-        words = [x for x in words if x not in stop_words]
+        words = self.remove_stop_words_from_message(
+            message, db_model, other_db_model, remove_punctuation=True)
         model_ids = {}
         for word in words:
             if word in word_idx:
@@ -2786,11 +2782,26 @@ class AliChat(object):
             db_model, model_ids, response, table_bool, table_name)
         return response, html_response
 
+    def remove_stop_words_from_message(
+            self, message, db_model=None, other_db_model=None,
+            remove_punctuation=False):
+        if remove_punctuation:
+            message = re.sub(r'[^\w\s]', '', message)
+        stop_words = self.stop_words.copy()
+        if db_model:
+            stop_words += db_model.get_model_name_list()
+        if other_db_model:
+            stop_words += other_db_model.get_name_list()
+        words = utl.lower_words_from_str(message)
+        words = [x for x in words if x not in stop_words]
+        return words
+
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
         html_response = ''
         model_ids, words = self.find_db_model(db_model, message)
         if model_ids:
+            words = self.remove_stop_words_from_message(message, db_model)
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
         return response, html_response
@@ -2804,20 +2815,26 @@ class AliChat(object):
 
     @staticmethod
     def get_parent_for_db_model(db_model, words):
+        g_parent = None
+        gg_parent = None
         parent = db_model.get_parent()
-        g_parent = parent.get_parent()
-        gg_parent = g_parent.get_parent()
+        if hasattr(parent, 'get_parent'):
+            g_parent = parent.get_parent()
+        if g_parent and hasattr(g_parent, 'get_parent'):
+            gg_parent = g_parent.get_parent()
+        parent_models = [x for x in [gg_parent, g_parent, parent] if x]
         prev_model = None
-        for parent_model in [gg_parent, g_parent, parent]:
+        for parent_model in parent_models:
             model_name_list = parent_model.get_model_name_list()
             name = utl.get_next_value_from_list(words, model_name_list)
             if not name:
                 name_list = parent_model.get_name_list()
-                name = utl.get_dict_values_from_list(words, name_list, True)
-                if name:
-                    name = [name[0][next(iter(name[0]))]]
-                else:
-                    name = parent_model.get_default_name()
+                if name_list:
+                    name = utl.get_dict_values_from_list(words, name_list, True)
+                    if name:
+                        name = [name[0][next(iter(name[0]))]]
+            if not name:
+                name = parent_model.get_default_name()
             new_model = parent_model()
             new_model.set_from_form({'name': name[0]}, prev_model)
             new_model = new_model.check_and_add()
@@ -2828,10 +2845,10 @@ class AliChat(object):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
+            r = 'Checking rules/placements for {}'.format(new_g_child.name)
             words = [x for x in words if x not in self.stop_words or x == 'y']
-            r = new_model.check_col_in_words(new_model, words, new_g_child.id,
-                                             total_db=total_db)
-            new_model.create_from_rules(new_model, new_g_child.id)
+            new_model.check_gg_children(new_model, new_g_child.id, words,
+                                        total_db, r, message=self.message)
         return r
 
     def create_db_model_children(self, cur_model, words):
@@ -2864,18 +2881,22 @@ class AliChat(object):
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
         if p_list:
             response += '{}(s) added '.format(db_model_g_child.__name__)
+        total_db = pd.DataFrame()
         for g_child in p_list:
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
             cost = utl.get_next_number_from_list(
-                words, lower_name, cur_model.name)
+                words, lower_name, cur_model.name, last_instance=True)
             g_child['total_budget'] = cost
             new_g_child = db_model_g_child()
             new_g_child.set_from_form(g_child, new_child)
             self.db.session.add(new_g_child)
             self.db.session.commit()
             response += '{} ({}) '.format(g_child_name, cost)
-            response += self.check_gg_children(words, new_g_child)
+            if total_db.empty:
+                if hasattr(new_g_child, 'get_children'):
+                    total_db = new_g_child.get_children().get_reporting_db_df()
+            response += self.check_gg_children(words, new_g_child, total_db)
         return response
 
     def create_db_model_from_other(self, db_model, message, other_db_model):
@@ -2891,9 +2912,9 @@ class AliChat(object):
                 self.db.session.add(new_model)
                 self.db.session.commit()
             cur_model_dict = cur_model.to_dict()
-            for k in list(db_model.__table__.columns):
+            for k in list(new_model.__table__.columns):
                 col = k.name
-                if col in other_db_model.__dict__.keys() and col != 'id':
+                if col in cur_model_dict.keys() and col != 'id':
                     v = cur_model_dict[col]
                     setattr(new_model, col, v)
             self.db.session.commit()
@@ -2951,7 +2972,8 @@ class AliChat(object):
                                         self.current_user.id)
                 self.db.session.add(new_model)
                 self.db.session.commit()
-            response = self.create_db_model_children(new_model, words)
+            response = self.check_db_model_col(db_model, words, new_model)
+            response += self.create_db_model_children(new_model, words)
             response = '{}{}'.format(self.create_success_msg, response)
             if hasattr(new_model, 'get_create_prompt'):
                 post_create = new_model.get_create_prompt()
@@ -2974,18 +2996,28 @@ class AliChat(object):
             in_list = utl.is_list_in_list(check_words, words, True, True)
             if in_list:
                 match_col_dict[k.name] = in_list
+        keys = []
         lengths = {k: len(v) for k, v in match_col_dict.items()}
-        max_length = max(lengths.values())
-        keys = [k for k, v in lengths.items() if v == max_length]
+        if lengths:
+            max_length = max(lengths.values())
+            keys = [k for k, v in lengths.items() if v == max_length]
         for k in keys:
             if k in words:
                 in_list = [k]
             else:
                 in_list = match_col_dict[k]
             pw = words[words.index(in_list[-1]) + 1:]
+            if pw[0] in ['is']:
+                pw = pw[1:]
             skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
-            new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+            if 'date' in k:
+                new_val = pw[0]
+                if pw[1] in ['/', '-']:
+                    new_val = ''.join(pw[x] for x in range(5))
+                new_val = utl.string_to_date(new_val)
+            else:
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
             setattr(cur_model, k, new_val)
             self.db.session.commit()
             response = 'The {} for {} was changed to {}'.format(
@@ -3018,8 +3050,7 @@ class AliChat(object):
                         break
         if not response:
             response = self.check_db_model_col(cur_model, words, cur_model)
-        if not response:
-            response = self.create_db_model_children(cur_model, words)
+        response += self.create_db_model_children(cur_model, words)
         return response
 
     def edit_db_model(self, db_model, words, model_ids):
@@ -3085,6 +3116,7 @@ class AliChat(object):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
+        self.message = message
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
