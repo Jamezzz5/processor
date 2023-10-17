@@ -162,8 +162,7 @@ class TikApi(object):
                   'page_size': 1000}
         filters = {'primary_status': 'STATUS_ALL',
                    'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
-        filters = json.dumps(filters)
-        params['filtering'] = filters
+        params['filtering'] = json.dumps(filters)
         ids, r = self.request_id(url, params, [], ad_ids=ad)
         if r and ids:
             total_pages = r.json()['data']['page_info']['total_page']
