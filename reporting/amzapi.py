@@ -36,7 +36,7 @@ class AmzApi(object):
         self.campaign_id = None
         self.profile_id = None
         self.report_ids = []
-        self.report_types = ['sp', 'hsa']
+        self.report_types = []
         self.config_list = None
         self.client = None
         self.headers = None
@@ -160,11 +160,7 @@ class AmzApi(object):
     def set_fields(self, fields):
         if fields:
             for field in fields:
-                if field == 'nan':
-                    self.report_types = ['sp', 'hsa']
-                elif field == 'sp':
-                    self.report_types.append('sp')
-                elif field == 'hsa':
+                if field == 'hsa':
                     self.report_types.append('hsa')
 
     def get_data_default_check(self, sd, ed, fields):
@@ -199,16 +195,16 @@ class AmzApi(object):
         if not profile_found:
             return self.df
         sd, ed = self.get_data_default_check(sd, ed, fields)
-        if self.amazon_dsp:
-            report_id = self.request_dsp_report(sd, ed)
-            self.get_dsp_report(report_id)
-        else:
+        if 'hsa' in self.report_types:
             date_list = self.list_dates(sd, ed)
             report_made = self.request_reports_for_all_dates(date_list)
             if not report_made:
                 logging.warning('Report not made returning blank df.')
                 return self.df
             self.check_and_get_all_reports(self.report_ids)
+        else:
+            report_id = self.request_dsp_report(sd, ed)
+            self.get_dsp_report(report_id)
         logging.info('All reports downloaded - returning dataframe.')
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
@@ -222,20 +218,33 @@ class AmzApi(object):
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         logging.info('Requesting DSP report for dates: {} to {}'.format(sd, ed))
-        body = {
-            "endDate": ed,
-            "format": "JSON",
-            "metrics": ['totalCost', 'impressions', 'clickThroughs',
-                        'videoStart', 'videoFirstQuartile', 'videoMidpoint',
-                        'videoThirdQuartile', 'videoComplete'],
-            "type": "CAMPAIGN",
-            "startDate": sd,
-            "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
-            "timeUnit": "DAILY"
-        }
-        self.headers['Accept'] = 'application/vnd.dspcreatereports.v3+json'
-        url = '{}/accounts/{}/dsp/reports'.format(
-            self.base_url, self.profile_id)
+        body = {"endDate": ed, "startDate": sd}
+        if self.amazon_dsp:
+            body.update({
+                "format": "JSON",
+                "metrics": ['totalCost', 'impressions', 'clickThroughs',
+                            'videoStart', 'videoFirstQuartile', 'videoMidpoint',
+                            'videoThirdQuartile', 'videoComplete'],
+                "type": "CAMPAIGN",
+                "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
+                "timeUnit": "DAILY"
+            })
+            self.headers['Accept'] = 'application/vnd.dspcreatereports.v3+json'
+            url = '{}/accounts/{}/dsp/reports'.format(
+                self.base_url, self.profile_id)
+        else:
+            body['configuration'] = {
+                    'adProduct': 'SPONSORED_PRODUCTS',
+                    'columns':  ['impressions', 'clicks', 'cost',
+                                 'spend', 'campaignName', 'campaignId',
+                                 'adGroupName', 'adGroupId'],
+                    'reportTypeId': 'spCampaigns',
+                    'format': 'GZIP_JSON',
+                    'groupBy': ['campaign', 'adGroup'],
+                    "timeUnit": "DAILY"
+                }
+            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+            url = '{}/reporting/reports'.format(self.base_url)
         for x in range(5):
             r = self.make_request(url, method='POST', body=body,
                                   headers=self.headers)
@@ -249,33 +258,48 @@ class AmzApi(object):
                     'Response: {}'.format((x + 1), r.json()))
                 time.sleep(30)
             else:
-                logging.warning('Error in request as follows: '
-                                '{}'.format(r.json()))
+                logging.warning('Error in request as follows: {}'
+                                .format(r.json()))
                 sys.exit(0)
         logging.warning('Could not generate report, exiting')
         sys.exit(0)
 
     def get_dsp_report(self, report_id):
-        self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
-        url = '{}/accounts/{}/dsp/reports/{}'.format(
-            self.base_url, self.profile_id, report_id)
+        if self.amazon_dsp:
+            self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
+            url = '{}/accounts/{}/dsp/reports/{}'.format(
+                self.base_url, self.profile_id, report_id)
+            complete_status = 'SUCCESS'
+            url_key = 'location'
+        else:
+            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+            url = '{}/reporting/reports/{}'.format(
+                self.base_url, report_id)
+            complete_status = 'COMPLETED'
+            url_key = 'url'
         for attempt in range(100):
             logging.info(
                 'Checking for report {} attempt {}'.format(
                     report_id, attempt + 1))
             r = self.make_request(url, method='GET', headers=self.headers)
             if 'status' in r.json():
-                if r.json()['status'] == 'SUCCESS':
-                    report_url = r.json()['location']
+                if r.json()['status'] == complete_status:
+                    report_url = r.json()[url_key]
                     r = requests.get(report_url)
-                    df = pd.DataFrame(r.json())
+                    if self.amazon_dsp:
+                        df = pd.DataFrame(r.json())
+                    else:
+                        df = pd.read_json(
+                            io.BytesIO(r.content), compression='gzip'
+                        )
                     if df.empty:
                         logging.warning('Dataframe empty, likely no data  - '
                                         'returning empty dataframe')
                     else:
-                        df['date'] = df['date'].apply(
-                            lambda x: dt.datetime.fromtimestamp(
-                                x / 1000).date())
+                        if self.amazon_dsp:
+                            df['date'] = df['date'].apply(
+                                lambda x: dt.datetime.fromtimestamp(
+                                    x / 1000).date())
                     self.df = df
                     break
                 else:
