@@ -306,6 +306,12 @@ class AmzApi(object):
                     break
                 else:
                     time.sleep(15)
+            elif ('message' in r.json() and r.json()['message'] ==
+                    'Too Many Requests'):
+                logging.warning(
+                    'Too many requests pausing.  Attempt: {}.  '
+                    'Response: {}'.format((attempt + 1), r.json()))
+                time.sleep(30)
             else:
                 logging.warning(
                     'No status in response as follows: {}'.format(r.json()))
