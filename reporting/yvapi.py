@@ -278,4 +278,4 @@ class YvApi(object):
             return pd.DataFrame(data=results, columns=vmc.r_cols)
         results = self.check_campaign_names(
             results, camp_col, success_msg, failure_msg)
-        return results
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
