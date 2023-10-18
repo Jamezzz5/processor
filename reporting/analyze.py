@@ -2802,23 +2802,30 @@ class AliChat(object):
                 new_child = cur_children
             new_child = new_child[0]
         db_model_g_child = new_child.get_children()
+        cur_g_children = new_child.get_current_children()
         partner_list, partner_type_list = db_model_g_child.get_name_list()
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
-        if p_list:
-            response += '{}(s) added '.format(db_model_g_child.__name__)
+        part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
         total_db = pd.DataFrame()
         for g_child in p_list:
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
-            cost = utl.get_next_number_from_list(
-                words, lower_name, cur_model.name, last_instance=True)
-            g_child['total_budget'] = cost
-            new_g_child = db_model_g_child()
-            new_g_child.set_from_form(g_child, new_child)
-            self.db.session.add(new_g_child)
-            self.db.session.commit()
+            new_g_child = [
+                x for x in cur_g_children if x.name.lower() == lower_name]
+            if new_g_child:
+                new_g_child = new_g_child[0]
+            else:
+                cost = utl.get_next_number_from_list(
+                    words, lower_name, cur_model.name, last_instance=True)
+                g_child['total_budget'] = cost
+                new_g_child = db_model_g_child()
+                new_g_child.set_from_form(g_child, new_child)
+                self.db.session.add(new_g_child)
+                self.db.session.commit()
+                if part_add_msg not in response:
+                    response += part_add_msg
+                response += '{} ({}) '.format(g_child_name, cost)
             self.check_db_model_col(db_model_g_child, words, new_g_child)
-            response += '{} ({}) '.format(g_child_name, cost)
             if total_db.empty:
                 if hasattr(new_g_child, 'get_children'):
                     total_db = new_g_child.get_children().get_reporting_db_df()
