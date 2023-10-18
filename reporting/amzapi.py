@@ -235,9 +235,11 @@ class AmzApi(object):
         else:
             body['configuration'] = {
                     'adProduct': 'SPONSORED_PRODUCTS',
-                    'columns':  ['impressions', 'clicks', 'cost',
+                    'columns':  ['date', 'impressions', 'clicks', 'cost',
                                  'spend', 'campaignName', 'campaignId',
-                                 'adGroupName', 'adGroupId'],
+                                 'adGroupName', 'adGroupId', 'purchases14d',
+                                 'purchasesSameSku14d', 'unitsSoldClicks14d',
+                                 'sales14d', 'attributedSalesSameSku14d'],
                     'reportTypeId': 'spCampaigns',
                     'format': 'GZIP_JSON',
                     'groupBy': ['campaign', 'adGroup'],
