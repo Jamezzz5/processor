@@ -2894,8 +2894,7 @@ class AliChat(object):
                     db_model, message, other_db_model)
                 db_model = other_db_model
             else:
-                name_words = ['named', 'called', 'name', 'title']
-                name = utl.get_next_value_from_list(words, name_words)
+                name = utl.get_next_values_from_list(words)
                 if not name:
                     name = [self.current_user.username]
                 parent_model = self.get_parent_for_db_model(db_model, words)

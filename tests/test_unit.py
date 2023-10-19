@@ -141,6 +141,13 @@ class TestUtils:
                                             last_instance=True)
         assert num == ''.join(last_num).replace('$', '').replace(',', '')
 
+    def test_get_next_values_from_list(self):
+        plan_name = 'xyz'
+        message = 'Plan named {}'.format(plan_name)
+        words = utl.lower_words_from_str(message)
+        words = utl.get_next_values_from_list(words, )
+        assert words[0] == plan_name
+
 
 class TestApis:
     pass
