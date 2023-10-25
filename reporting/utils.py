@@ -721,6 +721,29 @@ def get_next_number_from_list(words, lower_name, cur_model_name,
     return cost
 
 
+def get_next_values_from_list(first_list, match_list=None, break_list=None,
+                              date_search=False):
+    name_list = ['named', 'called', 'name', 'title', 'categorized']
+    if not match_list:
+        match_list = name_list.copy()
+    match_list = is_list_in_list(match_list, first_list, False, True)
+    if not match_list:
+        return []
+    first_list = first_list[first_list.index(match_list[0]) + 1:]
+    if break_list:
+        for value in first_list:
+            if value in break_list and value not in match_list:
+                first_list = first_list[:first_list.index(value)]
+                break
+    first_list = [x for x in first_list if x not in name_list]
+    if not date_search:
+        first_list = [x for x in first_list
+                      if not (x.isdigit() and int(x) > 10)]
+    first_list = ''.join(first_list).split('.')[0].split(',')
+    first_list = [x.strip(' ') for x in first_list]
+    return first_list
+
+
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):

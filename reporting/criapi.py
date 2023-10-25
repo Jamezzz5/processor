@@ -14,7 +14,7 @@ config_path = utl.config_path
 class CriApi(object):
     base_url = 'https://api.criteo.com'
     auth_url = '{}/oauth2/token'.format(base_url)
-    version_url = '/2022-07/retail-media'
+    version_url = '/2023-07/retail-media'
 
     def __init__(self):
         self.config = None
@@ -132,7 +132,8 @@ class CriApi(object):
         url = '{}/reports/campaigns'.format(base_url)
         params = {'startDate': sd, 'endDate': ed,
                   'timezone': 'America/New_York', 'id': self.advertiser_id,
-                  'reportType': 'summary'}
+                  'reportType': 'summary',
+                  'format': 'json-compact'}
         params = {'type': 'RetailMediaReportRequest', 'attributes': params}
         params = {'data': params}
         r = self.make_request(url, method='POST', headers=self.headers,
