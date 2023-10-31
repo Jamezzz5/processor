@@ -14,7 +14,7 @@ import reporting.dictcolumns as dctc
 def load_config():
     test_path = 'tests'
     tmp_path_str = 'tmp'
-    file_name = 'end_to_end_config.xlxs'
+    file_name = 'end_to_end_config.xlsx'
     tmp_path = os.path.join(test_path, tmp_path_str)
     utl.dir_check(tmp_path)
     load_config = utl.import_read_csv(os.path.join(test_path, file_name))
