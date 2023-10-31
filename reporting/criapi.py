@@ -175,7 +175,17 @@ class CriApi(object):
         logging.info('Report available downloading.')
         self.set_headers()
         url = url.replace('status', 'output')
-        r = self.make_request(url, method='GET', headers=self.headers)
-        df = pd.DataFrame(r.json()['data'], columns=r.json()['columns'])
-        logging.info('Report downloaded returning df.')
-        return df
+        for i in range(10):
+            r = self.make_request(url, method='GET', headers=self.headers)
+            if 'data' in r.json():
+                df = pd.DataFrame(r.json()['data'],
+                                  columns=r.json()['columns'])
+                logging.info('Report downloaded returning df.')
+                return df
+            else:
+                logging.info("'data' not in download response. Retrying. "
+                             "Attempt {}".format(i+1))
+                time.sleep(30)
+        logging.warning('Unexpected response. Returning blank df: {}'
+                        .format(r.json()))
+        return pd.DataFrame()
