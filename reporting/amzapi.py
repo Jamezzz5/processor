@@ -215,6 +215,14 @@ class AmzApi(object):
         return df
 
     def request_dsp_report(self, sd, ed):
+        delta = ed - sd
+        delta = delta.days
+        if delta > 31:
+            new_date = delta - 31
+            logging.warning('Dates exceed 31 day limit: shortening length by {}'
+                            ' days'.format(new_date))
+            logging.info("Recommend creating an additional API card")
+            ed = ed - dt.timedelta(days=new_date)
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         logging.info('Requesting DSP report for dates: {} to {}'.format(sd, ed))
