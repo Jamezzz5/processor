@@ -25,7 +25,7 @@ class RedApi(object):
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
 
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.headless = headless
         self.sw = None
         self.browser = None
