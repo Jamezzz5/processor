@@ -25,7 +25,7 @@ class RedApi(object):
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
 
-    def __init__(self, headless=True):
+    def __init__(self, headless=False):
         self.headless = headless
         self.sw = None
         self.browser = None
@@ -204,7 +204,7 @@ class RedApi(object):
 
     def set_metrics(self):
         logging.info('Setting metrics.')
-        metric_xpath = '//div[text()="{}"]'.format('Metrics')
+        metric_xpath = '//div[text()="{}"]'.format('Columns')
         self.sw.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
         apply_button_xpath = '//div[text()="Apply"]'
