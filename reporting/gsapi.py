@@ -5,6 +5,7 @@ import logging
 import time
 import pandas as pd
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -325,3 +326,28 @@ class GsApi(object):
         body = {"requests": request}
         response = self.client.post(url=url, json=body, headers=headers)
         return response, body
+
+    def check_sheet_id(self, results, acc_col, success_msg, failure_msg):
+        self.get_client()
+        url = self.create_url()
+        r = self.client.get(url)
+        if (r.status_code == 200 and
+                'values' in r.json()):
+            row = [acc_col, ' '.join([success_msg, str(self.sheet_id)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Permissions NOT Granted. '
+                   'Double Check Sheet ID and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, msg, r['error']['message']]), False]
+            results.append(row)
+        return results, r
+
+    def test_connection(self, acc_col, camp_col=None, acc_pre=None):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results, r = self.check_sheet_id(
+            [], acc_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
