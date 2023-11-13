@@ -13,6 +13,8 @@ import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
 import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
+from selenium.webdriver.common.by import By
+
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -600,6 +602,17 @@ class SeleniumWrapper(object):
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
+
+    def wait_for_elem_load(self, elem_id, attempts=10, sleep_time=.5):
+        elem_found = False
+        elem_id = '#{}'.format(elem_id)
+        for x in range(attempts):
+            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            if e:
+                elem_found = True
+                break
+            time.sleep(sleep_time)
+        return elem_found
 
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100):
