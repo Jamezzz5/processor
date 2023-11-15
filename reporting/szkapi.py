@@ -92,14 +92,19 @@ class SzkApi(object):
     def set_headers(self):
         self.headers = {'api-key': self.api_key}
         data = {'username': self.username, 'password': self.password}
-        r = self.make_request(
-            self.login_url, method='POST', data=json.dumps(data),
-            headers=self.headers)
-        if 'result' not in r.json():
-            logging.warning('Could not set headers with error as follows: '
-                            '{}'.format(r.json()))
-        session_id = r.json()['result']['sessionId']
-        self.headers['Authorization'] = session_id
+        try:
+            r = self.make_request(
+                self.login_url, method='POST', data=json.dumps(data),
+                headers=self.headers)
+            r.raise_for_status()  # Raises HTTPError if the response was an error
+            session_id = r.json().get('result', {}).get('sessionId') # passing in '{}' as second argument in get() avoids a TypeError
+            if not session_id:
+                raise ValueError('Session ID not found in the response')
+            self.headers['Authorization'] = session_id
+        except requests.exceptions.RequestException as e:
+            print(f"An error occurred while making the request: {e}")
+        except ValueError as e:
+            print(f"An error occurred while processing the response: {e}")
 
     def make_request(self, url, method, headers=None, json_body=None, data=None,
                      attempt=1):
