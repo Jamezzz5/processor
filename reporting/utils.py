@@ -14,6 +14,7 @@ import reporting.dictcolumns as dctc
 import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 
 
 config_path = 'config/'
@@ -592,9 +593,14 @@ class SeleniumWrapper(object):
             if get_xpath_from_id:
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
+            if len(item) > 2 and item[2] == 'clear':
+                clear_val = elem.find_element_by_xpath(
+                    'preceding-sibling::span/a[@class="remove-single"]')
+                clear_val.click()
             elem.send_keys(item[0])
             if 'selectized' in elem_xpath:
                 elem.send_keys(u'\ue007')
+                wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
