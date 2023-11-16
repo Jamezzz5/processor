@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import yaml
 import urllib
@@ -61,6 +60,8 @@ class VendorMatrix(object):
             vmc.api_yv_key: [],
             vmc.api_amd_key: [],
             vmc.api_ss_key: [],
+            vmc.api_nz_key: [],
+            vmc.api_ytd_key: []
         }
         self.ftp_sz_key = []
         self.db_dna_key = []
@@ -251,7 +252,8 @@ class VendorMatrix(object):
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
-            self.df = self.df.append(self.tdf, ignore_index=True, sort=True)
+            self.df = pd.concat([self.df, self.tdf], ignore_index=True,
+                                sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csv_path):
@@ -437,8 +439,8 @@ class ImportConfig(object):
         df[vmc.startdate] = start_date
         if api_fields:
             df[vmc.apifields] = api_fields
-        self.matrix_df = self.matrix_df.append(df, ignore_index=True,
-                                               sort=False)
+        self.matrix_df = pd.concat(
+            [self.matrix_df, df], ignore_index=True, sort=False)
         return df[vmc.vendorkey][0]
 
     def add_import_to_vm(self, import_key, account_id, import_filter=None,
@@ -509,7 +511,8 @@ class ImportConfig(object):
                  old_import_dict[self.account_id]) and
                 (import_dict[self.filter] == old_import_dict[self.filter])):
             params = self.get_default_params(import_dict[self.key])
-            if import_dict[self.account_id]:
+            if (import_dict[self.account_id]
+                    or import_dict[self.key] in vmc.no_account_apis):
                 self.make_new_config(params, file_name,
                                      import_dict[self.account_id],
                                      import_dict[self.filter])
@@ -966,7 +969,7 @@ def df_single_transform(df, transform):
             tdf.columns = tdf.loc[0]
             tdf = tdf.iloc[1:]
             tdf[header_col_name] = x
-            ndf = ndf.append(tdf)
+            ndf = pd.concat([ndf, tdf])
         df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
     if transform_type == 'Melt':
@@ -1040,7 +1043,7 @@ def vm_update(old_path=utl.config_path, old_file='OldVendorMatrix.csv'):
     rules = [col for col in ovm.columns if 'RULE_' in col]
     rule_metrics = [col for col in ovm.columns if '_METRIC' in col]
     nvm = pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
-    vm = nvm.append(ovm, sort=True)
+    vm = pd.concat([nvm, ovm], sort=True)
     if 'FIRSTROWADJ' in vm.columns:
         vm[vmc.firstrow] = np.where(vm['FIRSTROWADJ'],
                                     vm[vmc.firstrow] + 1, vm[vmc.firstrow])

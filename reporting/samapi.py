@@ -7,13 +7,14 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 
 
 class SamApi(object):
     config_path = utl.config_path
     base_url = 'https://reporting.trader.adgear.com/v1/reports'
     default_dimensions = [
-        "advertiser_id", "advertiser_name", "campaign_id", "campaign_name",
+        "campaign_id", "advertiser_id", "advertiser_name",  "campaign_name",
         "creative_id", "creative_group_name", "creative_name", "day"]
     default_metrics = [
         "impressions", "clicks", "buyer_spend", "media_spend", "video_start",
@@ -66,9 +67,9 @@ class SamApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
-        report_id = self.create_report(sd, ed)
-        if not report_id:
-            logging.warning('No report ID, returning blank df.')
+        report_id, error = self.create_report(sd, ed)
+        if error:
+            logging.warning('No report ID, returning blank df: {}', error)
             return pd.DataFrame()
         self.df = self.get_raw_data(report_id)
         self.check_empty_df()
@@ -88,9 +89,14 @@ class SamApi(object):
             logging.warning('No data in response, returning empty df.')
             self.df = pd.DataFrame()
 
-    def create_report(self, sd, ed):
+    def create_report(self, sd, ed, dimensions=None):
+        """
+        Generates report for download.
+
+        :returns: Report ID for retrieval if successful, any error messages
+        """
         logging.info('Creating report.')
-        query = self.create_report_query(sd, ed)
+        query = self.create_report_query(sd, ed, dimensions)
         header = self.create_header()
         body = {
             "title": "Report",
@@ -107,13 +113,16 @@ class SamApi(object):
             }
         }
         self.r = self.make_request('post', self.base_url, body, header)
+        if self.r.status_code != 201:
+            logging.warning('Failed Request, Code: {}'.format(
+                self.r.status_code))
+            return None, self.r.status_code
         response = self.r.json()
         if 'id' in response:
-            report_id = response['id']
+            return response['id'], None
         else:
             logging.warning('ID not in response: {}'.format(response))
-            report_id = None
-        return report_id
+            return None, response
 
     def make_request(self, method, url, body=None, header=None):
         try:
@@ -148,22 +157,19 @@ class SamApi(object):
         if report_url:
             logging.info('Found report url, downloading.')
             self.df = utl.import_read_csv(report_url[0], file_check=False,
-                                          error_bad=False)
+                                          error_bad='warn')
         else:
             logging.warning('Report does not exist.')
             self.df = pd.DataFrame()
         return self.df
 
-    def create_report_query(self, sd, ed):
-        query = {
-            "type": "trader_delivery_all",
-            "start_date": str(sd.date()),
-            "end_date": str(ed.date()),
-            "time_zone": "America/New_York",
-            "dimensions": self.default_dimensions,
-            "metrics": self.default_metrics,
-        }
-        if self.campaign_id:
+    def create_report_query(self, sd, ed, dimensions=None):
+        query = {"type": "trader_delivery_all", "start_date": str(sd.date()),
+                 "end_date": str(ed.date()), "time_zone": "America/New_York",
+                 "metrics": self.default_metrics,
+                 'dimensions': (dimensions if dimensions else
+                                self.default_dimensions)}
+        if self.campaign_id and not dimensions:
             campaign_filters = "campaign_id = " + self.campaign_id
             query['filter'] = campaign_filters
         return query
@@ -172,3 +178,30 @@ class SamApi(object):
         header = {'Authorization': 'Bearer connor.tullis:' + self.access_token,
                   'Content-Type': 'application/json'}
         return header
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        results = []
+        success_msg = 'SUCCESS -- ID:'
+        failure_msg = 'FAILURE:'
+        auth_msg = 'Authentication Failed.'
+        missing_campaign = ('Campaign ID Not Found. '
+                            'Check for typo and ensure access granted.')
+        sd = dt.datetime.today() - dt.timedelta(days=365)
+        ed = dt.datetime.today()
+        report_id, error = self.create_report(
+            sd, ed, dimensions=[self.default_dimensions[0]])
+        if error:
+            row = [acc_col, ' '.join([failure_msg, auth_msg]), False]
+            results.append(row)
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        df = self.get_raw_data(report_id)
+        if int(self.campaign_id) in df['Campaign ID'].to_list():
+            row = [acc_col, ' '.join([success_msg, str(self.campaign_id)]),
+                   True]
+            results.append(row)
+        else:
+            row = [acc_col, ' '.join([failure_msg, missing_campaign]),
+                   False]
+            results.append(row)
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)

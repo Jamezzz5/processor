@@ -11,7 +11,6 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
-import pandas.io.json as pdjson
 from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
 
@@ -100,6 +99,7 @@ class TwApi(object):
         self.cid_dict = None
         self.asid_dict = None
         self.adid_dict = None
+        self.mcid_dict = None
         self.promoted_account_id_dict = None
         self.tweet_dict = None
         self.usernames = None
@@ -194,9 +194,12 @@ class TwApi(object):
                 or not x[et]]
         if 'data' in data:
             if ad_name:
-                id_dict = {x[eid]: {'parent': x[parent], 'name': x[name],
-                                    'ad_name': x[ad_name]}
-                           for x in data['data']}
+                id_dict = {x[eid]: {
+                    'parent': x[parent],
+                    'name': x[name],
+                    'ad_name': x[ad_name],
+                    'card_uri': x['card_uri'] if 'card_uri' in x else None
+                } for x in data['data']}
             else:
                 id_dict = {x[eid]: {'parent': x[parent], 'name': x[name]}
                            for x in data['data']}
@@ -276,6 +279,10 @@ class TwApi(object):
                                       parent_filter=self.cid_dict.keys())
         self.adid_dict = self.get_ids('promoted_tweets', 'id',
                                       'tweet_id', 'line_item_id',
+                                      parent_filter=self.asid_dict.keys())
+        self.mcid_dict = self.get_ids(entity='media_creatives', eid='id',
+                                      name='account_media_id',
+                                      parent='line_item_id',
                                       parent_filter=self.asid_dict.keys())
         self.promoted_account_id_dict = self.get_ids(
             entity='promoted_accounts', eid='id', name='id',
@@ -363,7 +370,8 @@ class TwApi(object):
                 return pd.DataFrame()
         self.get_all_id_dicts(sd)
         for entity in [('PROMOTED_TWEET', self.adid_dict),
-                       ('PROMOTED_ACCOUNT', self.promoted_account_id_dict)]:
+                       ('PROMOTED_ACCOUNT', self.promoted_account_id_dict),
+                       ('MEDIA_CREATIVE', self.mcid_dict)]:
             entity_name = entity[0]
             entity_dict = entity[1]
             ids_lists = [list(entity_dict.keys())[i:i + 20] for i
@@ -391,8 +399,8 @@ class TwApi(object):
                                           async_request=async_request)
                 if not async_request:
                     df = self.clean_df(df)
-                    self.df = self.df.append(
-                        df, sort=True).reset_index(drop=True)
+                    self.df = pd.concat(
+                        [self.df, df], sort=True).reset_index(drop=True)
         return self.df
 
     def get_df_for_date_synchronous(self, ids, fields, sd, ed, date,
@@ -405,15 +413,16 @@ class TwApi(object):
 
     def convert_response_to_df(self, data, date, df):
         self.dates = self.get_dates(date)
-        id_df = pdjson.json_normalize(data[jsondata], [jsonidd], [colcid])
-        id_df = pd.concat([id_df, id_df[jsonmet].apply(pd.Series)], axis=1)
+        id_df = pd.json_normalize(data[jsondata], [jsonidd], [colcid])
+        col_names = {x: x.replace('metrics.', '') for x in id_df.columns}
+        id_df = id_df.rename(columns=col_names)
         for col in mobile_conversions + web_conversions:
             if col in id_df.columns:
                 col_df = id_df[col].apply(pd.Series)
                 col_df.columns = ['{} - {}'.format(col, col_1)
                                   for col_1 in col_df.columns]
                 id_df = pd.concat([id_df, col_df], axis=1)
-        df = df.append(id_df, sort=True)
+        df = pd.concat([df, id_df], sort=True)
         return df
 
     def make_request_for_date_asynchronous(self, ids, fields, sd, ed,
@@ -515,7 +524,7 @@ class TwApi(object):
         df = self.convert_response_to_df(
             data=response_data, date=cur_job.date, df=df)
         df = self.clean_df(df)
-        self.df = self.df.append(df, sort=True).reset_index(drop=True)
+        self.df = pd.concat([self.df, df], sort=True).reset_index(drop=True)
         cur_job.completed = True
 
     @staticmethod
@@ -572,11 +581,14 @@ class TwApi(object):
         return date
 
     def add_parents(self, df):
-        for id_key in self.promoted_account_id_dict:
-            current_dict = self.promoted_account_id_dict[id_key]
-            current_dict['name'] = 'PROMOTED ACCOUNT'
-            self.adid_dict[current_dict['parent']] = current_dict
-            self.adid_dict[id_key] = current_dict
+        ad_maps = [('PROMOTED ACCOUNT', self.promoted_account_id_dict),
+                   ('MEDIA CREATIVE', self.mcid_dict)]
+        for entity in ad_maps:
+            for id_key in entity[1]:
+                current_dict = entity[1][id_key]
+                current_dict['name'] = entity[0]
+                self.adid_dict[current_dict['parent']] = current_dict
+                self.adid_dict[id_key] = current_dict
         parent_maps = [[self.adid_dict, 'tweetid'],
                        [self.asid_dict, 'adset'], [self.cid_dict, 'campaign']]
         for parent in parent_maps:
@@ -596,21 +608,15 @@ class TwApi(object):
         df['ad_name'] = df['ad_name'].fillna('Untitled ad')
         tweet_ids = df['tweetid'].unique()
         id_dict = {}
-        tids = [tweet_ids[x:x + 100] for x in range(0, len(tweet_ids), 100)]
-        for tid in tids:
-            url = ('{}{}'
-                   'id={}&include_card_uri=true'
-                   .format(standard_base_url, status_url,
-                           ','.join([str(x) for x in tid])))
-            d = self.request(url)
-            for x in d:
-                if 'card_uri' in x:
-                    id_dict[str(x['id'])] = {'name': x['text'],
-                                             'Card name': x['card_uri']}
-                else:
-                    id_dict[str(x['id'])] = {'name': x['text'],
-                                             'Card name': None}
+        for tweet_id in tweet_ids:
+            if tweet_id in ['PROMOTED ACCOUNT', 'MEDIA CREATIVE']:
+                continue
+            if int(tweet_id) in self.tweet_dict:
+                id_dict[str(tweet_id)] = {
+                    'name': self.tweet_dict[int(tweet_id)]['name'],
+                    'Card name': self.tweet_dict[int(tweet_id)]['card_uri']}
         id_dict['PROMOTED ACCOUNT'] = {'name': 'PROMOTED ACCOUNT'}
+        id_dict['MEDIA CREATIVE'] = {'name': 'MEDIA CREATIVE'}
         df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
         return df
 
@@ -654,7 +660,8 @@ class TwApi(object):
         for col in mobile_conversions + web_conversions:
             if col in df.columns:
                 df = utl.col_removal(df, 'API_Twitter', [col], warn=False)
-        df = df.drop([jsonmet, jsonseg], axis=1).set_index(colcid)
+        df = utl.col_removal(df, '', [jsonmet, jsonseg], warn=False)
+        df = df.set_index(colcid)
         ndf = pd.DataFrame(columns=[coldate, colcid])
         ndf = utl.data_to_type(ndf, str_col=[colcid], int_col=[coldate])
         for col in df.columns:

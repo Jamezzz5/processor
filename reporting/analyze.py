@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import nltk
+import openai
 import shutil
 import logging
 import operator
@@ -12,7 +14,6 @@ import datetime as dt
 import reporting.calc as cal
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-import reporting.expcolumns as exc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
@@ -54,7 +55,10 @@ class Analyze(object):
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
+    blank_lines = 'blank_lines'
+    check_last_row = 'check_last_row'
     change_auto_order = 'change_auto_order'
+    brandtracker_imports = 'brandtracker_imports'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -69,20 +73,36 @@ class Analyze(object):
     analysis_dict_large_param_2 = 'Largest'
     analysis_dict_only_param_2 = 'Only'
     fixes_to_run = False
+    topline_metrics = [[cal.TOTAL_COST], [cal.NCF],
+                       [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
+                       [vmc.views], [vmc.views100, 'VCR'],
+                       [vmc.landingpage, 'CPLPV'], [vmc.btnclick, 'CPBC'],
+                       [vmc.purchase, 'CPP']]
+    topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
+                             vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
+                             vmc.landingpage,  vmc.btnclick, vmc.purchase,
+                             'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
-    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None):
+    def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
+                 load_chat=False, chat_path=utl.config_path):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
+        self.load_chat = load_chat
+        self.chat_path = chat_path
+        self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
+            CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
             GetDailyPacingAlerts, CheckPackageCapping]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
+        if self.load_chat:
+            self.chat = AliChat(config_path=self.chat_path)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -209,38 +229,6 @@ class Analyze(object):
         end_dates = start_end_dates[plan_names + [dctc.ED]]
         return start_dates, end_dates
 
-    def check_raw_file_update_time(self):
-        data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
-        for source in data_sources:
-            if vmc.filename not in source.p:
-                continue
-            file_name = source.p[vmc.filename]
-            if os.path.exists(file_name):
-                t = os.path.getmtime(file_name)
-                last_update = dt.datetime.fromtimestamp(t)
-                if last_update.date() == dt.datetime.today().date():
-                    update_tier = 'Today'
-                elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
-                    update_tier = 'Within A Week'
-                else:
-                    update_tier = 'Greater Than One Week'
-            else:
-                last_update = 'Does Not Exist'
-                update_tier = 'Never'
-            data_dict = {'source': [source.key], 'update_time': [last_update],
-                         'update_tier': [update_tier]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
-        if df.empty:
-            return False
-        df['update_time'] = df['update_time'].astype('U')
-        update_msg = 'Raw File update times and tiers are as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
-        self.add_to_analysis_dict(key_col=self.raw_file_update_col,
-                                  message=update_msg, data=df.to_dict())
-
     def get_plan_names(self):
         plan_names = self.matrix.vendor_set(vm.plan_key)
         if not plan_names:
@@ -306,7 +294,7 @@ class Analyze(object):
 
     # noinspection PyUnresolvedReferences
     @staticmethod
-    def make_heat_map(df, cost_cols=None, percent_cols=None):
+    def make_heat_map(df, cost_cols=None):
         fig, axs = sns.plt.subplots(ncols=len(df.columns),
                                     gridspec_kw={'hspace': 0, 'wspace': 0})
         for idx, col in enumerate(df.columns):
@@ -365,13 +353,14 @@ class Analyze(object):
     def get_table_without_format(self, data_filter=None, group=dctc.CAM):
         group = [group]
         metrics = []
-        potential_metrics = [[cal.TOTAL_COST], [cal.NCF],
-                             [vmc.impressions, 'CTR'], [vmc.clicks, 'CPC'],
-                             [vmc.landingpage, 'CPLP'], [vmc.btnclick, 'CPBC'],
-                             [vmc.purchase, 'CPP']]
-        for metric in potential_metrics:
+        kpis = self.get_kpis()
+        for metric in self.topline_metrics:
             if metric[0] in self.df.columns:
                 metrics += metric
+        if kpis:
+            metrics += list(kpis.keys())
+            metrics += [value for values in kpis.values() for value in values]
+            metrics = list(set(metrics))
         df = self.generate_df_table(group=group, metrics=metrics,
                                     data_filter=data_filter)
         return df
@@ -379,7 +368,13 @@ class Analyze(object):
     def generate_topline_metrics(self, data_filter=None, group=dctc.CAM):
         df = self.get_table_without_format(data_filter, group)
         df = self.give_df_default_format(df)
+        final_cols = [x for x in self.topline_metrics_final if x in df.columns]
+        df = df[final_cols]
         df = df.transpose()
+        df = df.reindex(final_cols)
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df = df.fillna(0)
+        df = df.reset_index().rename(columns={'index': 'Topline Metrics'})
         log_info_text = ('Topline metrics are as follows: \n{}'
                          ''.format(df.to_string()))
         if data_filter:
@@ -395,12 +390,13 @@ class Analyze(object):
         df = df.sort_values(vmc.date).reset_index(drop=True).reset_index()
         df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
         fit = np.polyfit(df['index'], df[kpi], deg=1)
+        format_map = utl.get_default_format(kpi)
         if fit[0] > 0:
             trend = 'increasing'
         else:
             trend = 'decreasing'
-        msg = ('The KPI {} is {} at a rate of {:,.3f} units per day'
-               ' when given linear fit').format(kpi, trend, abs(fit[0]))
+        msg = ('The KPI {} is {} at a rate of {} per day when given '
+               'linear fit').format(kpi, trend, format_map(abs(fit[0])))
         logging.info(msg)
         df['fit'] = fit[0] * df['index'] + fit[1]
         df[vmc.date] = df[vmc.date].dt.strftime('%Y-%m-%d')
@@ -444,7 +440,9 @@ class Analyze(object):
         format_df = self.give_df_default_format(df, columns=[kpi])
         if split == vmc.date:
             df[split] = df[split].dt.strftime('%Y-%m-%d')
-        split_values = ', '.join(str(x) for x in df[split].values)
+        split_values = ['{} ({})'.format(x, y) for x, y in
+                        format_df[[split, kpi]].values]
+        split_values = ', '.join(split_values)
         msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
             small_large, kpi, split, split_values)
         if filter_col:
@@ -481,28 +479,8 @@ class Analyze(object):
             self.evaluate_df_kpi_smallest_largest(df[0], kpi, split, filter_col,
                                                   filter_val, df[1])
 
-    def evaluate_on_kpi(self, kpi):
-        kpi_formula = [
-            self.vc.calculations[x] for x in self.vc.calculations
-            if self.vc.calculations[x][self.vc.metric_name] == kpi]
-        if kpi_formula:
-            kpi_cols = kpi_formula[0][self.vc.formula][::2]
-            metrics = kpi_cols + [kpi]
-            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
-            if missing_cols:
-                msg = 'Missing columns could not evaluate {}'.format(kpi)
-                logging.warning(msg)
-                self.add_to_analysis_dict(key_col=self.kpi_col,
-                                          message=msg, param=kpi)
-                return False
-        elif kpi not in self.df.columns:
-            msg = 'Unknown KPI: {}'.format(kpi)
-            logging.warning(msg)
-            self.add_to_analysis_dict(key_col=self.kpi_col,
-                                      message=msg, param=kpi)
-            return False
-        else:
-            metrics = [kpi]
+    def evaluate_on_kpi(self, kpi, formula):
+        metrics = [kpi] + formula
         group = [dctc.CAM, dctc.KPI]
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=dctc.VEN)
         self.explain_lowest_kpi_for_vendor(
@@ -510,10 +488,41 @@ class Analyze(object):
         self.evaluate_smallest_largest_kpi(kpi, group, metrics, split=vmc.date)
         self.calculate_kpi_trend(kpi, group, metrics)
 
-    def evaluate_on_kpis(self):
+    def get_kpi(self, kpi, write=False):
+        kpi_cols = []
+        kpi_formula = [
+            self.vc.calculations[x] for x in self.vc.calculations
+            if self.vc.calculations[x][self.vc.metric_name] == kpi]
+        if kpi_formula:
+            kpi_cols = kpi_formula[0][self.vc.formula][::2]
+            missing_cols = [x for x in kpi_cols if x not in self.df.columns]
+            if missing_cols:
+                msg = 'Missing columns could not evaluate {}'.format(kpi)
+                logging.warning(msg)
+                if write:
+                    self.add_to_analysis_dict(key_col=self.kpi_col,
+                                              message=msg, param=kpi)
+                kpi = False
+        elif kpi not in self.df.columns:
+            msg = 'Unknown KPI: {}'.format(kpi)
+            logging.warning(msg)
+            kpi = False
+        return kpi, kpi_cols
+
+    def get_kpis(self, write=False):
+        kpis = {}
         if dctc.KPI in self.df.columns:
             for kpi in self.df[dctc.KPI].unique():
-                self.evaluate_on_kpi(kpi)
+                kpi, kpi_cols = self.get_kpi(kpi, write)
+                if kpi:
+                    kpis[kpi] = kpi_cols
+        return kpis
+
+    def evaluate_on_kpis(self):
+        kpis = self.get_kpis(write=True)
+        if kpis:
+            for kpi, formula in kpis.items():
+                self.evaluate_on_kpi(kpi, formula)
 
     def generate_topline_and_weekly_metrics(self, group=dctc.CAM):
         df = self.generate_topline_metrics(group=group)
@@ -574,14 +583,16 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.vendor_metrics,
                                   message=update_msg,
                                   data=format_df.T.to_dict())
-        mdf = pd.DataFrame()
+        mdf = []
         for col in df.columns:
             missing_metrics = df[df[col] == 0][col].index.to_list()
             if missing_metrics:
                 miss_dict = {dctc.VEN: col,
                              self.missing_metrics: missing_metrics}
-                mdf = mdf.append(pd.DataFrame(miss_dict),
-                                 ignore_index=True, sort=False)
+                if mdf is None:
+                    mdf = []
+                mdf.append(miss_dict)
+        mdf = pd.DataFrame(mdf)
         if mdf.empty:
             missing_msg = 'No vendors have missing metrics.'
             logging.info('{}'.format(missing_msg))
@@ -592,7 +603,11 @@ class Analyze(object):
                                   message=missing_msg, data=mdf.to_dict())
 
     def flag_errant_metrics(self):
-        df = self.get_table_without_format(group=dctc.VEN)
+        metrics = [vmc.impressions, vmc.clicks, 'CTR']
+        if [metric for metric in metrics[:2] if metric not in self.df.columns]:
+            logging.warning('Missing metric, could not determine flags.')
+            return False
+        df = self.generate_df_table(group=[dctc.VEN, dctc.CAM], metrics=metrics)
         if df.empty:
             logging.warning('Dataframe empty, could not determine flags.')
             return False
@@ -601,6 +616,7 @@ class Analyze(object):
         thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
         for metric_name, threshold_dict in thresholds.items():
             edf = df.copy()
+            edf = edf.reset_index().set_index(dctc.VEN)
             edf[threshold_col] = edf.index.map(threshold_dict).fillna(
                 threshold_dict[all_threshold])
             edf = edf[edf['CTR'] > edf[threshold_col]]
@@ -695,7 +711,7 @@ class Analyze(object):
         file_name = '{}.json'.format(vk)
         file_name = os.path.join(utl.tmp_file_suffix, file_name)
         with open(file_name, 'w') as fp:
-            json.dump(cd, fp)
+            json.dump(cd, fp, cls=utl.NpEncoder)
 
     @staticmethod
     def check_combine_col_totals(cd, df, cds_name, c_cols):
@@ -722,7 +738,8 @@ class Analyze(object):
 
     @staticmethod
     def get_base_raw_file_dict(ds):
-        cd = {'file_load': {},
+        cd = {CheckFirstRow.new_first_line: {},
+              'file_load': {},
               vmc.fullplacename: {},
               vmc.placement: {},
               vmc.date: {},
@@ -765,6 +782,15 @@ class Analyze(object):
         cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
+                find_blank = CheckFirstRow(Analyze())
+                first_row = find_blank.find_first_row(cds, pd.DataFrame())
+                if not first_row.empty:
+                    first_row = first_row.iloc[0][find_blank.new_first_line]
+                    cds.p[vmc.firstrow] = first_row
+                else:
+                    first_row = cds.p[vmc.firstrow]
+                cd[find_blank.new_first_line][cds_name] = (
+                    True, '{}'.format(first_row))
                 df = cds.get_raw_df()
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
@@ -885,8 +911,11 @@ class Analyze(object):
         return True
 
     def find_in_analysis_dict(self, key, param=None, param_2=None,
-                              split_col=None, filter_col=None, filter_val=None):
-        item = [x for x in self.analysis_dict
+                              split_col=None, filter_col=None, filter_val=None,
+                              analysis_dict=None):
+        if not analysis_dict:
+            analysis_dict = self.analysis_dict
+        item = [x for x in analysis_dict
                 if x[self.analysis_dict_key_col] == key]
         if param:
             item = [x for x in item if x[self.analysis_dict_param_col] == param]
@@ -912,7 +941,6 @@ class Analyze(object):
         self.backup_files()
         self.check_delivery(self.df)
         self.check_plan_error(self.df)
-        self.check_raw_file_update_time()
         self.generate_topline_and_weekly_metrics()
         self.evaluate_on_kpis()
         self.get_metrics_by_vendor_key()
@@ -924,11 +952,60 @@ class Analyze(object):
             analysis_class(self).do_analysis()
         self.write_analysis_dict()
 
-    def do_analysis_and_fix_processor(self, pre_run=False):
+    def load_old_raw_file_dict(self, new, cu):
+        old = None
+        if os.path.exists(self.analysis_dict_file_name):
+            try:
+                with open(self.analysis_dict_file_name, 'r') as f:
+                    old = json.load(f)
+            except json.decoder.JSONDecodeError as e:
+                logging.warning('Json error assuming new sources: {}'.format(e))
+        if old:
+            old = self.find_in_analysis_dict(key=self.raw_file_update_col,
+                                             analysis_dict=old)
+            old = pd.DataFrame(old[0]['data'])
+        else:
+            logging.warning('No analysis dict assuming all new sources.')
+            old = new.copy()
+            old[cu.update_tier_col] = cu.update_tier_never
+        return old
+
+    def get_new_files(self):
+        cu = CheckRawFileUpdateTime(self)
+        cu.do_analysis()
+        new = self.find_in_analysis_dict(key=self.raw_file_update_col)
+        if not new:
+            logging.warning('Could not find update times.')
+            return False
+        new = pd.DataFrame(new[0]['data'])
+        old = self.load_old_raw_file_dict(new, cu)
+        if vmc.vendorkey not in old.columns:
+            logging.warning('Old df missing vendor key column.')
+            return []
+        df = new.merge(old, how='left', on=vmc.vendorkey)
+        df = df[df['{}_y'.format(cu.update_tier_col)] == cu.update_tier_never]
+        df = df[df['{}_x'.format(cu.update_tier_col)] != cu.update_tier_never]
+        new_sources = df[vmc.vendorkey].to_list()
+        return new_sources
+
+    def do_analysis_and_fix_processor(self, pre_run=False, first_run=False,
+                                      new_files=False):
+        new_file_check = []
+        if new_files:
+            new_file_check = self.get_new_files()
+        kwargs = {'only_new_files': new_files,
+                  'new_file_list': new_file_check}
         for analysis_class in self.class_list:
             if analysis_class.fix:
-                if (pre_run and analysis_class.pre_run) or not pre_run:
-                    analysis_class(self).do_and_fix_analysis()
+                is_pre_run = pre_run and analysis_class.pre_run
+                is_new_file = new_files and analysis_class.new_files
+                is_all_files = analysis_class.all_files
+                if new_files and is_all_files:
+                    kwargs['only_new_files'] = False
+                    kwargs['new_file_list'] = []
+                if is_pre_run or first_run or is_new_file:
+                    analysis_class(self).do_and_fix_analysis(**kwargs)
+                    self.matrix = vm.VendorMatrix(display_log=False)
         return self.fixes_to_run
 
 
@@ -936,6 +1013,8 @@ class AnalyzeBase(object):
     name = ''
     fix = False
     pre_run = False
+    new_files = False
+    all_files = False
 
     def __init__(self, analyze_class=None):
         self.aly = analyze_class
@@ -952,13 +1031,18 @@ class AnalyzeBase(object):
         logging.warning('{} function not implemented for: {}'.format(
             func_name, self.name))
 
-    def do_and_fix_analysis(self):
+    def do_and_fix_analysis(self, only_new_files=False, new_file_list=None):
         self.do_analysis()
         aly_dict = self.aly.find_in_analysis_dict(self.name)
         if (len(aly_dict) > 0 and 'data' in aly_dict[0]
                 and len(aly_dict[0]['data']) > 0):
+            aly_dict = aly_dict[0]['data']
+            if only_new_files:
+                df = pd.DataFrame(aly_dict)
+                df = df[df[vmc.vendorkey].isin(new_file_list)]
+                aly_dict = df.to_dict(orient='records')
             self.aly.fixes_to_run = True
-            self.fix_analysis(pd.DataFrame(aly_dict[0]['data']))
+            self.fix_analysis(pd.DataFrame(aly_dict))
 
     def add_to_analysis_dict(self, df, msg):
         self.aly.add_to_analysis_dict(
@@ -968,54 +1052,77 @@ class AnalyzeBase(object):
 class CheckAutoDictOrder(AnalyzeBase):
     name = Analyze.change_auto_order
     fix = True
+    new_files = True
 
     @staticmethod
-    def get_vendor_list():
+    def get_vendor_list(col=dctc.VEN):
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
         if dctc.DICT_COL_NAME not in tc.df.columns:
             return ven_list
-        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == dctc.VEN]
+        tdf = tc.df[tc.df[dctc.DICT_COL_NAME] == col]
         for col in [dctc.DICT_COL_VALUE, dctc.DICT_COL_NVALUE]:
             new_ven_list = tdf[col].unique().tolist()
             ven_list = list(set(ven_list + new_ven_list))
-            ven_list = [x for x in ven_list if x not in ['nan', '0']]
+            ven_list = [x for x in ven_list if x not in ['nan', '0', 'None']]
         return ven_list
 
-    def do_analysis_on_data_source(self, source, df, ven_list=None):
+    def do_analysis_on_data_source(self, source, df, ven_list=None,
+                                   cou_list=None):
+        if vmc.autodicord not in source.p:
+            return df
         if not ven_list:
             ven_list = self.get_vendor_list()
+        if not cou_list:
+            cou_list = self.get_vendor_list(dctc.COU)
+        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
+                         if dctc.VEN in source.p[vmc.autodicord] else None)
+        auto_order = source.p[vmc.autodicord]
+        if not auto_dict_idx or (len(auto_order) <= (auto_dict_idx + 1)):
+            return df
+        cou_after_ven = auto_order[auto_dict_idx + 1] == dctc.COU
+        if not cou_after_ven:
+            return df
         tdf = source.get_raw_df()
         if dctc.FPN not in tdf.columns or tdf.empty:
             return df
-        tdf = pd.DataFrame(tdf[dctc.FPN].str.split('_').to_list())
-        ven_col_counts = [tdf[col].isin(ven_list).sum()
-                          for col in tdf.columns]
-        max_val = max(ven_col_counts)
-        max_idx = min(
-            [idx for idx, val in enumerate(ven_col_counts) if val == max_val])
-        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                         if dctc.VEN in source.p[vmc.autodicord] else None)
-        if (auto_dict_idx and max_idx != auto_dict_idx and
-                ven_col_counts[max_idx] > 0):
+        auto_place = source.p[vmc.autodicplace]
+        if auto_place == dctc.PN:
+            auto_place = source.p[vmc.placement]
+        if auto_place not in tdf.columns:
+            return df
+        tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
+        max_idx = 0
+        max_val = 0
+        ven_counts = 0
+        for col in tdf.columns:
+            cou_counts = tdf[col].isin(cou_list).sum()
+            total = ven_counts + cou_counts
+            if total > max_val:
+                max_val = total
+                max_idx = col - 1
+            ven_counts = tdf[col].isin(ven_list).sum()
+        if auto_dict_idx and max_idx != auto_dict_idx and max_val > 0:
             diff = auto_dict_idx - max_idx
             if diff > 0:
-                new_order = source.p[vmc.autodicord][diff:]
+                new_order = auto_order[diff:]
             else:
-                new_order = (diff * -1) * [dctc.MIS] + source.p[vmc.autodicord]
-            data_dict = {vmc.vendorkey: [source.key],
-                         self.name: [new_order]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+                new_order = (diff * -1) * [dctc.MIS] + auto_order
+            data_dict = {vmc.vendorkey: source.key, self.name: new_order}
+            if df is None:
+                df = []
+            df.append(data_dict)
         return df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         ven_list = self.get_vendor_list()
+        cou_list = self.get_vendor_list(dctc.COU)
         for ds in data_sources:
-            df = self.do_analysis_on_data_source(ds, df, ven_list)
+            df = self.do_analysis_on_data_source(ds, df, ven_list, cou_list)
+        df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
         else:
@@ -1047,6 +1154,166 @@ class CheckAutoDictOrder(AnalyzeBase):
         return self.aly.matrix.vm_df
 
 
+class CheckFirstRow(AnalyzeBase):
+    name = Analyze.blank_lines
+    fix = True
+    new_files = True
+    all_files = True
+    new_first_line = 'new_first_line'
+
+    def find_first_row(self, source, df):
+        """
+        finds the first row in a raw file where any column in FPN appears
+        loops through only first 10 rows in case of major error
+        source -> an item from the VM
+        new_first_row -> row to be found
+        If first row is incorrect, returns a data frame containing:
+            vendor key and new_first_row
+        returns empty df otherwise
+        """
+        l_df = df
+        if vmc.filename not in source.p:
+            return l_df
+        raw_file = source.p[vmc.filename]
+        place_cols = source.p[dctc.FPN]
+        place_cols = [s.strip('::') if s.startswith('::')
+                      else s for s in place_cols]
+        old_first_row = int(source.p[vmc.firstrow])
+        df = utl.import_read_csv(raw_file, nrows=10)
+        if df.empty:
+            return l_df
+        for idx in range(len(df)):
+            tdf = utl.first_last_adj(df, idx, 0)
+            check = [x for x in place_cols if x in tdf.columns]
+            if check:
+                if idx == old_first_row:
+                    break
+                new_first_row = str(idx)
+                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                          self.new_first_line: [new_first_row]})
+                l_df = pd.concat([data_dict, l_df], ignore_index=True)
+                break
+        return l_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            df = self.find_first_row(source, df)
+        if df.empty:
+            msg = 'All first and last rows seem correct'
+        else:
+            msg = 'Suggested new row adjustments:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def adjust_first_row_in_vm(self, vk, new_first_line, write=True):
+        if int(new_first_line) > 0:
+            logging.info('Changing {} {} to {}'.format(
+                vk, vmc.firstrow, new_first_line))
+            self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        """
+        Plugs in new first line from aly dict to the VM
+        source -> data source from aly dict (created from find_first_row)
+        """
+        vk = source[vmc.vendorkey]
+        new_first_line = source[self.new_first_line]
+        self.adjust_first_row_in_vm(vk, new_first_line, write)
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, write=write)
+        if write:
+            self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+        return self.aly.matrix.vm_df
+
+
+class CheckLastRow(AnalyzeBase):
+    name = Analyze.check_last_row
+    new_last_line = 'new_last_line'
+    fix = True
+    new_files = True
+    all_files = True
+
+    def check_total_row_exists(self, source, df):
+        """
+        Sums all active metrics in every row except last
+        compares to the values in last row
+        if equal returns True
+        """
+        totals_df = df
+        old_last_row = source.p[vmc.lastrow]
+        if int(old_last_row) == 1 or vmc.filename not in source.p:
+            return totals_df
+        raw_file = source.p[vmc.filename]
+        df = utl.import_read_csv(raw_file)
+        if df.empty:
+            return totals_df
+        active_metrics = source.get_active_metrics()
+        active_metrics = active_metrics.values()
+        active_metrics = [item for s_list in active_metrics for item in s_list]
+        active_metrics = [x for x in active_metrics if x in df.columns]
+        try:
+            df = df[active_metrics]
+        except KeyError:
+            logging.debug("active metrics may be missing or mislabeled")
+            return totals_df
+        if df.empty:
+            return totals_df
+        df = df.replace(',', '', regex=True)
+        df = df.apply(pd.to_numeric, errors='coerce')
+        df = df.round(decimals=2)
+        col_sums = df.iloc[:-1, :].sum(min_count=1)
+        totals_row = df.iloc[-1, :]
+        if col_sums.equals(totals_row):
+            new_df = pd.DataFrame({vmc.vendorkey: [source.key],
+                                  self.new_last_line: ['1']})
+            totals_df = pd.concat([totals_df, new_df], ignore_index=True)
+        return totals_df
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        data_sources = [ds for ds in data_sources
+                        if 'Rawfile' in vmc.vendorkey
+                        or 'GoogleSheets' in vmc.vendorkey]
+        df = pd.DataFrame()
+        for source in data_sources:
+            df = self.check_total_row_exists(source, df)
+        if df.empty:
+            msg = 'All last rows seem correct'
+        else:
+            msg = 'Suggested new row adjustments:'
+        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        vk = source[vmc.vendorkey]
+        new_last_line = source[self.new_last_line]
+        if int(new_last_line) > 0:
+            logging.info('Changing {} {} to {}'.format(
+                vk, vmc.lastrow, new_last_line))
+            self.aly.matrix.vm_change_on_key(vk, vmc.lastrow, new_last_line)
+        if write:
+            self.aly.matrix.write()
+
+    def fix_analysis(self, aly_dict, write=True):
+        aly_dict = aly_dict.to_dict(orient='records')
+        for x in aly_dict:
+            self.fix_analysis_for_data_source(x, write=write)
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
+
+
 class CheckPackageCapping(AnalyzeBase):
     name = Analyze.package_cap
     cap_name = Analyze.cap_name
@@ -1055,7 +1322,7 @@ class CheckPackageCapping(AnalyzeBase):
     plan_net_temp = 'Planned Net Cost - TEMP'
     net_cost_capped = 'Net Cost (Capped)'
     pre_run = True
-    fix = True
+    fix = False
 
     def initialize_cap_file(self):
         """
@@ -1067,17 +1334,11 @@ class CheckPackageCapping(AnalyzeBase):
         cap_file -> MetricCap() object
         """
         df = self.aly.df
-        df = cal.net_cost_calculation(df)
-        c = None
-        if cal.MetricCap().config:
-            cap_file = cal.MetricCap()
-            for cfg in cap_file.config:
-                c = cap_file.config[cfg]
-            if c and os.path.isfile(c[cal.MetricCap().file_name]):
-                pdf = cap_file.get_cap_file(c)
-                df = df.append(pdf)
-                temp_package_cap = c[cap_file.proc_dim]
-                return df, temp_package_cap, c, pdf, cap_file
+        df = cal.net_cost_calculation(df).reset_index(drop=True)
+        cap_file = cal.MetricCap()
+        df = cap_file.apply_all_caps(df, final_calculation=False)
+        temp_package_cap = cap_file.c[cap_file.proc_dim]
+        return df, temp_package_cap, cap_file.c, cap_file.pdf, cap_file
 
     def check_package_cap(self, df, temp_package_cap):
         """
@@ -1142,7 +1403,7 @@ class CheckPackageCapping(AnalyzeBase):
         cols = [dctc.VEN, vmc.vendorkey, dctc.PN, temp_package_cap,
                 self.plan_net_temp, vmc.cost]
         missing_cols = [x for x in cols if x not in df.columns]
-        if any(missing_cols):
+        if any(missing_cols) or df.empty:
             logging.warning('Missing columns: {}'.format(missing_cols))
             return pd.DataFrame()
         df = df[cols]
@@ -1151,7 +1412,11 @@ class CheckPackageCapping(AnalyzeBase):
         except ValueError as e:
             logging.warning('ValueError as follows: {}'.format(e))
             return pd.DataFrame()
-        df = df.size().reset_index(name='count')
+        try:
+            df = df.size().reset_index(name='count')
+        except ValueError as e:
+            logging.warning('ValueError as follows: {}'.format(e))
+            return pd.DataFrame()
         df = df[[temp_package_cap, dctc.VEN]]
         if (temp_package_cap not in df.columns or
                 temp_package_cap not in pdf.columns):
@@ -1195,24 +1460,22 @@ class CheckPackageCapping(AnalyzeBase):
             t_df[dctc.DICT_COL_VALUE] = df[temp_package_cap]
             for temp_package_cap in df[[temp_package_cap]]:
                 df[temp_package_cap] = df[temp_package_cap] + '-' + df[dctc.VEN]
-                df[self.net_cost_capped] = pdf[self.plan_net_temp]
-            df = df[[temp_package_cap, self.net_cost_capped]]
-            df.replace(to_replace=np.NaN,
-                       value=df.loc[0],
-                       inplace=True)
+                df[c[cap_file.file_metric]] = pdf[self.plan_net_temp]
+            df = df[[temp_package_cap, c[cap_file.file_metric]]]
+            df = df.fillna(0)
             path = c[cap_file.file_name]
+            df = pd.concat([pdf, df])
             df.to_csv(path, index=False, encoding='utf-8')
-            t_df[dctc.DICT_COL_NVALUE] = df[temp_package_cap]
+            t_df[dctc.DICT_COL_NVALUE] = df[temp_package_cap].copy()
             t_df[dctc.DICT_COL_FNC] = 'Select::mpVendor'
             t_df = t_df[[dctc.DICT_COL_NAME, dctc.DICT_COL_VALUE,
                          dctc.DICT_COL_NVALUE, dctc.DICT_COL_FNC,
                          dctc.DICT_COL_SEL]]
             if write:
-                tc = dct.DictTranslationConfig().csv_path
                 translation = dct.DictTranslationConfig()
-                trans_dict = pd.read_csv(tc + dctc.filename_tran_config)
-                trans_dict = trans_dict.append(t_df)
-                translation.write(trans_dict, dctc.filename_tran_config)
+                translation.read(dctc.filename_tran_config)
+                translation.df = pd.concat([translation.df, t_df])
+                translation.write(translation.df, dctc.filename_tran_config)
                 fix_msg = 'Automatically changing capped package names:'
                 logging.info('{}\n{}'.format(fix_msg, t_df))
             return t_df
@@ -1251,6 +1514,7 @@ class CheckPackageCapping(AnalyzeBase):
 class FindPlacementNameCol(AnalyzeBase):
     name = Analyze.placement_col
     fix = True
+    new_files = True
 
     @staticmethod
     def do_analysis_on_data_source(source, df):
@@ -1271,7 +1535,7 @@ class FindPlacementNameCol(AnalyzeBase):
                 return df
             tdf = tdf.applymap(
                 lambda x: str(x).count('_')).apply(lambda x: sum(x))
-            max_col = tdf.idxmax(axis=1)
+            max_col = tdf.idxmax()
             max_exists = max_col in tdf
             p_exists = p_col in tdf
             no_p_check = (not p_exists and max_exists)
@@ -1279,18 +1543,19 @@ class FindPlacementNameCol(AnalyzeBase):
                        tdf[max_col] >= (tdf[p_col] + 9)
                        and 75 <= tdf[max_col] <= 105)
             if no_p_check or p_check:
-                data_dict = {vmc.vendorkey: [source.key],
+                data_dict = {vmc.vendorkey: source.key,
                              'Current Placement Col': p_col,
                              'Suggested Col': max_col}
-                df = df.append(pd.DataFrame(data_dict),
-                               ignore_index=True, sort=False)
+                df.append(data_dict)
         return df
 
     def do_analysis(self):
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        df = []
         for source in data_sources:
             df = self.do_analysis_on_data_source(source, df)
+        df = pd.DataFrame(df)
         if df.empty:
             msg = ('Placement Name columns look correct. '
                    'No columns w/ more breakouts.')
@@ -1335,7 +1600,7 @@ class CheckApiDateLength(AnalyzeBase):
         vk_list = []
         data_sources = self.matrix.get_all_data_sources()
         max_date_dict = {
-            vmc.api_amz_key: 60, vmc.api_szk_key: 60, vmc.api_db_key: 60,
+            vmc.api_amz_key: 31, vmc.api_szk_key: 60, vmc.api_db_key: 60,
             vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30,
             vmc.api_amd_key: 30}
         data_sources = [x for x in data_sources if 'API_' in x.key]
@@ -1393,7 +1658,7 @@ class CheckApiDateLength(AnalyzeBase):
                 idx, vmc.vendorkey][idx[0]].replace('API_', '')
             old_ed = new_sd - dt.timedelta(days=1)
             df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
-            df = df.append(ndf).reset_index(drop=True)
+            df = pd.concat([df, ndf]).reset_index(drop=True)
         self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
@@ -1404,15 +1669,17 @@ class CheckColumnNames(AnalyzeBase):
     """Checks raw data for column names and reassigns if necessary."""
     name = Analyze.raw_columns
     fix = True
-    pre_run = True
+    new_files = True
+    all_files = True
 
     def do_analysis(self):
         """
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
+        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
-        df = pd.DataFrame()
+        data = []
         for source in data_sources:
             if vmc.firstrow not in source.p:
                 continue
@@ -1424,19 +1691,20 @@ class CheckColumnNames(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row+5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            cols = list(tdf.columns)
+            cols = [str(x) for x in tdf.columns if str(x) != 'nan']
             active_metrics = source.get_active_metrics()
             active_metrics[vmc.placement] = [source.p[vmc.placement]]
             for k, v in active_metrics.items():
                 for c in v:
                     if c not in cols:
                         missing_cols.append({k: c})
-            data_dict = {vmc.vendorkey: [source.key], self.name: [cols],
-                         'missing': [missing_cols]}
-            df = df.append(pd.DataFrame(data_dict),
-                           ignore_index=True, sort=False)
+            data_dict = {vmc.vendorkey: source.key, self.name: cols,
+                         'missing': missing_cols}
+            data.append(data_dict)
+        df = pd.DataFrame(data)
+        df = df.fillna('')
         update_msg = 'Columns and missing columns by key as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        logging.info('{}\n{}'.format(update_msg, df))
         self.add_to_analysis_dict(df=df, msg=update_msg)
 
     def fix_analysis(self, aly_dict, write=True):
@@ -1449,9 +1717,10 @@ class CheckColumnNames(AnalyzeBase):
         :returns: the vm as a df
         """
         aly_dicts = aly_dict.to_dict(orient='records')
+        self.matrix = vm.VendorMatrix(display_log=False)
         df = self.aly.matrix.vm_df
         aly_dicts = [x for x in aly_dicts
-                     if x['missing'] and x['raw_file_columns']]
+                     if x['missing'] and x[Analyze.raw_columns]]
         for aly_dict in aly_dicts:
             vk = aly_dict[vmc.vendorkey]
             source = self.matrix.get_data_source(vk)
@@ -1461,15 +1730,16 @@ class CheckColumnNames(AnalyzeBase):
                 logging.info('Placement name missing for {}.  '
                              'Attempting to find.'.format(vk))
                 fnc = FindPlacementNameCol(self.aly)
-                tdf = fnc.do_analysis_on_data_source(source, pd.DataFrame())
-                if not tdf.empty:
-                    tdf = tdf.to_dict(orient='records')[0]
+                tdf = fnc.do_analysis_on_data_source(source, [])
+                if tdf:
+                    tdf = tdf[0]
                     for col in [vmc.placement, vmc.fullplacename]:
                         fnc.fix_analysis_for_data_source(tdf, True, col)
                     self.matrix = vm.VendorMatrix(display_log=False)
                     source = self.matrix.get_data_source(vk)
                     cad = CheckAutoDictOrder(self.aly)
-                    tdf = cad.do_analysis_on_data_source(source, pd.DataFrame())
+                    tdf = cad.do_analysis_on_data_source(source, [])
+                    tdf = pd.DataFrame(tdf)
                     if not tdf.empty:
                         tdf = tdf.to_dict(orient='records')[0]
                         cad.fix_analysis_for_data_source(tdf, True)
@@ -1538,7 +1808,7 @@ class CheckFlatSpends(AnalyzeBase):
                     (df[dctc.BM] == cal.BM_FLAT2)]
         if not df.empty:
             pk_groups = [dctc.VEN, dctc.COU, dctc.PKD]
-            tdf = df.groupby(pk_groups).sum()
+            tdf = df.groupby(pk_groups).sum(numeric_only=True)
             tdf.reset_index(inplace=True)
             tdf = tdf[tdf[cal.NCF] == 0]
             df = df.merge(tdf[pk_groups], how='right')
@@ -1551,7 +1821,7 @@ class CheckFlatSpends(AnalyzeBase):
                     return pd.DataFrame()
                 tdf = tdf.drop(columns=[cal.NCF])
                 tdf = utl.data_to_type(tdf, date_col=[dctc.PD, vmc.date])
-                df = df.groupby(pn_groups).sum()
+                df = df.groupby(pn_groups).sum(numeric_only=True)
                 df.reset_index(inplace=True)
                 df = utl.data_to_type(df, date_col=[dctc.PD])
                 df = self.merge_first_click_date(df, tdf, pn_groups)
@@ -1569,11 +1839,17 @@ class CheckFlatSpends(AnalyzeBase):
                     ndf = df[df['_merge'] == 'left_only']
                     ndf = ndf.drop(columns=['_merge'])
                     ndf[self.error_col] = self.missing_clicks_error
-                    df = cdf.append(rdf, sort=False)
-                    df = df.append(ndf, sort=False)
+                    df = pd.concat([cdf, rdf], ignore_index=True)
+                    df = pd.concat([df, ndf], ignore_index=True)
                     df = df.reset_index(drop=True)
                     df = df.dropna(how='all')
-                    df = df.fillna('')
+                    df_cols = [x for x in df.columns if x != '_merge']
+                    df = df[df_cols]
+                    for col in df.columns:
+                        try:
+                            df[col] = df[col].fillna('')
+                        except TypeError as e:
+                            logging.warning('Error for {}: {}'.format(col, e))
         df = utl.data_to_type(df, str_col=[dctc.PD, self.first_click_col])
         return df
 
@@ -1615,17 +1891,16 @@ class CheckFlatSpends(AnalyzeBase):
                 try:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
-                              aly_dict[dctc.PN], 0]]
-                    row = pd.DataFrame(trans, columns=translation_df.columns)
-                    tdf = tdf.append(row, ignore_index=True, sort=False)
-                except AssertionError:
-                    trans = [[dctc.PD, old_val, new_val,
-                              'Select::' + dctc.PN,
                               aly_dict[dctc.PN]]]
                     row = pd.DataFrame(trans, columns=translation_df.columns)
-                    tdf = tdf.append(row, ignore_index=True, sort=False)
-        translation_df = translation_df.append(
-            tdf, ignore_index=True, sort=False)
+                    tdf = pd.concat([tdf, row], ignore_index=True)
+                except ValueError:
+                    trans = [[dctc.PD, old_val, new_val,
+                              'Select::' + dctc.PN,
+                              aly_dict[dctc.PN], 0]]
+                    row = pd.DataFrame(trans, columns=translation_df.columns)
+                    tdf = pd.concat([tdf, row], ignore_index=True)
+        translation_df = pd.concat([translation_df, tdf], ignore_index=True)
         if write:
             translation.write(translation_df, dctc.filename_tran_config)
         return tdf
@@ -1665,6 +1940,8 @@ class CheckDoubleCounting(AnalyzeBase):
         df = self.aly.generate_df_table(groups, metrics, sort=None,
                                         data_filter=None, df=df)
         df.reset_index(inplace=True)
+        if df.empty:
+            return df
         sdf = self.count_unique_placements(df, self.total_placement_count)
         sdf = sdf.groupby(dctc.VEN).max().reset_index()
         df = df[df.duplicated(subset=[dctc.VEN, dctc.PN, vmc.date], keep=False)]
@@ -1936,7 +2213,12 @@ class GetPacingAnalysis(AnalyzeBase):
         average_df = average_df.drop(columns=[vmc.cost])
         start_dates, end_dates = self.aly.get_start_end_dates(
             df, plan_names)
-        df = df.groupby(plan_names)[vmc.cost, dctc.PNC, vmc.AD_COST].sum()
+        cols = [vmc.cost, dctc.PNC, vmc.AD_COST]
+        missing_cols = [x for x in cols if x not in df.columns]
+        if missing_cols:
+            logging.warning('Missing columns: {}'.format(missing_cols))
+            return pd.DataFrame()
+        df = df.groupby(plan_names)[cols].sum()
         df = df.reset_index()
         df = df[(df[vmc.cost] > 0) | (df[dctc.PNC] > 0)]
         tdf = df[df[dctc.PNC] > df[vmc.cost]]
@@ -2090,7 +2372,7 @@ class GetServingAlerts(AnalyzeBase):
         if not plan_names:
             return pd.DataFrame()
         final_cols = plan_names + [vmc.cost, vmc.AD_COST, self.adserving_ratio]
-        if not df.empty:
+        if not df.empty and dctc.VEN in df:
             df = utl.data_to_type(df, float_col=[vmc.cost, vmc.AD_COST])
             df[self.adserving_ratio] = df.apply(
                 lambda row: 0 if row[vmc.cost] == 0
@@ -2116,6 +2398,50 @@ class GetServingAlerts(AnalyzeBase):
             logging.info('{}\n{}'.format(msg, df))
         self.aly.add_to_analysis_dict(key_col=self.aly.adserving_alert,
                                       message=msg, data=df.to_dict())
+
+
+class CheckRawFileUpdateTime(AnalyzeBase):
+    name = Analyze.raw_file_update_col
+    update_tier_today = 'Today'
+    update_tier_week = 'Within A Week'
+    update_tier_greater_week = 'Greater Than One Week'
+    update_tier_never = 'Never'
+    update_time_col = 'update_time'
+    update_tier_col = 'update_tier'
+    last_update_does_not_exist = 'Does Not Exist'
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = []
+        for source in data_sources:
+            if vmc.filename not in source.p:
+                continue
+            file_name = source.p[vmc.filename]
+            if os.path.exists(file_name):
+                t = os.path.getmtime(file_name)
+                last_update = dt.datetime.fromtimestamp(t)
+                if last_update.date() == dt.datetime.today().date():
+                    update_tier = self.update_tier_today
+                elif last_update.date() > (
+                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                    update_tier = self.update_tier_week
+                else:
+                    update_tier = self.update_tier_greater_week
+            else:
+                last_update = self.last_update_does_not_exist
+                update_tier = self.update_tier_never
+            data_dict = {vmc.vendorkey: source.key,
+                         self.update_time_col: last_update,
+                         self.update_tier_col: update_tier}
+            df.append(data_dict)
+        df = pd.DataFrame(df)
+        if df.empty:
+            return False
+        df[self.update_time_col] = df[self.update_time_col].astype('U')
+        update_msg = 'Raw File update times and tiers are as follows:'
+        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=update_msg, data=df.to_dict())
 
 
 class GetDailyPacingAlerts(AnalyzeBase):
@@ -2197,9 +2523,10 @@ class ValueCalc(object):
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Purchase', 'Net Cost Final/Impressions',
-                   'Video Views 100/Video Views', 'Net Cost Final/Video Views']
+                   'Net Cost Final/Video Views 100',
+                   'Net Cost Final/Landing Page', 'Net Cost Final/Purchase',
+                   'Net Cost Final/Impressions', 'Video Views 100/Video Views',
+                   'Net Cost Final/Video Views']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
@@ -2223,23 +2550,19 @@ class ValueCalc(object):
              self.calculations[x][self.metric_name] == metric_name][0]
         return f
 
-    def calculate_all_metrics(self, metric_names, df=None, db_translate=None):
-        if db_translate:
-            tdf = pd.read_csv(os.path.join('config', 'db_df_translation.csv'))
-            db_translate = dict(
-                zip(tdf[exc.translation_df], tdf[exc.translation_db]))
+    def calculate_all_metrics(self, metric_names, df=None, db_translate=False):
         for metric_name in metric_names:
-            df = self.calculate_metric(metric_name, df,
-                                       db_translate=db_translate)
+            if metric_name in self.metric_names:
+                df = self.calculate_metric(metric_name, df,
+                                           db_translate=db_translate)
         return df
 
-    def calculate_metric(self, metric_name, df=None, db_translate=None):
+    def calculate_metric(self, metric_name, df=None, db_translate=False):
         col = metric_name
         formula = self.get_metric_formula(metric_name)
         current_op = None
         if db_translate:
-            formula = [db_translate[x] if x in formula[::2] else x
-                       for x in formula]
+            formula = list(utl.db_df_translation(formula).values())
         for item in formula:
             if item.lower() == 'impressions' and 'Clicks' not in formula:
                 df[item] = df[item] / 1000
@@ -2257,3 +2580,561 @@ class ValueCalc(object):
                     df[item] = 0
                 df[col] = df[item]
         return df
+
+
+class AliChat(object):
+    openai_found = 'Here is the openai gpt response: '
+    openai_msg = 'I had trouble understanding but the openai gpt response is:'
+    found_model_msg = 'Here are some links:'
+    create_success_msg = 'The object has been successfully created.  '
+
+    def __init__(self, config_name='openai.json', config_path='reporting'):
+        self.config_name = config_name
+        self.config_path = config_path
+        self.db = None
+        self.current_user = None
+        self.models_to_search = None
+        self.message = ''
+        self.stop_words = self.get_stop_words()
+        self.config = self.load_config(self.config_name, self.config_path)
+
+    @staticmethod
+    def load_config(config_name='openai.json', config_path='reporting'):
+        file_name = os.path.join(config_path, config_name)
+        try:
+            with open(file_name, 'r') as f:
+                config = json.load(f)
+        except IOError:
+            logging.error('{} not found.'.format(file_name))
+        return config
+
+    def get_openai_response(self, message):
+        openai.api_key = self.config['SECRET_KEY']
+        prompt = f"User: {message}\nAI:"
+        response = openai.Completion.create(
+            engine="text-davinci-002",
+            prompt=prompt,
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        )
+        return response.choices[0].text.strip()
+
+    @staticmethod
+    def index_db_model_by_word(db_model):
+        word_idx = {}
+        db_all = db_model.query.all()
+        for obj in db_all:
+            words = utl.lower_words_from_str(obj.name)
+            for word in words:
+                if word in word_idx:
+                    word_idx[word].append(obj.id)
+                else:
+                    word_idx[word] = [obj.id]
+        return word_idx
+
+    def convert_model_ids_to_message(self, db_model, model_ids, message='',
+                                     html_table=False, table_name=''):
+        message = message + '<br>'
+        html_response = ''
+        for idx, model_id in enumerate(model_ids):
+            obj = self.db.session.get(db_model, model_id)
+            if obj:
+                html_response += """
+                    {}.  <a href="{}" target="_blank">{}</a><br>
+                    """.format(idx + 1, obj.get_url(), obj.name)
+            if html_table:
+                table_elem = obj.get_table_elem(table_name)
+                html_response += '<br>{}'.format(table_elem)
+        return message, html_response
+
+    def check_db_model_table(self, db_model, words, model_ids):
+        table_response = ''
+        tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
+        cur_model = self.db.session.get(db_model, next(iter(model_ids)))
+        cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
+        cur_model_name = [x.lower() for x in cur_model_name]
+        for table in tables:
+            t_list = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', table)
+            t_list = [x.lower() for x in t_list]
+            model_name = db_model.get_model_name_list()
+            table_match = [
+                x for x in t_list if
+                x.lower() in words and
+                x.lower() not in model_name and
+                x.lower() not in cur_model_name]
+            if table_match:
+                table_response = table
+                break
+        return table_response
+
+    def find_db_model(self, db_model, message, other_db_model=None):
+        word_idx = self.index_db_model_by_word(db_model)
+        words = self.remove_stop_words_from_message(
+            message, db_model, other_db_model, remove_punctuation=True)
+        model_ids = {}
+        for word in words:
+            if word in word_idx:
+                new_model_ids = word_idx[word]
+                for new_model_id in new_model_ids:
+                    if new_model_id in model_ids:
+                        model_ids[new_model_id] += 1
+                    else:
+                        model_ids[new_model_id] = 1
+        if model_ids:
+            max_value = max(model_ids.values())
+            model_ids = {k: v for k, v in model_ids.items() if v == max_value}
+        return model_ids, words
+
+    def search_db_model_from_ids(self, db_model, words, model_ids):
+        response = self.run_db_model(db_model, words, model_ids)
+        if response:
+            table_name = ''
+        else:
+            table_name = self.check_db_model_table(db_model, words, model_ids)
+            response = self.found_model_msg
+        edit_made = self.edit_db_model(db_model, words, model_ids)
+        table_bool = True if table_name else False
+        if edit_made:
+            response = '{}<br>{}'.format(edit_made, self.found_model_msg)
+        response, html_response = self.convert_model_ids_to_message(
+            db_model, model_ids, response, table_bool, table_name)
+        return response, html_response
+
+    def remove_stop_words_from_message(
+            self, message, db_model=None, other_db_model=None,
+            remove_punctuation=False):
+        if remove_punctuation:
+            message = re.sub(r'[^\w\s]', '', message)
+        stop_words = self.stop_words.copy()
+        if db_model:
+            stop_words += db_model.get_model_name_list()
+            if hasattr(db_model, 'get_model_omit_search_list'):
+                stop_words += db_model.get_model_omit_search_list()
+        if other_db_model:
+            stop_words += other_db_model.get_name_list()
+        words = utl.lower_words_from_str(message)
+        words = [x for x in words if x not in stop_words]
+        return words
+
+    def search_db_models(self, db_model, message, response, html_response):
+        response = ''
+        html_response = ''
+        model_ids, words = self.find_db_model(db_model, message)
+        if model_ids:
+            words = self.remove_stop_words_from_message(message, db_model)
+            response, html_response = self.search_db_model_from_ids(
+                db_model, words, model_ids)
+        return response, html_response
+
+    @staticmethod
+    def db_model_name_in_message(message, db_model):
+        words = utl.lower_words_from_str(message)
+        db_model_name = db_model.get_model_name_list()
+        in_message = utl.is_list_in_list(db_model_name, words, True)
+        return in_message
+
+    @staticmethod
+    def get_parent_for_db_model(db_model, words):
+        g_parent = None
+        gg_parent = None
+        parent = db_model.get_parent()
+        if hasattr(parent, 'get_parent'):
+            g_parent = parent.get_parent()
+        if g_parent and hasattr(g_parent, 'get_parent'):
+            gg_parent = g_parent.get_parent()
+        parent_models = [x for x in [gg_parent, g_parent, parent] if x]
+        prev_model = None
+        for parent_model in parent_models:
+            model_name_list = parent_model.get_model_name_list()
+            name = utl.get_next_value_from_list(words, model_name_list)
+            if not name:
+                name_list = parent_model.get_name_list()
+                if name_list:
+                    name = utl.get_dict_values_from_list(words, name_list, True)
+                    if name:
+                        name = [name[0][next(iter(name[0]))]]
+            if not name:
+                name = parent_model.get_default_name()
+            new_model = parent_model()
+            new_model.set_from_form({'name': name[0]}, prev_model)
+            new_model = new_model.check_and_add()
+            prev_model = new_model
+        return prev_model
+
+    def check_gg_children(self, words, new_g_child, total_db=pd.DataFrame()):
+        r = ''
+        new_model = new_g_child.get_children()
+        if new_model:
+            r = 'Checking rules/placements for {}'.format(new_g_child.name)
+            words = [x for x in words if x not in self.stop_words or x == 'y']
+            new_model.check_gg_children(new_model, new_g_child.id, words,
+                                        total_db, r, message=self.message)
+        return r
+
+    def create_db_model_children(self, cur_model, words):
+        response = ''
+        if not cur_model:
+            return response
+        db_model_child = cur_model.get_children()
+        if not db_model_child:
+            return response
+        cur_children = cur_model.get_current_children()
+        child_list = db_model_child.get_name_list()
+        child_name = [x for x in words if x in child_list]
+        if not child_name and not cur_children:
+            child_name = child_list
+        if child_name:
+            new_child = db_model_child()
+            new_child.set_from_form({'name': child_name[0]}, cur_model)
+            self.db.session.add(new_child)
+            self.db.session.commit()
+            msg = 'The {} is named {}.  '.format(
+                db_model_child.__name__, child_name[0])
+            self.check_db_model_col(db_model_child, words, new_child)
+            response += msg
+        else:
+            new_child = [x for x in cur_children if x.name in words]
+            if not new_child:
+                new_child = cur_children
+            new_child = new_child[0]
+        db_model_g_child = new_child.get_children()
+        cur_g_children = new_child.get_current_children()
+        partner_list, partner_type_list = db_model_g_child.get_name_list()
+        p_list = utl.get_dict_values_from_list(words, partner_list, True)
+        part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
+        total_db = pd.DataFrame()
+        for g_child in p_list:
+            g_child_name = g_child[next(iter(g_child))]
+            lower_name = g_child_name.lower()
+            new_g_child = [
+                x for x in cur_g_children if x.name.lower() == lower_name]
+            if new_g_child:
+                new_g_child = new_g_child[0]
+            else:
+                cost = utl.get_next_number_from_list(
+                    words, lower_name, cur_model.name, last_instance=True)
+                g_child['total_budget'] = cost
+                new_g_child = db_model_g_child()
+                new_g_child.set_from_form(g_child, new_child)
+                self.db.session.add(new_g_child)
+                self.db.session.commit()
+                if part_add_msg not in response:
+                    response += part_add_msg
+                response += '{} ({}) '.format(g_child_name, cost)
+            self.check_db_model_col(db_model_g_child, words, new_g_child)
+            if total_db.empty:
+                if hasattr(new_g_child, 'get_children'):
+                    total_db = new_g_child.get_children().get_reporting_db_df()
+            response += self.check_gg_children(words, new_g_child, total_db)
+        return response
+
+    def create_db_model_from_other(self, db_model, message, other_db_model):
+        model_ids, words = self.find_db_model(db_model, message)
+        if model_ids:
+            cur_model = self.db.session.get(db_model, next(iter(model_ids)))
+            old_model = other_db_model.query.filter_by(
+                name=cur_model.name).first()
+            if old_model:
+                new_model = old_model
+            else:
+                new_model = other_db_model(name=cur_model.name)
+                self.db.session.add(new_model)
+                self.db.session.commit()
+            cur_model_dict = cur_model.to_dict()
+            for k in list(new_model.__table__.columns):
+                col = k.name
+                if col in cur_model_dict.keys() and col != 'id':
+                    v = cur_model_dict[col]
+                    setattr(new_model, col, v)
+            self.db.session.commit()
+            args = new_model.get_create_args_from_other(cur_model)
+            new_model.create_object(*args)
+            return new_model
+
+    def pick_db_model_create_from(self, db_model, other_db_model, words,
+                                  message):
+        other_db_model = other_db_model[0]
+        from_words = ['from']
+        is_from = utl.is_list_in_list(from_words, words,
+                                      return_vals=True)
+        db_model_post_from = None
+        if is_from:
+            post_words = words[words.index(is_from[0]) + 1:]
+            for word in post_words:
+                for x in [db_model, other_db_model]:
+                    if word in x.get_model_name_list():
+                        db_model_post_from = x
+                        break
+                if db_model_post_from:
+                    break
+        model_ids, words = self.find_db_model(db_model, message)
+        if not model_ids or (
+                db_model_post_from and db_model_post_from != db_model):
+            hold = other_db_model
+            other_db_model = db_model
+            db_model = hold
+        return db_model, other_db_model
+
+    def create_db_model(self, db_model, message, response, html_response):
+        create_words = ['create', 'make', 'new']
+        words = utl.lower_words_from_str(message)
+        is_create = utl.is_list_in_list(create_words, words)
+        if is_create:
+            other_db_model = [
+                x for x in self.models_to_search if
+                self.db_model_name_in_message(message, x) and x != db_model]
+            if other_db_model:
+                db_model, other_db_model = self.pick_db_model_create_from(
+                    db_model, other_db_model, words, message)
+                new_model = self.create_db_model_from_other(
+                    db_model, message, other_db_model)
+                db_model = other_db_model
+            else:
+                name = utl.get_next_values_from_list(words)
+                if not name:
+                    name = [self.current_user.username]
+                parent_model = self.get_parent_for_db_model(db_model, words)
+                new_model = db_model()
+                name = new_model.get_first_unique_name(name[0])
+                new_model.set_from_form({'name': name}, parent_model,
+                                        self.current_user.id)
+                self.db.session.add(new_model)
+                self.db.session.commit()
+            response = self.check_db_model_col(db_model, words, new_model)
+            response += self.create_db_model_children(new_model, words)
+            response = '{}{}'.format(self.create_success_msg, response)
+            if hasattr(new_model, 'get_create_prompt'):
+                post_create = new_model.get_create_prompt()
+                response = '{}{}'.format(response, post_create)
+            response, html_response = self.convert_model_ids_to_message(
+                db_model, [new_model.id], response, True)
+        return response, html_response
+
+    def check_db_model_col(self, db_model, words, cur_model, omit_list=None):
+        response = ''
+        if not omit_list:
+            omit_list = []
+        match_col_dict = {}
+        for k in db_model.__table__.columns:
+            if k.name == 'id' or k.foreign_keys:
+                continue
+            check_words = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', k.name)
+            check_words = [x for x in check_words
+                           if x and x not in self.stop_words]
+            in_list = utl.is_list_in_list(check_words, words, True, True)
+            if in_list:
+                match_col_dict[k.name] = in_list
+        keys = []
+        lengths = {k: len(v) for k, v in match_col_dict.items()}
+        if lengths:
+            max_length = max(lengths.values())
+            keys = [k for k, v in lengths.items() if v == max_length]
+        if hasattr(db_model, 'get_omit_cols'):
+            keys = [x for x in keys if x not in db_model.get_omit_cols()]
+        for k in keys:
+            if k in words:
+                in_list = [k]
+            else:
+                in_list = match_col_dict[k]
+                in_list = [x for x in in_list if x in words]
+            pw = words[words.index(in_list[-1]) + 1:]
+            if pw[0] in ['is']:
+                pw = pw[1:]
+            skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
+            pw = [x for x in pw if x not in skip_words]
+            if 'date' in k:
+                new_val = pw[0]
+                if pw[1] in ['/', '-']:
+                    new_val = ''.join(pw[x] for x in range(5))
+                new_val = utl.string_to_date(new_val)
+            else:
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
+            setattr(cur_model, k, new_val)
+            self.db.session.commit()
+            response += 'The {} for {} was changed to {}.  '.format(
+                k, cur_model.name, new_val)
+            words = [x for x in words if x not in in_list]
+        return response
+
+    def check_children_for_edit(self, cur_model, words):
+        response = ''
+        children = cur_model.get_current_children()
+        omit_list = [cur_model.name, cur_model.__table__.name]
+        for child in children:
+            lower_name = child.name.lower()
+            in_words = utl.is_list_in_list([lower_name], words, True)
+            if in_words:
+                response = self.check_db_model_col(
+                    child, words, child, omit_list)
+                break
+            else:
+                g_children = child.get_current_children()
+                omit_list.append(lower_name)
+                for g_child in g_children:
+                    lower_name = g_child.name.lower()
+                    in_words = utl.is_list_in_list([lower_name], words, True)
+                    if in_words:
+                        response = self.check_db_model_col(
+                            g_child, words, g_child, omit_list)
+                        if not response:
+                            response = self.check_gg_children(words, g_child)
+                        break
+        if not response:
+            response = self.check_db_model_col(cur_model, words, cur_model)
+        response += self.create_db_model_children(cur_model, words)
+        return response
+
+    def edit_db_model(self, db_model, words, model_ids):
+        response = ''
+        edit_words = ['change', 'edit', 'adjust', 'alter', 'add']
+        is_edit = utl.is_list_in_list(edit_words, words)
+        if is_edit:
+            cur_model = self.db.session.get(db_model, next(iter(model_ids)))
+            response = self.check_children_for_edit(cur_model, words)
+        return response
+
+    def check_db_object_run(self, cur_model, words):
+        response = ''
+        if hasattr(cur_model, 'run_object'):
+            response = cur_model.run_object(words)
+        return response
+
+    def run_db_model(self, db_model, words, model_ids):
+        response = ''
+        edit_words = ['run']
+        is_run = utl.is_list_in_list(edit_words, words)
+        if is_run:
+            cur_model = self.db.session.get(db_model, next(iter(model_ids)))
+            response = self.check_db_object_run(cur_model, words)
+        return response
+
+    def db_model_response_functions(self, db_model, message):
+        response = False
+        html_response = False
+        model_functions = [self.create_db_model, self.search_db_models]
+        args = [db_model, message, response, html_response]
+        for model_func in model_functions:
+            response, html_response = model_func(*args)
+            if response:
+                break
+        return response, html_response
+
+    def format_openai_response(self, message, pre_resp):
+        response = self.get_openai_response(message)
+        response = '{}<br>{}'.format(pre_resp, response)
+        html_response = ''
+        return response, html_response
+
+    def check_if_openai_message(self, message):
+        response = ''
+        html_response = ''
+        open_words = ['openai', 'chatgpt', 'gpt4', 'gpt3']
+        words = utl.lower_words_from_str(message)
+        in_message = utl.is_list_in_list(open_words, words, True)
+        if in_message:
+            response, html_response = self.format_openai_response(
+                message, self.openai_found)
+        return response, html_response
+
+    @staticmethod
+    def get_stop_words():
+        nltk.download('stopwords')
+        stop_words = list(nltk.corpus.stopwords.words('english'))
+        return stop_words
+
+    def get_response(self, message, models_to_search=None, db=None,
+                     current_user=None):
+        self.db = db
+        self.current_user = current_user
+        self.models_to_search = models_to_search
+        self.message = message
+        if not self.stop_words:
+            self.stop_words = self.get_stop_words()
+        response, html_response = self.check_if_openai_message(message)
+        if not response and models_to_search:
+            for db_model in models_to_search:
+                in_message = self.db_model_name_in_message(message, db_model)
+                if in_message:
+                    response, html_response = self.db_model_response_functions(
+                        db_model, message)
+                    break
+        if not response:
+            for db_model in models_to_search:
+                r, hr = self.search_db_models(
+                    db_model, message, response, html_response)
+                if r:
+                    response = r
+                    upper_name = db_model.get_model_name_list()[0].upper()
+                    hr = '{}<br>{}'.format(upper_name, hr)
+                    if not html_response:
+                        html_response = ''
+                    html_response += hr
+        if not response:
+            response, html_response = self.format_openai_response(
+                message, self.openai_msg)
+        return response, html_response
+
+    def train_tf(self, training_data):
+        import tensorflow as tf
+        vocab = ["<PAD>", "<UNK>"]
+        for message in training_data:
+            words = re.findall(r"[\w']+|[.,!?;]", message[0])
+            for word in words:
+                if word not in vocab:
+                    vocab.append(word)
+        word2idx = {word: idx for idx, word in enumerate(vocab)}
+        model = tf.keras.Sequential([
+            tf.keras.layers.Embedding(len(vocab), 32),
+            tf.keras.layers.GlobalAveragePooling1D(),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(len(vocab), activation="softmax")
+        ])
+        model.compile(
+            optimizer="adam",
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"]
+        )
+        x_train = np.array([
+            [word2idx.get(word, word2idx["<UNK>"]) for word in message.split()]
+            for message, response in training_data
+        ])
+        y_train = np.array([
+            [word2idx.get(word, word2idx["<UNK>"]) for word in response.split()]
+            for message, response in training_data
+        ])
+        model.fit(x_train, y_train, epochs=50)
+        return model
+
+    @staticmethod
+    def train_pt(model, train_loader, val_loader, epochs=10, lr=0.001):
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        for epoch in range(epochs):
+            model.train()
+            train_loss = 0
+            for data, target in train_loader:
+                optimizer.zero_grad()
+                output = model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * data.size(0)
+            train_loss /= len(train_loader.dataset)
+            model.eval()
+            val_loss = 0
+            val_accuracy = 0
+            with torch.no_grad():
+                for data, target in val_loader:
+                    output = model(data)
+                    loss = criterion(output, target)
+                    val_loss += loss.item() * data.size(0)
+                    _, pred = torch.max(output, 1)
+                    val_accuracy += torch.sum(pred == target).item()
+                val_loss /= len(val_loader.dataset)
+                val_accuracy /= len(val_loader.dataset)
+        return model

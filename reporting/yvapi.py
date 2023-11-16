@@ -8,6 +8,7 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 
 config_path = utl.config_path
 
@@ -18,6 +19,9 @@ class YvApi(object):
     aud = "{}/identity/oauth2/access_token?realm=dsp".format(b2b_url)
     schedule_url = 'http://api-sched-v3.admanagerplus.yahoo.com'
     report_url = '{}/yamplus_api/extreport/'.format(schedule_url)
+    ad_manager_url = 'https://dspapi.admanagerplus.yahoo.com'
+    ad_ids_url = '/traffic/advertisers'
+    campaigns_url = '/traffic/campaigns'
     start_time_str = "T00:00:00-08:00"
     end_time_str = "T23:59:59-08:00"
 
@@ -175,7 +179,7 @@ class YvApi(object):
             "reportOption": {
                 "timezone": "America/Los_Angeles",
                 "currency": 4,
-                "dimensionTypeIds": [4, 5, 8, 34, 39],
+                "dimensionTypeIds": [4, 5, 6, 7, 8, 34, 39],
                 "metricTypeIds": [1, 2, 23, 25, 26, 27, 28,
                                   29, 44, 109, 110, 138],
                 "accountIds": [self.advertiser]
@@ -216,3 +220,62 @@ class YvApi(object):
             df = self.filter_df_on_campaign(df)
         logging.info('Returning df.')
         return df
+
+    def get_advertisers(self):
+        url = self.ad_manager_url + self.ad_ids_url
+        r = requests.get(url, headers=self.header)
+        r = r.json()
+        df = pd.DataFrame(data=r['response'])
+        return df
+
+    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
+        df = self.get_advertisers()
+        if self.advertiser in df['id'].to_list():
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Advertiser ID NOT Found. '
+                   'Double Check ID and Ensure Permissions were granted.')
+            row = [acc_col, msg, False]
+            results.append(row)
+        return results
+
+    def get_campaigns(self):
+        url = self.ad_manager_url + self.campaigns_url
+        params = {'accountId': self.advertiser,
+                  'query': self.campaign_filter}
+        r = requests.get(url, headers=self.header, params=params)
+        r = r.json()
+        df = pd.DataFrame(data=r['response'])
+        return df
+
+    def check_campaign_names(self, results, camp_col, success_msg, failure_msg):
+        df = self.get_campaigns()
+        if df.empty:
+            msg = ('No campaigns under filter. '
+                   'Double check filter and permissions.')
+            row = [camp_col, msg, False]
+            results.append(row)
+        else:
+            campaign_names = df['name'].to_list()
+            msg = ' '.join(
+                [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
+            row = [camp_col, msg, True]
+            results.append(row)
+            for campaign in campaign_names:
+                row = [camp_col, campaign, True]
+                results.append(row)
+        return results
+
+    def test_connection(self, acc_col, camp_col, pre_col):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        self.set_header()
+        results = self.check_advertiser_id(
+            [], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results = self.check_campaign_names(
+            results, camp_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)

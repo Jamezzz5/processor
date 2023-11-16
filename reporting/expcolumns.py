@@ -5,6 +5,10 @@ config_file = 'Config_File'
 translation_file = 'Translation_File'
 schema_file = 'Schema_File'
 default_format = 'Default_Format'
+test_file = 'Test_File'
+test_config = 'Test_Config'
+
+test_path = 'tests'
 
 table = 'Table'
 pk = 'PK'
@@ -40,6 +44,7 @@ event_name = 'eventname'
 event_steam_name = 'eventsteamname'
 event_conv_name = 'eventconvname'
 event_plan_name = 'eventplanname'
+event_brand_name = 'eventbrandname'
 plan_name = 'planname'
 full_placement_name = 'fullplacementname'
 

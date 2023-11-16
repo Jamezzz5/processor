@@ -1,15 +1,21 @@
 import os
 import io
 import re
+import json
 import time
 import shutil
 import logging
 import pandas as pd
+import numpy as np
 import datetime as dt
 import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
+import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -18,6 +24,7 @@ dict_path = 'dictionaries/'
 backup_path = 'backup/'
 preview_path = './ad_previews/'
 preview_config = 'preview_config.csv'
+db_df_trans_config = 'db_df_translation.csv'
 
 RULE_PREF = 'RULE'
 RULE_METRIC = 'METRIC'
@@ -39,7 +46,7 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
-def import_read_csv(filename, path=None, file_check=True, error_bad=True,
+def import_read_csv(filename, path=None, file_check=True, error_bad='error',
                     empty_df=False, nrows=None):
     sheet_names = []
     if sheet_name_splitter in filename:
@@ -61,14 +68,15 @@ def import_read_csv(filename, path=None, file_check=True, error_bad=True,
         read_func = pd.read_excel
     else:
         read_func = pd.read_csv
+        kwargs['encoding'] = 'utf-8'
+        kwargs['on_bad_lines'] = error_bad
     try:
-        df = read_func(filename, encoding='utf-8',
-                       error_bad_lines=error_bad, **kwargs)
-    except pd.io.common.CParserError:
-        df = read_func(filename, sep=None, engine='python', **kwargs)
+        df = read_func(filename, **kwargs)
     except UnicodeDecodeError:
-        df = read_func(filename, encoding='iso-8859-1', **kwargs)
-    except pd.io.common.EmptyDataError:
+        if 'encoding' in kwargs:
+            kwargs['encoding'] = 'iso-8859-1'
+        df = read_func(filename, **kwargs)
+    except pd.errors.EmptyDataError:
         logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
         if empty_df:
             df = pd.DataFrame()
@@ -147,7 +155,20 @@ def string_to_date(my_string):
         return dt.datetime.strptime(my_string, '%a %b %d %M:%S:%H %Y')
     elif (('-' in my_string) and (my_string[:2] == '20') and
           len(my_string) == 10):
-        return dt.datetime.strptime(my_string, '%Y-%m-%d')
+        try:
+            return dt.datetime.strptime(my_string, '%Y-%m-%d')
+        except ValueError:
+            try:
+                return dt.datetime.strptime(my_string, '%Y-%d-%m')
+            except ValueError:
+                logging.warning('Could not parse date: {}'.format(my_string))
+                return pd.NaT
+    elif ((len(my_string) == 19) and (my_string[:2] == '20') and
+          ('-' in my_string) and (':' in my_string)):
+        return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
+    elif ((len(my_string) == 7 or len(my_string) == 8) and
+          my_string[-4:-2] == '20'):
+        return dt.datetime.strptime(my_string, '%m%d%Y')
     else:
         return my_string
 
@@ -331,22 +352,46 @@ def add_dummy_header(df, header_len, location='head'):
     cols = df.columns
     dummy_df = pd.DataFrame(data=[cols] * header_len, columns=cols)
     if location == 'head':
-        df = dummy_df.append(df).reset_index(drop=True)
+        df = pd.concat([dummy_df, df]).reset_index(drop=True)
     elif location == 'foot':
-        df = df.append(dummy_df).reset_index(drop=True)
+        df = pd.concat([df, dummy_df]).reset_index(drop=True)
     return df
+
+
+def get_default_format(col):
+    if 'Cost' in col or col[:2] == 'CP':
+        format_map = '${:,.2f}'.format
+    elif 'VCR' in col or col[-2:] == 'TR':
+        format_map = '{:,.2%}'.format
+    else:
+        format_map = '{:,.0f}'.format
+    return format_map
 
 
 def give_df_default_format(df, columns=None):
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.fillna(0)
     if not columns:
         columns = df.columns
     for col in columns:
-        if 'Cost' in col or col[:2] == 'CP':
-            format_map = '${:,.2f}'.format
-        else:
-            format_map = '{:,.0f}'.format
-        df[col] = df[col].map(format_map)
+        format_map = get_default_format(col)
+        try:
+            df[col] = df[col].map(format_map)
+        except ValueError as e:
+            logging.warning('ValueError: {}'.format(e))
     return df
+
+
+def db_df_translation(columns=None, proc_dir='', reverse=False):
+    df = import_read_csv(
+        os.path.join(proc_dir, config_path, db_df_trans_config))
+    if not columns or df.empty:
+        return {}
+    if reverse:
+        translation = dict(zip(df[exc.translation_db], df[exc.translation_df]))
+    else:
+        translation = dict(zip(df[exc.translation_df], df[exc.translation_db]))
+    return {x: translation[x] if x in translation else x for x in columns}
 
 
 def rename_duplicates(old):
@@ -548,9 +593,14 @@ class SeleniumWrapper(object):
             if get_xpath_from_id:
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
+            if len(item) > 2 and item[2] == 'clear':
+                clear_val = elem.find_element_by_xpath(
+                    'preceding-sibling::span/a[@class="remove-single"]')
+                clear_val.click()
             elem.send_keys(item[0])
             if 'selectized' in elem_xpath:
                 elem.send_keys(u'\ue007')
+                wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
@@ -558,6 +608,17 @@ class SeleniumWrapper(object):
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
+
+    def wait_for_elem_load(self, elem_id, attempts=10, sleep_time=.5):
+        elem_found = False
+        elem_id = '#{}'.format(elem_id)
+        for x in range(attempts):
+            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            if e:
+                elem_found = True
+                break
+            time.sleep(sleep_time)
+        return elem_found
 
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100):
@@ -596,3 +657,125 @@ def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
                 os.mkdir(new_file)
             copy_tree_no_overwrite(old_file, new_file, log=False,
                                    overwrite=overwrite)
+
+
+def lower_words_from_str(word_str):
+    words = re.findall(r"[\w']+|[.,!?;/]", word_str)
+    words = [x.lower() for x in words]
+    return words
+
+
+def index_words_from_list(word_list, word_idx, obj_to_append):
+    if not word_idx:
+        word_idx = {}
+    for word in word_list:
+        if word in word_idx:
+            word_idx[word].append(obj_to_append)
+        else:
+            word_idx[word] = [obj_to_append]
+    return word_idx
+
+
+def is_list_in_list(first_list, second_list, contains=False, return_vals=False):
+    in_list = False
+    if contains:
+        name_in_list = [x for x in first_list if
+                        x in second_list or [y for y in second_list if x in y]]
+    else:
+        name_in_list = [x for x in first_list if x in second_list]
+    if name_in_list:
+        in_list = True
+        if return_vals:
+            in_list = name_in_list
+    return in_list
+
+
+def get_next_value_from_list(first_list, second_list):
+    next_values = [first_list[idx + 1] for idx, x in enumerate(first_list) if
+                   x in second_list]
+    return next_values
+
+
+def get_dict_values_from_list(list_search, dict_check, check_dupes=False):
+    values_in_dict = []
+    keys_added = []
+    dict_key = next(iter(dict_check[0]))
+    for x in dict_check:
+        lower_val = str(x[dict_key]).lower()
+        if lower_val in list_search:
+            if (check_dupes and lower_val not in keys_added) or not check_dupes:
+                keys_added.append(lower_val)
+                values_in_dict.append(x)
+    return values_in_dict
+
+
+def check_dict_for_key(dict_to_check, key, missing_return_value=''):
+    if key in dict_to_check:
+        return_value = dict_to_check[key]
+    else:
+        return_value = missing_return_value
+    return return_value
+
+
+def get_next_number_from_list(words, lower_name, cur_model_name,
+                              last_instance=False):
+    post_words = words[words.index(lower_name):]
+    if last_instance:
+        idx = next(i for i in reversed(range(len(post_words)))
+                   if post_words[i] == lower_name)
+        post_words = post_words[idx:]
+    cost = [x for x in post_words if
+            any(y.isdigit() for y in x) and x != cur_model_name]
+    if cost:
+        if len(cost) > 1:
+            cost_append = ''
+            post_words = post_words[post_words.index(cost[0]):]
+            for x in range(1, len(post_words), 2):
+                two_comb = post_words[x:x + 2]
+                if len(two_comb) > 1 and two_comb[0] == ',':
+                    cost_append += two_comb[1]
+                else:
+                    break
+            cost = [cost[0] + cost_append]
+        cost = cost[0].replace('$', '')
+        cost = cost.replace('k', '000')
+        cost = cost.replace('m', '000000')
+    else:
+        cost = 0
+    if any(c.isalpha() for c in str(cost)):
+        cost = 0
+    return cost
+
+
+def get_next_values_from_list(first_list, match_list=None, break_list=None,
+                              date_search=False):
+    name_list = ['named', 'called', 'name', 'title', 'categorized']
+    if not match_list:
+        match_list = name_list.copy()
+    match_list = is_list_in_list(match_list, first_list, False, True)
+    if not match_list:
+        return []
+    first_list = first_list[first_list.index(match_list[0]) + 1:]
+    if break_list:
+        for value in first_list:
+            if value in break_list and value not in match_list:
+                first_list = first_list[:first_list.index(value)]
+                break
+    first_list = [x for x in first_list if x not in name_list]
+    if not date_search:
+        first_list = [x for x in first_list
+                      if not (x.isdigit() and int(x) > 10)]
+    first_list = ''.join(first_list).split('.')[0].split(',')
+    first_list = [x.strip(' ') for x in first_list]
+    return first_list
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)

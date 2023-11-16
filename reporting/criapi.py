@@ -14,7 +14,7 @@ config_path = utl.config_path
 class CriApi(object):
     base_url = 'https://api.criteo.com'
     auth_url = '{}/oauth2/token'.format(base_url)
-    version_url = '/2022-07/retail-media'
+    version_url = '/2023-07/retail-media'
 
     def __init__(self):
         self.config = None
@@ -132,7 +132,8 @@ class CriApi(object):
         url = '{}/reports/campaigns'.format(base_url)
         params = {'startDate': sd, 'endDate': ed,
                   'timezone': 'America/New_York', 'id': self.advertiser_id,
-                  'reportType': 'summary'}
+                  'reportType': 'summary',
+                  'format': 'json-compact'}
         params = {'type': 'RetailMediaReportRequest', 'attributes': params}
         params = {'data': params}
         r = self.make_request(url, method='POST', headers=self.headers,
@@ -174,7 +175,17 @@ class CriApi(object):
         logging.info('Report available downloading.')
         self.set_headers()
         url = url.replace('status', 'output')
-        r = self.make_request(url, method='GET', headers=self.headers)
-        df = pd.DataFrame(r.json()['data'], columns=r.json()['columns'])
-        logging.info('Report downloaded returning df.')
-        return df
+        for i in range(10):
+            r = self.make_request(url, method='GET', headers=self.headers)
+            if 'data' in r.json():
+                df = pd.DataFrame(r.json()['data'],
+                                  columns=r.json()['columns'])
+                logging.info('Report downloaded returning df.')
+                return df
+            else:
+                logging.info("'data' not in download response. Retrying. "
+                             "Attempt {}".format(i+1))
+                time.sleep(30)
+        logging.warning('Unexpected response. Returning blank df: {}'
+                        .format(r.json()))
+        return pd.DataFrame()

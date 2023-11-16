@@ -5,6 +5,7 @@ import logging
 import time
 import pandas as pd
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -13,15 +14,18 @@ config_path = utl.config_path
 class GsApi(object):
     sheets_url = 'https://sheets.googleapis.com/v4/spreadsheets'
     slides_url = 'https://slides.googleapis.com/v1/presentations'
-    drive_url = 'https://www.googleapis.com/drive/v3/files'
+    files_url = 'https://www.googleapis.com/drive/v3/files'
+    drive_url = 'https://www.googleapis.com/drive/v3/drives'
     docs_url = 'https://docs.googleapis.com/v1/documents'
     body_str = 'body'
     cont_str = 'content'
     para_str = 'paragraph'
     head_str = 'header'
     doc_str = 'Doc'
+    text_format = 'NORMAL_TEXT'
 
     def __init__(self):
+        self.default_config = "gsapi_screenshots.json"
         self.config = None
         self.config_file = None
         self.client_id = None
@@ -128,7 +132,7 @@ class GsApi(object):
         return presentation_id
 
     def add_permissions(self, presentation_id, domain="liquidarcade.com"):
-        url = self.drive_url + "/" + presentation_id + "/permissions"
+        url = self.files_url + "/" + presentation_id + "/permissions"
         body = {
             "role": "writer",
             "type": "domain",
@@ -219,3 +223,131 @@ class GsApi(object):
                         new_paragraph[self.cont_str] = ''
         self.df = pd.DataFrame(paragraph)
         return self.df
+
+    def create_google_doc(self, title=None):
+        logging.info('Creating GSlides Presentation: {}'.format(title))
+        body = {
+            "title": title,
+        }
+        response = self.client.post(url=self.docs_url, json=body)
+        response = response.json()
+        doc_id = response["documentId"]
+        self.add_permissions(doc_id)
+        return doc_id
+
+    @staticmethod
+    def get_format_req(start_ind=1, end_ind=1, style=text_format):
+        format_req = {
+            "updateParagraphStyle": {
+                "range": {
+                    "startIndex": start_ind,
+                    "endIndex": end_ind
+                },
+                "paragraphStyle": {
+                    "namedStyleType": style
+                },
+                "fields": "namedStyleType"
+            }
+        }
+        return format_req
+
+    @staticmethod
+    def fill_row(row, index):
+        row_requests = []
+        for cell in row:
+            if not str(cell).strip():
+                cell = '0'
+            row_requests.append({
+                "insertText":
+                    {
+                        "text": str(cell).strip(),
+                        "location":
+                            {
+                                "index": index
+                            }
+                    }
+            })
+            index += len(str(cell).strip()) + 2
+        index += 1
+        return row_requests, index
+
+    def add_table(self, data, index):
+        if not data:
+            return index
+        start_ind = index
+        table_requests = [{'insertTable': {
+            'rows': len(data) + 1,
+            'columns': len(data[0]),
+            'endOfSegmentLocation': {
+                'segmentId': ''
+            }
+        }}]
+        index += 4
+        column_req, index = self.fill_row(data[0].keys(), index)
+        table_requests.append(column_req)
+        for row in data:
+            row_request, index = self.fill_row(row.values(), index)
+            table_requests += row_request
+        table_requests.append(self.get_format_req(start_ind, index - 1,
+                                                  self.text_format))
+        return table_requests, index - 1
+
+    def add_text(self, doc_id, text_json=None, index=1, newline=True):
+        logging.info('Adding text to doc.')
+        url = self.docs_url + "/" + doc_id + ":batchUpdate"
+        headers = {"Content-Type": "application/json"}
+        request = []
+        format_request = []
+        for item in text_json:
+            if item['selected'] == 'false':
+                continue
+            if 'message' not in item:
+                continue
+            text = item['message']
+            if newline:
+                text += '\n'
+            request.append({
+                'insertText': {
+                    'location': {
+                        'index': index,
+                    },
+                    'text': text
+                }
+            })
+            style = item['format'] if 'format' in item else self.text_format
+            end_ind = index + len(text) - 1
+            format_request.append(self.get_format_req(index, end_ind, style))
+            index += len(text)
+            if 'data' in item:
+                table_req, index = self.add_table(item['data']['data'],
+                                                  index=index)
+                request += table_req
+        request += format_request
+        body = {"requests": request}
+        response = self.client.post(url=url, json=body, headers=headers)
+        return response, body
+
+    def check_sheet_id(self, results, acc_col, success_msg, failure_msg):
+        self.get_client()
+        url = self.create_url()
+        r = self.client.get(url)
+        if (r.status_code == 200 and
+                'values' in r.json()):
+            row = [acc_col, ' '.join([success_msg, str(self.sheet_id)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Permissions NOT Granted. '
+                   'Double Check Sheet ID and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, msg, r['error']['message']]), False]
+            results.append(row)
+        return results, r
+
+    def test_connection(self, acc_col, camp_col=None, acc_pre=None):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results, r = self.check_sheet_id(
+            [], acc_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)

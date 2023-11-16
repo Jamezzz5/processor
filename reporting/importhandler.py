@@ -31,6 +31,8 @@ import reporting.gsapi as gsapi
 import reporting.qtapi as qtapi
 import reporting.yvapi as yvapi
 import reporting.ssapi as ssapi
+import reporting.nzapi as nzapi
+import reporting.ytdapi as ytdapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.export as export
@@ -72,7 +74,9 @@ class ImportHandler(object):
             vmc.api_qt_key: qtapi.QtApi,
             vmc.api_yv_key: yvapi.YvApi,
             vmc.api_amd_key: amzapi.AmzApi,
-            vmc.api_ss_key: ssapi.SsApi
+            vmc.api_ss_key: ssapi.SsApi,
+            vmc.api_nz_key: nzapi.NzApi,
+            vmc.api_ytd_key: ytdapi.YtdApi
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
@@ -84,13 +88,13 @@ class ImportHandler(object):
         filename -- the name of the file to write to on disk
         """
         utl.dir_check(utl.raw_path)
-        if str(api_merge) != 'nan':
-            api_df = self.merge_df(api_df, filename, date_col, start_date,
-                                   end_date, first_row, last_row, api_merge)
         if '/' in filename:
             full_file = filename
         else:
             full_file = os.path.join(utl.raw_path, filename)
+        if str(api_merge) != 'nan':
+            api_df = self.merge_df(api_df, full_file, date_col, start_date,
+                                   end_date, first_row, last_row, api_merge)
         self.write_df(api_df, full_file)
 
     def write_df(self, api_df, full_file, attempt=0):
@@ -110,14 +114,14 @@ class ImportHandler(object):
 
     def merge_df(self, api_df, filename, date_col, start_date, end_date,
                  first_row, last_row, api_merge):
-        if not os.path.isfile(os.path.join(utl.raw_path, filename)):
+        if not os.path.isfile(filename):
             return api_df
-        df = utl.import_read_csv(filename, utl.raw_path)
+        df = utl.import_read_csv(filename)
         df = self.merge_df_cleaning(df, first_row, last_row, date_col, pd.NaT,
                                     end_date - dt.timedelta(days=api_merge))
         api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
                                         start_date, end_date)
-        df = df.append(api_df, ignore_index=True).reset_index(drop=True)
+        df = pd.concat([df, api_df], ignore_index=True).reset_index(drop=True)
         df = utl.add_dummy_header(df, first_row)
         df = utl.add_dummy_header(df, last_row, location='foot')
         return df

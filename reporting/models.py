@@ -1,8 +1,7 @@
 # coding: utf-8
 from sqlalchemy import BigInteger, Column, Date, ForeignKey,\
     Numeric, Text, text
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -924,6 +923,36 @@ class EventPlan(Base):
     plan_verificationcost = Column(Numeric)
     plan_reportingcost = Column(Numeric)
     plan_dcmservicefee = Column(Numeric)
+
+    uploadid = Column(ForeignKey('lqadb.upload.uploadid', ondelete='CASCADE'))
+
+    event = relationship('Event')
+    upload = relationship('Upload')
+
+
+class EventBrand(Base):
+    __tablename__ = 'eventbrand'
+    __table_args__ = {'schema': 'lqadb'}
+
+    eventbrandid = Column(BigInteger, primary_key=True, server_default=text(
+        "nextval('lqadb.eventbrand_eventbrandid_seq'::regclass)"))
+    eventbrandname = Column(Text)
+    eventid = Column(ForeignKey(
+        'lqadb.event.eventid', ondelete='CASCADE'))
+    media_spend = Column(Numeric)
+    youtube_subscribers = Column(Numeric)
+    twitter_followers = Column(Numeric)
+    twitch_views = Column(Numeric)
+    twitch_viewers = Column(Numeric)
+    subreddit_members = Column(Numeric)
+    player_share = Column(Numeric)
+    nz_awareness = Column(Numeric)
+    np_score = Column(Numeric)
+    coverage = Column(Numeric)
+    month_avg_user = Column(Numeric)
+    stickiness = Column(Numeric)
+    days_played = Column(Numeric)
+    play_intent = Column(Numeric)
 
     uploadid = Column(ForeignKey('lqadb.upload.uploadid', ondelete='CASCADE'))
 

@@ -371,7 +371,8 @@ class FbApi(object):
                     complete_job = None
                     time.sleep(30)
                 if complete_job:
-                    self.df = self.df.append(complete_job, ignore_index=True)
+                    self.df = pd.concat([self.df, pd.DataFrame(complete_job)],
+                                        ignore_index=True)
                     fb_request.complete = True
             else:
                 self.async_requests.append(fb_request)
@@ -386,7 +387,7 @@ class FbApi(object):
                 percent = self.get_async_job_percent(async_job)
             complete_job = list(async_job.get_result())
             if complete_job:
-                self.df = self.df.append(complete_job, ignore_index=True)
+                self.df = pd.concat([self.df, complete_job], ignore_index=True)
 
     @staticmethod
     def get_async_job_percent(async_job):
@@ -503,7 +504,8 @@ class FbApi(object):
             dirty_df = dirty_df.drop(col, axis=1)
         dirty_df = dirty_df.apply(pd.to_numeric)
         clean_df = pd.concat([clean_df, dirty_df], axis=1)
-        clean_df = clean_df.groupby(clean_df.columns, axis=1).sum()  # type: pd.DataFrame
+        clean_df = clean_df.groupby(
+            clean_df.columns, axis=1).sum()  # type: pd.DataFrame
         return clean_df
 
     def test_connection(self, acc_col, camp_col, acc_pre):

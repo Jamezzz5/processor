@@ -66,7 +66,8 @@ def clicks_by_place_date(df):
     df_cpd = df.loc[df[dctc.BM].isin([
         BM_FLAT, BM_FLAT2, BM_FLATIMP, BM_FLATCOUNT])]
     if not df_cpd.empty:
-        df_cpd = (df_cpd.groupby([PLACE_DATE])[vmc.impressions, vmc.clicks]
+        metrics = [vmc.impressions, vmc.clicks]
+        df_cpd = (df_cpd.groupby([PLACE_DATE], group_keys=False)[metrics]
                   .apply(lambda x: x / x.astype(float).sum()))
         df_cpd.columns = [IMP_PD, CLI_PD]
         df = pd.concat([df, df_cpd], axis=1)  # type: pd.DataFrame
@@ -181,7 +182,7 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
             df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
     nc_pnc = df[df[dctc.UNC] != True]
-    nc_pnc = nc_pnc.groupby(p_col)[p_cost, n_cost].sum()
+    nc_pnc = nc_pnc.groupby(p_col)[[p_cost, n_cost]].sum()
     nc_pnc = nc_pnc[nc_pnc[p_cost] > 0]
     if p_cost not in nc_pnc.columns:
         nc_pnc[p_cost] = 0
@@ -208,10 +209,11 @@ def net_sum_date(df, p_col=dctc.PFPN, n_cost=vmc.cost):
 
 
 def net_cost_final(df, p_col=dctc.PFPN, n_cost=vmc.cost):
-    tdf = (df[df[NC_CUM_SUM] > df[DIF_PNC]].groupby([p_col]).
-           min().reset_index())
+    dim_cols = [vmc.date, p_col]
+    tdf = df[df[NC_CUM_SUM] > df[DIF_PNC]][dim_cols]
+    tdf = tdf.groupby([p_col]).min().reset_index()
     if not tdf.empty:
-        tdf = tdf[[vmc.date, p_col]]
+        tdf = tdf[dim_cols]
         tdf[NC_CUM_SUM_MIN_DATE] = True
         df = df.merge(tdf, on=[p_col, vmc.date], how='left')
         df[NCF] = np.where(df[NC_CUM_SUM] > df[DIF_PNC],
@@ -278,14 +280,16 @@ class MetricCap(object):
         self.proc_dim = 'processor_dim'
         self.proc_metric = 'processor_metric'
         self.temp_metric = None
+        self.pdf = pd.DataFrame()
+        self.c = None
         self.config = utl.import_read_csv(config_file)
         self.config = self.config.to_dict(orient='index')
 
     def get_cap_file(self, c):
         pdf = utl.import_read_csv(c[self.file_name])
         p_dict = self.col_dict(c)
-        pdf = pdf.rename(columns=p_dict)
-        return pdf
+        self.pdf = pdf.rename(columns=p_dict)
+        return self.pdf
 
     def col_dict(self, c):
         self.temp_metric = c[self.proc_metric] + ' - TEMP'
@@ -293,11 +297,20 @@ class MetricCap(object):
                   c[self.file_metric]: self.temp_metric}
         return p_dict
 
-    def apply_cap(self, df, c):
+    def combine_cap_file_with_df(self, df, c):
+        pdf = self.get_cap_file(c)
+        cols = [x for x in pdf.columns if x not in ['level_0', 'index']]
+        pdf = pdf[cols].reset_index(drop=True)
+        df = df.loc[:, ~df.columns.duplicated()].copy()
+        df = pd.concat([df, pdf], sort=True)
+        return df
+
+    def apply_cap(self, df, c, final_calculation=True):
         logging.info('Calculating metric cap from: '
                      '{}'.format(c[self.file_name]))
-        pdf = self.get_cap_file(c)
-        df = df.append(pdf, sort=True)
+        df = self.combine_cap_file_with_df(df, c)
+        if not final_calculation:
+            return df
         df = net_cost_final_calculation(df, p_col=c[self.proc_dim],
                                         p_cost=self.temp_metric)
         df = df[~df[dctc.FPN].isnull()]
@@ -305,11 +318,11 @@ class MetricCap(object):
         df = utl.col_removal(df, 'Raw Data', [self.temp_metric])
         return df
 
-    def apply_all_caps(self, df):
+    def apply_all_caps(self, df, final_calculation=True):
         if self.config:
             for cfg in self.config:
-                c = self.config[cfg]
-                df = self.apply_cap(df, c)
+                self.c = self.config[cfg]
+                df = self.apply_cap(df, self.c, final_calculation)
         return df
 
 
@@ -325,3 +338,20 @@ def calculate_cost(df):
     df = agency_fees_calculation(df)
     df = total_cost_calculation(df)
     return df
+
+
+def calculate_weight_z_score(df, weights_dict):
+    zscore_suffix = '_zscore'
+    means = df.mean(axis=0)
+    stds = df.std(axis=0)
+    zscores = ((df - means) / stds)
+    output_df = df.merge(zscores, left_index=True, right_index=True,
+                         suffixes=("", zscore_suffix)).sort_index(axis=1)
+    for col_type in weights_dict:
+        cols = [col for col in weights_dict[col_type]
+                if col in zscores.columns]
+        weights = pd.Series({k: v for k, v in weights_dict[col_type].items()
+                             if k in zscores.columns})
+        output_df[col_type] = zscores[cols].fillna(0).dot(weights)
+    output_df = output_df.reset_index()
+    return output_df
