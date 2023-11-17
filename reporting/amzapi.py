@@ -116,6 +116,24 @@ class AmzApi(object):
         if self.profile_id:
             self.headers['Amazon-Advertising-API-Scope'] = str(self.profile_id)
 
+    def wait_and_retry(self, url, body, method, key):
+        for x in range(5):
+            r = self.make_request(url, method=method, body=body,
+                                  headers=self.headers)
+            if key in r.json():
+                report_id = r.json()[key]
+                return report_id
+            elif ('message' in r.json() and r.json()['message'] ==
+                  'Too Many Requests'):
+                logging.warning(
+                    'Too many requests pausing.  Attempt: {}.  '
+                    'Response: {}'.format((x + 1), r.json()))
+                time.sleep(30)
+            else:
+                logging.warning('Error in request as follows: {}'
+                                .format(r.json()))
+                sys.exit(0)
+
     def get_profiles(self):
         self.set_headers()
         for endpoint in [self.base_url, self.eu_url, self.fe_url]:
@@ -135,8 +153,9 @@ class AmzApi(object):
                     dsp_id = str(dsp_profile['profileId'])
                     self.headers['Amazon-Advertising-API-Scope'] = dsp_id
                     url = '{}/dsp/advertisers'.format(endpoint)
-                    r = self.make_request(url, method='GET', headers=self.headers)
-                    profile = [x for x in r.json()['response'] if
+                    r = self.wait_and_retry(url=url, body=None, method='GET',
+                                            key='response')
+                    profile = [x for x in r if
                                self.advertiser_id in x['advertiserId']]
                     if profile:
                         self.profile_id = profile[0]['advertiserId']
@@ -242,37 +261,27 @@ class AmzApi(object):
                 self.base_url, self.profile_id)
         else:
             body['configuration'] = {
-                    'adProduct': 'SPONSORED_PRODUCTS',
-                    'columns':  ['date', 'impressions', 'clicks', 'cost',
-                                 'spend', 'campaignName', 'campaignId',
-                                 'adGroupName', 'adGroupId', 'purchases14d',
-                                 'purchasesSameSku14d', 'unitsSoldClicks14d',
-                                 'sales14d', 'attributedSalesSameSku14d'],
-                    'reportTypeId': 'spCampaigns',
-                    'format': 'GZIP_JSON',
-                    'groupBy': ['campaign', 'adGroup'],
-                    "timeUnit": "DAILY"
-                }
-            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+                'adProduct': 'SPONSORED_PRODUCTS',
+                'columns': ['date', 'impressions', 'clicks', 'cost',
+                            'spend', 'campaignName', 'campaignId',
+                            'adGroupName', 'adGroupId', 'purchases14d',
+                            'purchasesSameSku14d', 'unitsSoldClicks14d',
+                            'sales14d', 'attributedSalesSameSku14d'],
+                'reportTypeId': 'spCampaigns',
+                'format': 'GZIP_JSON',
+                'groupBy': ['campaign', 'adGroup'],
+                "timeUnit": "DAILY"
+            }
+            self.headers[
+                'Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
             url = '{}/reporting/reports'.format(self.base_url)
-        for x in range(5):
-            r = self.make_request(url, method='POST', body=body,
-                                  headers=self.headers)
-            if 'reportId' in r.json():
-                report_id = r.json()['reportId']
-                return report_id
-            elif ('message' in r.json() and r.json()['message'] ==
-                    'Too Many Requests'):
-                logging.warning(
-                    'Too many requests pausing.  Attempt: {}.  '
-                    'Response: {}'.format((x + 1), r.json()))
-                time.sleep(30)
-            else:
-                logging.warning('Error in request as follows: {}'
-                                .format(r.json()))
-                sys.exit(0)
-        logging.warning('Could not generate report, exiting')
-        sys.exit(0)
+        report_id = self.wait_and_retry(url, body, method='POST',
+                                        key='reportId')
+        if report_id:
+            return report_id
+        else:
+            logging.warning('Could not generate report, exiting')
+            sys.exit(0)
 
     def get_dsp_report(self, report_id):
         if self.amazon_dsp:
@@ -282,7 +291,8 @@ class AmzApi(object):
             complete_status = 'SUCCESS'
             url_key = 'location'
         else:
-            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+            self.headers[
+                'Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
             url = '{}/reporting/reports/{}'.format(
                 self.base_url, report_id)
             complete_status = 'COMPLETED'
@@ -315,7 +325,7 @@ class AmzApi(object):
                 else:
                     time.sleep(15)
             elif ('message' in r.json() and r.json()['message'] ==
-                    'Too Many Requests'):
+                  'Too Many Requests'):
                 logging.warning(
                     'Too many requests pausing.  Attempt: {}.  '
                     'Response: {}'.format((attempt + 1), r.json()))
