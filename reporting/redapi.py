@@ -204,7 +204,7 @@ class RedApi(object):
 
     def set_metrics(self):
         logging.info('Setting metrics.')
-        metric_xpath = '//div[text()="{}"]'.format('Metrics')
+        metric_xpath = '//div[text()="{}"]'.format('Columns')
         self.sw.click_on_xpath(metric_xpath)
         self.click_grouped_metrics()
         apply_button_xpath = '//div[text()="Apply"]'

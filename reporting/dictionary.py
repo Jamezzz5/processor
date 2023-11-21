@@ -143,6 +143,25 @@ class Dict(object):
 
     def sort_relation_cols(self, columns, rc_auto, keep_bad_delim=True,
                            return_missing=False, return_bad_values=False):
+        """Returns dictionary sorting any relational columns from the auto
+            dictionary order into their respective final output columns
+
+        @param columns: Iterable of columns to sort into relation table columns.
+        @param rc_auto: Tuple of dictionaries containing relation configuration
+            information as returned by RelationalConfig.get_auto_tuple().
+        @param keep_bad_delim: Flag allowing incorrect delimiters on the first
+            element of relation columns to be accepted/sorted.
+        @param return_missing: Flag to return "skipped" Auto relation columns
+            under the 'missing' key in output dictionary.
+        @param return_bad_values: Flag to return any relational column entries
+            from columns which could not be sorted under the 'bad_values' key
+            in output dictionary.
+        @return: Dictionary keyed by relation key columns with a value of a
+            dictionary with key, value of relation columns, input columns whose
+            data will appear in that relation column.
+            i.e. {'mpCreative': {'mpSize': ['mpCreative:::0:::_',
+            'mpCreative:::1:::-']}...}
+        """
         miss = 'missing'
         bad_value = 'bad_values'
         default_delim = '_'
@@ -150,19 +169,28 @@ class Dict(object):
         component_dict = {}
         valid_values = []
         all_rel_cols = []
+        # Perform sort for each relation key column, i.e. mpCreative
         for rc_key in rc_cols:
             start_idx = 0
+            # Assign each relation column component  an empty list for input
+            # columns to be sorted into, if applicable
             component_dict[rc_key] = {comp: [] for comp in rc_cols[rc_key]}
+            # Get all input columns that have the relation key as base name,
+            # i.e. mpCreative:::0:::_
             key_cols = [col for col in columns
                         if col.split(self.comb_key)[0] == rc_key]
             all_rel_cols.extend(key_cols)
             for idx, comp in enumerate(rc_cols[rc_key]):
+                # Get leading and/or trailing delimiter(s) for current component
+                # of the Auto relation columns
                 lead_delim = None
                 trail_delim = None
                 if 0 < idx <= len(rc_delimit[rc_key]):
                     lead_delim = rc_delimit[rc_key][idx - 1]
                 if idx < len(rc_delimit[rc_key]):
                     trail_delim = rc_delimit[rc_key][idx]
+                # Get all input columns that have a relation component as a
+                # base name, i.e. mpSize:::0:::_
                 rel_cols = [col for col in columns
                             if col.split(self.comb_key)[0] == comp
                             if col not in key_cols]
@@ -175,6 +203,9 @@ class Dict(object):
                     first_index = start_idx
                     check_cols = key_cols
                     bad_delim = False
+                # Get the first column belonging to a relation component, and
+                # any additional columns that will be sorted into that component
+                # column
                 first_col = self.get_first_comp_col(first_index,
                                                     check_cols,
                                                     lead_delim,
@@ -184,6 +215,9 @@ class Dict(object):
                                                          trail_delim)
                 if not first_col:
                     if return_missing:
+                        # If there is no column sorted into the first position
+                        # of a relation component, add the column to the
+                        # 'missing' list for the relation key.
                         if miss not in component_dict[rc_key]:
                             component_dict[rc_key][miss] = []
                         if not lead_delim:
@@ -196,11 +230,14 @@ class Dict(object):
                 component_dict[rc_key][comp].extend(seq_cols)
                 start_idx += len(component_dict[rc_key][comp])
 
+            # Get any columns which have not been sorted and whose index exceeds
+            # the current maximum of all sorted columns for the relation key
             extra_cols = [col for col in key_cols if
                           len(col.split(self.comb_key)) == 3]
             extra_cols = [col for col in extra_cols if
                           int(col.split(self.comb_key)[1]) >= start_idx]
             if return_missing:
+                # Get any missing indices in the extra columns
                 if miss not in component_dict[rc_key]:
                     component_dict[rc_key][miss] = []
                 if extra_cols:
@@ -216,6 +253,7 @@ class Dict(object):
             if return_bad_values:
                 valid_values.extend(extra_cols)
         if return_bad_values:
+            # Return any columns that could not be sorted in 'bad_values' key
             valid_values.extend([x for col in component_dict for sublist in
                                  component_dict[col].values() for x in
                                  sublist])
@@ -262,9 +300,22 @@ class Dict(object):
         return sequential_cols
 
     def get_relation_translations(self, columns, rc_auto, fix_bad_delim=True):
+        """Get dictionary of translations between key and component formats
+            for any relation columns in auto dictionary order
+
+        @param columns: Pandas Index of columns.
+        @param rc_auto: Tuple of dictionaries containing relation configuration
+            information as returned by RelationalConfig.get_auto_tuple().
+        @param fix_bad_delim: Flag to fix incorrect delimiters for first
+            components.
+        @return: Translation dictionary keyed by input columns with values of
+            their key/component equivalent.
+            i.e. {'mpCreative:::0:::_': 'mpSize:::0:::_'}
+        """
         if columns.empty:
             return {}
         rc_delimit = rc_auto[1]
+        # Get columns sorted into their relation keys and components
         sorted_columns = self.sort_relation_cols(
             columns, rc_auto, keep_bad_delim=fix_bad_delim)
         translation_dict = {}
@@ -276,6 +327,9 @@ class Dict(object):
                     continue
                 col_name = (sorted_columns[rc_key][comp][0]
                             .split(self.comb_key)[0])
+                # Get appropriate lead delimiter and index value based on
+                # whether the column is being translated from key to component
+                # or vise-versa
                 lead_delim = None
                 first_index = abs_index
                 if 0 < idx <= len(rc_delimit[rc_key]):
@@ -290,6 +344,8 @@ class Dict(object):
                 for col_idx, col in enumerate(sorted_columns[rc_key][comp]):
                     if not first_col:
                         col_idx += 1
+                    # Get delimiter specified in column. If not specified in
+                    # column name, use required value or default '_'
                     if len(col.split(self.comb_key)) != 3:
                         new_delim = '_'
                         if lead_delim:
@@ -300,6 +356,8 @@ class Dict(object):
                         new_name = rc_key
                         new_index = str(abs_index)
                         if fix_bad_delim and col_idx < 1 and lead_delim:
+                            # Set delimiter to required delimiter to ensure
+                            # expected column output
                             if new_delim != lead_delim:
                                 new_delim = lead_delim
                                 logging.warning(
@@ -318,6 +376,18 @@ class Dict(object):
 
     def translate_relation_cols(self, df, rc_auto, to_component=False,
                                 fix_bad_delim=True):
+        """Rename dataframe columns belonging to relation tables to all key
+            versions or all component versions
+
+        @param df: Dataframe with columns to be translated.
+        @param rc_auto: Tuple of dictionaries containing relation configuration
+            information as returned by RelationalConfig.get_auto_tuple().
+        @param to_component: Flag to translate all columns to component form,
+            i.e. ['mpCreative:::0:::_', 'mpCreative Length'] ->
+            ['mpSize:::0:::_', 'mpCreative Length']
+        @param fix_bad_delim: Flag to correct any incompatible lead delimiters.
+        @return: Dataframe with translated relation columns.
+        """
         if df.columns.empty:
             return df
         rc_keys = rc_auto[0].keys()

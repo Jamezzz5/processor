@@ -2634,13 +2634,12 @@ class AliChat(object):
                     word_idx[word] = [obj.id]
         return word_idx
 
-    @staticmethod
-    def convert_model_ids_to_message(db_model, model_ids, message='',
+    def convert_model_ids_to_message(self, db_model, model_ids, message='',
                                      html_table=False, table_name=''):
         message = message + '<br>'
         html_response = ''
         for idx, model_id in enumerate(model_ids):
-            obj = db_model.query.get(model_id)
+            obj = self.db.session.get(db_model, model_id)
             if obj:
                 html_response += """
                     {}.  <a href="{}" target="_blank">{}</a><br>
@@ -2650,11 +2649,10 @@ class AliChat(object):
                 html_response += '<br>{}'.format(table_elem)
         return message, html_response
 
-    @staticmethod
-    def check_db_model_table(db_model, words, model_ids):
+    def check_db_model_table(self, db_model, words, model_ids):
         table_response = ''
         tables = [x for x in db_model.get_table_name_to_task_dict().keys()]
-        cur_model = db_model.query.get(next(iter(model_ids)))
+        cur_model = self.db.session.get(db_model, next(iter(model_ids)))
         cur_model_name = re.split(r'[_\s]|(?<=[a-z])(?=[A-Z])', cur_model.name)
         cur_model_name = [x.lower() for x in cur_model_name]
         for table in tables:

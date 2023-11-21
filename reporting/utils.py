@@ -13,6 +13,9 @@ import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
 import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -152,7 +155,14 @@ def string_to_date(my_string):
         return dt.datetime.strptime(my_string, '%a %b %d %M:%S:%H %Y')
     elif (('-' in my_string) and (my_string[:2] == '20') and
           len(my_string) == 10):
-        return dt.datetime.strptime(my_string, '%Y-%m-%d')
+        try:
+            return dt.datetime.strptime(my_string, '%Y-%m-%d')
+        except ValueError:
+            try:
+                return dt.datetime.strptime(my_string, '%Y-%d-%m')
+            except ValueError:
+                logging.warning('Could not parse date: {}'.format(my_string))
+                return pd.NaT
     elif ((len(my_string) == 19) and (my_string[:2] == '20') and
           ('-' in my_string) and (':' in my_string)):
         return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
@@ -583,9 +593,14 @@ class SeleniumWrapper(object):
             if get_xpath_from_id:
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
+            if len(item) > 2 and item[2] == 'clear':
+                clear_val = elem.find_element_by_xpath(
+                    'preceding-sibling::span/a[@class="remove-single"]')
+                clear_val.click()
             elem.send_keys(item[0])
             if 'selectized' in elem_xpath:
                 elem.send_keys(u'\ue007')
+                wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
     def xpath_from_id_and_click(self, elem_id, sleep=2):
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
@@ -593,6 +608,17 @@ class SeleniumWrapper(object):
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
+
+    def wait_for_elem_load(self, elem_id, attempts=10, sleep_time=.5):
+        elem_found = False
+        elem_id = '#{}'.format(elem_id)
+        for x in range(attempts):
+            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            if e:
+                elem_found = True
+                break
+            time.sleep(sleep_time)
+        return elem_found
 
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100):

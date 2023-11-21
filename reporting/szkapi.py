@@ -227,7 +227,8 @@ class SzkApi(object):
             r = self.make_request(url, method='GET', headers=self.headers)
             logging.info('Checking report.  Attempt: {} \n'
                          'Response: {}'.format(attempt + 1, r.json()))
-            if r.json()['result']['executionStatus'] == 'FINISHED':
+            result = r.json()['result']
+            if result and result['executionStatus'] == 'FINISHED':
                 logging.info('Report has been generated.')
                 report_dl_url = r.json()['result']['files']
                 if report_dl_url:
@@ -238,6 +239,9 @@ class SzkApi(object):
                     r = self.make_request(url, method='GET',
                                           headers=self.headers)
                     report_dl_url = r.json()['result'][0]['link']
+                break
+            elif not result:
+                logging.warning('No result, returning blank.')
                 break
             elif 'fault' in r.json():
                 logging.warning('Fault in response: {}'.format(r.json()))
