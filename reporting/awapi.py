@@ -360,7 +360,7 @@ class AwApi(object):
                 return None
         return r
 
-    def report_to_df(self, r, fields):
+    def report_to_df(self, r, fields, filter_camp=True):
         logging.info('Response received converting to df.')
         if not r.json():
             logging.warning('No results in response returning blank df.')
@@ -375,7 +375,8 @@ class AwApi(object):
                 tdf = pd.json_normalize(results)
                 replace_dict = {x.return_name: x.display_name for x in fields}
                 tdf = tdf.rename(columns=replace_dict)
-                tdf = self.filter_on_campaign(tdf)
+                if filter_camp:
+                    tdf = self.filter_on_campaign(tdf)
                 tdf = self.clean_up_columns(tdf)
                 tdf = tdf.loc[:, ~tdf.columns.duplicated()].copy()
                 df = pd.concat([df, tdf], sort=False, ignore_index=True)
@@ -440,12 +441,13 @@ class AwApi(object):
             return row
         return row
 
-    def get_only_campaigns(self):
+    def get_campaign_and_client_ids(self):
         sd = dt.datetime.today()
         ed = dt.datetime.today()
         report = {
             "query": """
                         SELECT 
+                            customer.id,
                             campaign.id,
                             campaign.name
                         FROM campaign
@@ -459,38 +461,51 @@ class AwApi(object):
             logging.warning('No response returning blank df.')
             return self.df
         fields = self.parse_fields(fields=None)
-        self.df = self.report_to_df(r, fields)
+        self.df = self.report_to_df(r, fields, filter_camp=False)
         return self.df
+
+    @staticmethod
+    def check_df(df, str_filter, column='customer.id'):
+        if df.empty:
+            return False
+        else:
+            str_filter = str(str_filter).replace('-', '')
+            df = df[df[column].str.contains(str_filter)]
+            df = df.reset_index(drop=True)
+            if df.empty:
+                return False
+        return True
 
     def test_connection(self, acc_col, camp_col, acc_pre):
         results = []
         headers = self.get_client()
         try:
             r = self.client.get(self.access_url, headers=headers)
-        except (ConnectionError, NewConnectionError) as e:
+            df = self.get_campaign_and_client_ids()
+        except (ConnectionError, NewConnectionError, TypeError) as e:
             row = self.return_row(acc_col, False,
                                   acc_filter='Account')
             results.append(row)
-            return pd.DataFrame(data=results, columns=vmc.r_cols)
-        row = self.return_row(acc_col, True,
-                              acc_filter='Account')
-        results.append(row)
+            results = pd.DataFrame(data=results, columns=vmc.r_cols)
+            return results
+        if self.check_df(df, self.client_customer_id):
+            row = self.return_row(acc_col, True,
+                                  acc_filter='Account')
+            results.append(row)
+        else:
+            row = self.return_row(acc_col, False,
+                                  acc_filter='Account')
+            results.append(row)
+            results = pd.DataFrame(data=results, columns=vmc.r_cols)
+            return results
         if self.campaign_filter:
-            df = self.get_only_campaigns()
-            if df.empty:
-                row = self.return_row(camp_col, False,
+            if self.check_df(df, self.campaign_filter, column='Campaign'):
+                row = self.return_row(camp_col, True,
                                       acc_filter='Campaign')
                 results.append(row)
             else:
-                df = df[df['Campaign'].str.contains(str(self.campaign_filter))]
-                df = df.reset_index(drop=True)
-                if df.empty:
-                    row = self.return_row(camp_col, False,
-                                          acc_filter='Campaign')
-                    results.append(row)
-                else:
-                    row = self.return_row(camp_col, True,
-                                          acc_filter='Campaign')
-                    results.append(row)
+                row = self.return_row(camp_col, False,
+                                      acc_filter='Campaign')
+                results.append(row)
         results = pd.DataFrame(data=results, columns=vmc.r_cols)
         return results
