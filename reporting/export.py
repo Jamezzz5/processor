@@ -399,7 +399,6 @@ class DB(object):
         self.df_to_output(df)
         cur = self.connection.cursor()
         cur.copy_from(self.output, table=table_path, columns=columns)
-        cur.copy_from(self.output, table=table_path, columns=columns)
         self.connection.commit()
         cur.close()
 

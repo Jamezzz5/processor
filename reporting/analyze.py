@@ -669,7 +669,11 @@ class Analyze(object):
             min_date = tdf['{} - amin'.format(vmc.date)][0].date()
             sd = cds.p[vmc.startdate].date()
             ed = cds.p[vmc.enddate].date()
-            if max_date < sd:
+            if any(pd.isnull(x) for x in [max_date, min_date]):
+                msg = 'Max date {} or min date {} is not a date.'.format(
+                    max_date, min_date)
+                msg = (False, msg)
+            elif max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
                          max_date, sd))
