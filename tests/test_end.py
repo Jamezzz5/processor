@@ -92,4 +92,5 @@ class TestEndToEnd:
         df = df.groupby(group_cols)[metric_cols].sum().reset_index()
         file_name = os.path.join('tests', 'results.csv')
         rdf = pd.read_csv(file_name)
+        rdf = rdf.groupby(group_cols)[metric_cols].sum().reset_index()
         assert pd.testing.assert_frame_equal(df, rdf) is None
