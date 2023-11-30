@@ -2604,26 +2604,30 @@ class AliChat(object):
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
+        config = None
         file_name = os.path.join(config_path, config_name)
         try:
             with open(file_name, 'r') as f:
                 config = json.load(f)
         except IOError:
-            logging.error('{} not found.'.format(file_name))
+            logging.warning('{} not found.'.format(file_name))
         return config
 
     def get_openai_response(self, message):
-        openai.api_key = self.config['SECRET_KEY']
-        prompt = f"User: {message}\nAI:"
-        response = openai.Completion.create(
-            engine="text-davinci-002",
-            prompt=prompt,
-            max_tokens=1024,
-            n=1,
-            stop=None,
-            temperature=0.5,
-        )
-        return response.choices[0].text.strip()
+        response = 'OpenAI not configured could not get response.'
+        if self.config:
+            openai.api_key = self.config['SECRET_KEY']
+            prompt = f"User: {message}\nAI:"
+            response = openai.Completion.create(
+                engine="text-davinci-002",
+                prompt=prompt,
+                max_tokens=1024,
+                n=1,
+                stop=None,
+                temperature=0.5,
+            )
+            response = response.choices[0].text.strip()
+        return response
 
     @staticmethod
     def index_db_model_by_word(db_model):
