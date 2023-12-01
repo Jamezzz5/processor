@@ -119,6 +119,8 @@ def exceldate_to_datetime(excel_date):
 
 
 def string_to_date(my_string):
+    month_list = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec']
     if ('/' in my_string and my_string[-4:][:2] != '20' and
             ':' not in my_string and len(my_string) in [6, 7, 8]):
         try:
@@ -170,6 +172,10 @@ def string_to_date(my_string):
     elif ((len(my_string) == 7 or len(my_string) == 8) and
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
+    elif ((len(my_string) == 6 or len(my_string) == 5) and
+            my_string[-3:] in month_list):
+        my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
+        return dt.datetime.strptime(my_string, '%d-%b-%Y')
     else:
         return my_string
 
