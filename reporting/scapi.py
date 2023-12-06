@@ -283,3 +283,66 @@ class ScApi(object):
         df[col] = df[col].map(map_dict).fillna('None')
         df = pd.concat([df, df[col].apply(pd.Series)], axis=1)
         return df
+
+    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
+        self.get_client()
+        r = self.get_campaign_ids()
+        if r.status_code == 200:
+            row = [acc_col, ' '.join([success_msg, str(self.ad_account_id)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Permissions NOT Granted. '
+                   'Double Check Account ID and'
+                   ' Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, msg, r['debug_message']]),
+                   False]
+            results.append(row)
+        return results, r
+
+    def check_campaign_id(self, results, camp_col, success_msg, failure_msg):
+        self.get_client()
+        r = self.get_campaign_ids()
+        if 'campaigns' in r.json() and r.json()['campaigns']:
+            cids = {x['campaign']['id']: x['campaign']['name']
+                    for x in r.json()['campaigns']}
+            if self.campaign_filter:
+                cids = {x: cids[x] for x in cids if
+                        self.campaign_filter in cids[x]}
+            if cids:
+                camp_names = ' '.join([cids[x] for x in cids])
+                row = [camp_col, ' '.join([success_msg, camp_names]),
+                       True]
+                results.append(row)
+            else:
+                msg = ('Campaign name in Filter not found in Account. '
+                       'Double Check campaign filter name matches the platform'
+                       '\n Error Msg:')
+                r = r.json()
+                row = [camp_col, ' '.join([failure_msg,
+                                           str(self.campaign_filter), msg]),
+                       False]
+                results.append(row)
+            return results, r
+        else:
+            msg = ('No Campaigns in Account. '
+                   'Double Check Platform account for campaigns'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [camp_col, ' '.join([failure_msg, msg,
+                                       str(self.campaign_filter)]), False]
+            results.append(row)
+        return results, r
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results, r = self.check_advertiser_id(
+            [], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results, r = self.check_campaign_id(
+            [], camp_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
