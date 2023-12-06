@@ -496,7 +496,7 @@ class SeleniumWrapper(object):
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
         driver.execute("send_command", params)
 
-    def go_to_url(self, url, sleep=5):
+    def go_to_url(self, url, sleep=5, elem_id=''):
         logging.info('Going to url {}.'.format(url))
         max_attempts = 10
         for x in range(max_attempts):
@@ -509,7 +509,10 @@ class SeleniumWrapper(object):
                 if x > (max_attempts - 2):
                     logging.warning('More than ten attempts returning.')
                     return False
-        time.sleep(sleep)
+        if elem_id:
+            self.wait_for_elem_load(elem_id)
+        else:
+            time.sleep(sleep)
         return True
 
     @staticmethod
@@ -616,7 +619,7 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, attempts=10, sleep_time=.5):
+    def wait_for_elem_load(self, elem_id, attempts=100, sleep_time=.05):
         elem_found = False
         elem_id = '#{}'.format(elem_id)
         for x in range(attempts):
