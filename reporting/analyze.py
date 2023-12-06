@@ -80,7 +80,7 @@ class Analyze(object):
                        [vmc.purchase, 'CPP']]
     topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
                              vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
-                             vmc.landingpage,  vmc.btnclick, vmc.purchase,
+                             vmc.landingpage, vmc.btnclick, vmc.purchase,
                              'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
@@ -145,8 +145,8 @@ class Analyze(object):
             logging.warning('Df does not have cols {}'.format(miss_cols))
             return False
         df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
-                                          else x[vmc.cost].sum() /
-                                          x[dctc.PNC].sum())
+        else x[vmc.cost].sum() /
+             x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
             delivery_msg = 'Nothing has delivered in full.'
@@ -676,17 +676,17 @@ class Analyze(object):
             elif max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
-                         max_date, sd))
+                    max_date, sd))
                 msg = (False, msg)
             elif min_date > ed:
                 msg = ('First day in raw file {} is less than end date {}.\n'
                        'Result will be blank.  Change end date.'.format(
-                         min_date, ed))
+                    min_date, ed))
                 msg = (False, msg)
             else:
                 msg = ('Some or all data in raw file with date range {} - {} '
                        'falls between start and end dates {} - {}'.format(
-                         sd, ed, min_date, max_date))
+                    sd, ed, min_date, max_date))
                 msg = (True, msg)
         cd[vmc.startdate][cds_name] = msg
         return cd
@@ -736,7 +736,7 @@ class Analyze(object):
                         msg = (
                             False, 'Old file total {} was greater than new '
                                    'file total {} for col {}'.format(
-                                      old_total, total, col))
+                                old_total, total, col))
                 cd[col][cds_name] = msg
         return cd
 
@@ -895,7 +895,7 @@ class Analyze(object):
                 'Dataframe empty, could not determine missing ad rate.')
             return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
-                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
                 (df[dctc.AR] == 'nan')]
@@ -1279,7 +1279,7 @@ class CheckLastRow(AnalyzeBase):
         totals_row = df.iloc[-1, :]
         if col_sums.equals(totals_row):
             new_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                  self.new_last_line: ['1']})
+                                   self.new_last_line: ['1']})
             totals_df = pd.concat([totals_df, new_df], ignore_index=True)
         return totals_df
 
@@ -1359,6 +1359,11 @@ class CheckPackageCapping(AnalyzeBase):
             logging.warning('Missing columns: {}'.format(missing_cols))
             return pd.DataFrame()
         df = df[cols]
+        if any(not isinstance(x, (int, np.integer)) or
+               not isinstance(y, (int, np.integer)) for x, y in
+               df[[self.plan_net_temp, vmc.cost]].values):
+            logging.warning('Package Caps may not be formatted correctly')
+            return pd.DataFrame()
         df = df.groupby([temp_package_cap])
         df = df.apply(lambda x:
                       0 if x[self.plan_net_temp].sum() == 0
@@ -1616,7 +1621,7 @@ class CheckApiDateLength(AnalyzeBase):
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -1692,7 +1697,7 @@ class CheckColumnNames(AnalyzeBase):
             transforms = [x for x in transforms if x.split('::')[0]
                           in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = source.get_raw_df(nrows=first_row+5)
+            tdf = source.get_raw_df(nrows=first_row + 5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
             cols = [str(x) for x in tdf.columns if str(x) != 'nan']
@@ -2428,7 +2433,7 @@ class CheckRawFileUpdateTime(AnalyzeBase):
                 if last_update.date() == dt.datetime.today().date():
                     update_tier = self.update_tier_today
                 elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                        dt.datetime.today() - dt.timedelta(days=7)).date():
                     update_tier = self.update_tier_week
                 else:
                     update_tier = self.update_tier_greater_week
