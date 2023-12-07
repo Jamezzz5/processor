@@ -521,7 +521,18 @@ class SeleniumWrapper(object):
         time.sleep(sleep)
 
     def click_on_xpath(self, xpath, sleep=2):
-        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
+        elem_click = True
+        for x in range(10):
+            elem = self.browser.find_element_by_xpath(xpath)
+            try:
+                self.click_on_elem(elem, sleep)
+            except ex.ElementNotInteractableException as e:
+                logging.info(e)
+                time.sleep(.1)
+                elem_click = False
+            if elem_click:
+                break
+        return elem_click
 
     def quit(self):
         self.browser.quit()
@@ -619,14 +630,23 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, attempts=100, sleep_time=.05):
+    def wait_for_elem_load(self, elem_id='', attempts=100, sleep_time=.05,
+                           xpath='', visible=False):
         elem_found = False
         elem_id = '#{}'.format(elem_id)
+        by_type = By.CSS_SELECTOR
+        if xpath:
+            elem_id = xpath
+            by_type = By.XPATH
         for x in range(attempts):
-            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            e = self.browser.find_elements(by_type, elem_id)
             if e:
-                elem_found = True
-                break
+                elem_visible = True
+                if visible:
+                    elem_visible = e[0].is_displayed()
+                if elem_visible:
+                    elem_found = True
+                    break
             time.sleep(sleep_time)
         return elem_found
 
