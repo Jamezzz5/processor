@@ -619,11 +619,14 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, attempts=100, sleep_time=.05):
+    def wait_for_elem_load(self, elem_id, selector_type='id', attempts=100,
+                           sleep_time=.05):
         elem_found = False
-        elem_id = '#{}'.format(elem_id)
+        select_types = {'id': By.ID, 'class': By.CLASS_NAME, 'xpath': By.XPATH,
+                        'css': By.CSS_SELECTOR}
+        selector = select_types[selector_type]
         for x in range(attempts):
-            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            e = self.browser.find_elements(selector, elem_id)
             if e:
                 elem_found = True
                 break
