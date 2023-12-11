@@ -135,7 +135,9 @@ class AmzApi(object):
                     dsp_id = str(dsp_profile['profileId'])
                     self.headers['Amazon-Advertising-API-Scope'] = dsp_id
                     url = '{}/dsp/advertisers'.format(endpoint)
-                    r = self.make_request(url, method='GET', headers=self.headers)
+                    r = self.make_request(url, method='GET',
+                                          headers=self.headers,
+                                          json_response_key='response')
                     profile = [x for x in r.json()['response'] if
                                self.advertiser_id in x['advertiserId']]
                     if profile:
@@ -417,27 +419,31 @@ class AmzApi(object):
             time.sleep(30)
 
     def make_request(self, url, method, body=None, params=None, headers=None,
-                     attempt=1, json_response=True):
+                     attempt=1, json_response=True, json_response_key=''):
         self.get_client()
-        try:
-            self.r = self.raw_request(url, method, body=body, params=params,
-                                      headers=headers)
-        except (requests.exceptions.SSLError,
-                requests.exceptions.ConnectionError) as e:
-            logging.warning('Warning SSLError as follows {}'.format(e))
-            time.sleep(30)
-            self.r = self.make_request(url=url, method=method, body=body,
-                                       params=params, attempt=attempt,
-                                       json_response=json_response)
-        if json_response and 'error' in self.r.json():
-            logging.warning('Request error.  Retrying {}'.format(self.r.json()))
-            time.sleep(30)
-            attempt += 1
-            if attempt > 10:
-                self.request_error()
-            self.r = self.make_request(url=url, method=method, body=body,
-                                       params=params, attempt=attempt,
-                                       json_response=json_response)
+        request_success = True
+        for x in range(10):
+            try:
+                self.r = self.raw_request(url, method, body=body, params=params,
+                                          headers=headers)
+            except (requests.exceptions.SSLError,
+                    requests.exceptions.ConnectionError) as e:
+                logging.warning('Warning SSLError as follows {}'.format(e))
+                request_success = False
+            json_error = json_response and 'error' in self.r.json()
+            json_error_2 = (json_response_key and
+                            json_response_key not in self.r.json())
+            if json_error or json_error_2:
+                logging.warning(
+                    'Request error.  Retrying {}'.format(self.r.json()))
+                request_success = False
+            if request_success:
+                break
+            else:
+                time.sleep(30)
+                attempt += 1
+                if attempt > 10:
+                    self.request_error()
         return self.r
 
     def raw_request(self, url, method, body=None, params=None, headers=None):

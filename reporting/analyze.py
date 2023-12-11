@@ -146,7 +146,7 @@ class Analyze(object):
             return False
         df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
                                           else x[vmc.cost].sum() /
-                                          x[dctc.PNC].sum())
+                                               x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
             delivery_msg = 'Nothing has delivered in full.'
@@ -736,7 +736,7 @@ class Analyze(object):
                         msg = (
                             False, 'Old file total {} was greater than new '
                                    'file total {} for col {}'.format(
-                                      old_total, total, col))
+                                old_total, total, col))
                 cd[col][cds_name] = msg
         return cd
 
@@ -1359,6 +1359,11 @@ class CheckPackageCapping(AnalyzeBase):
             logging.warning('Missing columns: {}'.format(missing_cols))
             return pd.DataFrame()
         df = df[cols]
+        if any(not isinstance(x, (int, np.integer)) or
+               not isinstance(y, (int, np.integer)) for x, y in
+               df[[self.plan_net_temp, vmc.cost]].values):
+            logging.warning('Package Caps may not be formatted correctly')
+            return pd.DataFrame()
         df = df.groupby([temp_package_cap])
         df = df.apply(lambda x:
                       0 if x[self.plan_net_temp].sum() == 0
@@ -2079,7 +2084,8 @@ class CheckDoubleCounting(AnalyzeBase):
                             logging.warning('No empty rules for {}. Could not '
                                             'auto-fix double counting.'
                                             .format(vk))
-                vks.remove(vk)
+                if vk in vks:
+                    vks.remove(vk)
         self.aly.matrix.vm_df = vm_df
         return vm_df
 

@@ -119,6 +119,8 @@ def exceldate_to_datetime(excel_date):
 
 
 def string_to_date(my_string):
+    month_list = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec']
     if ('/' in my_string and my_string[-4:][:2] != '20' and
             ':' not in my_string and len(my_string) in [6, 7, 8]):
         try:
@@ -170,6 +172,10 @@ def string_to_date(my_string):
     elif ((len(my_string) == 7 or len(my_string) == 8) and
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
+    elif ((len(my_string) == 6 or len(my_string) == 5) and
+            my_string[-3:] in month_list):
+        my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
+        return dt.datetime.strptime(my_string, '%d-%b-%Y')
     else:
         return my_string
 
@@ -490,7 +496,7 @@ class SeleniumWrapper(object):
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
         driver.execute("send_command", params)
 
-    def go_to_url(self, url, sleep=5):
+    def go_to_url(self, url, sleep=5, elem_id=''):
         logging.info('Going to url {}.'.format(url))
         max_attempts = 10
         for x in range(max_attempts):
@@ -503,7 +509,10 @@ class SeleniumWrapper(object):
                 if x > (max_attempts - 2):
                     logging.warning('More than ten attempts returning.')
                     return False
-        time.sleep(sleep)
+        if elem_id:
+            self.wait_for_elem_load(elem_id)
+        else:
+            time.sleep(sleep)
         return True
 
     @staticmethod
@@ -512,7 +521,18 @@ class SeleniumWrapper(object):
         time.sleep(sleep)
 
     def click_on_xpath(self, xpath, sleep=2):
-        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
+        elem_click = True
+        for x in range(10):
+            elem = self.browser.find_element_by_xpath(xpath)
+            try:
+                self.click_on_elem(elem, sleep)
+            except ex.ElementNotInteractableException as e:
+                logging.info(e)
+                time.sleep(.1)
+                elem_click = False
+            if elem_click:
+                break
+        return elem_click
 
     def quit(self):
         self.browser.quit()
@@ -610,14 +630,23 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, attempts=10, sleep_time=.5):
+    def wait_for_elem_load(self, elem_id='', attempts=100, sleep_time=.05,
+                           xpath='', visible=False):
         elem_found = False
         elem_id = '#{}'.format(elem_id)
+        by_type = By.CSS_SELECTOR
+        if xpath:
+            elem_id = xpath
+            by_type = By.XPATH
         for x in range(attempts):
-            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            e = self.browser.find_elements(by_type, elem_id)
             if e:
-                elem_found = True
-                break
+                elem_visible = True
+                if visible:
+                    elem_visible = e[0].is_displayed()
+                if elem_visible:
+                    elem_found = True
+                    break
             time.sleep(sleep_time)
         return elem_found
 
