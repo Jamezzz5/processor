@@ -643,7 +643,11 @@ class SeleniumWrapper(object):
             if e:
                 elem_visible = True
                 if visible:
-                    elem_visible = e[0].is_displayed()
+                    try:
+                        elem_visible = e[0].is_displayed()
+                    except ex.StaleElementReferenceException:
+                        e = self.browser.find_elements(by_type, elem_id)
+                        elem_visible = e[0].is_displayed()
                 if elem_visible:
                     elem_found = True
                     break
