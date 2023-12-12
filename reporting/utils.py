@@ -465,6 +465,10 @@ class SeleniumWrapper(object):
         self.headless = headless
         self.browser, self.co = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
+        self.select_id = By.ID
+        self.select_class = By.CLASS_NAME
+        self.select_xpath = By.XPATH
+        self.select_css = By.CSS_SELECTOR
 
     def init_browser(self, headless):
         download_path = os.path.join(os.getcwd(), 'tmp')
@@ -521,7 +525,18 @@ class SeleniumWrapper(object):
         time.sleep(sleep)
 
     def click_on_xpath(self, xpath, sleep=2):
-        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
+        elem_click = True
+        for x in range(10):
+            elem = self.browser.find_element_by_xpath(xpath)
+            try:
+                self.click_on_elem(elem, sleep)
+            except ex.ElementNotInteractableException as e:
+                logging.info(e)
+                time.sleep(.1)
+                elem_click = False
+            if elem_click:
+                break
+        return elem_click
 
     def quit(self):
         self.browser.quit()
@@ -619,17 +634,23 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, selector_type='id', attempts=100,
-                           sleep_time=.05):
+    def wait_for_elem_load(self, elem_id, selector=None, attempts=100,
+                           sleep_time=.05, visible=False):
+        selector = selector if selector else self.select_id
         elem_found = False
-        select_types = {'id': By.ID, 'class': By.CLASS_NAME, 'xpath': By.XPATH,
-                        'css': By.CSS_SELECTOR}
-        selector = select_types[selector_type]
         for x in range(attempts):
             e = self.browser.find_elements(selector, elem_id)
             if e:
-                elem_found = True
-                break
+                elem_visible = True
+                if visible:
+                    try:
+                        elem_visible = e[0].is_displayed()
+                    except ex.StaleElementReferenceException:
+                        e = self.browser.find_elements(selector, elem_id)
+                        elem_visible = e[0].is_displayed()
+                if elem_visible:
+                    elem_found = True
+                    break
             time.sleep(sleep_time)
         return elem_found
 
