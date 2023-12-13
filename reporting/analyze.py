@@ -2079,7 +2079,8 @@ class CheckDoubleCounting(AnalyzeBase):
                             logging.warning('No empty rules for {}. Could not '
                                             'auto-fix double counting.'
                                             .format(vk))
-                vks.remove(vk)
+                if vk in vks:
+                    vks.remove(vk)
         self.aly.matrix.vm_df = vm_df
         return vm_df
 
