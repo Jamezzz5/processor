@@ -158,9 +158,12 @@ class ScApi(object):
         timezone = r.json()['adaccounts'][0]['adaccount']['timezone']
         return timezone
 
-    def get_campaigns(self):
+    def get_campaign_ids(self):
         act_url = 'adaccounts/{}/campaigns'.format(self.ad_account_id)
         r = self.make_request(act_url)
+        return r
+
+    def get_campaigns(self):
         cids = {x['campaign']['id']: x['campaign']['name']
                 for x in r.json()['campaigns']}
         if self.campaign_filter:
