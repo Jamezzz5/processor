@@ -465,6 +465,10 @@ class SeleniumWrapper(object):
         self.headless = headless
         self.browser, self.co = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
+        self.select_id = By.ID
+        self.select_class = By.CLASS_NAME
+        self.select_xpath = By.XPATH
+        self.select_css = By.CSS_SELECTOR
 
     def init_browser(self, headless):
         download_path = os.path.join(os.getcwd(), 'tmp')
@@ -630,23 +634,19 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id='', attempts=100, sleep_time=.05,
-                           xpath='', visible=False):
+    def wait_for_elem_load(self, elem_id, selector=None, attempts=100,
+                           sleep_time=.05, visible=False):
+        selector = selector if selector else self.select_id
         elem_found = False
-        elem_id = '#{}'.format(elem_id)
-        by_type = By.CSS_SELECTOR
-        if xpath:
-            elem_id = xpath
-            by_type = By.XPATH
         for x in range(attempts):
-            e = self.browser.find_elements(by_type, elem_id)
+            e = self.browser.find_elements(selector, elem_id)
             if e:
                 elem_visible = True
                 if visible:
                     try:
                         elem_visible = e[0].is_displayed()
                     except ex.StaleElementReferenceException:
-                        e = self.browser.find_elements(by_type, elem_id)
+                        e = self.browser.find_elements(selector, elem_id)
                         elem_visible = e[0].is_displayed()
                 if elem_visible:
                     elem_found = True
