@@ -88,9 +88,9 @@ class TestEndToEnd:
         group_cols = [vmc.vendorkey, vmc.date, dctc.CAM, dctc.VEN, dctc.COU,
                       dctc.ENV]
         metric_cols = [vmc.impressions, vmc.clicks, vmc.cost]
-        df = pd.read_csv(vmc.output_file)
+        df = utl.import_read_csv(vmc.output_file)
         df = df.groupby(group_cols)[metric_cols].sum().reset_index()
         file_name = os.path.join('tests', 'results.csv')
-        rdf = pd.read_csv(file_name)
+        rdf = utl.import_read_csv(file_name)
         rdf = rdf.groupby(group_cols)[metric_cols].sum().reset_index()
         assert pd.testing.assert_frame_equal(df, rdf) is None
