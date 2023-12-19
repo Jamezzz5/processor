@@ -530,7 +530,8 @@ class SeleniumWrapper(object):
             elem = self.browser.find_element_by_xpath(xpath)
             try:
                 self.click_on_elem(elem, sleep)
-            except ex.ElementNotInteractableException as e:
+            except (ex.ElementNotInteractableException,
+                    ex.ElementClickInterceptedException) as e:
                 logging.info(e)
                 time.sleep(.1)
                 elem_click = False
@@ -612,6 +613,20 @@ class SeleniumWrapper(object):
             time.sleep(5)
         return ads
 
+    def send_keys_wrapper(self, elem, value):
+        elem_sent = True
+        for x in range(10):
+            try:
+                elem.send_keys(value)
+            except ex.ElementNotInteractableException as e:
+                logging.warning(e)
+                time.sleep(.1)
+                self.browser.execute_script("window.scrollTo(0, 0)")
+                elem_sent = False
+            if elem_sent:
+                break
+        return elem_sent
+
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -622,13 +637,17 @@ class SeleniumWrapper(object):
                 clear_val = elem.find_element_by_xpath(
                     'preceding-sibling::span/a[@class="remove-single"]')
                 clear_val.click()
-            elem.send_keys(item[0])
+            self.send_keys_wrapper(elem, item[0])
             if 'selectized' in elem_xpath:
                 elem.send_keys(u'\ue007')
                 wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
-    def xpath_from_id_and_click(self, elem_id, sleep=2):
+    def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
+        if load_elem_id:
+            sleep = .1
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
+        if load_elem_id:
+            self.wait_for_elem_load(load_elem_id)
 
     @staticmethod
     def get_xpath_from_id(elem_id):
