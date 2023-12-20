@@ -234,7 +234,9 @@ class AmzApi(object):
                 "format": "JSON",
                 "metrics": ['totalCost', 'impressions', 'clickThroughs',
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
-                            'videoThirdQuartile', 'videoComplete'],
+                            'videoThirdQuartile', 'videoComplete',
+                            'totalSales14d', 'totalPurchases14d',
+                            'totalROAS14d'],
                 "type": "CAMPAIGN",
                 "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
                 "timeUnit": "DAILY"
