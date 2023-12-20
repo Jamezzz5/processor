@@ -168,7 +168,11 @@ def string_to_date(my_string):
                 return pd.NaT
     elif ((len(my_string) == 19) and (my_string[:2] == '20') and
           ('-' in my_string) and (':' in my_string)):
-        return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
+        try:
+            return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif ((len(my_string) == 7 or len(my_string) == 8) and
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
