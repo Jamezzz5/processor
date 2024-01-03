@@ -528,6 +528,13 @@ class SeleniumWrapper(object):
         elem.click()
         time.sleep(sleep)
 
+    def click_error(self, elem, e):
+        logging.info(e)
+        scroll_script = "arguments[0].scrollIntoView();"
+        self.browser.execute_script(scroll_script,elem)
+        time.sleep(.1)
+        return False
+
     def click_on_xpath(self, xpath, sleep=2):
         elem_click = True
         for x in range(10):
@@ -536,11 +543,11 @@ class SeleniumWrapper(object):
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException) as e:
-                logging.info(e)
-                time.sleep(.1)
-                elem_click = False
+                elem_click = self.click_error(elem, e)
             if elem_click:
                 break
+            else:
+                elem_click = True
         return elem_click
 
     def quit(self):
@@ -623,12 +630,11 @@ class SeleniumWrapper(object):
             try:
                 elem.send_keys(value)
             except ex.ElementNotInteractableException as e:
-                logging.warning(e)
-                time.sleep(.1)
-                self.browser.execute_script("window.scrollTo(0, 0)")
-                elem_sent = False
+                elem_sent = self.click_error(elem, e)
             if elem_sent:
                 break
+            else:
+                elem_sent = True
         return elem_sent
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
