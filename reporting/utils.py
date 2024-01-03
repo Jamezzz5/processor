@@ -168,7 +168,11 @@ def string_to_date(my_string):
                 return pd.NaT
     elif ((len(my_string) == 19) and (my_string[:2] == '20') and
           ('-' in my_string) and (':' in my_string)):
-        return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
+        try:
+            return dt.datetime.strptime(my_string, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            logging.warning('Could not parse date: {}'.format(my_string))
+            return pd.NaT
     elif ((len(my_string) == 7 or len(my_string) == 8) and
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
@@ -465,6 +469,10 @@ class SeleniumWrapper(object):
         self.headless = headless
         self.browser, self.co = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
+        self.select_id = By.ID
+        self.select_class = By.CLASS_NAME
+        self.select_xpath = By.XPATH
+        self.select_css = By.CSS_SELECTOR
 
     def init_browser(self, headless):
         download_path = os.path.join(os.getcwd(), 'tmp')
@@ -521,7 +529,19 @@ class SeleniumWrapper(object):
         time.sleep(sleep)
 
     def click_on_xpath(self, xpath, sleep=2):
-        self.click_on_elem(self.browser.find_element_by_xpath(xpath), sleep)
+        elem_click = True
+        for x in range(10):
+            elem = self.browser.find_element_by_xpath(xpath)
+            try:
+                self.click_on_elem(elem, sleep)
+            except (ex.ElementNotInteractableException,
+                    ex.ElementClickInterceptedException) as e:
+                logging.info(e)
+                time.sleep(.1)
+                elem_click = False
+            if elem_click:
+                break
+        return elem_click
 
     def quit(self):
         self.browser.quit()
@@ -597,6 +617,20 @@ class SeleniumWrapper(object):
             time.sleep(5)
         return ads
 
+    def send_keys_wrapper(self, elem, value):
+        elem_sent = True
+        for x in range(10):
+            try:
+                elem.send_keys(value)
+            except ex.ElementNotInteractableException as e:
+                logging.warning(e)
+                time.sleep(.1)
+                self.browser.execute_script("window.scrollTo(0, 0)")
+                elem_sent = False
+            if elem_sent:
+                break
+        return elem_sent
+
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -607,26 +641,39 @@ class SeleniumWrapper(object):
                 clear_val = elem.find_element_by_xpath(
                     'preceding-sibling::span/a[@class="remove-single"]')
                 clear_val.click()
-            elem.send_keys(item[0])
+            self.send_keys_wrapper(elem, item[0])
             if 'selectized' in elem_xpath:
                 elem.send_keys(u'\ue007')
                 wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
-    def xpath_from_id_and_click(self, elem_id, sleep=2):
+    def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
+        if load_elem_id:
+            sleep = .1
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
+        if load_elem_id:
+            self.wait_for_elem_load(load_elem_id)
 
     @staticmethod
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, attempts=100, sleep_time=.05):
+    def wait_for_elem_load(self, elem_id, selector=None, attempts=100,
+                           sleep_time=.05, visible=False):
+        selector = selector if selector else self.select_id
         elem_found = False
-        elem_id = '#{}'.format(elem_id)
         for x in range(attempts):
-            e = self.browser.find_elements(By.CSS_SELECTOR, elem_id)
+            e = self.browser.find_elements(selector, elem_id)
             if e:
-                elem_found = True
-                break
+                elem_visible = True
+                if visible:
+                    try:
+                        elem_visible = e[0].is_displayed()
+                    except ex.StaleElementReferenceException:
+                        e = self.browser.find_elements(selector, elem_id)
+                        elem_visible = e[0].is_displayed()
+                if elem_visible:
+                    elem_found = True
+                    break
             time.sleep(sleep_time)
         return elem_found
 

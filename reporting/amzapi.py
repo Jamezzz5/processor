@@ -234,7 +234,9 @@ class AmzApi(object):
                 "format": "JSON",
                 "metrics": ['totalCost', 'impressions', 'clickThroughs',
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
-                            'videoThirdQuartile', 'videoComplete'],
+                            'videoThirdQuartile', 'videoComplete',
+                            'totalSales14d', 'totalPurchases14d',
+                            'totalROAS14d'],
                 "type": "CAMPAIGN",
                 "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
                 "timeUnit": "DAILY"
@@ -421,8 +423,9 @@ class AmzApi(object):
     def make_request(self, url, method, body=None, params=None, headers=None,
                      attempt=1, json_response=True, json_response_key=''):
         self.get_client()
-        request_success = True
-        for x in range(10):
+        attempts = 10
+        for x in range(attempts):
+            request_success = True
             try:
                 self.r = self.raw_request(url, method, body=body, params=params,
                                           headers=headers)
@@ -442,7 +445,7 @@ class AmzApi(object):
             else:
                 time.sleep(30)
                 attempt += 1
-                if attempt > 10:
+                if attempt > attempts:
                     self.request_error()
         return self.r
 
