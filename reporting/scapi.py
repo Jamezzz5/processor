@@ -351,3 +351,4 @@ class ScApi(object):
         results, r = self.check_campaign_id(
             [], camp_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
+
