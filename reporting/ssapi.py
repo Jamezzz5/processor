@@ -13,6 +13,7 @@ class SsApi(object):
     img_url = 'img_url'
     ads = 'ads'
     date = 'date'
+    hour = 'hour'
     device = 'device'
     device_mobile = 'Mobile'
     device_desktop = 'Desktop'
@@ -109,6 +110,7 @@ class SsApi(object):
         date = self.ss_file_path_date.split('\\')[-1].split('/')[-1]
         date = dt.datetime.strptime(date, '%y%m%d_%H')
         df[self.date] = date
+        df[self.hour] = date.hour
         output_file = os.path.join(self.ss_file_path_date, self.output_file)
         df.to_excel(output_file, index=False)
         df.to_excel(self.output_file, index=False)
