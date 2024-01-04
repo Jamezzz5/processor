@@ -149,7 +149,7 @@ class Site(object):
             file_name = url
             for x in [self.prots, self.www] + self.tlds:
                 file_name = file_name.replace(x, '')
-            file_name = file_name.replace('.', '')
+            file_name = file_name.replace('.', '').replace('/', ' ')
             if device:
                 file_name = '{}_{}'.format(file_name, device)
             file_name += '.png'
