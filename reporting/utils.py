@@ -638,17 +638,20 @@ class SeleniumWrapper(object):
         return elem_sent
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
+        select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
             if get_xpath_from_id:
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
-            if len(item) > 2 and item[2] == 'clear':
-                clear_val = elem.find_element_by_xpath(
-                    'preceding-sibling::span/a[@class="remove-single"]')
-                clear_val.click()
+            clear_specified = len(item) > 2 and item[2] == 'clear'
+            if select_xpath in elem_xpath or clear_specified:
+                clear_x = 'preceding-sibling::span/a[@class="remove-single"]'
+                clear_val = elem.find_elements_by_xpath(clear_x)
+                if len(clear_val) > 0:
+                    clear_val[0].click()
             self.send_keys_wrapper(elem, item[0])
-            if 'selectized' in elem_xpath:
+            if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
                 wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
