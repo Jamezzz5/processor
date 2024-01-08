@@ -686,6 +686,14 @@ class SeleniumWrapper(object):
             time.sleep(sleep_time)
         return elem_found
 
+    def count_rows_in_table(self, elem_id=''):
+        elem = self.browser.find_element
+        if elem_id:
+            elem = elem(By.ID, elem_id)
+        tbody = elem.find_element(By.CSS_SELECTOR, "table > tbody")
+        rows = tbody.find_elements(By.TAG_NAME, "tr")
+        return len(rows)
+
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100):
     try:
