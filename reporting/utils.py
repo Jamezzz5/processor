@@ -793,13 +793,19 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
 
 def get_next_number_from_list(words, lower_name, cur_model_name,
                               last_instance=False):
+    if lower_name not in words:
+        for x in lower_name.split('_'):
+            if x in words:
+                lower_name = x
+                break
     post_words = words[words.index(lower_name):]
     if last_instance:
         idx = next(i for i in reversed(range(len(post_words)))
                    if post_words[i] == lower_name)
         post_words = post_words[idx:]
     cost = [x for x in post_words if
-            any(y.isdigit() for y in x) and x != cur_model_name]
+            any(y.isdigit() for y in x) and
+            x not in [cur_model_name, lower_name]]
     if cost:
         if len(cost) > 1:
             cost_append = ''
@@ -836,10 +842,12 @@ def get_next_values_from_list(first_list, match_list=None, break_list=None,
                 first_list = first_list[:first_list.index(value)]
                 break
     first_list = [x for x in first_list if x not in name_list]
+    delimit = ''
     if not date_search:
-        first_list = [x for x in first_list
+        first_list = [x.capitalize() for x in first_list
                       if not (x.isdigit() and int(x) > 10)]
-    first_list = ''.join(first_list).split('.')[0].split(',')
+        delimit = ' '
+    first_list = delimit.join(first_list).split('.')[0].split(',')
     first_list = [x.strip(' ') for x in first_list]
     return first_list
 
