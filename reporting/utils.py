@@ -528,6 +528,13 @@ class SeleniumWrapper(object):
         elem.click()
         time.sleep(sleep)
 
+    def click_error(self, elem, e):
+        logging.info(e)
+        scroll_script = "arguments[0].scrollIntoView();"
+        self.browser.execute_script(scroll_script,elem)
+        time.sleep(.1)
+        return False
+
     def click_on_xpath(self, xpath, sleep=2):
         elem_click = True
         for x in range(10):
@@ -536,11 +543,11 @@ class SeleniumWrapper(object):
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException) as e:
-                logging.info(e)
-                time.sleep(.1)
-                elem_click = False
+                elem_click = self.click_error(elem, e)
             if elem_click:
                 break
+            else:
+                elem_click = True
         return elem_click
 
     def quit(self):
@@ -623,26 +630,28 @@ class SeleniumWrapper(object):
             try:
                 elem.send_keys(value)
             except ex.ElementNotInteractableException as e:
-                logging.warning(e)
-                time.sleep(.1)
-                self.browser.execute_script("window.scrollTo(0, 0)")
-                elem_sent = False
+                elem_sent = self.click_error(elem, e)
             if elem_sent:
                 break
+            else:
+                elem_sent = True
         return elem_sent
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
+        select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
             if get_xpath_from_id:
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
-            if len(item) > 2 and item[2] == 'clear':
-                clear_val = elem.find_element_by_xpath(
-                    'preceding-sibling::span/a[@class="remove-single"]')
-                clear_val.click()
+            clear_specified = len(item) > 2 and item[2] == 'clear'
+            if select_xpath in elem_xpath or clear_specified:
+                clear_x = 'preceding-sibling::span/a[@class="remove-single"]'
+                clear_val = elem.find_elements_by_xpath(clear_x)
+                if len(clear_val) > 0:
+                    clear_val[0].click()
             self.send_keys_wrapper(elem, item[0])
-            if 'selectized' in elem_xpath:
+            if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
                 wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
 
@@ -676,6 +685,14 @@ class SeleniumWrapper(object):
                     break
             time.sleep(sleep_time)
         return elem_found
+
+    def count_rows_in_table(self, elem_id=''):
+        elem = self.browser.find_element
+        if elem_id:
+            elem = elem(By.ID, elem_id)
+        tbody = elem.find_element(By.CSS_SELECTOR, "table > tbody")
+        rows = tbody.find_elements(By.TAG_NAME, "tr")
+        return len(rows)
 
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100):
@@ -776,13 +793,19 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
 
 def get_next_number_from_list(words, lower_name, cur_model_name,
                               last_instance=False):
+    if lower_name not in words:
+        for x in lower_name.split('_'):
+            if x in words:
+                lower_name = x
+                break
     post_words = words[words.index(lower_name):]
     if last_instance:
         idx = next(i for i in reversed(range(len(post_words)))
                    if post_words[i] == lower_name)
         post_words = post_words[idx:]
     cost = [x for x in post_words if
-            any(y.isdigit() for y in x) and x != cur_model_name]
+            any(y.isdigit() for y in x) and
+            x not in [cur_model_name, lower_name]]
     if cost:
         if len(cost) > 1:
             cost_append = ''
@@ -819,10 +842,12 @@ def get_next_values_from_list(first_list, match_list=None, break_list=None,
                 first_list = first_list[:first_list.index(value)]
                 break
     first_list = [x for x in first_list if x not in name_list]
+    delimit = ''
     if not date_search:
-        first_list = [x for x in first_list
+        first_list = [x.capitalize() for x in first_list
                       if not (x.isdigit() and int(x) > 10)]
-    first_list = ''.join(first_list).split('.')[0].split(',')
+        delimit = ' '
+    first_list = delimit.join(first_list).split('.')[0].split(',')
     first_list = [x.strip(' ') for x in first_list]
     return first_list
 

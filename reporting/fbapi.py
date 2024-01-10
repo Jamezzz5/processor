@@ -407,6 +407,10 @@ class FbApi(object):
             logging.warning('An unexpected error occurred.  '
                             'Retrying request later. {}'.format(e))
             return True
+        elif e._http_status == 503 or e._api_error_code == 133004:
+            logging.warning('Facebook server is temporarily unavailable. '
+                            'Retrying request later. {}'.format(e))
+            return True
         elif e._api_error_code == 17:
             logging.warning('Facebook rate limit reached.  Pausing for '
                             '300 seconds.')
