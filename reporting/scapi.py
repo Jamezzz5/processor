@@ -7,6 +7,7 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
+import reporting.vmcolumns as vmc
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
@@ -158,9 +159,13 @@ class ScApi(object):
         timezone = r.json()['adaccounts'][0]['adaccount']['timezone']
         return timezone
 
-    def get_campaigns(self):
+    def get_campaign_ids(self):
         act_url = 'adaccounts/{}/campaigns'.format(self.ad_account_id)
         r = self.make_request(act_url)
+        return r
+
+    def get_campaigns(self):
+        r = self.get_campaign_ids()
         cids = {x['campaign']['id']: x['campaign']['name']
                 for x in r.json()['campaigns']}
         if self.campaign_filter:
@@ -346,4 +351,4 @@ class ScApi(object):
         results, r = self.check_campaign_id(
             [], camp_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
-      
+
