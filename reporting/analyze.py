@@ -2958,8 +2958,10 @@ class AliChat(object):
             else:
                 in_list = match_col_dict[k]
                 in_list = [x for x in in_list if x in words]
+            if not in_list:
+                continue
             pw = words[words.index(in_list[-1]) + 1:]
-            if pw[0] in ['is']:
+            if pw and pw[0] in ['is']:
                 pw = pw[1:]
             skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
@@ -2973,11 +2975,12 @@ class AliChat(object):
             if any(x in k for x in ['cost', 'budget']):
                 new_val = utl.get_next_number_from_list(
                     words, k, cur_model.name, last_instance=True)
-            setattr(cur_model, k, new_val)
-            self.db.session.commit()
-            response += 'The {} for {} was changed to {}.  '.format(
-                k, cur_model.name, new_val)
-            words = [x for x in words if x not in in_list]
+            if new_val:
+                setattr(cur_model, k, new_val)
+                self.db.session.commit()
+                response += 'The {} for {} was changed to {}.  '.format(
+                    k, cur_model.name, new_val)
+                words = [x for x in words if x not in in_list]
         return response
 
     def check_children_for_edit(self, cur_model, words):

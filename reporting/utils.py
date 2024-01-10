@@ -792,13 +792,18 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
 
 
 def get_next_number_from_list(words, lower_name, cur_model_name,
-                              last_instance=False):
+                              last_instance=False, break_words_list=None):
     if lower_name not in words:
         for x in lower_name.split('_'):
             if x in words:
                 lower_name = x
                 break
     post_words = words[words.index(lower_name):]
+    if break_words_list:
+        for idx, x in enumerate(post_words):
+            if idx != 0 and x in break_words_list:
+                post_words = post_words[:idx]
+                break
     if last_instance:
         idx = next(i for i in reversed(range(len(post_words)))
                    if post_words[i] == lower_name)
