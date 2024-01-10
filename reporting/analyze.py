@@ -2781,7 +2781,7 @@ class AliChat(object):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
-            r = 'Checking rules/placements for {}'.format(new_g_child.name)
+            r = 'Checking rules/placements for {}.  '.format(new_g_child.name)
             words = [x for x in words if x not in self.stop_words or x == 'y']
             new_model.check_gg_children(new_model, new_g_child.id, words,
                                         total_db, r, message=self.message)
@@ -2818,7 +2818,6 @@ class AliChat(object):
         partner_list, partner_type_list = db_model_g_child.get_name_list()
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
         part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
-        total_db = pd.DataFrame()
         lower_p_list = [x[next(iter(x))].lower() for x in p_list]
         new_g_children = []
         for g_child in p_list:
@@ -2846,12 +2845,8 @@ class AliChat(object):
                     response += part_add_msg
                 response += '{} ({}) '.format(g_child_name, cost)
             self.check_db_model_col(db_model_g_child, words, new_g_child)
-            if total_db.empty:
-                if hasattr(new_g_child, 'get_children'):
-                    total_db = new_g_child.get_children().get_reporting_db_df()
-            new_g_children.append(new_g_child)
-        for new_g_child in new_g_children:
-            response += self.check_gg_children(words, new_g_child, total_db)
+            new_g_children.append(new_g_child.id)
+        cur_model.launch_placement_task(new_g_children, words, self.message)
         return response
 
     def create_db_model_from_other(self, db_model, message, other_db_model):
