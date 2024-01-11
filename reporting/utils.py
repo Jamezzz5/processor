@@ -15,7 +15,7 @@ import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-
+from selenium.webdriver.chrome.options import Options
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -484,6 +484,8 @@ class SeleniumWrapper(object):
         co.add_argument('--start-maximized')
         co.add_argument('--no-sandbox')
         co.add_argument('--disable-gpu')
+        co.add_argument('--headless=new')
+        co.add_extension(r'C:\Users\pkonopnicki\Desktop\extension\I-still-don-t-care-about-cookies.crx')
         prefs = {'download.default_directory': download_path}
         co.add_experimental_option('prefs', prefs)
         if self.mobile:
