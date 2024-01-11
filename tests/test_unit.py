@@ -142,7 +142,7 @@ class TestUtils:
         assert num == ''.join(last_num).replace('$', '').replace(',', '')
 
     def test_get_next_values_from_list(self):
-        plan_name = 'xyz'
+        plan_name = 'X Y Z'
         message = 'Plan named {}'.format(plan_name)
         words = utl.lower_words_from_str(message)
         words = utl.get_next_values_from_list(words, )
