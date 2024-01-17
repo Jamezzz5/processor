@@ -8,7 +8,8 @@ import pandas as pd
 import reporting.utils as utl
 
 
-url = 'https://api.thetradedesk.com/v3'
+ttd_url = 'https://api.thetradedesk.com/v3'
+walmart_url = 'https://api.dsp.walmart.com/v3'
 configpath = utl.config_path
 
 
@@ -51,8 +52,11 @@ class TtdApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
-    def authenticate(self):
-        auth_url = "{0}/authentication".format(url)
+    def authenticate(self, wapi=False):
+        if wapi:
+            auth_url = "{0}/authentication".format(walmart_url)
+        else:
+            auth_url = "{0}/authentication".format(ttd_url)
         userpass = {'Login': self.login, 'Password': self.password}
         self.headers = {'Content-Type': 'application/json'}
         r = requests.post(auth_url, headers=self.headers, json=userpass)
@@ -63,9 +67,14 @@ class TtdApi(object):
         auth_token = json.loads(r.text)['Token']
         return auth_token
 
-    def get_download_url(self):
-        auth_token = self.authenticate()
-        rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
+    def get_download_url(self, wapi=False):
+        auth_token = self.authenticate(wapi=wapi)
+        if wapi:
+            rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(
+                walmart_url)
+        else:
+            rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(
+                ttd_url)
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
         data = []
@@ -122,7 +131,11 @@ class TtdApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
-        dl_url = self.get_download_url()
+        if 'ttd_api' not in self.login and 'wmt_api' in self.login:
+            walmart_check = True
+        else:
+            walmart_check = False
+        dl_url = self.get_download_url(wapi=walmart_check)
         r = requests.get(dl_url, headers=self.headers)
         self.df = self.get_df_from_response(r)
         return self.df
