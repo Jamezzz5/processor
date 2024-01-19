@@ -2687,10 +2687,12 @@ class AliChat(object):
         word_idx = self.index_db_model_by_word(db_model)
         words = self.remove_stop_words_from_message(
             message, db_model, other_db_model, remove_punctuation=True)
+        used_words = []
         model_ids = {}
         for word in words:
-            if word in word_idx:
+            if word in word_idx and word not in used_words:
                 new_model_ids = word_idx[word]
+                used_words.append(word)
                 for new_model_id in new_model_ids:
                     if new_model_id in model_ids:
                         model_ids[new_model_id] += 1
@@ -2820,7 +2822,9 @@ class AliChat(object):
         part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
         lower_p_list = [x[next(iter(x))].lower() for x in p_list]
         new_g_children = []
+        brand_new_ids = []
         for g_child in p_list:
+            is_new = False
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
             new_g_child = [
@@ -2828,6 +2832,7 @@ class AliChat(object):
             if new_g_child:
                 new_g_child = new_g_child[0]
             else:
+                is_new = True
                 words_cost = words[words.index(lower_name):]
                 idx = len(words_cost)
                 for idx, x in enumerate(words_cost):
@@ -2846,7 +2851,10 @@ class AliChat(object):
                 response += '{} ({}) '.format(g_child_name, cost)
             self.check_db_model_col(db_model_g_child, words, new_g_child)
             new_g_children.append(new_g_child.id)
-        cur_model.launch_placement_task(new_g_children, words, self.message)
+            if is_new:
+                brand_new_ids.append(new_g_child.id)
+        cur_model.launch_placement_task(new_g_children, words, self.message,
+                                        brand_new_ids=brand_new_ids)
         return response
 
     def create_db_model_from_other(self, db_model, message, other_db_model):
