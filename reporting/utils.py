@@ -479,6 +479,10 @@ class SeleniumWrapper(object):
         co = wd.chrome.options.Options()
         if headless:
             co.headless = True
+        co.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 "
+            "Safari/537.36")
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -486,6 +490,7 @@ class SeleniumWrapper(object):
         co.add_argument('--disable-gpu')
         prefs = {'download.default_directory': download_path}
         co.add_experimental_option('prefs', prefs)
+        co.add_experimental_option('excludeSwitches', ['enable-automation'])
         if self.mobile:
             mobile_emulation = {"deviceName": "iPhone X"}
             co.add_experimental_option("mobileEmulation", mobile_emulation)
@@ -535,10 +540,11 @@ class SeleniumWrapper(object):
         time.sleep(.1)
         return False
 
-    def click_on_xpath(self, xpath, sleep=2):
+    def click_on_xpath(self, xpath='', sleep=2, elem=None):
         elem_click = True
         for x in range(10):
-            elem = self.browser.find_element_by_xpath(xpath)
+            if not elem:
+                elem = self.browser.find_element_by_xpath(xpath)
             try:
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
@@ -577,11 +583,32 @@ class SeleniumWrapper(object):
         ads = self.get_all_iframe_ads()
         return ads
 
+    def click_accept_buttons(self, btn_xpath):
+        accept_buttons = self.browser.find_elements(By.XPATH, btn_xpath)
+        if accept_buttons:
+            self.click_on_xpath(sleep=3, elem=accept_buttons[0])
+
+    def accept_cookies(self):
+        btn = ['AKZEPTIEREN UND WEITER', 'Accept Cookies', 'OK',
+               'Accept All Cookies', 'Zustimmen', 'Accetto', "J'ACCEPTE",
+               'Accetta', 'I agree', 'Continue', 'Proceed']
+        btn_xpath = ["""//*[contains(normalize-space(), "{}")]""".format(x) for
+                     x in btn]
+        btn_xpath = ' | '.join(btn_xpath)
+        self.click_accept_buttons(btn_xpath)
+        iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
+        for iframe in iframes:
+            if iframe.is_displayed():
+                self.browser.switch_to.frame(iframe)
+                self.click_accept_buttons(btn_xpath)
+                self.browser.switch_to.default_content()
+
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
         went_to_url = self.go_to_url(url)
         if went_to_url:
+            self.accept_cookies()
             self.browser.save_screenshot(file_name)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
