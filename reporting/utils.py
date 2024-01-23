@@ -598,7 +598,12 @@ class SeleniumWrapper(object):
         self.click_accept_buttons(btn_xpath)
         iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
         for iframe in iframes:
-            if iframe.is_displayed():
+            try:
+                is_displayed = iframe.is_displayed()
+            except ex.StaleElementReferenceException as e:
+                logging.warning(e)
+                is_displayed = False
+            if is_displayed:
                 self.browser.switch_to.frame(iframe)
                 self.click_accept_buttons(btn_xpath)
                 self.browser.switch_to.default_content()
