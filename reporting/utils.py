@@ -548,7 +548,8 @@ class SeleniumWrapper(object):
             try:
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
-                    ex.ElementClickInterceptedException) as e:
+                    ex.ElementClickInterceptedException,
+                    ex.StaleElementReferenceException) as e:
                 elem_click = self.click_error(elem, e)
             if elem_click:
                 break
@@ -604,7 +605,11 @@ class SeleniumWrapper(object):
                 logging.warning(e)
                 is_displayed = False
             if is_displayed:
-                self.browser.switch_to.frame(iframe)
+                try:
+                    self.browser.switch_to.frame(iframe)
+                except ex.WebDriverException as e:
+                    logging.warning(e)
+                    continue
                 self.click_accept_buttons(btn_xpath)
                 self.browser.switch_to.default_content()
 
@@ -614,6 +619,7 @@ class SeleniumWrapper(object):
         went_to_url = self.go_to_url(url)
         if went_to_url:
             self.accept_cookies()
+            self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
