@@ -113,6 +113,15 @@ class TestUtils:
         assert sw.browser.current_url == test_url
         sw.quit()
 
+    def test_screenshot(self):
+        sw = utl.SeleniumWrapper()
+        test_url = 'https://www.google.com/'
+        file_name = 'test.png'
+        sw.take_screenshot(test_url, file_name=file_name)
+        assert os.path.isfile(file_name)
+        os.remove(file_name)
+        sw.quit()
+
     @pytest.mark.parametrize(
         'sd, ed, expected_output', [
             (dt.datetime.today(),

@@ -446,8 +446,8 @@ class FbApi(object):
 
     @staticmethod
     def split_list(x):
-        first_half = x[:len(x)/2]
-        back_half = x[len(x)/2:]
+        first_half = x[:len(x)//2]
+        back_half = x[len(x)//2:]
         return first_half, back_half
 
     @staticmethod
