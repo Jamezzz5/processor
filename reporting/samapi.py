@@ -146,13 +146,14 @@ class SamApi(object):
         url = '{}/{}'.format(self.base_url, report_id)
         for x in range(1, 101):
             self.r = self.make_request('get', url, header=header)
-            response = self.r.json()
-            if response.get('urls') and response['urls']:
-                break
-            else:
-                logging.warning('Waiting for Request. '
-                                'Response: {}'.format(self.r.json()))
-                time.sleep(60)
+            if self.r.status_code == 200 and 'application/json' in self.r.headers.get('Content-Type', ''):
+                response = self.r.json()
+                if response.get('urls') and response['urls']:
+                    break
+                else:
+                    logging.warning('Waiting for Request. '
+                                    'Response: {}'.format(self.r.json()))
+                    time.sleep(60)
         report_url = (response['urls'])
         if report_url:
             logging.info('Found report url, downloading.')
