@@ -114,7 +114,7 @@ class QtApi(object):
         params = {'from': sd, 'to': ed}
         for i in range(1,10):
             r = requests.post(req_url, headers=self.header, json=params)
-            if r.json()['data']:
+            if 'data' in r.json():
                 tdf = pd.DataFrame(r.json()['data'])
                 logging.info('Data downloaded, returning df')
                 return tdf
