@@ -596,8 +596,9 @@ class SeleniumWrapper(object):
         btn = ['AKZEPTIEREN UND WEITER', 'Accept Cookies', 'OK',
                'Accept All Cookies', 'Zustimmen', 'Accetto', "J'ACCEPTE",
                'Accetta', 'I agree', 'Continue', 'Proceed']
-        btn_xpath = ["""//*[contains(normalize-space(), "{}")]""".format(x) for
-                     x in btn]
+        btn_xpath = [
+            """//*[contains(normalize-space(text()), "{}")]""".format(x)
+            for x in btn]
         btn_xpath = ' | '.join(btn_xpath)
         self.click_accept_buttons(btn_xpath)
         iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
