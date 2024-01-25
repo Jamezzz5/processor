@@ -536,7 +536,10 @@ class SeleniumWrapper(object):
     def click_error(self, elem, e):
         logging.info(e)
         scroll_script = "arguments[0].scrollIntoView();"
-        self.browser.execute_script(scroll_script,elem)
+        try:
+            self.browser.execute_script(scroll_script,elem)
+        except ex.StaleElementReferenceException as e:
+            logging.warning(e)
         time.sleep(.1)
         return False
 
