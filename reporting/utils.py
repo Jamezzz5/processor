@@ -536,7 +536,10 @@ class SeleniumWrapper(object):
     def click_error(self, elem, e):
         logging.info(e)
         scroll_script = "arguments[0].scrollIntoView();"
-        self.browser.execute_script(scroll_script,elem)
+        try:
+            self.browser.execute_script(scroll_script,elem)
+        except ex.StaleElementReferenceException as e:
+            logging.warning(e)
         time.sleep(.1)
         return False
 
@@ -548,7 +551,8 @@ class SeleniumWrapper(object):
             try:
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
-                    ex.ElementClickInterceptedException) as e:
+                    ex.ElementClickInterceptedException,
+                    ex.StaleElementReferenceException) as e:
                 elem_click = self.click_error(elem, e)
             if elem_click:
                 break
@@ -592,8 +596,9 @@ class SeleniumWrapper(object):
         btn = ['AKZEPTIEREN UND WEITER', 'Accept Cookies', 'OK',
                'Accept All Cookies', 'Zustimmen', 'Accetto', "J'ACCEPTE",
                'Accetta', 'I agree', 'Continue', 'Proceed']
-        btn_xpath = ["""//*[contains(normalize-space(), "{}")]""".format(x) for
-                     x in btn]
+        btn_xpath = [
+            """//*[contains(normalize-space(text()), "{}")]""".format(x)
+            for x in btn]
         btn_xpath = ' | '.join(btn_xpath)
         self.click_accept_buttons(btn_xpath)
         iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
@@ -604,7 +609,11 @@ class SeleniumWrapper(object):
                 logging.warning(e)
                 is_displayed = False
             if is_displayed:
-                self.browser.switch_to.frame(iframe)
+                try:
+                    self.browser.switch_to.frame(iframe)
+                except ex.WebDriverException as e:
+                    logging.warning(e)
+                    continue
                 self.click_accept_buttons(btn_xpath)
                 self.browser.switch_to.default_content()
 
@@ -614,6 +623,7 @@ class SeleniumWrapper(object):
         went_to_url = self.go_to_url(url)
         if went_to_url:
             self.accept_cookies()
+            self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
