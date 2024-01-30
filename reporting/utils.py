@@ -533,9 +533,11 @@ class SeleniumWrapper(object):
         elem.click()
         time.sleep(sleep)
 
-    def click_error(self, elem, e):
+    def click_error(self, elem, e, attempts=0):
         logging.info(e)
         scroll_script = "arguments[0].scrollIntoView();"
+        if attempts > 5:
+            scroll_script = "window.scrollTo(0, 0)"
         try:
             self.browser.execute_script(scroll_script,elem)
         except ex.StaleElementReferenceException as e:
@@ -553,7 +555,7 @@ class SeleniumWrapper(object):
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException,
                     ex.StaleElementReferenceException) as e:
-                elem_click = self.click_error(elem, e)
+                elem_click = self.click_error(elem, e, x)
             if elem_click:
                 break
             else:
