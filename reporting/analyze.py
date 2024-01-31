@@ -1614,7 +1614,7 @@ class CheckApiDateLength(AnalyzeBase):
             vmc.api_amd_key: 30, vmc.api_cri_key: 99}
         data_sources = [x for x in data_sources if 'API_' in x.key]
         for ds in data_sources:
-            if 'API_' in ds.key:
+            if 'API_' in ds.key and vmc.enddate in ds.p:
                 key = ds.key.split('_')[1]
                 if key in max_date_dict.keys():
                     max_date = max_date_dict[key]
