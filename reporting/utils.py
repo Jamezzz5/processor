@@ -16,7 +16,6 @@ import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
-
 config_path = 'config/'
 raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
@@ -129,10 +128,10 @@ def string_to_date(my_string):
             logging.warning('Could not parse date: {}'.format(my_string))
             return pd.NaT
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
-            ':' not in my_string):
+          ':' not in my_string):
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
-            ((len(my_string) == 7) and ('.' in my_string))):
+          ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
         try:
@@ -145,7 +144,7 @@ def string_to_date(my_string):
     elif my_string == '0' or my_string == '0.0':
         return pd.NaT
     elif ((len(my_string) == 22) and (':' in my_string) and
-            ('+' in my_string)):
+          ('+' in my_string)):
         my_string = my_string[:-6]
         return dt.datetime.strptime(my_string, '%Y-%m-%d %M:%S')
     elif ((':' in my_string) and ('/' in my_string) and my_string[1] == '/' and
@@ -177,7 +176,7 @@ def string_to_date(my_string):
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
     elif ((len(my_string) == 6 or len(my_string) == 5) and
-            my_string[-3:] in month_list):
+          my_string[-3:] in month_list):
         my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
         return dt.datetime.strptime(my_string, '%d-%b-%Y')
     else:
@@ -284,7 +283,7 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         queries = kwargs[vm_rules[rule][RULE_QUERY]]
         factor = kwargs[vm_rules[rule][RULE_FACTOR]]
         if (str(metrics) == 'nan' or str(queries) == 'nan' or
-           str(factor) == 'nan'):
+                str(factor) == 'nan'):
             continue
         metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
@@ -533,13 +532,17 @@ class SeleniumWrapper(object):
         elem.click()
         time.sleep(sleep)
 
+    def scroll_to_elem(self, elem,
+                       scroll_script="arguments[0].scrollIntoView();"):
+        self.browser.execute_script(scroll_script, elem)
+
     def click_error(self, elem, e, attempts=0):
         logging.info(e)
         scroll_script = "arguments[0].scrollIntoView();"
         if attempts > 5:
             scroll_script = "window.scrollTo(0, 0)"
         try:
-            self.browser.execute_script(scroll_script,elem)
+            self.scroll_to_elem(elem, scroll_script)
         except ex.StaleElementReferenceException as e:
             logging.warning(e)
         time.sleep(.1)
