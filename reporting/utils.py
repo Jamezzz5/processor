@@ -16,7 +16,6 @@ import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
-
 config_path = 'config/'
 raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
@@ -129,10 +128,10 @@ def string_to_date(my_string):
             logging.warning('Could not parse date: {}'.format(my_string))
             return pd.NaT
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
-            ':' not in my_string):
+          ':' not in my_string):
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
-            ((len(my_string) == 7) and ('.' in my_string))):
+          ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
         try:
@@ -145,7 +144,7 @@ def string_to_date(my_string):
     elif my_string == '0' or my_string == '0.0':
         return pd.NaT
     elif ((len(my_string) == 22) and (':' in my_string) and
-            ('+' in my_string)):
+          ('+' in my_string)):
         my_string = my_string[:-6]
         return dt.datetime.strptime(my_string, '%Y-%m-%d %M:%S')
     elif ((':' in my_string) and ('/' in my_string) and my_string[1] == '/' and
@@ -177,7 +176,7 @@ def string_to_date(my_string):
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
     elif ((len(my_string) == 6 or len(my_string) == 5) and
-            my_string[-3:] in month_list):
+          my_string[-3:] in month_list):
         my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
         return dt.datetime.strptime(my_string, '%d-%b-%Y')
     else:
@@ -284,7 +283,7 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         queries = kwargs[vm_rules[rule][RULE_QUERY]]
         factor = kwargs[vm_rules[rule][RULE_FACTOR]]
         if (str(metrics) == 'nan' or str(queries) == 'nan' or
-           str(factor) == 'nan'):
+                str(factor) == 'nan'):
             continue
         metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
@@ -533,10 +532,19 @@ class SeleniumWrapper(object):
         elem.click()
         time.sleep(sleep)
 
-    def click_error(self, elem, e):
+    def scroll_to_elem(self, elem,
+                       scroll_script="arguments[0].scrollIntoView();"):
+        self.browser.execute_script(scroll_script, elem)
+
+    def click_error(self, elem, e, attempts=0):
         logging.info(e)
         scroll_script = "arguments[0].scrollIntoView();"
-        self.browser.execute_script(scroll_script,elem)
+        if attempts > 5:
+            scroll_script = "window.scrollTo(0, 0)"
+        try:
+            self.scroll_to_elem(elem, scroll_script)
+        except ex.StaleElementReferenceException as e:
+            logging.warning(e)
         time.sleep(.1)
         return False
 
@@ -548,8 +556,9 @@ class SeleniumWrapper(object):
             try:
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
-                    ex.ElementClickInterceptedException) as e:
-                elem_click = self.click_error(elem, e)
+                    ex.ElementClickInterceptedException,
+                    ex.StaleElementReferenceException) as e:
+                elem_click = self.click_error(elem, e, x)
             if elem_click:
                 break
             else:
@@ -592,8 +601,9 @@ class SeleniumWrapper(object):
         btn = ['AKZEPTIEREN UND WEITER', 'Accept Cookies', 'OK',
                'Accept All Cookies', 'Zustimmen', 'Accetto', "J'ACCEPTE",
                'Accetta', 'I agree', 'Continue', 'Proceed']
-        btn_xpath = ["""//*[contains(normalize-space(), "{}")]""".format(x) for
-                     x in btn]
+        btn_xpath = [
+            """//*[contains(normalize-space(text()), "{}")]""".format(x)
+            for x in btn]
         btn_xpath = ' | '.join(btn_xpath)
         self.click_accept_buttons(btn_xpath)
         iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
@@ -604,7 +614,11 @@ class SeleniumWrapper(object):
                 logging.warning(e)
                 is_displayed = False
             if is_displayed:
-                self.browser.switch_to.frame(iframe)
+                try:
+                    self.browser.switch_to.frame(iframe)
+                except ex.WebDriverException as e:
+                    logging.warning(e)
+                    continue
                 self.click_accept_buttons(btn_xpath)
                 self.browser.switch_to.default_content()
 
@@ -614,6 +628,7 @@ class SeleniumWrapper(object):
         went_to_url = self.go_to_url(url)
         if went_to_url:
             self.accept_cookies()
+            self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
