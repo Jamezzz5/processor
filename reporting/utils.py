@@ -46,7 +46,7 @@ def dir_check(directory):
 
 
 def import_read_csv(filename, path=None, file_check=True, error_bad='error',
-                    empty_df=False, nrows=None):
+                    empty_df=False, nrows=None, file_type=None):
     sheet_names = []
     if sheet_name_splitter in filename:
         filename = filename.split(sheet_name_splitter)
@@ -58,7 +58,8 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         if not os.path.isfile(filename):
             logging.warning('{} not found.  Continuing.'.format(filename))
             return pd.DataFrame()
-    file_type = os.path.splitext(filename)[1].lower()
+    if not file_type:
+        file_type = os.path.splitext(filename)[1].lower()
     kwargs = {'parse_dates': True, 'keep_default_na': False,
               'na_values': na_values, 'nrows': nrows}
     if sheet_names:
