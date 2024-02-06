@@ -180,6 +180,9 @@ def string_to_date(my_string):
           my_string[-3:] in month_list):
         my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
         return dt.datetime.strptime(my_string, '%d-%b-%Y')
+    elif len(my_string) == 24 and my_string[-3:] == 'GMT':
+        my_string = my_string[4:-11]
+        return dt.datetime.strptime(my_string, '%d%b%Y')
     else:
         return my_string
 
