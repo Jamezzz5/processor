@@ -6,6 +6,7 @@ import time
 import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
+import reporting.awss3 as awss3
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -23,9 +24,11 @@ class GsApi(object):
     head_str = 'header'
     doc_str = 'Doc'
     text_format = 'NORMAL_TEXT'
+    screenshot_dir = os.path.join('screenshots', 'charts/')
 
-    def __init__(self):
+    def __init__(self, s3config='s3config_screenshots.json'):
         self.default_config = "gsapi_screenshots.json"
+        self.s3_config = s3config
         self.config = None
         self.config_file = None
         self.client_id = None
@@ -40,6 +43,7 @@ class GsApi(object):
         self.r = None
         self.google_doc = False
         self.parse_response = self.parse_sheets_response
+        self.s3 = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -292,12 +296,52 @@ class GsApi(object):
                                                   self.text_format))
         return table_requests, index - 1
 
+    def add_image_doc(self, img_uri, name, index):
+        if not img_uri:
+            return [], index
+        name = self.screenshot_dir + name
+        data = utl.base64_to_binary(img_uri)
+        url = self.s3.s3_upload_file_obj(data, name)
+        client = self.s3.get_client()
+        key = str(url).split('.com/')[1]
+        presigned_url = client.generate_presigned_url(
+            ClientMethod='get_object',
+            Params={'Bucket': self.s3.bucket, 'Key': key},
+            ExpiresIn=3600)
+        img_request = [{'insertInlineImage': {
+            'location': {
+                'index': index
+            },
+            'uri': presigned_url,
+            'objectSize': {
+                'height': {
+                    'magnitude': 250,
+                    'unit': 'PT'
+                },
+                'width': {
+                    'magnitude': 250,
+                    'unit': 'PT'
+                }
+            }
+        }}, {
+            'insertText': {
+                'location': {
+                    'index': index + 1,
+                },
+                'text': '\n'
+            }
+        }]
+        index += 2
+        return img_request, index
+
     def add_text(self, doc_id, text_json=None, index=1, newline=True):
         logging.info('Adding text to doc.')
         url = self.docs_url + "/" + doc_id + ":batchUpdate"
         headers = {"Content-Type": "application/json"}
         request = []
         format_request = []
+        self.s3 = awss3.S3()
+        self.s3.input_config(self.s3_config)
         for item in text_json:
             if item['selected'] == 'false':
                 continue
@@ -319,8 +363,14 @@ class GsApi(object):
             format_request.append(self.get_format_req(index, end_ind, style))
             index += len(text)
             if 'data' in item:
-                table_req, index = self.add_table(item['data']['data'],
-                                                  index=index)
+                table_req = []
+                if 'imgURI' in item['data']['cols']:
+                    name = item['data']['data'][0]['name']
+                    img_uri = item['data']['data'][0]['imgURI']
+                    table_req, index = self.add_image_doc(img_uri, name, index)
+                elif item['data']['cols']:
+                    table_req, index = self.add_table(item['data']['data'],
+                                                      index=index)
                 request += table_req
         request += format_request
         body = {"requests": request}
