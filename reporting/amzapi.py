@@ -135,10 +135,10 @@ class AmzApi(object):
                     dsp_id = str(dsp_profile['profileId'])
                     self.headers['Amazon-Advertising-API-Scope'] = dsp_id
                     url = '{}/dsp/advertisers'.format(endpoint)
-                    r = self.make_request(url, method='GET',
-                                          headers=self.headers,
-                                          json_response_key='response')
-                    profile = [x for x in r.json()['response'] if
+                    r = self.make_request(url=url, body=None, method='GET',
+                                          headers=self.headers)
+                    response = r.json()['response']
+                    profile = [x for x in response if
                                self.advertiser_id in x['advertiserId']]
                     if profile:
                         self.profile_id = profile[0]['advertiserId']
@@ -234,9 +234,7 @@ class AmzApi(object):
                 "format": "JSON",
                 "metrics": ['totalCost', 'impressions', 'clickThroughs',
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
-                            'videoThirdQuartile', 'videoComplete',
-                            'totalSales14d', 'totalPurchases14d',
-                            'totalROAS14d'],
+                            'videoThirdQuartile', 'videoComplete'],
                 "type": "CAMPAIGN",
                 "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
                 "timeUnit": "DAILY"
@@ -286,7 +284,8 @@ class AmzApi(object):
             complete_status = 'SUCCESS'
             url_key = 'location'
         else:
-            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+            self.headers[
+                'Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
             url = '{}/reporting/reports/{}'.format(
                 self.base_url, report_id)
             complete_status = 'COMPLETED'
@@ -421,32 +420,27 @@ class AmzApi(object):
             time.sleep(30)
 
     def make_request(self, url, method, body=None, params=None, headers=None,
-                     attempt=1, json_response=True, json_response_key=''):
+                     attempt=1, json_response=True):
         self.get_client()
-        attempts = 10
-        for x in range(attempts):
-            request_success = True
-            try:
-                self.r = self.raw_request(url, method, body=body, params=params,
-                                          headers=headers)
-            except (requests.exceptions.SSLError,
-                    requests.exceptions.ConnectionError) as e:
-                logging.warning('Warning SSLError as follows {}'.format(e))
-                request_success = False
-            json_error = json_response and 'error' in self.r.json()
-            json_error_2 = (json_response_key and
-                            json_response_key not in self.r.json())
-            if json_error or json_error_2:
-                logging.warning(
-                    'Request error.  Retrying {}'.format(self.r.json()))
-                request_success = False
-            if request_success:
-                break
-            else:
-                time.sleep(30)
-                attempt += 1
-                if attempt > attempts:
-                    self.request_error()
+        try:
+            self.r = self.raw_request(url, method, body=body, params=params,
+                                      headers=headers)
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError) as e:
+            logging.warning('Warning SSLError as follows {}'.format(e))
+            time.sleep(30)
+            self.r = self.make_request(url=url, method=method, body=body,
+                                       params=params, attempt=attempt,
+                                       json_response=json_response)
+        if json_response and 'error' in self.r.json():
+            logging.warning('Request error.  Retrying {}'.format(self.r.json()))
+            time.sleep(30)
+            attempt += 1
+            if attempt > 10:
+                self.request_error()
+            self.r = self.make_request(url=url, method=method, body=body,
+                                       params=params, attempt=attempt,
+                                       json_response=json_response)
         return self.r
 
     def raw_request(self, url, method, body=None, params=None, headers=None):

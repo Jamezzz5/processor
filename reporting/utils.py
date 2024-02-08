@@ -5,6 +5,7 @@ import json
 import time
 import shutil
 import logging
+import base64
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -158,14 +159,7 @@ def string_to_date(my_string):
         return dt.datetime.strptime(my_string, '%a %b %d %M:%S:%H %Y')
     elif (('-' in my_string) and (my_string[:2] == '20') and
           len(my_string) == 10):
-        try:
-            return dt.datetime.strptime(my_string, '%Y-%m-%d')
-        except ValueError:
-            try:
-                return dt.datetime.strptime(my_string, '%Y-%d-%m')
-            except ValueError:
-                logging.warning('Could not parse date: {}'.format(my_string))
-                return pd.NaT
+        return dt.datetime.strptime(my_string, '%Y-%m-%d')
     elif ((len(my_string) == 19) and (my_string[:2] == '20') and
           ('-' in my_string) and (':' in my_string)):
         try:
@@ -464,6 +458,12 @@ def image_to_binary(file_name, as_bytes_io=False):
         logging.warning('{} does not exist returning None'.format(file_name))
         image_data = None
     return image_data
+
+
+def base64_to_binary(data):
+    data = data.split(',')[1]
+    decoded_bytes = base64.b64decode(data)
+    return io.BytesIO(decoded_bytes)
 
 
 class SeleniumWrapper(object):
