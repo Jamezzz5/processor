@@ -6,7 +6,6 @@ import time
 import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-import reporting.awss3 as awss3
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -296,18 +295,9 @@ class GsApi(object):
                                                   self.text_format))
         return table_requests, index - 1
 
-    def add_image_doc(self, img_uri, name, index):
-        if not img_uri:
+    def add_image_doc(self, presigned_url, index):
+        if not presigned_url:
             return [], index
-        name = self.screenshot_dir + name
-        data = utl.base64_to_binary(img_uri)
-        url = self.s3.s3_upload_file_obj(data, name)
-        client = self.s3.get_client()
-        key = str(url).split('.com/')[1]
-        presigned_url = client.generate_presigned_url(
-            ClientMethod='get_object',
-            Params={'Bucket': self.s3.bucket, 'Key': key},
-            ExpiresIn=3600)
         img_request = [{'insertInlineImage': {
             'location': {
                 'index': index
@@ -340,8 +330,6 @@ class GsApi(object):
         headers = {"Content-Type": "application/json"}
         request = []
         format_request = []
-        self.s3 = awss3.S3()
-        self.s3.input_config(self.s3_config)
         for item in text_json:
             if item['selected'] == 'false':
                 continue
@@ -365,9 +353,8 @@ class GsApi(object):
             if 'data' in item:
                 table_req = []
                 if 'imgURI' in item['data']['cols']:
-                    name = item['data']['data'][0]['name']
-                    img_uri = item['data']['data'][0]['imgURI']
-                    table_req, index = self.add_image_doc(img_uri, name, index)
+                    presigned_url = item['url']
+                    table_req, index = self.add_image_doc(presigned_url, index)
                 elif item['data']['cols']:
                     table_req, index = self.add_table(item['data']['data'],
                                                       index=index)
