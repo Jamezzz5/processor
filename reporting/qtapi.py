@@ -112,7 +112,15 @@ class QtApi(object):
         sd, ed = self.format_dates(sd, ed)
         logging.info('Getting data from {} to {}'.format(sd, ed))
         params = {'from': sd, 'to': ed}
-        r = requests.post(req_url, headers=self.header, json=params)
-        tdf = pd.DataFrame(r.json()['data'])
-        logging.info('Data downloaded, returning df')
-        return tdf
+        for i in range(1,10):
+            r = requests.post(req_url, headers=self.header, json=params)
+            if 'data' in r.json():
+                tdf = pd.DataFrame(r.json()['data'])
+                logging.info('Data downloaded, returning df')
+                return tdf
+            else:
+                logging.warning('Could not retrieve data, retrying:'
+                                '{}'.format(r.json()))
+        logging.warning('Failed to retrieve data'
+                        '{}'.format(r.json()))
+        return pd.DataFrame()

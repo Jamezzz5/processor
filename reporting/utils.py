@@ -16,7 +16,6 @@ import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
-
 config_path = 'config/'
 raw_path = 'raw_data/'
 error_path = 'ERROR_REPORTS/'
@@ -47,7 +46,7 @@ def dir_check(directory):
 
 
 def import_read_csv(filename, path=None, file_check=True, error_bad='error',
-                    empty_df=False, nrows=None):
+                    empty_df=False, nrows=None, file_type=None):
     sheet_names = []
     if sheet_name_splitter in filename:
         filename = filename.split(sheet_name_splitter)
@@ -59,7 +58,8 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         if not os.path.isfile(filename):
             logging.warning('{} not found.  Continuing.'.format(filename))
             return pd.DataFrame()
-    file_type = os.path.splitext(filename)[1].lower()
+    if not file_type:
+        file_type = os.path.splitext(filename)[1].lower()
     kwargs = {'parse_dates': True, 'keep_default_na': False,
               'na_values': na_values, 'nrows': nrows}
     if sheet_names:
@@ -129,10 +129,10 @@ def string_to_date(my_string):
             logging.warning('Could not parse date: {}'.format(my_string))
             return pd.NaT
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
-            ':' not in my_string):
+          ':' not in my_string):
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
-            ((len(my_string) == 7) and ('.' in my_string))):
+          ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
         try:
@@ -145,7 +145,7 @@ def string_to_date(my_string):
     elif my_string == '0' or my_string == '0.0':
         return pd.NaT
     elif ((len(my_string) == 22) and (':' in my_string) and
-            ('+' in my_string)):
+          ('+' in my_string)):
         my_string = my_string[:-6]
         return dt.datetime.strptime(my_string, '%Y-%m-%d %M:%S')
     elif ((':' in my_string) and ('/' in my_string) and my_string[1] == '/' and
@@ -177,9 +177,12 @@ def string_to_date(my_string):
           my_string[-4:-2] == '20'):
         return dt.datetime.strptime(my_string, '%m%d%Y')
     elif ((len(my_string) == 6 or len(my_string) == 5) and
-            my_string[-3:] in month_list):
+          my_string[-3:] in month_list):
         my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
         return dt.datetime.strptime(my_string, '%d-%b-%Y')
+    elif len(my_string) == 24 and my_string[-3:] == 'GMT':
+        my_string = my_string[4:-11]
+        return dt.datetime.strptime(my_string, '%d%b%Y')
     else:
         return my_string
 
@@ -284,7 +287,7 @@ def apply_rules(df, vm_rules, pre_or_post, **kwargs):
         queries = kwargs[vm_rules[rule][RULE_QUERY]]
         factor = kwargs[vm_rules[rule][RULE_FACTOR]]
         if (str(metrics) == 'nan' or str(queries) == 'nan' or
-           str(factor) == 'nan'):
+                str(factor) == 'nan'):
             continue
         metrics = metrics.split('::')
         if metrics[0] != pre_or_post:
@@ -479,6 +482,10 @@ class SeleniumWrapper(object):
         co = wd.chrome.options.Options()
         if headless:
             co.headless = True
+        co.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 "
+            "Safari/537.36")
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -486,6 +493,7 @@ class SeleniumWrapper(object):
         co.add_argument('--disable-gpu')
         prefs = {'download.default_directory': download_path}
         co.add_experimental_option('prefs', prefs)
+        co.add_experimental_option('excludeSwitches', ['enable-automation'])
         if self.mobile:
             mobile_emulation = {"deviceName": "iPhone X"}
             co.add_experimental_option("mobileEmulation", mobile_emulation)
@@ -528,22 +536,33 @@ class SeleniumWrapper(object):
         elem.click()
         time.sleep(sleep)
 
-    def click_error(self, elem, e):
+    def scroll_to_elem(self, elem,
+                       scroll_script="arguments[0].scrollIntoView();"):
+        self.browser.execute_script(scroll_script, elem)
+
+    def click_error(self, elem, e, attempts=0):
         logging.info(e)
         scroll_script = "arguments[0].scrollIntoView();"
-        self.browser.execute_script(scroll_script,elem)
+        if attempts > 5:
+            scroll_script = "window.scrollTo(0, 0)"
+        try:
+            self.scroll_to_elem(elem, scroll_script)
+        except ex.StaleElementReferenceException as e:
+            logging.warning(e)
         time.sleep(.1)
         return False
 
-    def click_on_xpath(self, xpath, sleep=2):
+    def click_on_xpath(self, xpath='', sleep=2, elem=None):
         elem_click = True
         for x in range(10):
-            elem = self.browser.find_element_by_xpath(xpath)
+            if not elem:
+                elem = self.browser.find_element_by_xpath(xpath)
             try:
                 self.click_on_elem(elem, sleep)
             except (ex.ElementNotInteractableException,
-                    ex.ElementClickInterceptedException) as e:
-                elem_click = self.click_error(elem, e)
+                    ex.ElementClickInterceptedException,
+                    ex.StaleElementReferenceException) as e:
+                elem_click = self.click_error(elem, e, x)
             if elem_click:
                 break
             else:
@@ -577,11 +596,43 @@ class SeleniumWrapper(object):
         ads = self.get_all_iframe_ads()
         return ads
 
+    def click_accept_buttons(self, btn_xpath):
+        accept_buttons = self.browser.find_elements(By.XPATH, btn_xpath)
+        if accept_buttons:
+            self.click_on_xpath(sleep=3, elem=accept_buttons[0])
+
+    def accept_cookies(self):
+        btn = ['AKZEPTIEREN UND WEITER', 'Accept Cookies', 'OK',
+               'Accept All Cookies', 'Zustimmen', 'Accetto', "J'ACCEPTE",
+               'Accetta', 'I agree', 'Continue', 'Proceed']
+        btn_xpath = [
+            """//*[contains(normalize-space(text()), "{}")]""".format(x)
+            for x in btn]
+        btn_xpath = ' | '.join(btn_xpath)
+        self.click_accept_buttons(btn_xpath)
+        iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
+        for iframe in iframes:
+            try:
+                is_displayed = iframe.is_displayed()
+            except ex.StaleElementReferenceException as e:
+                logging.warning(e)
+                is_displayed = False
+            if is_displayed:
+                try:
+                    self.browser.switch_to.frame(iframe)
+                except ex.WebDriverException as e:
+                    logging.warning(e)
+                    continue
+                self.click_accept_buttons(btn_xpath)
+                self.browser.switch_to.default_content()
+
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
         went_to_url = self.go_to_url(url)
         if went_to_url:
+            self.accept_cookies()
+            self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
@@ -792,14 +843,25 @@ def check_dict_for_key(dict_to_check, key, missing_return_value=''):
 
 
 def get_next_number_from_list(words, lower_name, cur_model_name,
-                              last_instance=False):
+                              last_instance=False, break_words_list=None):
+    if lower_name not in words:
+        for x in lower_name.split('_'):
+            if x in words:
+                lower_name = x
+                break
     post_words = words[words.index(lower_name):]
+    if break_words_list:
+        for idx, x in enumerate(post_words):
+            if idx != 0 and x in break_words_list:
+                post_words = post_words[:idx]
+                break
     if last_instance:
         idx = next(i for i in reversed(range(len(post_words)))
                    if post_words[i] == lower_name)
         post_words = post_words[idx:]
     cost = [x for x in post_words if
-            any(y.isdigit() for y in x) and x != cur_model_name]
+            any(y.isdigit() for y in x) and
+            x not in [cur_model_name, lower_name]]
     if cost:
         if len(cost) > 1:
             cost_append = ''
@@ -836,10 +898,12 @@ def get_next_values_from_list(first_list, match_list=None, break_list=None,
                 first_list = first_list[:first_list.index(value)]
                 break
     first_list = [x for x in first_list if x not in name_list]
+    delimit = ''
     if not date_search:
-        first_list = [x for x in first_list
+        first_list = [x.capitalize() for x in first_list
                       if not (x.isdigit() and int(x) > 10)]
-    first_list = ''.join(first_list).split('.')[0].split(',')
+        delimit = ' '
+    first_list = delimit.join(first_list).split('.')[0].split(',')
     first_list = [x.strip(' ') for x in first_list]
     return first_list
 

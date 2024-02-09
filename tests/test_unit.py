@@ -113,6 +113,15 @@ class TestUtils:
         assert sw.browser.current_url == test_url
         sw.quit()
 
+    def test_screenshot(self):
+        sw = utl.SeleniumWrapper()
+        test_url = 'https://www.google.com/'
+        file_name = 'test.png'
+        sw.take_screenshot(test_url, file_name=file_name)
+        assert os.path.isfile(file_name)
+        os.remove(file_name)
+        sw.quit()
+
     @pytest.mark.parametrize(
         'sd, ed, expected_output', [
             (dt.datetime.today(),
@@ -142,7 +151,7 @@ class TestUtils:
         assert num == ''.join(last_num).replace('$', '').replace(',', '')
 
     def test_get_next_values_from_list(self):
-        plan_name = 'xyz'
+        plan_name = 'X Y Z'
         message = 'Plan named {}'.format(plan_name)
         words = utl.lower_words_from_str(message)
         words = utl.get_next_values_from_list(words, )

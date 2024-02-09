@@ -1611,10 +1611,10 @@ class CheckApiDateLength(AnalyzeBase):
         max_date_dict = {
             vmc.api_amz_key: 31, vmc.api_szk_key: 60, vmc.api_db_key: 60,
             vmc.api_tik_key: 30, vmc.api_ttd_key: 80, vmc.api_sc_key: 30,
-            vmc.api_amd_key: 30}
+            vmc.api_amd_key: 30, vmc.api_cri_key: 99}
         data_sources = [x for x in data_sources if 'API_' in x.key]
         for ds in data_sources:
-            if 'API_' in ds.key:
+            if 'API_' in ds.key and vmc.enddate in ds.p:
                 key = ds.key.split('_')[1]
                 if key in max_date_dict.keys():
                     max_date = max_date_dict[key]
@@ -2687,10 +2687,12 @@ class AliChat(object):
         word_idx = self.index_db_model_by_word(db_model)
         words = self.remove_stop_words_from_message(
             message, db_model, other_db_model, remove_punctuation=True)
+        used_words = []
         model_ids = {}
         for word in words:
-            if word in word_idx:
+            if word in word_idx and word not in used_words:
                 new_model_ids = word_idx[word]
+                used_words.append(word)
                 for new_model_id in new_model_ids:
                     if new_model_id in model_ids:
                         model_ids[new_model_id] += 1
@@ -2781,7 +2783,7 @@ class AliChat(object):
         r = ''
         new_model = new_g_child.get_children()
         if new_model:
-            r = 'Checking rules/placements for {}'.format(new_g_child.name)
+            r = 'Checking rules/placements for {}.  '.format(new_g_child.name)
             words = [x for x in words if x not in self.stop_words or x == 'y']
             new_model.check_gg_children(new_model, new_g_child.id, words,
                                         total_db, r, message=self.message)
@@ -2818,8 +2820,11 @@ class AliChat(object):
         partner_list, partner_type_list = db_model_g_child.get_name_list()
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
         part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
-        total_db = pd.DataFrame()
+        lower_p_list = [x[next(iter(x))].lower() for x in p_list]
+        new_g_children = []
+        brand_new_ids = []
         for g_child in p_list:
+            is_new = False
             g_child_name = g_child[next(iter(g_child))]
             lower_name = g_child_name.lower()
             new_g_child = [
@@ -2827,8 +2832,15 @@ class AliChat(object):
             if new_g_child:
                 new_g_child = new_g_child[0]
             else:
+                is_new = True
+                words_cost = words[words.index(lower_name):]
+                idx = len(words_cost)
+                for idx, x in enumerate(words_cost):
+                    if x in lower_p_list and idx != 0:
+                        break
+                words_cost = words_cost[:idx]
                 cost = utl.get_next_number_from_list(
-                    words, lower_name, cur_model.name, last_instance=True)
+                    words_cost, lower_name, cur_model.name, last_instance=True)
                 g_child['total_budget'] = cost
                 new_g_child = db_model_g_child()
                 new_g_child.set_from_form(g_child, new_child)
@@ -2838,10 +2850,11 @@ class AliChat(object):
                     response += part_add_msg
                 response += '{} ({}) '.format(g_child_name, cost)
             self.check_db_model_col(db_model_g_child, words, new_g_child)
-            if total_db.empty:
-                if hasattr(new_g_child, 'get_children'):
-                    total_db = new_g_child.get_children().get_reporting_db_df()
-            response += self.check_gg_children(words, new_g_child, total_db)
+            new_g_children.append(new_g_child.id)
+            if is_new:
+                brand_new_ids.append(new_g_child.id)
+        cur_model.launch_placement_task(new_g_children, words, self.message,
+                                        brand_new_ids=brand_new_ids)
         return response
 
     def create_db_model_from_other(self, db_model, message, other_db_model):
@@ -2953,8 +2966,10 @@ class AliChat(object):
             else:
                 in_list = match_col_dict[k]
                 in_list = [x for x in in_list if x in words]
+            if not in_list:
+                continue
             pw = words[words.index(in_list[-1]) + 1:]
-            if pw[0] in ['is']:
+            if pw and pw[0] in ['is']:
                 pw = pw[1:]
             skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
@@ -2965,11 +2980,15 @@ class AliChat(object):
                 new_val = utl.string_to_date(new_val)
             else:
                 new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
-            setattr(cur_model, k, new_val)
-            self.db.session.commit()
-            response += 'The {} for {} was changed to {}.  '.format(
-                k, cur_model.name, new_val)
-            words = [x for x in words if x not in in_list]
+            if any(x in k for x in ['cost', 'budget']):
+                new_val = utl.get_next_number_from_list(
+                    words, k, cur_model.name, last_instance=True)
+            if new_val:
+                setattr(cur_model, k, new_val)
+                self.db.session.commit()
+                response += 'The {} for {} was changed to {}.  '.format(
+                    k, cur_model.name, new_val)
+                words = [x for x in words if x not in in_list]
         return response
 
     def check_children_for_edit(self, cur_model, words):
