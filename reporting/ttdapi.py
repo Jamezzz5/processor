@@ -98,7 +98,11 @@ class TtdApi(object):
                 logging.warning('Retrying.  Unknown response :'
                                 '{}'.format(raw_data))
                 error_response_count = self.response_error(error_response_count)
-        last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
+        try:
+            last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
+        except ValueError as e:
+            logging.warning('Report does not contain any data: {}'.format(e))
+            return None
         dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
         return dl_url
 
@@ -123,6 +127,9 @@ class TtdApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
         dl_url = self.get_download_url()
+        if dl_url is None:
+            logging.warning('Could not retrieve download url, returning blank df.')
+            return pd.DataFrame()
         r = requests.get(dl_url, headers=self.headers)
         self.df = self.get_df_from_response(r)
         return self.df
