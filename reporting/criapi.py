@@ -224,4 +224,3 @@ class CriApi(object):
             [], acc_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
 
-
