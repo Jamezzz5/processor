@@ -205,3 +205,4 @@ class TtdApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
+
