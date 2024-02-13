@@ -328,7 +328,8 @@ api_partner_name_translation = {
     api_qt_key: ['Quantcast'],
     api_yv_key: ['Yahoo', 'Verizon'],
     api_amd_key: ['Amazon DSP'],
-    api_nz_key: ['NewZoo']
+    api_nz_key: ['NewZoo'],
+    api_wal_key: ['Walmart']
 }
 
 output_file = 'Raw Data Output.csv'
