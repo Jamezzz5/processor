@@ -53,11 +53,9 @@ class TtdApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
-    def authenticate(self, wapi=False):
-        if wapi:
-            auth_url = "{0}/authentication".format(walmart_url)
-        else:
-            auth_url = "{0}/authentication".format(ttd_url)
+    def authenticate(self):
+        url = self.walmart_check()
+        auth_url = "{0}/authentication".format(url)
         userpass = {'Login': self.login, 'Password': self.password}
         self.headers = {'Content-Type': 'application/json'}
         r = requests.post(auth_url, headers=self.headers, json=userpass)
@@ -73,14 +71,11 @@ class TtdApi(object):
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
 
-    def get_download_url(self, wapi=False):
+    def get_download_url(self):
         self.set_headers()
-        if wapi:
-            rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(
-                walmart_url)
-        else:
-            rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(
-                ttd_url)data = []
+        url = self.walmart_check()
+        rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
+        data = []
         i = 0
         error_response_count = 0
         result_data = [1]
@@ -138,13 +133,9 @@ class TtdApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
-        if 'ttd_api' not in self.login and 'wmt_api' in self.login:
-            walmart_check = True
-        else:
-            walmart_check = False
-        dl_url = self.get_download_url(wapi=walmart_check)
+        dl_url = self.get_download_url()
         if dl_url is None:
-            logging.warning('Could not retrieve download url, returning blank df.')
+            logging.warning('Could not retrieve url, returning blank df.')
             return pd.DataFrame()
         r = requests.get(dl_url, headers=self.headers)
         self.df = self.get_df_from_response(r)
@@ -152,6 +143,7 @@ class TtdApi(object):
 
     def check_partner_id(self):
         self.set_headers()
+        url = self.walmart_check()
         rep_url = '{0}/partner/query'.format(url)
         i = 0
         error_response_count = 0
@@ -180,6 +172,7 @@ class TtdApi(object):
 
     def advertiser_id(self, results, acc_col, success_msg, failure_msg):
         self.set_headers()
+        url = self.walmart_check()
         rep_url = '{0}/advertiser/query/partner'.format(url)
         i = 0
         error_response_count = 0
@@ -224,4 +217,11 @@ class TtdApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
+
+    def walmart_check(self):
+        if 'ttd_api' not in self.login and 'wmt_api' in self.login:
+            url = walmart_url
+        else:
+            url = ttd_url
+        return url
 
