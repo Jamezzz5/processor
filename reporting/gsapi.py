@@ -25,9 +25,8 @@ class GsApi(object):
     text_format = 'NORMAL_TEXT'
     screenshot_dir = os.path.join('screenshots', 'charts/')
 
-    def __init__(self, s3config='s3config_screenshots.json'):
+    def __init__(self):
         self.default_config = "gsapi_screenshots.json"
-        self.s3_config = s3config
         self.config = None
         self.config_file = None
         self.client_id = None
@@ -42,7 +41,6 @@ class GsApi(object):
         self.r = None
         self.google_doc = False
         self.parse_response = self.parse_sheets_response
-        self.s3 = None
 
     def input_config(self, config):
         if str(config) == 'nan':
