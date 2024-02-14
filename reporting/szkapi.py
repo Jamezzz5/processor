@@ -90,7 +90,8 @@ class SzkApi(object):
                 sys.exit(0)
 
     def set_headers(self):
-        self.headers = {'api-key': self.api_key}
+        self.headers = {'api-key': self.api_key,
+                        'Content-Type': 'application/json'}
         data = {'username': self.username, 'password': self.password}
         for i in range(1, 10):
             r = self.make_request(
@@ -101,8 +102,9 @@ class SzkApi(object):
                 self.headers['Authorization'] = session_id
                 return True
             else:
-                logging.warning('Could not set headers with error as follows, retrying:'
-                                '{}'.format(r.json()))
+                logging.warning(
+                    'Could not set headers with error as follows, retrying:'
+                    '{}'.format(r.json()))
         return False
 
     def make_request(self, url, method, headers=None, json_body=None, data=None,

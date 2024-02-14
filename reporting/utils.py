@@ -46,7 +46,7 @@ def dir_check(directory):
 
 
 def import_read_csv(filename, path=None, file_check=True, error_bad='error',
-                    empty_df=False, nrows=None):
+                    empty_df=False, nrows=None, file_type=None):
     sheet_names = []
     if sheet_name_splitter in filename:
         filename = filename.split(sheet_name_splitter)
@@ -58,7 +58,8 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         if not os.path.isfile(filename):
             logging.warning('{} not found.  Continuing.'.format(filename))
             return pd.DataFrame()
-    file_type = os.path.splitext(filename)[1].lower()
+    if not file_type:
+        file_type = os.path.splitext(filename)[1].lower()
     kwargs = {'parse_dates': True, 'keep_default_na': False,
               'na_values': na_values, 'nrows': nrows}
     if sheet_names:
@@ -179,6 +180,9 @@ def string_to_date(my_string):
           my_string[-3:] in month_list):
         my_string = my_string + '-' + dt.datetime.today().strftime('%Y')
         return dt.datetime.strptime(my_string, '%d-%b-%Y')
+    elif len(my_string) == 24 and my_string[-3:] == 'GMT':
+        my_string = my_string[4:-11]
+        return dt.datetime.strptime(my_string, '%d%b%Y')
     else:
         return my_string
 
