@@ -259,7 +259,7 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
             api_mp_key, api_ss_key, api_nz_key, api_ytd_key, api_wal_key]
 test_apis = [api_dc_key, api_fb_key, api_aw_key, api_sam_key, api_tik_key,
-             api_yv_key, api_gs_key, api_sc_key]
+             api_yv_key, api_gs_key, api_sc_key, api_cri_key]
 r_cols = ['Field', 'Result', 'Success']
 preview_apis = [api_fb_key]
 no_account_apis = [api_tw_key]

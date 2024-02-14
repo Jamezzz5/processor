@@ -6,6 +6,7 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
+import reporting.vmcolumns as vmc
 import reporting.utils as utl
 
 config_path = utl.config_path
@@ -125,19 +126,22 @@ class CriApi(object):
         self.df = self.request_and_get_data(sd, ed)
         return self.df
 
-    def request_and_get_data(self, sd, ed):
+    def request_data(self, sd, ed, base_url):
         logging.info('Getting data form {} to {}'.format(sd, ed))
         self.set_headers()
-        base_url = '{}{}'.format(self.base_url, self.version_url)
         url = '{}/reports/campaigns'.format(base_url)
         params = {'startDate': sd, 'endDate': ed,
                   'timezone': 'America/New_York', 'id': self.advertiser_id,
-                  'reportType': 'summary',
                   'format': 'json-compact'}
         params = {'type': 'RetailMediaReportRequest', 'attributes': params}
         params = {'data': params}
         r = self.make_request(url, method='POST', headers=self.headers,
                               json_body=params)
+        return r
+
+    def request_and_get_data(self, sd, ed):
+        base_url = '{}{}'.format(self.base_url, self.version_url)
+        r = self.request_data(sd, ed, base_url)
         if 'data' not in r.json():
             logging.warning('data was not in response returning blank df: '
                             '{}'.format(r.json()))
@@ -189,3 +193,34 @@ class CriApi(object):
         logging.warning('Unexpected response. Returning blank df: {}'
                         .format(r.json()))
         return pd.DataFrame()
+
+    def check_permissions(self, results, acc_col, success_msg, failure_msg):
+        self.set_headers()
+        sd = dt.datetime.today() - dt.timedelta(days=30)
+        ed = dt.datetime.today() - dt.timedelta(days=1)
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        base_url = '{}{}'.format(self.base_url, self.version_url)
+        r = self.request_data(sd, ed, base_url)
+        if (r.status_code == 200 and
+                'data' in r.json()):
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Permissions NOT Granted. '
+                   'Double Check Permissions were granted, '
+                   'and verify Campaign ID is correct'
+                   '\n Error Msg:')
+            row = [acc_col, ' '.join([failure_msg, msg, r.reason]),
+                   False]
+            results.append(row)
+        return results, r
+
+    def test_connection(self, acc_col, camp_col=None, acc_pre=None):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results, r = self.check_permissions(
+            [], acc_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
+

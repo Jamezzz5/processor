@@ -5,6 +5,7 @@ import json
 import time
 import shutil
 import logging
+import base64
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -464,6 +465,12 @@ def image_to_binary(file_name, as_bytes_io=False):
         logging.warning('{} does not exist returning None'.format(file_name))
         image_data = None
     return image_data
+
+
+def base64_to_binary(data):
+    data = data.split(',')[1]
+    decoded_bytes = base64.b64decode(data)
+    return io.BytesIO(decoded_bytes)
 
 
 class SeleniumWrapper(object):
