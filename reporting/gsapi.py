@@ -23,6 +23,7 @@ class GsApi(object):
     head_str = 'header'
     doc_str = 'Doc'
     text_format = 'NORMAL_TEXT'
+    screenshot_dir = os.path.join('screenshots', 'charts/')
 
     def __init__(self):
         self.default_config = "gsapi_screenshots.json"
@@ -292,6 +293,35 @@ class GsApi(object):
                                                   self.text_format))
         return table_requests, index - 1
 
+    def add_image_doc(self, presigned_url, index):
+        if not presigned_url:
+            return [], index
+        img_request = [{'insertInlineImage': {
+            'location': {
+                'index': index
+            },
+            'uri': presigned_url,
+            'objectSize': {
+                'height': {
+                    'magnitude': 250,
+                    'unit': 'PT'
+                },
+                'width': {
+                    'magnitude': 250,
+                    'unit': 'PT'
+                }
+            }
+        }}, {
+            'insertText': {
+                'location': {
+                    'index': index + 1,
+                },
+                'text': '\n'
+            }
+        }]
+        index += 2
+        return img_request, index
+
     def add_text(self, doc_id, text_json=None, index=1, newline=True):
         logging.info('Adding text to doc.')
         url = self.docs_url + "/" + doc_id + ":batchUpdate"
@@ -319,8 +349,13 @@ class GsApi(object):
             format_request.append(self.get_format_req(index, end_ind, style))
             index += len(text)
             if 'data' in item:
-                table_req, index = self.add_table(item['data']['data'],
-                                                  index=index)
+                table_req = []
+                if 'imgURI' in item['data']['cols']:
+                    presigned_url = item['url']
+                    table_req, index = self.add_image_doc(presigned_url, index)
+                elif item['data']['cols']:
+                    table_req, index = self.add_table(item['data']['data'],
+                                                      index=index)
                 request += table_req
         request += format_request
         body = {"requests": request}

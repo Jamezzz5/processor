@@ -29,7 +29,7 @@ class S3(object):
         self.key_list = None
         self.df = pd.DataFrame()
 
-    def input_config(self, config):
+    def input_config(self, config='s3config_screenshots.json'):
         logging.info('Loading S3 config file: {}'.format(config))
         self.config_file = config_path + config
         self.load_config()
@@ -129,3 +129,13 @@ class S3(object):
         logging.info('File successfully uploaded as: {}'.format(key))
         object_url = 'https://{}.s3.amazonaws.com/{}'.format(self.bucket, key)
         return object_url
+
+    def s3_upload_file_get_presigned_url(self, file_object, key):
+        client = self.get_client()
+        url = self.s3_upload_file_obj(file_object, key)
+        key = str(url).split('.com/')[1]
+        presigned_url = client.generate_presigned_url(
+            ClientMethod='get_object',
+            Params={'Bucket': self.bucket, 'Key': key},
+            ExpiresIn=3600)
+        return presigned_url
