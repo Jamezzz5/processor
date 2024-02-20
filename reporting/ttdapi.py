@@ -144,7 +144,9 @@ class TtdApi(object):
         i = 0
         error_response_count = 0
         partner_id = None
-        while not partner_id and error_response_count < 5:
+        for i in range(5):
+            if partner_id or error_response_count >= 5:
+                break
             payload = {
                 'searchTerms': [],
                 'PageStartIndex': i * 99,
@@ -155,27 +157,28 @@ class TtdApi(object):
             if 'Result' in raw_data:
                 partner_id = raw_data['Result'][0]['PartnerId']
             elif ('Message' in raw_data and
-                    raw_data['Message'] == 'Too Many Requests'):
+                  raw_data['Message'] == 'Too Many Requests'):
                 logging.warning('Rate limit exceeded, '
                                 'pausing for 5s: {}'.format(raw_data))
                 time.sleep(5)
-                error_response_count = self.response_error(error_response_count)
+                error_response_count = self.response_error(
+                    error_response_count)
             else:
                 logging.warning('Retrying.  Unknown response :'
                                 '{}'.format(raw_data))
-                error_response_count = self.response_error(error_response_count)
+                error_response_count = self.response_error(
+                    error_response_count)
         return partner_id
 
-    def advertiser_id(self, results, acc_col, success_msg, failure_msg):
+    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
         self.set_headers()
         rep_url = '{0}/advertiser/query/partner'.format(url)
         i = 0
         error_response_count = 0
-        advertiser_id = None
+        check_advertiser_id = ""
         partner_id = self.check_partner_id()
         r = None
-        while not advertiser_id and error_response_count < 5\
-                and advertiser_id is not False:
+        for i in range(5):
             payload = {
                 'partnerId': partner_id,
                 'PageStartIndex': i * 99,
@@ -186,12 +189,23 @@ class TtdApi(object):
             if 'Result' in raw_data:
                 result_list = raw_data['Result']
                 df = pd.DataFrame(data=result_list)
-                advertiser_id = df['AdvertiserId'].eq(self.ad_id).any()
-                if advertiser_id:
-                    advertiser_id = self.ad_id
-                else:
-                    advertiser_id = False
-        if advertiser_id:
+                check_advertiser_id = df['AdvertiserId'].eq(self.ad_id).any()
+                if check_advertiser_id:
+                    check_advertiser_id = self.ad_id
+                break
+            elif ('Message' in raw_data and
+                  raw_data['Message'] == 'Too Many Requests'):
+                logging.warning('Rate limit exceeded, '
+                                'pausing for 5s: {}'.format(raw_data))
+                time.sleep(5)
+                error_response_count = self.response_error(
+                    error_response_count)
+            else:
+                logging.warning('Retrying.  Unknown response :'
+                                '{}'.format(raw_data))
+                error_response_count = self.response_error(
+                    error_response_count)
+        if check_advertiser_id:
             row = [acc_col, ' '.join([success_msg, str(self.ad_id)]),
                    True]
             results.append(row)
@@ -208,7 +222,7 @@ class TtdApi(object):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
         self.set_headers()
-        results, r = self.advertiser_id(
+        results, r = self.check_advertiser_id(
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
