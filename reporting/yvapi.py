@@ -144,7 +144,13 @@ class YvApi(object):
         return sd, ed
 
     def check_file(self, download_url, attempt=1):
-        r = requests.get(download_url, headers=self.header)
+        try:
+            r = requests.get(download_url, headers=self.header)
+        except ConnectionError as e:
+            r = None
+            logging.error('Connection error: {}'.format(e))
+            time.sleep(30)
+            return False, r
         if 'status' in r.json() and r.json()['status'] == 'Success':
             return True, r
         else:

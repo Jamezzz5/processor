@@ -6,6 +6,7 @@ import logging
 import requests
 import pandas as pd
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 
 
 url = 'https://api.thetradedesk.com/v3'
@@ -63,11 +64,14 @@ class TtdApi(object):
         auth_token = json.loads(r.text)['Token']
         return auth_token
 
-    def get_download_url(self):
+    def set_headers(self):
         auth_token = self.authenticate()
-        rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
+
+    def get_download_url(self):
+        self.set_headers()
+        rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
         data = []
         i = 0
         error_response_count = 0
@@ -98,7 +102,11 @@ class TtdApi(object):
                 logging.warning('Retrying.  Unknown response :'
                                 '{}'.format(raw_data))
                 error_response_count = self.response_error(error_response_count)
-        last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
+        try:
+            last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
+        except ValueError as e:
+            logging.warning('Report does not contain any data: {}'.format(e))
+            return None
         dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
         return dl_url
 
@@ -123,6 +131,85 @@ class TtdApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
         dl_url = self.get_download_url()
+        if dl_url is None:
+            logging.warning('Could not retrieve download url, returning blank df.')
+            return pd.DataFrame()
         r = requests.get(dl_url, headers=self.headers)
         self.df = self.get_df_from_response(r)
         return self.df
+
+    def check_partner_id(self):
+        self.set_headers()
+        rep_url = '{0}/partner/query'.format(url)
+        i = 0
+        error_response_count = 0
+        partner_id = None
+        while not partner_id and error_response_count < 5:
+            payload = {
+                'searchTerms': [],
+                'PageStartIndex': i * 99,
+                'PageSize': 100
+            }
+            r = requests.post(rep_url, headers=self.headers, json=payload)
+            raw_data = json.loads(r.content)
+            if 'Result' in raw_data:
+                partner_id = raw_data['Result'][0]['PartnerId']
+            elif ('Message' in raw_data and
+                    raw_data['Message'] == 'Too Many Requests'):
+                logging.warning('Rate limit exceeded, '
+                                'pausing for 5s: {}'.format(raw_data))
+                time.sleep(5)
+                error_response_count = self.response_error(error_response_count)
+            else:
+                logging.warning('Retrying.  Unknown response :'
+                                '{}'.format(raw_data))
+                error_response_count = self.response_error(error_response_count)
+        return partner_id
+
+    def advertiser_id(self, results, acc_col, success_msg, failure_msg):
+        self.set_headers()
+        rep_url = '{0}/advertiser/query/partner'.format(url)
+        i = 0
+        error_response_count = 0
+        advertiser_id = None
+        partner_id = self.check_partner_id()
+        r = None
+        while not advertiser_id and error_response_count < 5\
+                and advertiser_id is not False:
+            payload = {
+                'partnerId': partner_id,
+                'PageStartIndex': i * 99,
+                'PageSize': 100
+            }
+            r = requests.post(rep_url, headers=self.headers, json=payload)
+            raw_data = json.loads(r.content)
+            if 'Result' in raw_data:
+                result_list = raw_data['Result']
+                df = pd.DataFrame(data=result_list)
+                advertiser_id = df['AdvertiserId'].eq(self.ad_id).any()
+                if advertiser_id:
+                    advertiser_id = self.ad_id
+                else:
+                    advertiser_id = False
+        if advertiser_id:
+            row = [acc_col, ' '.join([success_msg, str(self.ad_id)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Advertiser ID NOT Found. '
+                   'Double Check ID and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, msg]), False]
+            results.append(row)
+        return results, r
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        self.set_headers()
+        results, r = self.advertiser_id(
+            [], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+
