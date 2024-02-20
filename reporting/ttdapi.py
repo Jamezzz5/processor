@@ -6,7 +6,6 @@ import logging
 import requests
 import pandas as pd
 import reporting.utils as utl
-import reporting.vmcolumns as vmc
 
 
 url = 'https://api.thetradedesk.com/v3'
@@ -102,11 +101,7 @@ class TtdApi(object):
                 logging.warning('Retrying.  Unknown response :'
                                 '{}'.format(raw_data))
                 error_response_count = self.response_error(error_response_count)
-        try:
-            last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
-        except ValueError as e:
-            logging.warning('Report does not contain any data: {}'.format(e))
-            return None
+        last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
         dl_url = last_completed['ReportDeliveries'][0]['DownloadURL']
         return dl_url
 
@@ -131,68 +126,28 @@ class TtdApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         logging.info('Getting TTD data for: {}'.format(self.report_name))
         dl_url = self.get_download_url()
-        if dl_url is None:
-            logging.warning('Could not retrieve download url, returning blank df.')
-            return pd.DataFrame()
         r = requests.get(dl_url, headers=self.headers)
         self.df = self.get_df_from_response(r)
         return self.df
 
-    def check_partner_id(self):
-        self.set_headers()
-        rep_url = '{0}/partner/query'.format(url)
-        i = 0
-        error_response_count = 0
-        partner_id = None
-        while not partner_id and error_response_count < 5:
-            payload = {
-                'searchTerms': [],
-                'PageStartIndex': i * 99,
-                'PageSize': 100
-            }
-            r = requests.post(rep_url, headers=self.headers, json=payload)
-            raw_data = json.loads(r.content)
-            if 'Result' in raw_data:
-                partner_id = raw_data['Result'][0]['PartnerId']
-            elif ('Message' in raw_data and
-                    raw_data['Message'] == 'Too Many Requests'):
-                logging.warning('Rate limit exceeded, '
-                                'pausing for 5s: {}'.format(raw_data))
-                time.sleep(5)
-                error_response_count = self.response_error(error_response_count)
-            else:
-                logging.warning('Retrying.  Unknown response :'
-                                '{}'.format(raw_data))
-                error_response_count = self.response_error(error_response_count)
-        return partner_id
 
-    def advertiser_id(self, results, acc_col, success_msg, failure_msg):
+    def check_report_name(self, results, acc_col, success_msg, failure_msg):
+        metrics = 'spend'
+        dimensions = 'campaign_id'
+        sd = dt.datetime.today() - dt.timedelta(days=365)
+        ed = dt.datetime.today()
+        url = self.base_url + self.version + self.ad_report_url
         self.set_headers()
-        rep_url = '{0}/advertiser/query/partner'.format(url)
-        i = 0
-        error_response_count = 0
-        advertiser_id = None
-        partner_id = self.check_partner_id()
-        r = None
-        while not advertiser_id and error_response_count < 5\
-                and advertiser_id is not False:
-            payload = {
-                'partnerId': partner_id,
-                'PageStartIndex': i * 99,
-                'PageSize': 100
-            }
-            r = requests.post(rep_url, headers=self.headers, json=payload)
-            raw_data = json.loads(r.content)
-            if 'Result' in raw_data:
-                result_list = raw_data['Result']
-                df = pd.DataFrame(data=result_list)
-                advertiser_id = df['AdvertiserId'].eq(self.ad_id).any()
-                if advertiser_id:
-                    advertiser_id = self.ad_id
-                else:
-                    advertiser_id = False
-        if advertiser_id:
-            row = [acc_col, ' '.join([success_msg, str(self.ad_id)]),
+        self.params['start_date'] = sd.date().isoformat()
+        self.params['end_date'] = ed.date().isoformat()
+        self.params['metrics'] = json.dumps([metrics])
+        self.params['dimensions'] = json.dumps([dimensions])
+        self.params['data_level'] = 'AUCTION_CAMPAIGN'
+        r = self.make_request(
+            url=url, method='GET', headers=self.headers, params=self.params)
+        if (r.status_code == 200 and
+                'data' in r.json() and 'list' in r.json()['data']):
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
                    True]
             results.append(row)
         else:
@@ -200,16 +155,38 @@ class TtdApi(object):
                    'Double Check ID and Ensure Permissions were granted.'
                    '\n Error Msg:')
             r = r.json()
-            row = [acc_col, ' '.join([failure_msg, msg]), False]
+            row = [acc_col, ' '.join([failure_msg, msg, r['message']]), False]
             results.append(row)
         return results, r
+
+    def check_ad_id(self, results, camp_col, success_msg, failure_msg):
+        self.get_ids(ad=False)
+        df = pd.DataFrame(data=self.campaign_id_list)
+        df = self.filter_df_on_campaign(df)
+        campaign_names = df['campaign_name'].to_list()
+        if not self.campaign_id_list:
+            msg = ' '.join([failure_msg, 'No Campaigns Under Advertiser. '
+                                         'Check Active and Permissions.'])
+            row = [camp_col, msg, False]
+            results.append(row)
+        else:
+            msg = ' '.join(
+                [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
+            row = [camp_col, msg, True]
+            results.append(row)
+            for campaign in campaign_names:
+                row = [camp_col, campaign, True]
+                results.append(row)
+        return results
 
     def test_connection(self, acc_col, camp_col, acc_pre):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
         self.set_headers()
-        results, r = self.advertiser_id(
+        results, r = self.check_report_name(
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-
+        results = self.check_ad_id(
+            results, camp_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
