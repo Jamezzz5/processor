@@ -49,7 +49,7 @@ def dir_check(directory):
 def import_read_csv(filename, path=None, file_check=True, error_bad='error',
                     empty_df=False, nrows=None, file_type=None):
     sheet_names = []
-    if sheet_name_splitter in filename:
+    if file_check and sheet_name_splitter in filename:
         filename = filename.split(sheet_name_splitter)
         sheet_names = filename[1:]
         filename = filename[0]
@@ -78,13 +78,18 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         if 'encoding' in kwargs:
             kwargs['encoding'] = 'iso-8859-1'
         df = read_func(filename, **kwargs)
-    except pd.errors.EmptyDataError:
-        logging.warning('Raw Data {} empty.  Continuing.'.format(filename))
+    except pd.errors.EmptyDataError as e:
+        msg = 'Data {} empty.  Continuing. {}'.format(filename, e)
+        logging.warning(msg)
         if empty_df:
             df = pd.DataFrame()
         else:
             df = None
             return df
+    except ValueError as e:
+        logging.warning(e)
+        read_func = pd.read_csv
+        df = read_func(filename, **kwargs)
     if sheet_names:
         df = pd.concat(df, ignore_index=True, sort=True)
     df = df.rename(columns=lambda x: x.strip())
@@ -844,6 +849,8 @@ def get_dict_values_from_list(list_search, dict_check, check_dupes=False):
 def check_dict_for_key(dict_to_check, key, missing_return_value=''):
     if key in dict_to_check:
         return_value = dict_to_check[key]
+        if not return_value:
+            return_value = missing_return_value
     else:
         return_value = missing_return_value
     return return_value
