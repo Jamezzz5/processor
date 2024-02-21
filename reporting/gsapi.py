@@ -322,6 +322,16 @@ class GsApi(object):
         index += 2
         return img_request, index
 
+    def get_file_by_name(self, name):
+        self.get_client()
+        q = "name = '{}'".format(name)
+        params = {'q': q}
+        return self.client.get(self.files_url, params=params)
+
+    def delete_file(self, file_id):
+        url = self.files_url + '/{}'.format(file_id)
+        self.client.delete(url)
+
     def add_text(self, doc_id, text_json=None, index=1, newline=True):
         logging.info('Adding text to doc.')
         url = self.docs_url + "/" + doc_id + ":batchUpdate"
