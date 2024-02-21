@@ -4,7 +4,7 @@ import pandas as pd
 import datetime as dt
 import reporting.utils as utl
 import reporting.awss3 as awss3
-
+import selenium.common.exceptions as ex
 
 class SsApi(object):
     url = 'url'
@@ -70,7 +70,10 @@ class SsApi(object):
             if site.device == self.device_mobile and not browser.mobile:
                 browser.quit()
                 browser = utl.SeleniumWrapper(mobile=True)
-            browser.take_screenshot(site.url, site.file_name)
+            try:
+                browser.take_screenshot(site.url, site.file_name)
+            except ex.TimeoutException as e:
+                logging.warning('Timed out - failed to take a screenshot. {}'.format(e))
             self.config[index][self.file_name] = site.file_name
         browser.quit()
         self.write_config_to_df()
