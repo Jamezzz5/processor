@@ -76,7 +76,8 @@ class ImportHandler(object):
             vmc.api_amd_key: amzapi.AmzApi,
             vmc.api_ss_key: ssapi.SsApi,
             vmc.api_nz_key: nzapi.NzApi,
-            vmc.api_ytd_key: ytdapi.YtdApi
+            vmc.api_ytd_key: ytdapi.YtdApi,
+            vmc.api_wal_key: ttdapi.TtdApi
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
