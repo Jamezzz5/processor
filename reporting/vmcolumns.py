@@ -216,7 +216,7 @@ VER_COST = 'Verification Cost'
 ad_rep_cols = [AD_COST, REP_COST, VER_COST]
 
 
-api_aw_key = 'Adwords'
+api_aw_key = 'Google Ads'
 api_fb_key = 'Facebook'
 api_tw_key = 'Twitter'
 api_ttd_key = 'TTD'
@@ -227,7 +227,7 @@ api_sc_key = 'Snapchat'
 api_aj_key = 'Adjust'
 api_dc_key = 'DCM'
 api_rs_key = 'Redshell'
-api_db_key = 'DBM'
+api_db_key = 'DV360'
 api_vk_key = 'VK'
 api_rc_key = 'Revcontent'
 api_szk_key = 'Sizmek'
