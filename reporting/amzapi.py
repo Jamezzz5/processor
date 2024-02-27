@@ -206,6 +206,9 @@ class AmzApi(object):
             self.check_and_get_all_reports(self.report_ids)
         else:
             report_id = self.request_dsp_report(sd, ed)
+            if not report_id:
+                logging.warning('Could not generate report, returning blank df')
+                return self.df
             self.get_dsp_report(report_id)
         logging.info('All reports downloaded - returning dataframe.')
         self.df = self.filter_df_on_campaign(self.df)
@@ -257,7 +260,8 @@ class AmzApi(object):
                     'groupBy': ['campaign', 'adGroup'],
                     "timeUnit": "DAILY"
                 }
-            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+            self.headers['Accept'] = (
+                'application/vnd.createasyncreportrequest.v3+json')
             url = '{}/reporting/reports'.format(self.base_url)
         for x in range(5):
             r = self.make_request(url, method='POST', body=body,
@@ -275,8 +279,7 @@ class AmzApi(object):
                 logging.warning('Error in request as follows: {}'
                                 .format(r.json()))
                 sys.exit(0)
-        logging.warning('Could not generate report, exiting')
-        sys.exit(0)
+        return None
 
     def get_dsp_report(self, report_id):
         if self.amazon_dsp:
@@ -286,7 +289,8 @@ class AmzApi(object):
             complete_status = 'SUCCESS'
             url_key = 'location'
         else:
-            self.headers['Accept'] = 'application/vnd.createasyncreportrequest.v3+json'
+            self.headers['Accept'] = (
+                'application/vnd.createasyncreportrequest.v3+json')
             url = '{}/reporting/reports/{}'.format(
                 self.base_url, report_id)
             complete_status = 'COMPLETED'
@@ -327,7 +331,7 @@ class AmzApi(object):
             else:
                 logging.warning(
                     'No status in response as follows: {}'.format(r.json()))
-                sys.exit(0)
+                self.df = pd.DataFrame()
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
