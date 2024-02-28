@@ -5,6 +5,7 @@ import pandas as pd
 import datetime as dt
 import reporting.fbapi as fbapi
 import reporting.awapi as awapi
+import reporting.goadapi as goadapi
 import reporting.twapi as twapi
 import reporting.gaapi as gaapi
 import reporting.nbapi as nbapi
@@ -14,6 +15,7 @@ import reporting.ajapi as ajapi
 import reporting.dcapi as dcapi
 import reporting.rsapi as rsapi
 import reporting.dbapi as dbapi
+import reporting.dvoapi as dvoapi
 import reporting.vkapi as vkapi
 import reporting.rcapi as rcapi
 import reporting.ttdapi as ttdapi
@@ -48,6 +50,7 @@ class ImportHandler(object):
         self.class_list = {
             vmc.api_fb_key: fbapi.FbApi,
             vmc.api_aw_key: awapi.AwApi,
+            vmc.api_goad_key: goadapi.GoadApi,
             vmc.api_tw_key: twapi.TwApi,
             vmc.api_ttd_key: ttdapi.TtdApi,
             vmc.api_ga_key: gaapi.GaApi,
@@ -57,6 +60,7 @@ class ImportHandler(object):
             vmc.api_aj_key: ajapi.AjApi,
             vmc.api_dc_key: dcapi.DcApi,
             vmc.api_db_key: dbapi.DbApi,
+            vmc.api_dvo_key: dvoapi.DvoApi,
             vmc.api_vk_key: vkapi.VkApi,
             vmc.api_rs_key: rsapi.RsApi,
             vmc.api_rc_key: rcapi.RcApi,
