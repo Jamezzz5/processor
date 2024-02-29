@@ -33,6 +33,7 @@ class VendorMatrix(object):
         self.vks = {
             vmc.api_fb_key: [],
             vmc.api_aw_key: [],
+            vmc.api_goad_key: [],
             vmc.api_tw_key: [],
             vmc.api_ttd_key: [],
             vmc.api_ga_key: [],
@@ -43,6 +44,7 @@ class VendorMatrix(object):
             vmc.api_dc_key: [],
             vmc.api_rs_key: [],
             vmc.api_db_key: [],
+            vmc.api_dvo_key: [],
             vmc.api_vk_key: [],
             vmc.api_rc_key: [],
             vmc.api_szk_key: [],

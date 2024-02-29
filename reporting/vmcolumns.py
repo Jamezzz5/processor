@@ -217,6 +217,7 @@ ad_rep_cols = [AD_COST, REP_COST, VER_COST]
 
 
 api_aw_key = 'Adwords'
+api_goad_key = 'GoogleAds'
 api_fb_key = 'Facebook'
 api_tw_key = 'Twitter'
 api_ttd_key = 'TTD'
@@ -228,6 +229,7 @@ api_aj_key = 'Adjust'
 api_dc_key = 'DCM'
 api_rs_key = 'Redshell'
 api_db_key = 'DBM'
+api_dvo_key = 'DV360'
 api_vk_key = 'VK'
 api_rc_key = 'Revcontent'
 api_szk_key = 'Sizmek'
@@ -257,7 +259,8 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_red_key, api_dv_key, api_raw_key, api_adk_key, api_inn_key,
             api_tik_key, api_amz_key, api_cri_key, api_pm_key, api_sam_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
-            api_mp_key, api_ss_key, api_nz_key, api_ytd_key, api_wal_key]
+            api_mp_key, api_ss_key, api_nz_key, api_ytd_key, api_wal_key,
+            api_goad_key, api_dvo_key]
 test_apis = [api_dc_key, api_fb_key, api_aw_key, api_sam_key, api_tik_key,
              api_yv_key, api_gs_key, api_sc_key, api_cri_key]
 r_cols = ['Field', 'Result', 'Success']
@@ -266,6 +269,7 @@ no_account_apis = [api_tw_key]
 
 api_translation = {
     api_aw_key: 'aw',
+    api_goad_key: 'goad',
     api_fb_key: 'fb',
     api_tw_key: 'tw',
     api_ttd_key: 'ttd',
@@ -277,6 +281,7 @@ api_translation = {
     api_dc_key: 'dc',
     api_rs_key: 'rs',
     api_db_key: 'db',
+    api_dvo_key: 'dvo',
     api_vk_key: 'vk',
     api_rc_key: 'rc',
     api_szk_key: 'szk',
@@ -301,6 +306,7 @@ api_translation = {
 
 api_partner_name_translation = {
     api_aw_key: ['Google SEM', 'YouTube'],
+    api_goad_key: ['Google SEM', 'YouTube'],
     api_fb_key: ['Facebook', 'Instagram', 'Facebook/Instagram', 'FBIG'],
     api_tw_key: ['Twitter'],
     api_ttd_key: ['The Trade Desk'],
@@ -312,6 +318,7 @@ api_partner_name_translation = {
     api_dc_key: ['DCM'],
     api_rs_key: ['Redshell'],
     api_db_key: ['DBM', 'DV360'],
+    api_dvo_key: ['DBM', 'DV360'],
     api_vk_key: ['VK'],
     api_rc_key: ['Revcontent'],
     api_szk_key: ['Sizmek'],
