@@ -2687,12 +2687,13 @@ class AliChat(object):
         word_idx = {}
         db_all = db_model.query.all()
         for obj in db_all:
-            words = utl.lower_words_from_str(obj.name)
-            for word in words:
-                if word in word_idx:
-                    word_idx[word].append(obj.id)
-                else:
-                    word_idx[word] = [obj.id]
+            if obj.name:
+                words = utl.lower_words_from_str(obj.name)
+                for word in words:
+                    if word in word_idx:
+                        word_idx[word].append(obj.id)
+                    else:
+                        word_idx[word] = [obj.id]
         return word_idx
 
     def convert_model_ids_to_message(self, db_model, model_ids, message='',
