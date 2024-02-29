@@ -591,6 +591,47 @@ class TestAnalyze:
         assert 'API_Tiktok_Test' in df[vmc.vendorkey][0]
         assert 'API_Rawfile_Test' in df[vmc.vendorkey][0]
 
+    def test_placement_not_in_mp(self):
+        df = pd.DataFrame({
+            dctc.VEN: {0: 'TikTok', 1: 'TikTok', 2: 'TikTok'},
+            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Tiktok_Test',
+                            2: vmc.api_mp_key},
+            vmc.clicks: {0: 15.0, 1: 15.0, 2: 0},
+            vmc.date: {0: '7/27/2022', 1: '7/27/2022', 2: '7/27/2022'},
+            dctc.PN: {0: 'Test', 1: 'Test1', 2: 'Test'}})
+        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
+        cpmp = az.CheckPlacementsNotInMp(az.Analyze())
+        df = cpmp.find_placements_not_in_mp(df)
+        assert 'Test1' in df[dctc.PN].values
+        assert 'Test' not in df[dctc.PN].values
+
+    def test_placement_not_in_mp_empty(self):
+        df = pd.DataFrame({
+            dctc.VEN: {0: 'TikTok', 1: 'TikTok'},
+            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Tiktok_Test'},
+            vmc.clicks: {0: 15.0, 1: 15.0},
+            vmc.date: {0: '7/27/2022', 1: '7/27/2022'},
+            dctc.PN: {0: 'Test', 1: 'Test1'}})
+        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
+        cpmp = az.CheckPlacementsNotInMp(az.Analyze())
+        df = cpmp.find_placements_not_in_mp(df)
+        assert df.empty
+
+    def test_all_placement_in_mp(self):
+        df = pd.DataFrame({
+            dctc.VEN: {0: 'TikTok', 1: 'TikTok', 2: 'TikTok', 3: 'TikTok'},
+            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Tiktok_Test',
+                            2: vmc.api_mp_key, 3: vmc.api_mp_key},
+            vmc.clicks: {0: 15.0, 1: 15.0, 2: 0, 3: 0},
+            vmc.date: {0: '7/27/2022', 1: '7/27/2022', 2: '7/27/2022',
+                       3: '7/27/2022'},
+            dctc.PN: {0: 'Test', 1: 'Test1', 2: 'Test', 3: 'Test1'}})
+        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
+        cpmp = az.CheckPlacementsNotInMp(az.Analyze())
+        df = cpmp.find_placements_not_in_mp(df)
+        assert 'Test' not in df[dctc.PN].values
+        assert 'Test1' not in df[dctc.PN].values
+
     def test_find_double_counting_empty(self):
         df = pd.DataFrame()
         cdc = az.CheckDoubleCounting(az.Analyze())
