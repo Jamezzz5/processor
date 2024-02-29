@@ -2522,25 +2522,26 @@ class CheckPlacementsNotInMp(AnalyzeBase):
     merge = 'left'
     merge_col = '_merge'
     merge_filter = 'left_only'
+    cols = [vmc.vendorkey, dctc.VEN, dctc.PN]
 
     def find_placements_not_in_mp(self, df):
         """
         Find placements in full output not included in the media plan.
 
         """
-        cols = [vmc.vendorkey, dctc.VEN, dctc.PN]
         if df.empty:
-            return pd.DataFrame(columns=cols)
-        df = df.groupby(cols).size()
+            return pd.DataFrame(columns=self.cols)
+        df = df.groupby(self.cols).size()
         df = df.reset_index().rename(columns={0: self.tmp_col})
-        mp_placements = df.loc[df[vmc.vendorkey] == vmc.api_mp_key][cols[1:]]
+        mp_placements = (
+            df.loc[df[vmc.vendorkey] == vmc.api_mp_key][self.cols[1:]])
         if mp_placements.empty:
-            return pd.DataFrame(columns=cols)
+            return pd.DataFrame(columns=self.cols)
         df_placements = df.loc[df[vmc.vendorkey] != vmc.api_mp_key]
         merged_df = pd.merge(df_placements, mp_placements, how=self.merge,
-                             on=cols[1:], indicator=True)
+                             on=self.cols[1:], indicator=True)
         filtered_df = merged_df[merged_df[self.merge_col] == self.merge_filter]
-        return filtered_df[cols]
+        return filtered_df[self.cols]
 
     def do_analysis(self):
         df = self.aly.df
