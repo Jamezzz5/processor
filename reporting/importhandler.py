@@ -50,7 +50,7 @@ class ImportHandler(object):
         self.class_list = {
             vmc.api_fb_key: fbapi.FbApi,
             vmc.api_aw_key: awapi.AwApi,
-            vmc.api_goad_key: goadapi.GoadApi,
+            vmc.api_goad_key: awapi.AwApi,
             vmc.api_tw_key: twapi.TwApi,
             vmc.api_ttd_key: ttdapi.TtdApi,
             vmc.api_ga_key: gaapi.GaApi,
@@ -60,7 +60,7 @@ class ImportHandler(object):
             vmc.api_aj_key: ajapi.AjApi,
             vmc.api_dc_key: dcapi.DcApi,
             vmc.api_db_key: dbapi.DbApi,
-            vmc.api_dvo_key: dvoapi.DvoApi,
+            vmc.api_dvo_key: dbapi.DbApi,
             vmc.api_vk_key: vkapi.VkApi,
             vmc.api_rs_key: rsapi.RsApi,
             vmc.api_rc_key: rcapi.RcApi,
