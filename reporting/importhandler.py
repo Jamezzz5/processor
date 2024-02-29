@@ -5,7 +5,6 @@ import pandas as pd
 import datetime as dt
 import reporting.fbapi as fbapi
 import reporting.awapi as awapi
-import reporting.goadapi as goadapi
 import reporting.twapi as twapi
 import reporting.gaapi as gaapi
 import reporting.nbapi as nbapi
@@ -15,7 +14,6 @@ import reporting.ajapi as ajapi
 import reporting.dcapi as dcapi
 import reporting.rsapi as rsapi
 import reporting.dbapi as dbapi
-import reporting.dvoapi as dvoapi
 import reporting.vkapi as vkapi
 import reporting.rcapi as rcapi
 import reporting.ttdapi as ttdapi
