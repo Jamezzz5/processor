@@ -44,6 +44,7 @@ class Analyze(object):
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
     placement_col = 'placement_col'
+    non_mp_placement_col = 'non_mp_placement_col'
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
@@ -98,7 +99,7 @@ class Analyze(object):
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping]
+            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -2511,6 +2512,51 @@ class GetDailyPacingAlerts(AnalyzeBase):
         self.aly.add_to_analysis_dict(
             key_col=self.aly.daily_pacing_alert, message=msg,
             param=self.aly.under_daily_pace, data=under_df.to_dict())
+
+
+class CheckPlacementsNotInMp(AnalyzeBase):
+    name = Analyze.non_mp_placement_col
+    fix = False
+    pre_run = False
+    tmp_col = 'temp'
+    merge = 'left'
+    merge_col = '_merge'
+    merge_filter = 'left_only'
+
+    def find_placements_not_in_mp(self, df):
+        """
+        Find placements in full output not included in the media plan.
+
+        """
+        cols = [vmc.vendorkey, dctc.VEN, dctc.PN]
+        if df.empty:
+            return pd.DataFrame(columns=cols)
+        df = df.groupby(cols).size()
+        df = df.reset_index().rename(columns={0: self.tmp_col})
+        mp_placements = df.loc[df[vmc.vendorkey] == vmc.api_mp_key][cols[1:]]
+        if mp_placements.empty:
+            return pd.DataFrame(columns=cols)
+        df_placements = df.loc[df[vmc.vendorkey] != vmc.api_mp_key]
+        merged_df = pd.merge(df_placements, mp_placements, how=self.merge,
+                             on=cols[1:], indicator=True)
+        filtered_df = merged_df[merged_df[self.merge_col] == self.merge_filter]
+        return filtered_df[cols]
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_placements_not_in_mp(df)
+        if rdf.empty:
+            msg = ('No datasources have placements not included in the '
+                   'Media Plan.')
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following datasources have placement names that were '
+                   'not included in the provided Media Plan. '
+                   'Consider Translating:')
+            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=rdf.to_dict())
 
 
 class ValueCalc(object):
