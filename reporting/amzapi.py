@@ -285,7 +285,7 @@ class AmzApi(object):
             url = '{}/reporting/reports'.format(self.base_url)
         return self.make_request_dsp_report(url, body)
 
-    def get_dsp_report(self, report_id, attempts=100, wait=15):
+    def get_dsp_report(self, report_id, attempts=100, wait=30):
         if self.amazon_dsp:
             self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
             url = '{}/accounts/{}/dsp/reports/{}'.format(
