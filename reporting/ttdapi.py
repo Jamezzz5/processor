@@ -223,6 +223,60 @@ class TtdApi(object):
             results.append(row)
         return results, r
 
+    def check_reports_id(self, results, acc_col, success_msg, failure_msg):
+        self.set_headers()
+        url = self.walmart_check()
+        rep_url = '{0}/myreports/reportschedule/query'.format(url)
+        i = 0
+        error_response_count = 0
+        check_reports_id = ""
+        r = None
+        for i in range(5):
+            if check_reports_id or error_response_count >= 5:
+                break
+            payload = {
+                'sortFields': [],
+                'PageStartIndex': i * 99,
+                'NameContains': self.report_name,
+                'PageSize': 100
+            }
+            r = requests.post(rep_url, headers=self.headers, json=payload)
+            raw_data = json.loads(r.content)
+            if 'Result' in raw_data:
+                result_list = raw_data['Result']
+                df = pd.DataFrame(data=result_list)
+                if not df.empty:
+                    if 'ReportScheduleName' in df.columns:
+                        check_reports_id = \
+                            df['ReportScheduleName'].eq(self.report_name).any()
+                        if check_reports_id:
+                            check_reports_id = self.report_name
+                        break
+            elif ('Result' in raw_data and
+                  raw_data['Message'] == 'Too Many Requests'):
+                logging.warning('Rate limit exceeded, '
+                                'pausing for 5s: {}'.format(raw_data))
+                time.sleep(5)
+                error_response_count = self.response_error(
+                    error_response_count)
+            else:
+                logging.warning('Retrying.  Unknown response :'
+                                '{}'.format(raw_data))
+                error_response_count = self.response_error(
+                    error_response_count)
+        if check_reports_id:
+            row = [acc_col, ' '.join([success_msg, str(self.report_name)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Report Name NOT Found.'
+                   'Double Check name and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, msg]), False]
+            results.append(row)
+        return results, r
+
     def test_connection(self, acc_col, camp_col, acc_pre):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
@@ -230,7 +284,10 @@ class TtdApi(object):
         results, r = self.check_advertiser_id(
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
-            return pd.DataFrame(data=results, columns=vmc.r_cols)
+            return pd.DataFrame(data=results, columns=vmc.r_cols[:2])
+        results = self.check_reports_id(
+            results, camp_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols[:2])
 
     def walmart_check(self):
         if 'ttd_api' not in self.login and 'wmt_api' in self.login:
