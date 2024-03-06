@@ -10,6 +10,7 @@ import pandas as pd
 import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
+import reporting.vmcolumns as vmc
 
 config_path = utl.config_path
 
@@ -219,6 +220,25 @@ class AmzApi(object):
             df = df[df['campaignName'].str.contains(self.campaign_id)]
         return df
 
+    def make_request_dsp_report(self, url, body):
+        for x in range(5):
+            r = self.make_request(url, method='POST', body=body,
+                                  headers=self.headers)
+            if 'reportId' in r.json():
+                report_id = r.json()['reportId']
+                return report_id
+            elif ('message' in r.json() and r.json()['message'] ==
+                    'Too Many Requests'):
+                logging.warning(
+                    'Too many requests pausing.  Attempt: {}.  '
+                    'Response: {}'.format((x + 1), r.json()))
+                time.sleep(30)
+            else:
+                logging.warning('Error in request as follows: {}'
+                                .format(r.json()))
+                sys.exit(0)
+        return None
+
     def request_dsp_report(self, sd, ed):
         delta = ed - sd
         delta = delta.days
@@ -263,25 +283,9 @@ class AmzApi(object):
             self.headers['Accept'] = (
                 'application/vnd.createasyncreportrequest.v3+json')
             url = '{}/reporting/reports'.format(self.base_url)
-        for x in range(5):
-            r = self.make_request(url, method='POST', body=body,
-                                  headers=self.headers)
-            if 'reportId' in r.json():
-                report_id = r.json()['reportId']
-                return report_id
-            elif ('message' in r.json() and r.json()['message'] ==
-                    'Too Many Requests'):
-                logging.warning(
-                    'Too many requests pausing.  Attempt: {}.  '
-                    'Response: {}'.format((x + 1), r.json()))
-                time.sleep(30)
-            else:
-                logging.warning('Error in request as follows: {}'
-                                .format(r.json()))
-                sys.exit(0)
-        return None
+        return self.make_request_dsp_report(url, body)
 
-    def get_dsp_report(self, report_id):
+    def get_dsp_report(self, report_id, attempts=100, wait=30):
         if self.amazon_dsp:
             self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
             url = '{}/accounts/{}/dsp/reports/{}'.format(
@@ -295,7 +299,7 @@ class AmzApi(object):
                 self.base_url, report_id)
             complete_status = 'COMPLETED'
             url_key = 'url'
-        for attempt in range(100):
+        for attempt in range(attempts):
             logging.info(
                 'Checking for report {} attempt {}'.format(
                     report_id, attempt + 1))
@@ -314,20 +318,20 @@ class AmzApi(object):
                         logging.warning('Dataframe empty, likely no data  - '
                                         'returning empty dataframe')
                     else:
-                        if self.amazon_dsp:
+                        if self.amazon_dsp and 'date' in df.columns:
                             df['date'] = df['date'].apply(
                                 lambda x: dt.datetime.fromtimestamp(
                                     x / 1000).date())
                     self.df = df
                     break
                 else:
-                    time.sleep(15)
+                    time.sleep(wait)
             elif ('message' in r.json() and r.json()['message'] ==
                     'Too Many Requests'):
                 logging.warning(
                     'Too many requests pausing.  Attempt: {}.  '
                     'Response: {}'.format((attempt + 1), r.json()))
-                time.sleep(30)
+                time.sleep(wait)
             else:
                 logging.warning(
                     'No status in response as follows: {}'.format(r.json()))
@@ -476,3 +480,92 @@ class AmzApi(object):
             dates.append(sd)
             sd = sd + dt.timedelta(days=1)
         return dates
+
+    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
+        profile = self.get_profiles()
+        if profile:
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Advertiser ID NOT Found. '
+                   'Double Check ID and Ensure Permissions were granted.')
+            row = [acc_col, ' '.join([failure_msg, msg]), False]
+            results.append(row)
+        return results, profile
+
+    def check_campaign_ids(self, results, camp_col, success_msg, failure_msg):
+        sd = dt.datetime.today() - dt.timedelta(days=30)
+        ed = dt.datetime.today() - dt.timedelta(days=1)
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        body = {"endDate": ed, "startDate": sd}
+        if self.amazon_dsp:
+            body.update({
+                "type": "CAMPAIGN",
+                "dimensions": ["ORDER"],
+                "metrics": ["totalCost"],
+                "startDate": sd,
+                "endDate": ed
+            })
+            self.headers['Accept'] = 'application/vnd.dspcreatereports.v3+json'
+            url = '{}/accounts/{}/dsp/reports'.format(
+                self.base_url, self.profile_id)
+        else:
+            body['configuration'] = {
+                    'adProduct': 'SPONSORED_PRODUCTS',
+                    'columns':  ["cost", "campaignId", "campaignName"],
+                    'reportTypeId': 'spCampaigns',
+                    'format': 'GZIP_JSON',
+                    'groupBy': ['campaign'],
+                    "timeUnit": "SUMMARY"
+                }
+            self.headers['Accept'] = (
+                'application/vnd.createasyncreportrequest.v3+json')
+            url = '{}/reporting/reports'.format(self.base_url)
+        report_id = self.make_request_dsp_report(url, body)
+        if not report_id:
+            msg = ' '.join([failure_msg,
+                            'Unable to check campaign names. Try again later.'])
+            row = [camp_col, msg, True]
+            results.append(row)
+            return results
+        self.get_dsp_report(report_id, 10, 10)
+        if self.df.empty:
+            msg = ' '.join([failure_msg,
+                            'Unable to check campaign names. Try again later.'])
+            row = [camp_col, msg, True]
+            results.append(row)
+            return results
+        df = self.filter_df_on_campaign(self.df)
+        if df.empty:
+            msg = ' '.join([failure_msg, 'No Campaigns Under Filter. '
+                                         'Double Check Filter and Active.'])
+            row = [camp_col, msg, False]
+            results.append(row)
+        elif self.amazon_dsp:
+            msg = ' '.join(
+                [success_msg, 'All Campaigns Under Advertiser Included.'])
+            row = [camp_col, msg, True]
+            results.append(row)
+        else:
+            msg = ' '.join(
+                [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
+            row = [camp_col, msg, True]
+            results.append(row)
+            for campaign in df['campaignName'].tolist():
+                row = [camp_col, campaign, True]
+                results.append(row)
+        return results
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        self.set_headers()
+        results, r = self.check_advertiser_id(
+            [], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results = self.check_campaign_ids(
+            results, camp_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
