@@ -503,7 +503,10 @@ class SeleniumWrapper(object):
         co.add_argument('--start-maximized')
         co.add_argument('--no-sandbox')
         co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path}
+        prefs = {'download.default_directory': download_path,
+                 "credentials_enable_service": False,
+                 "profile.password_manager_enabled": False
+                 }
         co.add_experimental_option('prefs', prefs)
         co.add_experimental_option('excludeSwitches', ['enable-automation'])
         if self.mobile:
@@ -712,7 +715,7 @@ class SeleniumWrapper(object):
                 clear_x = 'preceding-sibling::span/a[@class="remove-single"]'
                 clear_val = elem.find_elements_by_xpath(clear_x)
                 if len(clear_val) > 0:
-                    clear_val[0].click()
+                    self.click_on_xpath(elem=clear_val[0])
             self.send_keys_wrapper(elem, item[0])
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
