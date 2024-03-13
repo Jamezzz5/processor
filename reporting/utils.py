@@ -503,7 +503,10 @@ class SeleniumWrapper(object):
         co.add_argument('--start-maximized')
         co.add_argument('--no-sandbox')
         co.add_argument('--disable-gpu')
-        prefs = {'download.default_directory': download_path}
+        prefs = {'download.default_directory': download_path,
+                 "credentials_enable_service": False,
+                 "profile.password_manager_enabled": False
+                 }
         co.add_experimental_option('prefs', prefs)
         co.add_experimental_option('excludeSwitches', ['enable-automation'])
         if self.mobile:
@@ -712,8 +715,11 @@ class SeleniumWrapper(object):
                 clear_x = 'preceding-sibling::span/a[@class="remove-single"]'
                 clear_val = elem.find_elements_by_xpath(clear_x)
                 if len(clear_val) > 0:
-                    clear_val[0].click()
-            self.send_keys_wrapper(elem, item[0])
+                    self.click_on_xpath(elem=clear_val[0])
+            if elem.get_attribute('type') == 'checkbox':
+                self.click_on_xpath(elem=elem)
+            else:
+                self.send_keys_wrapper(elem, item[0])
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
                 wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
@@ -748,6 +754,19 @@ class SeleniumWrapper(object):
                     break
             time.sleep(sleep_time)
         return elem_found
+
+    def drag_and_drop(self, elem, target):
+        action_chains = wd.ActionChains(self.browser)
+        action_chains.drag_and_drop(elem, target).perform()
+
+    def get_element_order(self, elem1_id, elem2_id):
+        elem1 = self.browser.find_element_by_id(elem1_id)
+        elem2 = self.browser.find_element_by_id(elem2_id)
+        first_element_position = self.browser.execute_script(
+            "return arguments[0].getBoundingClientRect().top", elem1)
+        second_element_position = self.browser.execute_script(
+            "return arguments[0].getBoundingClientRect().top", elem2)
+        return first_element_position < second_element_position
 
     def count_rows_in_table(self, elem_id=''):
         elem = self.browser.find_element
