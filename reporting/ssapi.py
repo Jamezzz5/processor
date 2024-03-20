@@ -72,8 +72,12 @@ class SsApi(object):
                 browser = utl.SeleniumWrapper(mobile=True)
             try:
                 browser.take_screenshot(site.url, site.file_name)
-            except ex.TimeoutException as e:
-                logging.warning('Timed out - failed to take a screenshot. {}'.format(e))
+            except (ex.TimeoutException, ex.WebDriverException) as e:
+                logging.warning('Failed to take a screenshot. {}'.format(e))
+                try:
+                    browser.take_screenshot(site.url, site.file_name)
+                except (ex.TimeoutException, ex.WebDriverException) as e:
+                    logging.error('Failed to take a screenshot again. {}'.format(e))
             self.config[index][self.file_name] = site.file_name
         browser.quit()
         self.write_config_to_df()
