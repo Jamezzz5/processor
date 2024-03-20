@@ -2925,6 +2925,8 @@ class AliChat(object):
                     setattr(new_model, col, v)
             self.db.session.commit()
             args = new_model.get_create_args_from_other(cur_model)
+            if self.current_user:
+                args.append(self.current_user.id)
             new_model.create_object(*args)
             return new_model
 
