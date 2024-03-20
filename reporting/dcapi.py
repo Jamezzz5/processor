@@ -19,8 +19,7 @@ base_url = 'https://www.googleapis.com/dfareporting'
 class DcApi(object):
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
-        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId',
-        'PlatformType']
+        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId']
     default_metrics = [
         'impressions', 'clicks', 'clickRate',
         'activeViewViewableImpressions',
@@ -151,6 +150,8 @@ class DcApi(object):
             self.date_range = {'kind': 'dfareporting#dateRange',
                                'relativeDateRange': 'LAST_365_DAYS'}
             for field in fields:
+                if field == 'platformType':
+                    self.default_fields.append('platformType')
                 if field == '60':
                     self.date_range['relativeDateRange'] = 'LAST_60_DAYS'
                 elif field == '30':
