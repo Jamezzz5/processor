@@ -185,6 +185,7 @@ class SzkApi(object):
             sd = ed - dt.timedelta(days=1)
         sd = '{}{}'.format(sd.isoformat(), '.000Z')
         ed = '{}{}'.format(ed.isoformat(), '.000Z')
+        ed = ed.replace('T00:00:00.000Z', 'T23:59:59.000Z')
         return sd, ed
 
     def get_data_default_check(self, sd, ed, fields):
