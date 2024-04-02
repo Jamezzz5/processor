@@ -7,11 +7,10 @@ import operator
 import calendar
 import pandas as pd
 import datetime as dt
-
 import selenium.common.exceptions
-
 import reporting.utils as utl
 import selenium.common.exceptions as ex
+import reporting.vmcolumns as vmc
 
 
 class RedApi(object):
