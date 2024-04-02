@@ -262,3 +262,30 @@ class RedApi(object):
         df = self.sw.get_file_as_df(self.temp_path)
         self.sw.quit()
         return df
+
+    def check_credentials(self, results, camp_col, success_msg, failure_msg):
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
+        self.sw.go_to_url(self.base_url)
+        sign_in_check = self.sign_in()
+        self.sw.quit()
+        if not sign_in_check:
+            msg = ' '.join([failure_msg, 'Incorrect User or password. '
+                                         'Check Active and Permissions.'])
+            row = [camp_col, msg, False]
+            results.append(row)
+        else:
+            msg = ' '.join(
+                [success_msg, 'User or password are corrects:'])
+            row = [camp_col, msg, True]
+            results.append(row)
+        return results
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results = self.check_credentials(
+            [], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+
