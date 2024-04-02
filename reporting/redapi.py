@@ -111,7 +111,7 @@ class RedApi(object):
         if self.browser.current_url[:len(self.base_url)] != self.base_url:
             self.sw.go_to_url(self.base_url)
         else:
-            logo_xpath = '//*[@id="app"]/div/div[1]/div[1]/div/a/img'
+            logo_xpath = '//*[@id="app"]/div/div/div[1]/div/div[2]/a'
             self.sw.click_on_xpath(logo_xpath, sleep=5)
         if 'adsregister' in self.browser.current_url:
             logging.warning('Could not log in check username and password.')

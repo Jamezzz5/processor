@@ -2834,7 +2834,8 @@ class AliChat(object):
             r = 'Checking rules/placements for {}.  '.format(new_g_child.name)
             words = [x for x in words if x not in self.stop_words or x == 'y']
             new_model.check_gg_children(new_model, new_g_child.id, words,
-                                        total_db, r, message=self.message)
+                                        total_db, r, message=self.message,
+                                        running_user_id=self.current_user.id)
         return r
 
     def create_db_model_children(self, cur_model, words):

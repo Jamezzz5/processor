@@ -150,6 +150,8 @@ class DcApi(object):
             self.date_range = {'kind': 'dfareporting#dateRange',
                                'relativeDateRange': 'LAST_365_DAYS'}
             for field in fields:
+                if field == 'platformType':
+                    self.default_fields.append('platformType')
                 if field == '60':
                     self.date_range['relativeDateRange'] = 'LAST_60_DAYS'
                 elif field == '30':
