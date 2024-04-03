@@ -444,8 +444,9 @@ class Analyze(object):
         split_values = ['{} ({})'.format(x, y) for x, y in
                         format_df[[split, kpi]].values]
         split_values = ', '.join(split_values)
+        split_name = split if split == vmc.date else split[2:]
         msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
-            small_large, kpi, split, split_values)
+            small_large, kpi, split_name, split_values)
         if filter_col:
             msg = '{} when filtered by the {} {}'.format(
                 msg, filter_col, filter_val)
@@ -462,8 +463,9 @@ class Analyze(object):
         df = self.get_df_based_on_kpi(kpi, group, metrics, split, filter_col,
                                       filter_val)
         if df.empty:
+            split_name = split if split == vmc.date else split[2:]
             msg = ('Value(s) for KPI {} broken out by {} could '
-                   'not be calculated'.format(kpi, split))
+                   'not be calculated'.format(kpi, split_name))
             if filter_col:
                 msg = '{} when filtered by the {} {}'.format(
                     msg, filter_col, filter_val)
