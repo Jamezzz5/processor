@@ -15,11 +15,9 @@ class SimApi(object):
     rest_url = '/v4/website'
     validate_url = '/request-validate'
     website_url = '/traffic_and_engagement'
-    demo_url = '/audience_interests'
     request_url = '/request-report'
     status_url = '/request-status/'
     retry_url = '/retry/'
-    virtual_table_url = '/tables/describe'
 
     def __init__(self):
         self.config = None
@@ -71,8 +69,10 @@ class SimApi(object):
         return headers
 
     def construct_payload(self, sd, ed):
-        payload = {'metrics': ['all_traffic_visits', 'desktop_new_visitors',
-                               'mobile_average_visit_duration'],
+        payload = {'metrics': ['desktop_visits', 'desktop_bounce_rate',
+                               'desktop_pages_per_visit',
+                               'desktop_average_visit_duration',
+                               'desktop_unique_visitors'],
                    'filters': {
                        'domains': self.domains.split(','),
                        'countries': self.countries.split(','),
@@ -89,18 +89,42 @@ class SimApi(object):
     # Uses Data Credits
     def make_request(self, sd, ed):
         headers = self.set_headers()
-        url = self.url + self.batch_url + self.website_url + self.request_url
-        payload = self.construct_payload(sd, ed)
-        response = requests.request('POST', url, headers=headers, json=payload)
-        report_id = response.json()['report_id']
-        return report_id
+        url = '{}{}{}{}'.format(self.url, self.batch_url, self.website_url,
+                                self.request_url)
+        report_id = self.config.get('report_id')
+        if report_id is None:
+            payload = self.construct_payload(sd, ed)
+            response = requests.request('POST', url, headers=headers,
+                                        json=payload)
+            if response.status_code == 200:
+                report_id = response.json()['report_id']
+                self.config['report_id'] = report_id
+                return report_id
+            elif response.status_code == 400:
+                logging.warning('Metrics are not available in table')
+                return None
+            else:
+                logging.warning(f'Unexpected status code: '
+                                f'{response.status_code}')
+        else:
+            return report_id
 
     def check_report_status(self, report_id):
         headers = self.set_headers()
-        url = self.url + self.batch_url + self.status_url + report_id
-        r = requests.request('GET', url, headers=headers)
-        report_url = r.json()['download_url']
-        return report_url
+        url = '{}{}{}{}'.format(self.url, self.batch_url, self.status_url,
+                                report_id)
+        for x in range(10):
+            r = requests.request('GET', url, headers=headers)
+            if r.status_code != 200:
+                return None
+            status = r.json()['status']
+            if status == 'completed':
+                report_url = r.json()['download_url']
+                return report_url
+            if status in ['processing', 'pending']:
+                time.sleep(30)
+        logging.warning('Job still in progress, please try again in a moment')
+        return None
 
     @staticmethod
     def get_df_from_response(report_url):
@@ -109,15 +133,10 @@ class SimApi(object):
 
     def make_validate_request(self, sd, ed):
         headers = self.set_headers()
-        url = self.url + self.batch_url + self.website_url + self.validate_url
+        url = '{}{}{}{}'.format(self.url, self.batch_url, self.website_url,
+                                self.validate_url)
         payload = self.construct_payload(sd, ed)
         r = requests.request('POST', url, headers=headers, json=payload)
-        print(r.text)
+        result = r.text
+        return result
 
-    def discover_table(self, sd, ed):
-        headers = self.set_headers()
-        url = self.url + self.batch_url + self.virtual_table_url
-        payload = self.construct_payload(sd, ed)
-        r = requests.request('GET', url, headers=headers, json=payload)
-        df = pd.DataFrame(r.json())
-        return df
