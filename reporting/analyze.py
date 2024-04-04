@@ -2640,6 +2640,20 @@ class ValueCalc(object):
                 df[col] = df[item]
         return df
 
+    @staticmethod
+    def calculate_trending(df, col_name='DoD Change', metric=None,
+                           groupby=None, period=1, date='eventdate'):
+        df = df.sort_values(by=groupby+[date])
+        if groupby:
+            df[col_name] = df.groupby(groupby)[metric].pct_change(
+                periods=period)
+        else:
+            df[col_name] = df[metric].pct_change(periods=period)
+        df = df.sort_values(by=date, ascending=False)
+        groupby_ascending = [True for _ in groupby] + [False]
+        df = df.sort_values(by=groupby+[date], ascending=groupby_ascending)
+        return df
+
 
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
