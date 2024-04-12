@@ -2643,15 +2643,26 @@ class ValueCalc(object):
     @staticmethod
     def calculate_trending(df, col_name='DoD Change', metric=None,
                            groupby=None, period=1, date='eventdate'):
-        df = df.sort_values(by=groupby+[date])
+        group_and_date = groupby + [date] if groupby else [date]
+        df = df.sort_values(by=group_and_date)
         if groupby:
-            df[col_name] = df.groupby(groupby)[metric].pct_change(
-                periods=period)
+            group_df = df.groupby(groupby)[metric]
         else:
-            df[col_name] = df[metric].pct_change(periods=period)
+            group_df = df[metric]
+        df[col_name] = group_df.pct_change(periods=period)
         df = df.sort_values(by=date, ascending=False)
-        groupby_ascending = [True for _ in groupby] + [False]
-        df = df.sort_values(by=groupby+[date], ascending=groupby_ascending)
+        groupby_ascending = (
+            [True for _ in groupby] + [False] if groupby else [False])
+        df = df.sort_values(by=group_and_date, ascending=groupby_ascending)
+        return df
+
+    @staticmethod
+    def calculate_percent_total(df, metric, groupby='eventdate'):
+        groupby = groupby if type(groupby) == list else [groupby]
+        group_df = df.groupby(groupby)[metric]
+        group_sum = group_df.transform('sum')
+        df['% of {} by {}'.format(metric, ' , '.join(groupby))] = (
+                df[metric] / group_sum * 100)
         return df
 
 
