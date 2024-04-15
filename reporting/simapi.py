@@ -6,6 +6,7 @@ import logging
 import requests
 import pandas as pd
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 
 
 class SimApi(object):
@@ -131,12 +132,31 @@ class SimApi(object):
         df = pd.read_csv(report_url)
         return df
 
-    def make_validate_request(self, sd, ed):
+    def make_validate_request(self, sd, ed, acc_col, success_msg, failure_msg):
         headers = self.set_headers()
         url = '{}{}{}{}'.format(self.url, self.batch_url, self.website_url,
                                 self.validate_url)
         payload = self.construct_payload(sd, ed)
         r = requests.request('POST', url, headers=headers, json=payload)
-        result = r.text
-        return result
+        results_text = r.text
+        results = []
+        if 'estimated_credits' in results_text:
+            row = [acc_col, ' '.join([success_msg, results_text]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('You do not have enough credits. '
+                   'Double Check ID and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            row = [acc_col, ' '.join([failure_msg, msg]), False]
+            results.append(row)
+        return results
+    def test_connection(self, acc_col, camp_col=None, acc_pre=None,sd=None ,ed=None):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        self.set_headers()
+        result = self.make_validate_request(
+            sd, ed, acc_col, success_msg, failure_msg)
+        if False in result:
+            return pd.DataFrame(data=result, columns=vmc.r_cols)
 
