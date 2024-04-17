@@ -2766,13 +2766,16 @@ class AliChat(object):
         model_ids = {}
         for word in words:
             if word in word_idx and word not in used_words:
+                word_val = 1
                 new_model_ids = word_idx[word]
                 used_words.append(word)
+                if word.startswith('2') and len(word) > 5 and word.isnumeric():
+                    word_val += 5
                 for new_model_id in new_model_ids:
                     if new_model_id in model_ids:
-                        model_ids[new_model_id] += 1
+                        model_ids[new_model_id] += word_val
                     else:
-                        model_ids[new_model_id] = 1
+                        model_ids[new_model_id] = word_val
         if model_ids:
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
