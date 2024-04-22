@@ -138,25 +138,29 @@ class SimApi(object):
                                 self.validate_url)
         payload = self.construct_payload(sd, ed)
         r = requests.request('POST', url, headers=headers, json=payload)
-        results_text = r.text
+        raw_data = json.loads(r.content)
         results = []
-        if 'estimated_credits' in results_text:
-            row = [acc_col, ' '.join([success_msg, results_text]),
-                   True]
-            results.append(row)
+        if 'estimated_credits' in raw_data:
+            results_text = raw_data['estimated_credits']
+            if results_text:
+                row = [acc_col, ' '.join([success_msg, json.dumps(raw_data)]),
+                       True]
+                results.append(row)
         else:
             msg = ('You do not have enough credits. '
                    'Double Check ID and Ensure Permissions were granted.'
                    '\n Error Msg:')
+            r = r.json()
             row = [acc_col, ' '.join([failure_msg, msg]), False]
             results.append(row)
-        return results
-    def test_connection(self, acc_col, camp_col=None, acc_pre=None,sd=None ,ed=None):
+        return results, r
+
+    def test_connection(self, acc_col, camp_col=None, acc_pre=None, sd=None, ed=None):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
         self.set_headers()
-        result = self.make_validate_request(
+        results, r = self.make_validate_request(
             sd, ed, acc_col, success_msg, failure_msg)
-        if False in result:
-            return pd.DataFrame(data=result, columns=vmc.r_cols)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
+
 
