@@ -767,6 +767,7 @@ class DataSource(object):
             for col in vmc.datafloatcol:
                 self.p[col + vmc.planned_suffix] = self.p[col]
                 float_cols.append(col + vmc.planned_suffix)
+                self.p[col] = 0
         else:
             float_cols = vmc.datafloatcol
         df = combining_data(df, self.key, float_cols, **self.p)
