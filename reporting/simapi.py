@@ -6,6 +6,7 @@ import logging
 import requests
 import pandas as pd
 import reporting.utils as utl
+import datetime as dt
 import reporting.vmcolumns as vmc
 
 
@@ -29,6 +30,7 @@ class SimApi(object):
         self.domains = None
         self.countries = None
         self.report_id = None
+        self.df = pd.DataFrame()
         self.r = None
 
     def input_config(self, config):
@@ -70,10 +72,19 @@ class SimApi(object):
         return headers
 
     def construct_payload(self, sd, ed):
-        payload = {'metrics': ['desktop_visits', 'desktop_bounce_rate',
+        payload = {'metrics': ['all_traffic_visits', 'desktop_visits',
+                               'mobile_visits', 'all_traffic_bounce_rate',
+                               'desktop_bounce_rate', 'mobile_bounce_rate',
+                               'all_traffic_pages_per_visit',
                                'desktop_pages_per_visit',
+                               'mobile_pages_per_visit',
+                               'all_traffic_average_visit_duration',
                                'desktop_average_visit_duration',
-                               'desktop_unique_visitors'],
+                               'mobile_average_visit_duration',
+                               'desktop_unique_visitors',
+                               'mobile_unique_visitors',
+                               'deduplicated_audience'
+                               ],
                    'filters': {
                        'domains': self.domains.split(','),
                        'countries': self.countries.split(','),
@@ -132,35 +143,41 @@ class SimApi(object):
         df = pd.read_csv(report_url)
         return df
 
-    def make_validate_request(self, sd, ed, acc_col, success_msg, failure_msg):
+    def make_validate_request(self, sd=None, ed=None):
         headers = self.set_headers()
         url = '{}{}{}{}'.format(self.url, self.batch_url, self.website_url,
                                 self.validate_url)
+        if sd is None:
+            sd = dt.datetime.today() - dt.timedelta(days=35)
+        if ed is None:
+            ed = dt.datetime.today() - dt.timedelta(days=28)
         payload = self.construct_payload(sd, ed)
         r = requests.request('POST', url, headers=headers, json=payload)
-        raw_data = json.loads(r.content)
+        results = json.loads(r.text)
+        return results
+
+    def estimated_credits(self, acc_col, success_msg, failure_msg):
+        r = self.make_validate_request()
         results = []
-        if 'estimated_credits' in raw_data:
-            results_text = raw_data['estimated_credits']
-            if results_text:
-                row = [acc_col, ' '.join([success_msg, json.dumps(raw_data)]),
+        if 'estimated_credits' in r:
+            results_text = r['estimated_credits']
+            if results_text <= 3000:
+                row = [acc_col, ' '.join([success_msg, json.dumps(r)]),
                        True]
                 results.append(row)
-        else:
-            msg = ('You do not have enough credits. '
-                   'Double Check ID and Ensure Permissions were granted.'
-                   '\n Error Msg:')
-            r = r.json()
-            row = [acc_col, ' '.join([failure_msg, msg]), False]
-            results.append(row)
-        return results, r
+            else:
+                msg = ('This request is using over 3000 credits,'
+                       ' Be aware that we only have 25000 per month.'
+                       ' Double check your settings and'
+                       ' if everything is correct continue'
+                       '\n Warning:')
+                row = [acc_col, ' '.join([failure_msg, msg]), False]
+                results.append(row)
+        return results
 
-    def test_connection(self, acc_col, camp_col=None, acc_pre=None, sd=None, ed=None):
+    def test_connection(self, acc_col=None, camp_col=None, acc_pre=None):
         success_msg = 'SUCCESS:'
-        failure_msg = 'FAILURE:'
+        failure_msg = 'WARNING:'
         self.set_headers()
-        results, r = self.make_validate_request(
-            sd, ed, acc_col, success_msg, failure_msg)
+        results = self.estimated_credits(acc_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
-
-
