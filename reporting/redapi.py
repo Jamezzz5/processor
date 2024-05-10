@@ -81,7 +81,14 @@ class RedApi(object):
             except ex.NoSuchElementException as e:
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
-                self.sw.click_on_xpath("//a[text()='Log In']")
+                try:
+                    self.sw.click_on_xpath("//a[text()='Log In']")
+                except ex.NoSuchElementException as e:
+                    logging.warning('Could not find Log In, rechecking.'
+                                    '  Error: {}'.format(e))
+                    self.sw.click_on_xpath("//*[text()='Log In']")
+                    self.browser.switch_to.window(
+                        self.browser.window_handles[1])
         try:
             self.sw.browser.switch_to_alert().accept()
         except selenium.common.exceptions.NoAlertPresentException as e:
