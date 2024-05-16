@@ -444,8 +444,9 @@ class Analyze(object):
         split_values = ['{} ({})'.format(x, y) for x, y in
                         format_df[[split, kpi]].values]
         split_values = ', '.join(split_values)
+        split_name = split if split == vmc.date else split[2:]
         msg = '{} value(s) for KPI {} broken out by {} are {}'.format(
-            small_large, kpi, split, split_values)
+            small_large, kpi, split_name, split_values)
         if filter_col:
             msg = '{} when filtered by the {} {}'.format(
                 msg, filter_col, filter_val)
@@ -462,8 +463,9 @@ class Analyze(object):
         df = self.get_df_based_on_kpi(kpi, group, metrics, split, filter_col,
                                       filter_val)
         if df.empty:
+            split_name = split if split == vmc.date else split[2:]
             msg = ('Value(s) for KPI {} broken out by {} could '
-                   'not be calculated'.format(kpi, split))
+                   'not be calculated'.format(kpi, split_name))
             if filter_col:
                 msg = '{} when filtered by the {} {}'.format(
                     msg, filter_col, filter_val)
@@ -2638,6 +2640,31 @@ class ValueCalc(object):
                 df[col] = df[item]
         return df
 
+    @staticmethod
+    def calculate_trending(df, col_name='DoD Change', metric=None,
+                           groupby=None, period=1, date='eventdate'):
+        group_and_date = groupby + [date] if groupby else [date]
+        df = df.sort_values(by=group_and_date)
+        if groupby:
+            group_df = df.groupby(groupby)[metric]
+        else:
+            group_df = df[metric]
+        df[col_name] = group_df.pct_change(periods=period)
+        df = df.sort_values(by=date, ascending=False)
+        groupby_ascending = (
+            [True for _ in groupby] + [False] if groupby else [False])
+        df = df.sort_values(by=group_and_date, ascending=groupby_ascending)
+        return df
+
+    @staticmethod
+    def calculate_percent_total(df, metric, groupby='eventdate'):
+        groupby = groupby if type(groupby) == list else [groupby]
+        group_df = df.groupby(groupby)[metric]
+        group_sum = group_df.transform('sum')
+        df['% of {} by {}'.format(metric, ' , '.join(groupby))] = (
+                df[metric] / group_sum * 100)
+        return df
+
 
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
@@ -2739,13 +2766,16 @@ class AliChat(object):
         model_ids = {}
         for word in words:
             if word in word_idx and word not in used_words:
+                word_val = 1
                 new_model_ids = word_idx[word]
                 used_words.append(word)
+                if word.startswith('2') and len(word) > 5 and word.isnumeric():
+                    word_val += 5
                 for new_model_id in new_model_ids:
                     if new_model_id in model_ids:
-                        model_ids[new_model_id] += 1
+                        model_ids[new_model_id] += word_val
                     else:
-                        model_ids[new_model_id] = 1
+                        model_ids[new_model_id] = word_val
         if model_ids:
             max_value = max(model_ids.values())
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}

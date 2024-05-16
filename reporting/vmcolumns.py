@@ -308,7 +308,7 @@ api_translation = {
 api_partner_name_translation = {
     api_aw_key: ['Google SEM', 'YouTube'],
     api_goad_key: ['Google SEM', 'YouTube'],
-    api_fb_key: ['Facebook', 'Instagram', 'Facebook/Instagram', 'FBIG'],
+    api_fb_key: ['Facebook', 'Instagram', 'Facebook/Instagram', 'FBIG', 'Meta'],
     api_tw_key: ['Twitter'],
     api_ttd_key: ['The Trade Desk'],
     api_ga_key: ['Google Analytics'],
