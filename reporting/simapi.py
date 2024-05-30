@@ -196,6 +196,4 @@ class SimApi(object):
         self.set_headers()
         results = self.check_estimated_credits(acc_col, success_msg,
                                                failure_msg)
-        # row = ['whatever', ''.join([success_msg, credits]), True]
-        # results.append(row)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
