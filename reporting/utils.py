@@ -493,7 +493,7 @@ class SeleniumWrapper(object):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
         if headless:
-            co.headless = True
+            co.add_argument('--headless=new')
         co.add_argument(
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 "

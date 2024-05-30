@@ -612,9 +612,11 @@ class TwApi(object):
             if tweet_id in ['PROMOTED ACCOUNT', 'MEDIA CREATIVE']:
                 continue
             if int(tweet_id) in self.tweet_dict:
-                id_dict[str(tweet_id)] = {
-                    'name': self.tweet_dict[int(tweet_id)]['name'],
-                    'Card name': self.tweet_dict[int(tweet_id)]['card_uri']}
+                cur_tweet = self.tweet_dict[int(tweet_id)]
+                if 'card_uri' in cur_tweet and 'name' in cur_tweet:
+                    new_dict = {'name': cur_tweet['name'],
+                                'Card name': cur_tweet['card_uri']}
+                    id_dict[str(tweet_id)] = new_dict
         id_dict['PROMOTED ACCOUNT'] = {'name': 'PROMOTED ACCOUNT'}
         id_dict['MEDIA CREATIVE'] = {'name': 'MEDIA CREATIVE'}
         df = self.replace_with_parent(df, [id_dict, 'Tweet Text'], 'tweetid')
