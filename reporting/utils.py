@@ -16,6 +16,10 @@ import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -612,7 +616,12 @@ class SeleniumWrapper(object):
         return ads
 
     def click_accept_buttons(self, btn_xpath):
-        accept_buttons = self.browser.find_elements(By.XPATH, btn_xpath)
+        wait = WebDriverWait(self.browser, 3)
+        try:
+            accept_buttons = wait.until(
+                EC.visibility_of_all_elements_located((By.XPATH, btn_xpath)))
+        except ex.TimeoutException as e:
+            accept_buttons = None
         if accept_buttons:
             self.click_on_xpath(sleep=3, elem=accept_buttons[0])
 
