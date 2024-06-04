@@ -14,7 +14,8 @@ config_path = utl.config_path
 class AjApi(object):
     base_url = 'https://dash.adjust.com/control-center/reports-service/'
     def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus',
-                  'events', 'clicks', 'impressions', 'cost']
+                  'events', 'clicks', 'impressions', 'cost', 'network_installs',
+                  'organic_installs', 'skad_installs']
     def_groupings = ['day', 'country', 'os_name',
                      'partner_name', 'campaign', 'adgroup', 'creative']
 
