@@ -589,6 +589,7 @@ class SeleniumWrapper(object):
         return elem_click
 
     def quit(self):
+        self.browser.close()
         self.browser.quit()
 
     @staticmethod
@@ -718,7 +719,7 @@ class SeleniumWrapper(object):
             wd.ActionChains(self.browser).send_keys(Keys.TAB).perform()
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
-                            clear_existing=True):
+                            clear_existing=True, send_escape=True):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -744,7 +745,9 @@ class SeleniumWrapper(object):
                     self.send_keys_wrapper(elem, item[0])
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
-                wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
+                if send_escape:
+                    wd.ActionChains(self.browser).send_keys(
+                        Keys.ESCAPE).perform()
 
     def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
         if load_elem_id:
