@@ -712,17 +712,13 @@ class SeleniumWrapper(object):
                 elem_sent = True
         return elem_sent
 
-<<<<<<< Updated upstream
-    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
-                            clear_existing=True):
-=======
     def send_multiple_keys_wrapper(self, elem, items):
         for item in items:
             self.send_keys_wrapper(elem, item)
             wd.ActionChains(self.browser).send_keys(Keys.TAB).perform()
 
-    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
->>>>>>> Stashed changes
+    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
+                            clear_existing=True):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
