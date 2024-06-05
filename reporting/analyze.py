@@ -2643,7 +2643,7 @@ class ValueCalc(object):
     @staticmethod
     def calculate_trending(df, col_name='DoD Change', metric=None,
                            groupby=None, period=1, date='eventdate'):
-        group_and_date = groupby + [date] if groupby else [date]
+        group_and_date = list(groupby) + [date] if groupby else [date]
         df = df.sort_values(by=group_and_date)
         if groupby:
             group_df = df.groupby(groupby)[metric]

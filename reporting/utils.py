@@ -712,8 +712,17 @@ class SeleniumWrapper(object):
                 elem_sent = True
         return elem_sent
 
+<<<<<<< Updated upstream
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
                             clear_existing=True):
+=======
+    def send_multiple_keys_wrapper(self, elem, items):
+        for item in items:
+            self.send_keys_wrapper(elem, item)
+            wd.ActionChains(self.browser).send_keys(Keys.TAB).perform()
+
+    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
+>>>>>>> Stashed changes
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -733,7 +742,10 @@ class SeleniumWrapper(object):
             if elem.get_attribute('type') == 'checkbox':
                 self.click_on_xpath(elem=elem)
             else:
-                self.send_keys_wrapper(elem, item[0])
+                if type(item[0]) == list:
+                    self.send_multiple_keys_wrapper(elem, item[0])
+                else:
+                    self.send_keys_wrapper(elem, item[0])
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
                 wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
