@@ -98,7 +98,7 @@ class SimApi(object):
         return payload
 
     # Uses Data Credits
-    def get_data(self, sd=None, ed=None):
+    def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
         report_id = self.make_request(sd, ed)
         self.df = self.check_report_status(report_id)
