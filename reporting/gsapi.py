@@ -273,6 +273,10 @@ class GsApi(object):
         return row_requests, index
 
     def add_table(self, data, index):
+        """
+        See for indexing: (https://stackoverflow.com/questions/75689738/
+        how-can-i-dynamically-populate-a-table-in-google-doc-using-their-api)
+        """
         if not data:
             return index
         start_ind = index
