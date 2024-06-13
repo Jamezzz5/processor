@@ -1897,9 +1897,9 @@ class CheckFlatSpends(AnalyzeBase):
         tdf = pd.DataFrame(columns=translation_df.columns)
         for aly_dict in aly_dicts:
             if aly_dict[self.error_col] == self.placement_date_error:
-                old_val = aly_dict[dctc.PD].strip('00:00:00').strip()
+                old_val = aly_dict[dctc.PD].replace('00:00:00', '').strip()
                 new_val = aly_dict[
-                    self.first_click_col].strip('00:00:00').strip()
+                    self.first_click_col].replace('00:00:00', '').strip()
                 try:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
