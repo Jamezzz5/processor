@@ -620,6 +620,8 @@ class DictRelational(object):
         self.read()
         self.add_key_values(data_dict)
         data_dict = utl.data_to_type(data_dict, str_col=[self.key])
+        cols = [x for x in data_dict.columns if x[-2:] != '_x']
+        data_dict = data_dict[cols]
         data_dict = data_dict.merge(self.df, on=self.key, how='left')
         for col in self.dependents:
             col_x = col + '_x'
