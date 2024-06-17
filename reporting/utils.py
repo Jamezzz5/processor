@@ -16,6 +16,10 @@ import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
 
 config_path = 'config/'
 raw_path = 'raw_data/'
@@ -493,7 +497,7 @@ class SeleniumWrapper(object):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
         if headless:
-            co.headless = True
+            co.add_argument('--headless=new')
         co.add_argument(
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 "
@@ -585,6 +589,7 @@ class SeleniumWrapper(object):
         return elem_click
 
     def quit(self):
+        self.browser.close()
         self.browser.quit()
 
     @staticmethod
@@ -612,7 +617,12 @@ class SeleniumWrapper(object):
         return ads
 
     def click_accept_buttons(self, btn_xpath):
-        accept_buttons = self.browser.find_elements(By.XPATH, btn_xpath)
+        wait = WebDriverWait(self.browser, 3)
+        try:
+            accept_buttons = wait.until(
+                EC.visibility_of_all_elements_located((By.XPATH, btn_xpath)))
+        except ex.TimeoutException as e:
+            accept_buttons = None
         if accept_buttons:
             self.click_on_xpath(sleep=3, elem=accept_buttons[0])
 
@@ -703,7 +713,13 @@ class SeleniumWrapper(object):
                 elem_sent = True
         return elem_sent
 
-    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True):
+    def send_multiple_keys_wrapper(self, elem, items):
+        for item in items:
+            self.send_keys_wrapper(elem, item)
+            wd.ActionChains(self.browser).send_keys(Keys.TAB).perform()
+
+    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
+                            clear_existing=True, send_escape=True):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -711,18 +727,27 @@ class SeleniumWrapper(object):
                 elem_xpath = self.get_xpath_from_id(elem_xpath)
             elem = self.browser.find_element_by_xpath(elem_xpath)
             clear_specified = len(item) > 2 and item[2] == 'clear'
-            if select_xpath in elem_xpath or clear_specified:
-                clear_x = 'preceding-sibling::span/a[@class="remove-single"]'
-                clear_val = elem.find_elements_by_xpath(clear_x)
-                if len(clear_val) > 0:
-                    self.click_on_xpath(elem=clear_val[0])
+            elem_to_clear = select_xpath in elem_xpath or clear_specified
+            if clear_existing and elem_to_clear:
+                clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
+                            '../following-sibling::a[@class="clear"]']
+                for clear_x in clear_xs:
+                    clear_val = elem.find_elements_by_xpath(clear_x)
+                    if len(clear_val) > 0:
+                        self.click_on_xpath(elem=clear_val[0])
+                        break
             if elem.get_attribute('type') == 'checkbox':
                 self.click_on_xpath(elem=elem)
             else:
-                self.send_keys_wrapper(elem, item[0])
+                if type(item[0]) == list:
+                    self.send_multiple_keys_wrapper(elem, item[0])
+                else:
+                    self.send_keys_wrapper(elem, item[0])
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
-                wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
+                if send_escape:
+                    wd.ActionChains(self.browser).send_keys(
+                        Keys.ESCAPE).perform()
 
     def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
         if load_elem_id:

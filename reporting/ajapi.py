@@ -12,11 +12,12 @@ config_path = utl.config_path
 
 
 class AjApi(object):
-    base_url = 'https://api.adjust.com/kpis/v1/'
+    base_url = 'https://dash.adjust.com/control-center/reports-service/'
     def_fields = ['sessions', 'installs', 'revenue', 'daus', 'waus', 'maus',
-                  'events', 'clicks', 'impressions', 'cost']
-    def_groupings = ['days', 'countries', 'events', 'os_names',
-                     'partners', 'campaign', 'adgroup', 'creative']
+                  'events', 'clicks', 'impressions', 'cost', 'network_installs',
+                  'organic_installs', 'skad_installs']
+    def_groupings = ['day', 'country', 'os_name',
+                     'partner_name', 'campaign', 'adgroup', 'creative']
 
     def __init__(self):
         self.config = None
@@ -78,11 +79,11 @@ class AjApi(object):
         return sd, ed
 
     def create_url(self, sd, ed, fields):
-        full_url = '{}{}'.format(self.base_url, self.app_token)
-        params = {'user_token': self.api_token,
-                  'kpis': ','.join(self.def_fields),
-                  'start_date': sd, 'end_date': ed,
-                  'grouping': ','.join(self.def_groupings)}
+        full_url = '{}csv_report'.format(self.base_url)
+        params = {'app_token__in': self.app_token,
+                  'metrics': ','.join(self.def_fields),
+                  'date_period': '{}:{}'.format(sd, ed),
+                  'dimensions': ','.join(self.def_groupings)}
         if self.tracker_token:
             params['tracker_filter'] = self.tracker_token
         if fields:
@@ -107,7 +108,7 @@ class AjApi(object):
     def get_raw_data(self, sd, ed, fields):
         logging.info('Getting data from {} to {}'.format(sd, ed))
         full_url, params = self.create_url(sd, ed, fields)
-        headers = {'Accept': 'text/csv'}
+        headers = {'Authorization': 'Bearer {}'.format(self.api_token)}
         self.r = requests.get(full_url, headers=headers, params=params)
         if self.r.status_code == 200:
             tdf = self.data_to_df(self.r)

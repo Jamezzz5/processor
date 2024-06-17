@@ -1897,9 +1897,9 @@ class CheckFlatSpends(AnalyzeBase):
         tdf = pd.DataFrame(columns=translation_df.columns)
         for aly_dict in aly_dicts:
             if aly_dict[self.error_col] == self.placement_date_error:
-                old_val = aly_dict[dctc.PD].strip('00:00:00').strip()
+                old_val = aly_dict[dctc.PD].replace('00:00:00', '').strip()
                 new_val = aly_dict[
-                    self.first_click_col].strip('00:00:00').strip()
+                    self.first_click_col].replace('00:00:00', '').strip()
                 try:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
@@ -2643,7 +2643,7 @@ class ValueCalc(object):
     @staticmethod
     def calculate_trending(df, col_name='DoD Change', metric=None,
                            groupby=None, period=1, date='eventdate'):
-        group_and_date = groupby + [date] if groupby else [date]
+        group_and_date = list(groupby) + [date] if groupby else [date]
         df = df.sort_values(by=group_and_date)
         if groupby:
             group_df = df.groupby(groupby)[metric]

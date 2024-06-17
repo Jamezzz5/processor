@@ -132,7 +132,7 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
-    version = 14
+    version = 17
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
