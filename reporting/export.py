@@ -143,8 +143,9 @@ class ExportHandler(object):
 
     def export_azu(self, exp_key):
         azu_class = azu.AzuApi()
+        db = DB(config='dbconfig.json')
         dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
-                                  self.config[exc.output_file][exp_key])
+                                  self.config[exc.output_file][exp_key], db)
         if dft_class.df.empty:
             logging.warning('Empty df stopping export.')
             return False
@@ -667,10 +668,6 @@ class DFTranslation(object):
         self.df = self.clean_types_for_upload(self.df)
         if self.db:
             self.get_upload_id()
-        else:
-            self.add_upload_cols()
-            self.upload_id = 1
-            self.df[exc.upload_id_col] = int(self.upload_id)
         self.add_event_name()
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
