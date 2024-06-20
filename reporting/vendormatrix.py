@@ -65,11 +65,13 @@ class VendorMatrix(object):
             vmc.api_nz_key: [],
             vmc.api_ytd_key: [],
             vmc.api_wal_key: [],
-            vmc.api_sim_key: []
+            vmc.api_sim_key: [],
+            vmc.api_azu_key: []
         }
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
+        self.azu_dna_key = []
         self.vm_rules_dict = {}
         self.ven_param = None
         self.plan_omit_list = None
@@ -141,6 +143,9 @@ class VendorMatrix(object):
             if vk_split[vk][0] == 'S3':
                 if vk_split[vk][1] == 'DNA':
                     self.s3_dna_key.append(vk)
+            if vk_split[vk][0] == 'AZU':
+                if vk_split[vk][1] == 'DNA':
+                    self.azu_dna_key.append(vk)
 
     def vm_rules(self):
         for key in self.vm:

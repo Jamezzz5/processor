@@ -16,6 +16,7 @@ import reporting.utils as utl
 import reporting.models as mdl
 import reporting.awss3 as awss3
 import reporting.tbapi as tbapi
+import reporting.azapi as azu
 import reporting.expcolumns as exc
 
 log = logging.getLogger()
@@ -51,6 +52,9 @@ class ExportHandler(object):
         elif (self.config[exc.export_type][exp_key] == 'S3' and
               (self.args == 's3' or self.args == 'all')):
             self.export_s3(exp_key)
+        elif (self.config[exc.export_type][exp_key] == 'AZ' and
+              (self.args == 'azu' or self.args == 'all')):
+            self.export_azu(exp_key)
 
     def export_db(self, exp_key, test=False):
         dbu = DBUpload()
@@ -135,6 +139,17 @@ class ExportHandler(object):
         else:
             default_format = True
         s3_class.s3_write_file(dft_class.df, default_format=default_format)
+        return True
+
+    def export_azu(self, exp_key):
+        azu_class = azu.AzuApi()
+        dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
+                                  self.config[exc.output_file][exp_key])
+        if dft_class.df.empty:
+            logging.warning('Empty df stopping export.')
+            return False
+        azu_class.input_config(self.config[exc.config_file][exp_key])
+        azu_class.azu_write_file(dft_class.df)
         return True
 
 
@@ -652,6 +667,10 @@ class DFTranslation(object):
         self.df = self.clean_types_for_upload(self.df)
         if self.db:
             self.get_upload_id()
+        else:
+            self.add_upload_cols()
+            self.upload_id = 1
+            self.df[exc.upload_id_col] = int(self.upload_id)
         self.add_event_name()
         self.df = self.df.groupby(self.text_columns + self.date_columns +
                                   self.int_columns).sum().reset_index()
