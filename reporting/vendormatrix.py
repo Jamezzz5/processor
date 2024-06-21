@@ -1001,10 +1001,16 @@ def df_single_transform(df, transform):
         tc.read(dctc.filename_tran_config)
         df = tc.apply_translation_to_dict(df)
     if transform_type == 'AddColumn':
+        if len(transform) < 3:
+            logging.warning('Not formed correctly: {}'.format(transform))
+            return df
         col_name = transform[1]
         col_val = transform[2]
         df[col_name] = col_val
     if transform_type == 'FilterCol':
+        if len(transform) < 3:
+            logging.warning('Not formed correctly: {}'.format(transform))
+            return df
         col_name = transform[1]
         col_val = transform[2]
         exclude_toggle = False

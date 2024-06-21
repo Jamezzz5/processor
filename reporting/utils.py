@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import gzip
 import json
 import time
 import shutil
@@ -480,6 +481,29 @@ def base64_to_binary(data):
     data = data.split(',')[1]
     decoded_bytes = base64.b64decode(data)
     return io.BytesIO(decoded_bytes)
+
+
+def write_df_to_buffer(df, file_name='raw', default_format=True,
+                       base_folder=''):
+    csv_file = '{}{}'.format(file_name, '.csv')
+    if default_format:
+        gzip_extension = '.gzip'
+    else:
+        gzip_extension = '.gz'
+    zip_file = '{}{}'.format(file_name, gzip_extension)
+    today_yr = dt.datetime.strftime(dt.datetime.today(), '%Y')
+    today_str = dt.datetime.strftime(dt.datetime.today(), '%m%d')
+    today_folder_name = '{}/{}/'.format(today_yr, today_str)
+    product_name = '{}_{}'.format(df['uploadid'].unique()[0],
+                                  '_'.join(df['productname'].unique()))
+    product_name = re.sub(r'\W+', '', product_name)
+    zip_file = '{}/{}{}/{}'.format(
+        base_folder, today_folder_name, product_name, zip_file)
+    buffer = io.BytesIO()
+    with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
+        f.write(df.to_csv().encode())
+    buffer.seek(0)
+    return buffer, zip_file
 
 
 class SeleniumWrapper(object):

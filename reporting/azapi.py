@@ -2,17 +2,15 @@ import os
 import sys
 import json
 import logging
-import uuid
 import requests
 import pandas as pd
 import reporting.utils as utl
-import reporting.expcolumns as exc
 
 config_path = utl.config_path
 
 
 class AzuApi(object):
-    base_url = 'https://{}.blob.core.windows.net/{}/{}?{}'
+    base_url = 'https://{}.blob.core.windows.net/{}?{}'
 
     def __init__(self):
         self.config = None
@@ -55,19 +53,15 @@ class AzuApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
-    def create_url(self, product_name, campaign_name):
-        blob_encode = str(uuid.uuid4())
-        blob_name = ('{}_{}_().csv'.format(product_name,
-                                           campaign_name,
-                                           blob_encode))
-        url = self.base_url.format(self.account_name, self.container_name,
-                                   blob_name, self.sas_token)
+    def create_url(self, key):
+        url = self.base_url.format(self.account_name, key, self.sas_token)
         return url
 
     @staticmethod
     def set_headers():
         headers = {
             'x-ms-blob-type': 'BlockBlob',
+            'Content-Encoding': 'gzip',
             'Content-Type': 'application/octet-stream'
         }
         return headers
@@ -75,19 +69,17 @@ class AzuApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         return self.df
 
-    def azu_write_file(self, df):
-        product_name = df[exc.product_name].unique()
-        campaign_name = df[exc.campaign_name].unique()
-        url = self.create_url(product_name, campaign_name)
+    def write_file(self, df, file_name='raw', default_format=True):
+        buffer, zip_file = utl.write_df_to_buffer(
+            df, file_name=file_name, default_format=default_format,
+            base_folder=self.container_name)
+        url = self.create_url(key=zip_file)
         headers = self.set_headers()
-        if not df.empty:
-            data = df.to_csv()
-        else:
-            logging.warning('Empty DataFrame, stopping export')
-            return None
+        data = buffer.getvalue()
+        headers['Content-Length'] = str(len(data))
         r = requests.put(url=url, headers=headers, data=data)
         if r.status_code == 201:
-            logging.info('File successfully uploaded to Azure')
+            logging.info('File successfully uploaded to {}'.format(zip_file))
         else:
             logging.warning('failed to upload. Status Code: {}'
                             .format(r.status_code))

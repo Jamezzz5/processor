@@ -13,6 +13,7 @@ import reporting.calc as cal
 import reporting.analyze as az
 import reporting.export as exp
 import reporting.expcolumns as exc
+import reporting.azapi as azapi
 
 
 def func(x):
@@ -114,8 +115,8 @@ class TestUtils:
         sw.quit()
 
     def test_screenshot(self):
-        sw = utl.SeleniumWrapper()
-        test_url = 'https://www.google.com/'
+        sw = utl.SeleniumWrapper(headless=False)
+        test_url = 'https://www.gamespot.com/'
         file_name = 'test.png'
         sw.take_screenshot(test_url, file_name=file_name)
         assert os.path.isfile(file_name)
@@ -159,7 +160,21 @@ class TestUtils:
 
 
 class TestApis:
-    pass
+
+    def make_fake_config(self, key_list, tmp_path_factory):
+        json_data = {}
+        for cur_key in key_list:
+            json_data[cur_key] = '{} - value'.format(cur_key)
+        file_name = '{}/config.json'.format(tmp_path_factory.mktemp("config"))
+        return file_name, json_data
+
+    def test_azapi(self, tmp_path_factory):
+        api = azapi.AzApi()
+        file_name, json_data = self.make_fake_config(
+            api.key_list, tmp_path_factory)
+        api.input_config()
+        df = pd.DataFrame({'uploadid': ['a'], 'productname': ['b']})
+        api.s3_write_file(df)
 
 
 class TestDictionary:
