@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
 
 config_path = utl.config_path
 
@@ -102,6 +103,7 @@ class RsApi(object):
             self.game_id = int(self.game_id[0])
         else:
             logging.warning('Game ID not in response: {}'.format(r.json()))
+        return
 
     def date_check(self, sd, ed):
         sd, ed = self.get_data_default_check(sd, ed)
@@ -249,3 +251,37 @@ class RsApi(object):
             df = df[col].apply(pd.Series)
             df.columns = ['{} - {}'.format(col, x) for x in df.columns]
         return df
+
+    def check_get_name(self, results, acc_col, success_msg, failure_msg):
+        r = requests.get(self.games_url, headers=self.headers)
+        if r.status_code == 403:
+            msg = "Error 403: verify that the API Key is correct."
+            row = [acc_col, ' '.join([failure_msg, msg]), False]
+            results.append(row)
+            return results
+        game_title = self.game_name
+        response_json = r.json()
+        if 'games' in response_json:
+            for game in response_json['games']:
+                if game['name'] == game_title:
+                    self.game_name = game['name']
+                    break
+            row = [acc_col, ' '.join([success_msg, str(self.game_name)]),
+                   True]
+            results.append(row)
+        else:
+            msg = ('Account ID in existing or Contains an error. '
+                'Double Check Account ID and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            r = r.json()
+            row = [acc_col, ' '.join([failure_msg, msg, r['error']['message']]), False]
+            results.append(row)
+        return results
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results = self.check_get_name(
+            [], acc_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
+
