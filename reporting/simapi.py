@@ -113,8 +113,7 @@ class SimApi(object):
         report_id = self.config.get('report_id')
         if not report_id:
             payload = self.construct_payload(sd, ed)
-            response = requests.request('POST', url, headers=headers,
-                                        json=payload)
+            response = requests.post(url, headers=headers, json=payload)
             if response.status_code == 200:
                 report_id = response.json()['report_id']
                 self.config['report_id'] = report_id
@@ -133,7 +132,7 @@ class SimApi(object):
         url = '{}{}{}{}'.format(self.url, self.batch_url, self.status_url,
                                 report_id)
         for x in range(10):
-            r = requests.request('GET', url, headers=headers)
+            r = requests.get(url, headers=headers)
             if r.status_code != 200:
                 return None
             status = r.json()['status']
@@ -167,7 +166,7 @@ class SimApi(object):
                                 self.validate_url)
         sd, ed = self.get_data_default_check(sd, ed)
         payload = self.construct_payload(sd, ed)
-        r = requests.request('POST', url, headers=headers, json=payload)
+        r = requests.post(url, headers=headers, json=payload)
         results = json.loads(r.content)
         return results
 
