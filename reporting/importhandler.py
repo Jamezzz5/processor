@@ -34,6 +34,7 @@ import reporting.ssapi as ssapi
 import reporting.nzapi as nzapi
 import reporting.ytdapi as ytdapi
 import reporting.simapi as simapi
+import reporting.pixapi as pixapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.azapi as azu
@@ -82,7 +83,8 @@ class ImportHandler(object):
             vmc.api_nz_key: nzapi.NzApi,
             vmc.api_ytd_key: ytdapi.YtdApi,
             vmc.api_wal_key: ttdapi.TtdApi,
-            vmc.api_sim_key: simapi.SimApi
+            vmc.api_sim_key: simapi.SimApi,
+            vmc.api_pix_key: pixapi.PixApi
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
