@@ -193,6 +193,13 @@ class VendorMatrix(object):
             for col in [vmc.autodicord, vmc.fullplacename]:
                 new_value = '|'.join(str(x) for x in source[col].split('\r\n'))
                 self.vm_change(index, col, new_value)
+            transforms = source['transforms']
+            if str(transforms) == 'NaN':
+                self.vm_change(index, vmc.transform, 'nan')
+            else:
+                transform_list = [x['Transform'] for x in transforms]
+                transform_string = ':::'.join(transform_list)
+                self.vm_change(index, vmc.transform, transform_string)
             active_metric_cols = list(source['active_metrics'].keys())
             for col in vmc.datacol:
                 if col in active_metric_cols:
