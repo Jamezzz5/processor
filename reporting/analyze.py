@@ -2951,7 +2951,8 @@ class AliChat(object):
             cur_model_dict = cur_model.to_dict()
             for k in list(new_model.__table__.columns):
                 col = k.name
-                if col in cur_model_dict.keys() and col != 'id':
+                omit_cols = ['id', 'local_path']
+                if col in cur_model_dict.keys() and col not in omit_cols:
                     v = cur_model_dict[col]
                     setattr(new_model, col, v)
             self.db.session.commit()
