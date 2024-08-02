@@ -2699,7 +2699,7 @@ class AliChat(object):
             openai.api_key = self.config['SECRET_KEY']
             prompt = f"User: {message}\nAI:"
             response = openai.Completion.create(
-                engine="text-davinci-002",
+                engine="gpt-3.5-turbo-instruct",
                 prompt=prompt,
                 max_tokens=1024,
                 n=1,
