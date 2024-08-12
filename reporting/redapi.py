@@ -84,14 +84,16 @@ class RedApi(object):
             try:
                 self.sw.click_on_xpath('//*[@id="Footer"]/p[2]/a')
             except ex.NoSuchElementException as e:
+                sel = ("[translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+                       " 'abcdefghijklmnopqrstuvwxyz')='log in']")
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
                 try:
-                    self.sw.click_on_xpath("//a[text()='Log In']")
+                    self.sw.click_on_xpath('//{}'.format(sel))
                 except ex.NoSuchElementException as e:
                     logging.warning('Could not find Log In, rechecking.'
                                     '  Error: {}'.format(e))
-                    self.sw.click_on_xpath("//*[text()='Log In']")
+                    self.sw.click_on_xpath("//*{}".format(sel))
                     self.browser.switch_to.window(
                         self.browser.window_handles[1])
         try:
