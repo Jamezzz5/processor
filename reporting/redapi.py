@@ -100,7 +100,12 @@ class RedApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-            elem.send_keys(Keys.ENTER)
+            try:
+                elem.send_keys(Keys.ENTER)
+            except selenium.common.exceptions.ElementNotInteractableException:
+                logging.info('Could not find field for {}'.format(item))
+            except selenium.common.exceptions.StaleElementReferenceException:
+                logging.info('Could not find field for {}'.format(item))
         time.sleep(2)
         actions = ActionChains(self.browser)
         actions.send_keys(Keys.ENTER)
