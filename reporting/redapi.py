@@ -11,6 +11,8 @@ import selenium.common.exceptions
 import reporting.utils as utl
 import selenium.common.exceptions as ex
 import reporting.vmcolumns as vmc
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 
 
 class RedApi(object):
@@ -93,20 +95,15 @@ class RedApi(object):
             self.sw.browser.switch_to_alert().accept()
         except selenium.common.exceptions.NoAlertPresentException as e:
             logging.info('No alert: {}'.format(e))
-        user_pass = [(self.username, '//*[@id="loginUsername"]'),
-                     (self.password, '//*[@id="loginPassword"]')]
+        user_pass = [(self.username, '//*[@id="login-username"]'),
+                     (self.password, '//*[@id="login-password"]')]
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
+            elem.send_keys(Keys.ENTER)
         time.sleep(2)
-        login_xpaths = ['//button[normalize-space(text())="{}"]'.format(x)
-                        for x in ['Sign in', 'Log in', 'Log In']]
-        for xpath in login_xpaths:
-            try:
-                self.sw.click_on_xpath(xpath, sleep=5)
-                break
-            except:
-                logging.warning('Could not click xpath: {}'.format(xpath))
+        actions = ActionChains(self.browser)
+        actions.send_keys(Keys.ENTER)
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
         try:
             self.browser.find_element_by_xpath(error_xpath)
