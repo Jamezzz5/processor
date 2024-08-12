@@ -71,9 +71,13 @@ class TabApi(object):
         url = self.create_url('auth/signin')
         r = self.make_request(url, 'post', resp_key='credentials',
                               json_data=data)
+        if 'credentials' not in r.json():
+            logging.warning('credentials not in: {}'.format(r.json()))
+            return False
         session_id = r.json()['credentials']['token']
         self.headers['X-Tableau-Auth'] = session_id
         self.site_id = r.json()['credentials']['site']['id']
+        return True
 
     def create_url(self, addition_url, site_url=False):
         url = self.base_url
@@ -155,7 +159,10 @@ class TabApi(object):
 
     def refresh_extract(self):
         if self.datasource:
-            self.set_headers()
+            header_set = self.set_headers()
+            if not header_set:
+                logging.error('Extract not refreshed.')
+                return False
             ds_id = self.find_datasource()
             er_id = self.find_extract_refreshes(ds_id)
             if er_id:
