@@ -25,6 +25,8 @@ class RedApi(object):
         'videoPlaysWithSound', 'videoPlaysExpanded', 'videoWatches25',
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
+    username_str = 'username'
+    password_str = 'password'
 
     def __init__(self, headless=True):
         self.headless = headless
@@ -36,6 +38,7 @@ class RedApi(object):
         self.account = None
         self.config_list = None
         self.config = None
+        self.key_list = [self.username_str, self.password_str]
 
     def input_config(self, config):
         logging.info('Loading Reddit config file: {}.'.format(config))
@@ -50,8 +53,8 @@ class RedApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
+        self.username = self.config[self.username_str]
+        self.password = self.config[self.password_str]
         self.config_list = [self.username, self.password]
 
     def check_config(self):

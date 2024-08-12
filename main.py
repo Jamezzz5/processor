@@ -57,7 +57,8 @@ def get_args(arguments=None):
     parser.add_argument('--noprocess', action='store_true')
     parser.add_argument('--analyze', action='store_true')
     parser.add_argument('--update', choices=['all', 'vm', 'dct'])
-    parser.add_argument('--exp', choices=['all', 'db', 'ftp', 'test', 'azu'])
+    parser.add_argument('--exp', choices=[
+        'all', 'db', 'ftp', 'test', 'azu'])
     parser.add_argument('--tab', action='store_true')
     parser.add_argument('--basic', action='store_true')
     parser.add_argument('--nolog', action='store_true')

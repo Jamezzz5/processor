@@ -1,4 +1,5 @@
 import os
+import json
 import string
 import pytest
 import numpy as np
@@ -13,6 +14,8 @@ import reporting.calc as cal
 import reporting.analyze as az
 import reporting.export as exp
 import reporting.expcolumns as exc
+import reporting.azapi as azapi
+import reporting.redapi as redapi
 
 
 def func(x):
@@ -107,7 +110,7 @@ class TestUtils:
 
     def test_selenium_wrapper(self):
         sw = utl.SeleniumWrapper()
-        assert sw.co.headless is True
+        assert sw.headless is True
         test_url = 'https://www.google.com/'
         sw.go_to_url(test_url, sleep=1)
         assert sw.browser.current_url == test_url
@@ -115,7 +118,7 @@ class TestUtils:
 
     def test_screenshot(self):
         sw = utl.SeleniumWrapper(headless=False)
-        test_url = 'https://www.kotaku.com'
+        test_url = 'https://www.google.com/'
         file_name = 'test.png'
         sw.take_screenshot(test_url, file_name=file_name)
         assert os.path.isfile(file_name)
@@ -159,7 +162,39 @@ class TestUtils:
 
 
 class TestApis:
-    pass
+
+    @staticmethod
+    def make_fake_config(key_list, tmp_path_factory, credentials=None):
+        if not credentials:
+            credentials = {}
+        json_data = {}
+        for cur_key in key_list:
+            new_value = '{} - value'.format(cur_key)
+            if cur_key in credentials and credentials[cur_key]:
+                new_value = credentials[cur_key]
+            json_data[cur_key] = new_value
+        file_name = '{}/config.json'.format(tmp_path_factory.mktemp("config"))
+        with open(file_name, 'w') as f:
+            json.dump(json_data, f)
+        return file_name, json_data
+
+    def test_azapi(self, tmp_path_factory):
+        api = azapi.AzuApi()
+        file_name, json_data = self.make_fake_config(
+            api.key_list, tmp_path_factory)
+        api.input_config(file_name)
+        df = pd.DataFrame({'uploadid': ['a'], 'productname': ['b']})
+        # api.write_file(df)
+
+    def test_redapi(self, tmp_path_factory):
+        api = redapi.RedApi(headless=False)
+        credentials = {api.username_str: '',
+                       api.password_str: ''}
+        file_name, json_data = self.make_fake_config(
+            api.key_list, tmp_path_factory, credentials)
+        api.input_config(file_name)
+        sd = dt.datetime.today() - dt.timedelta(days=70)
+        # api.get_data(sd=sd)
 
 
 class TestDictionary:
