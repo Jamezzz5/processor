@@ -103,10 +103,16 @@ class RedApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-            elem.send_keys(Keys.ENTER)
+            try:
+                elem.send_keys(Keys.ENTER)
+            except selenium.common.exceptions.ElementNotInteractableException:
+                logging.info('Could not find field for {}'.format(item))
+            except selenium.common.exceptions.StaleElementReferenceException:
+                logging.info('Could not find field for {}'.format(item))
         time.sleep(2)
         actions = ActionChains(self.browser)
         actions.send_keys(Keys.ENTER)
+        self.sw.wait_for_elem_load(elem_id='automation-home')
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
         try:
             self.browser.find_element_by_xpath(error_xpath)
