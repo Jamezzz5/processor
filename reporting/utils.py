@@ -678,7 +678,9 @@ class SeleniumWrapper(object):
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        went_to_url = self.go_to_url(url)
+        went_to_url = True
+        if url:
+            went_to_url = self.go_to_url(url)
         if went_to_url:
             self.accept_cookies()
             self.browser.execute_script("window.scrollTo(0, 0)")

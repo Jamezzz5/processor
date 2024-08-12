@@ -77,6 +77,11 @@ class RedApi(object):
 
     def sign_in(self):
         logging.info('Signing in.')
+        login_sel = ['log in', 'sign in']
+        login_sel = ["[translate(normalize-space(text()), "
+                     "'ABCDEFGHIJKLMNOPQRSTUVWXYZ', "
+                     "'abcdefghijklmnopqrstuvwxyz')='{}']".format(x)
+                     for x in login_sel]
         try:
             self.sw.click_on_xpath('//*[@id="Content"]/h2/a')
         except ex.NoSuchElementException as e:
@@ -84,16 +89,14 @@ class RedApi(object):
             try:
                 self.sw.click_on_xpath('//*[@id="Footer"]/p[2]/a')
             except ex.NoSuchElementException as e:
-                sel = ("[translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
-                       " 'abcdefghijklmnopqrstuvwxyz')='log in']")
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
                 try:
-                    self.sw.click_on_xpath('//{}'.format(sel))
+                    self.sw.click_on_xpath('//a{}'.format(login_sel[0]))
                 except ex.NoSuchElementException as e:
                     logging.warning('Could not find Log In, rechecking.'
                                     '  Error: {}'.format(e))
-                    self.sw.click_on_xpath("//*{}".format(sel))
+                    self.sw.click_on_xpath("//*{}".format(login_sel[0]))
                     self.browser.switch_to.window(
                         self.browser.window_handles[1])
         try:
@@ -114,7 +117,11 @@ class RedApi(object):
         time.sleep(2)
         actions = ActionChains(self.browser)
         actions.send_keys(Keys.ENTER)
-        self.sw.wait_for_elem_load(elem_id='dashboard-metrics')
+        elem_id = 'dashboard-metrics'
+        elem_load = self.sw.wait_for_elem_load(elem_id=elem_id, attempts=200)
+        if not elem_load:
+            logging.warning('{} did not load'.format(elem_id))
+            self.sw.take_screenshot(file_name='reddit_error.jpg')
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
         try:
             self.browser.find_element_by_xpath(error_xpath)
