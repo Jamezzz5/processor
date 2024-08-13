@@ -190,9 +190,15 @@ class ImportHandler(object):
             params[vmc.startdate] = self.set_start(params[vmc.startdate],
                                                    params[vmc.enddate],
                                                    params[vmc.apimerge])
-            df = api_class.get_data(sd=params[vmc.startdate],
-                                    ed=params[vmc.enddate],
-                                    fields=params[vmc.apifields])
+            df = pd.DataFrame()
+            try:
+                df = api_class.get_data(sd=params[vmc.startdate],
+                                        ed=params[vmc.enddate],
+                                        fields=params[vmc.apifields])
+            except Exception as e:
+                logging.error("API error occurred", exc_info=True)
+                if not isinstance(api_class, redapi.RedApi):
+                    raise e
             self.output(df, params[vmc.filename], params[vmc.apimerge],
                         params[vmc.firstrow], params[vmc.lastrow],
                         params[vmc.date], params[vmc.startdate],
