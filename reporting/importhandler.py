@@ -197,7 +197,9 @@ class ImportHandler(object):
                                         fields=params[vmc.apifields])
             except Exception as e:
                 logging.error("API error occurred", exc_info=True)
-                if not isinstance(api_class, redapi.RedApi):
+                if isinstance(api_class, redapi.RedApi):
+                    api_class.sw.quit()
+                else:
                     raise e
             self.output(df, params[vmc.filename], params[vmc.apimerge],
                         params[vmc.firstrow], params[vmc.lastrow],

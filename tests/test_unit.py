@@ -188,13 +188,20 @@ class TestApis:
 
     def test_redapi(self, tmp_path_factory):
         api = redapi.RedApi(headless=False)
-        credentials = {api.username_str: '',
-                       api.password_str: ''}
+        file_name = os.path.join(utl.config_path, api.default_config_file_name)
+        with open(file_name, 'r') as f:
+            credentials = json.load(f)
         file_name, json_data = self.make_fake_config(
             api.key_list, tmp_path_factory, credentials)
         api.input_config(file_name)
         sd = dt.datetime.today() - dt.timedelta(days=70)
-        # api.get_data(sd=sd)
+        ed = dt.datetime.today() - dt.timedelta(days=35)
+        try:
+            assert 1 == 1
+            # api.get_data(sd=sd, ed=ed)
+        except Exception as e:
+            api.sw.quit()
+            raise e
 
 
 class TestDictionary:

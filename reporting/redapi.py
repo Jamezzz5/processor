@@ -12,11 +12,11 @@ import reporting.utils as utl
 import selenium.common.exceptions as ex
 import reporting.vmcolumns as vmc
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
 
 
 class RedApi(object):
     config_path = utl.config_path
+    default_config_file_name = 'redapi.json'
     base_url = 'https://ads.reddit.com'
     temp_path = 'tmp'
     base_metric = '//*[@id="metrics.'
@@ -108,15 +108,13 @@ class RedApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-            try:
-                elem.send_keys(Keys.ENTER)
-            except selenium.common.exceptions.ElementNotInteractableException:
-                logging.info('Could not find field for {}'.format(item))
-            except selenium.common.exceptions.StaleElementReferenceException:
-                logging.info('Could not find field for {}'.format(item))
-        time.sleep(2)
-        actions = ActionChains(self.browser)
-        actions.send_keys(Keys.ENTER)
+            if item[0] == self.password:
+                try:
+                    elem.send_keys(Keys.ENTER)
+                except ex.ElementNotInteractableException:
+                    logging.info('Could not find field for {}'.format(item))
+                except ex.StaleElementReferenceException:
+                    logging.info('Could not find field for {}'.format(item))
         elem_id = 'dashboard-metrics'
         elem_load = self.sw.wait_for_elem_load(elem_id=elem_id, attempts=200)
         if not elem_load:
