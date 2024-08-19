@@ -11,10 +11,12 @@ import selenium.common.exceptions
 import reporting.utils as utl
 import selenium.common.exceptions as ex
 import reporting.vmcolumns as vmc
+from selenium.webdriver.common.keys import Keys
 
 
 class RedApi(object):
     config_path = utl.config_path
+    default_config_file_name = 'redapi.json'
     base_url = 'https://ads.reddit.com'
     temp_path = 'tmp'
     base_metric = '//*[@id="metrics.'
@@ -23,6 +25,8 @@ class RedApi(object):
         'videoPlaysWithSound', 'videoPlaysExpanded', 'videoWatches25',
         'videoWatches50', 'videoWatches75', 'videoWatches95', 'videoWatches100',
         'videoWatches3Secs', 'videoWatches10Secs']
+    username_str = 'username'
+    password_str = 'password'
 
     def __init__(self, headless=True):
         self.headless = headless
@@ -34,6 +38,7 @@ class RedApi(object):
         self.account = None
         self.config_list = None
         self.config = None
+        self.key_list = [self.username_str, self.password_str]
 
     def input_config(self, config):
         logging.info('Loading Reddit config file: {}.'.format(config))
@@ -48,8 +53,8 @@ class RedApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
+        self.username = self.config[self.username_str]
+        self.password = self.config[self.password_str]
         self.config_list = [self.username, self.password]
 
     def check_config(self):
@@ -70,8 +75,13 @@ class RedApi(object):
                     self.account = val
         return sd, ed
 
-    def sign_in(self):
-        logging.info('Signing in.')
+    def sign_in(self, attempt=0):
+        logging.info('Signing in.: Attempt {}'.format(attempt))
+        login_sel = ['log in', 'sign in']
+        login_sel = ["[translate(normalize-space(text()), "
+                     "'ABCDEFGHIJKLMNOPQRSTUVWXYZ', "
+                     "'abcdefghijklmnopqrstuvwxyz')='{}']".format(x)
+                     for x in login_sel]
         try:
             self.sw.click_on_xpath('//*[@id="Content"]/h2/a')
         except ex.NoSuchElementException as e:
@@ -82,31 +92,35 @@ class RedApi(object):
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
                 try:
-                    self.sw.click_on_xpath("//a[text()='Log In']")
+                    self.sw.click_on_xpath('//a{}'.format(login_sel[0]))
                 except ex.NoSuchElementException as e:
                     logging.warning('Could not find Log In, rechecking.'
                                     '  Error: {}'.format(e))
-                    self.sw.click_on_xpath("//*[text()='Log In']")
+                    self.sw.click_on_xpath("//*{}".format(login_sel[0]))
                     self.browser.switch_to.window(
-                        self.browser.window_handles[1])
+                        self.browser.window_handles[-1])
         try:
             self.sw.browser.switch_to_alert().accept()
         except selenium.common.exceptions.NoAlertPresentException as e:
             logging.info('No alert: {}'.format(e))
-        user_pass = [(self.username, '//*[@id="loginUsername"]'),
-                     (self.password, '//*[@id="loginPassword"]')]
+        user_pass = [(self.username, '//*[@id="login-username"]'),
+                     (self.password, '//*[@id="login-password"]')]
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
-        time.sleep(2)
-        login_xpaths = ['//button[normalize-space(text())="{}"]'.format(x)
-                        for x in ['Sign in', 'Log in', 'Log In']]
-        for xpath in login_xpaths:
-            try:
-                self.sw.click_on_xpath(xpath, sleep=5)
-                break
-            except:
-                logging.warning('Could not click xpath: {}'.format(xpath))
+            if item[0] == self.password:
+                try:
+                    elem.send_keys(Keys.ENTER)
+                except ex.ElementNotInteractableException:
+                    logging.info('Could not find field for {}'.format(item))
+                except ex.StaleElementReferenceException:
+                    logging.info('Could not find field for {}'.format(item))
+        elem_id = 'dashboard-metrics'
+        elem_load = self.sw.wait_for_elem_load(elem_id=elem_id, attempts=200)
+        if not elem_load:
+            logging.warning('{} did not load'.format(elem_id))
+            self.sw.take_screenshot(file_name='reddit_error.jpg')
+            return False
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
         try:
             self.browser.find_element_by_xpath(error_xpath)
@@ -127,7 +141,14 @@ class RedApi(object):
     def set_breakdowns(self):
         logging.info('Setting breakdowns.')
         bd_xpath = '//button[contains(normalize-space(),"Breakdown")]'
-        self.sw.click_on_xpath(bd_xpath)
+        elem_found = self.sw.wait_for_elem_load(elem_id=bd_xpath,
+                                                selector=self.sw.select_xpath)
+        try:
+            self.sw.click_on_xpath(bd_xpath)
+        except ex.NoSuchElementException as e:
+            msg = 'Could not click elem_found {}: {}'.format(elem_found, e)
+            logging.warning(msg)
+            self.sw.take_screenshot(file_name='reddit_error.jpg')
         bd_date_xpath = '//button[contains(normalize-space(),"Date")]'
         self.sw.click_on_xpath(bd_date_xpath)
 
@@ -259,8 +280,12 @@ class RedApi(object):
         self.sw = utl.SeleniumWrapper(headless=self.headless)
         self.browser = self.sw.browser
         sd, ed = self.get_data_default_check(sd, ed, fields)
-        self.sw.go_to_url(self.base_url)
-        sign_in_result = self.sign_in()
+        sign_in_result = False
+        for x in range(3):
+            self.sw.go_to_url(self.base_url)
+            sign_in_result = self.sign_in(attempt=x + 1)
+            if sign_in_result:
+                break
         if not sign_in_result:
             self.sw.quit()
             return pd.DataFrame()

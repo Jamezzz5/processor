@@ -20,6 +20,7 @@ class AzuApi(object):
         self.sas_token = None
         self.config_list = None
         self.df = pd.DataFrame()
+        self.key_list = ['storage_account_name', 'container_name', 'sas_token']
         self.header = None
         self.r = None
 
@@ -40,9 +41,9 @@ class AzuApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.account_name = self.config['storage_account_name']
-        self.container_name = self.config['container_name']
-        self.sas_token = self.config['sas_token']
+        self.account_name = self.config[self.key_list[0]]
+        self.container_name = self.config[self.key_list[1]]
+        self.sas_token = self.config[self.key_list[2]]
         self.config_list = [self.account_name, self.container_name,
                             self.sas_token]
 
