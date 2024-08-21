@@ -1099,6 +1099,10 @@ class CheckAutoDictOrder(AnalyzeBase):
             auto_place = source.p[vmc.placement]
         if auto_place not in tdf.columns:
             return df
+        if tdf[auto_place].isnull().values.any():
+            msg = 'contains NaN, suggest choosing different placement column'
+            logging.warning('{} {}]'.format(auto_place, msg))
+            tdf[auto_place] = tdf[auto_place].astype(str)
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
         max_idx = 0
         max_val = 0
