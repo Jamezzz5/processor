@@ -613,7 +613,10 @@ class SeleniumWrapper(object):
         return elem_click
 
     def quit(self):
-        self.browser.close()
+        try:
+            self.browser.close()
+        except ex.WebDriverException as e:
+            logging.warning('Error closing: {}'.format(e))
         self.browser.quit()
 
     @staticmethod

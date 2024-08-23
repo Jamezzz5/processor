@@ -2762,10 +2762,12 @@ class AliChat(object):
                 break
         return table_response
 
-    def find_db_model(self, db_model, message, other_db_model=None):
+    def find_db_model(self, db_model, message, other_db_model=None,
+                      remove_punctuation=True):
         word_idx = self.index_db_model_by_word(db_model)
         words = self.remove_stop_words_from_message(
-            message, db_model, other_db_model, remove_punctuation=True)
+            message, db_model, other_db_model,
+            remove_punctuation=remove_punctuation)
         used_words = []
         model_ids = {}
         for word in words:
@@ -2940,8 +2942,10 @@ class AliChat(object):
                                         brand_new_ids=brand_new_ids)
         return response
 
-    def create_db_model_from_other(self, db_model, message, other_db_model):
-        model_ids, words = self.find_db_model(db_model, message)
+    def create_db_model_from_other(self, db_model, message, other_db_model,
+                                   remove_punctuation=True):
+        model_ids, words = self.find_db_model(
+            db_model, message, remove_punctuation=remove_punctuation)
         if model_ids:
             cur_model = self.db.session.get(db_model, next(iter(model_ids)))
             old_model = other_db_model.query.filter_by(
