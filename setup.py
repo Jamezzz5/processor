@@ -8,6 +8,7 @@ setup(
     version='0.1.0',
     author='J',
     author_email='j',
+    package_dir={'': 'reporting'},
     description='Processor.',
     install_requires=requirements,
 )

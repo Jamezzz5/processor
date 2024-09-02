@@ -1099,6 +1099,10 @@ class CheckAutoDictOrder(AnalyzeBase):
             auto_place = source.p[vmc.placement]
         if auto_place not in tdf.columns:
             return df
+        if tdf[auto_place].isnull().values.any():
+            msg = 'contains NaN, suggest choosing different placement column'
+            logging.warning('{} {}]'.format(auto_place, msg))
+            tdf[auto_place] = tdf[auto_place].astype(str)
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
         max_idx = 0
         max_val = 0
@@ -1897,9 +1901,9 @@ class CheckFlatSpends(AnalyzeBase):
         tdf = pd.DataFrame(columns=translation_df.columns)
         for aly_dict in aly_dicts:
             if aly_dict[self.error_col] == self.placement_date_error:
-                old_val = aly_dict[dctc.PD].strip('00:00:00').strip()
+                old_val = aly_dict[dctc.PD].replace('00:00:00', '').strip()
                 new_val = aly_dict[
-                    self.first_click_col].strip('00:00:00').strip()
+                    self.first_click_col].replace('00:00:00', '').strip()
                 try:
                     trans = [[dctc.PD, old_val, new_val,
                               'Select::' + dctc.PN,
@@ -2643,7 +2647,7 @@ class ValueCalc(object):
     @staticmethod
     def calculate_trending(df, col_name='DoD Change', metric=None,
                            groupby=None, period=1, date='eventdate'):
-        group_and_date = groupby + [date] if groupby else [date]
+        group_and_date = list(groupby) + [date] if groupby else [date]
         df = df.sort_values(by=group_and_date)
         if groupby:
             group_df = df.groupby(groupby)[metric]
@@ -2699,7 +2703,7 @@ class AliChat(object):
             openai.api_key = self.config['SECRET_KEY']
             prompt = f"User: {message}\nAI:"
             response = openai.Completion.create(
-                engine="text-davinci-002",
+                engine="gpt-3.5-turbo-instruct",
                 prompt=prompt,
                 max_tokens=1024,
                 n=1,
@@ -2758,10 +2762,12 @@ class AliChat(object):
                 break
         return table_response
 
-    def find_db_model(self, db_model, message, other_db_model=None):
+    def find_db_model(self, db_model, message, other_db_model=None,
+                      remove_punctuation=True):
         word_idx = self.index_db_model_by_word(db_model)
         words = self.remove_stop_words_from_message(
-            message, db_model, other_db_model, remove_punctuation=True)
+            message, db_model, other_db_model,
+            remove_punctuation=remove_punctuation)
         used_words = []
         model_ids = {}
         for word in words:
@@ -2936,8 +2942,10 @@ class AliChat(object):
                                         brand_new_ids=brand_new_ids)
         return response
 
-    def create_db_model_from_other(self, db_model, message, other_db_model):
-        model_ids, words = self.find_db_model(db_model, message)
+    def create_db_model_from_other(self, db_model, message, other_db_model,
+                                   remove_punctuation=True):
+        model_ids, words = self.find_db_model(
+            db_model, message, remove_punctuation=remove_punctuation)
         if model_ids:
             cur_model = self.db.session.get(db_model, next(iter(model_ids)))
             old_model = other_db_model.query.filter_by(
@@ -2951,7 +2959,8 @@ class AliChat(object):
             cur_model_dict = cur_model.to_dict()
             for k in list(new_model.__table__.columns):
                 col = k.name
-                if col in cur_model_dict.keys() and col != 'id':
+                omit_cols = ['id', 'local_path']
+                if col in cur_model_dict.keys() and col not in omit_cols:
                     v = cur_model_dict[col]
                     setattr(new_model, col, v)
             self.db.session.commit()

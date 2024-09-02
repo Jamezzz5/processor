@@ -49,14 +49,16 @@ def get_args(arguments=None):
         'all', 'fb', 'aw', 'tw', 'ttd', 'ga', 'nb', 'af', 'sc', 'aj', 'dc',
         'rs', 'db', 'vk', 'rc', 'szk', 'red', 'dv', 'adk', 'inn', 'tik', 'amz',
         'cri', 'pm', 'sam', 'gs', 'qt', 'yv', 'amd', 'ss', 'nz', 'ytd', 'wal',
-        'dvo', 'goad'])
+        'dvo', 'goad', 'sim', 'pix'])
     parser.add_argument('--ftp', choices=['all', 'sz'])
     parser.add_argument('--dbi', choices=['all', 'dna'])
     parser.add_argument('--s3', choices=['all', 'dna'])
+    parser.add_argument('--azu', choices=['all', 'dna'])
     parser.add_argument('--noprocess', action='store_true')
     parser.add_argument('--analyze', action='store_true')
     parser.add_argument('--update', choices=['all', 'vm', 'dct'])
-    parser.add_argument('--exp', choices=['all', 'db', 'ftp', 'test'])
+    parser.add_argument('--exp', choices=[
+        'all', 'db', 'ftp', 'test', 'azu'])
     parser.add_argument('--tab', action='store_true')
     parser.add_argument('--basic', action='store_true')
     parser.add_argument('--nolog', action='store_true')
@@ -96,6 +98,9 @@ def main(arguments=None):
     if args.s3:
         s3 = ih.ImportHandler(args.s3, matrix)
         s3.s3_loop()
+    if args.azu:
+        azu = ih.ImportHandler(args.azu, matrix)
+        azu.azu_loop()
     if not args.noprocess:
         if args.analyze:
             aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)

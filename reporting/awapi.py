@@ -132,7 +132,7 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
-    version = 14
+    version = 17
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
@@ -234,9 +234,14 @@ class AwApi(object):
             column = metric.display_name
             if column in df.columns:
                 df[column] = (df[column] * 100).round(2)
-                df['{} - Percent'.format(column)] = df[column]
+                percent_col = '{} - Percent'.format(column)
+                df[percent_col] = df[column]
                 df[column] = ((df[column] / 100) *
                               df[self.rb.views.display_name].astype(float))
+                imp_view_col = '{} - Impressions'.format(column)
+                df[imp_view_col] = (
+                        (df[percent_col] / 100) *
+                        df[self.rb.impressions.display_name].astype(float))
         return df
 
     def find_correct_login_customer_id(self, report):

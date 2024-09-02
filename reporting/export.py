@@ -16,6 +16,7 @@ import reporting.utils as utl
 import reporting.models as mdl
 import reporting.awss3 as awss3
 import reporting.tbapi as tbapi
+import reporting.azapi as azu
 import reporting.expcolumns as exc
 
 log = logging.getLogger()
@@ -50,7 +51,10 @@ class ExportHandler(object):
             self.export_ftp(exp_key)
         elif (self.config[exc.export_type][exp_key] == 'S3' and
               (self.args == 's3' or self.args == 'all')):
-            self.export_s3(exp_key)
+            self.export_s3(exp_key, awss3.S3)
+        elif (self.config[exc.export_type][exp_key] == 'AZ' and
+              (self.args == 'azu' or self.args == 'all')):
+            self.export_s3(exp_key, azu.AzuApi)
 
     def export_db(self, exp_key, test=False):
         dbu = DBUpload()
@@ -119,8 +123,8 @@ class ExportHandler(object):
         ftp_class.ftp_write_file(dft_class.df,
                                  self.config[exc.output_file][exp_key])
 
-    def export_s3(self, exp_key):
-        s3_class = awss3.S3()
+    def export_s3(self, exp_key, s3_base_class=None):
+        s3_class = s3_base_class()
         db = DB(config='dbconfig.json')
         dft_class = DFTranslation(self.config[exc.translation_file][exp_key],
                                   self.config[exc.output_file][exp_key], db)
@@ -134,7 +138,7 @@ class ExportHandler(object):
                 default_format = True
         else:
             default_format = True
-        s3_class.s3_write_file(dft_class.df, default_format=default_format)
+        s3_class.write_file(dft_class.df, default_format=default_format)
         return True
 
 

@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import gzip
 import json
 import time
 import shutil
@@ -482,6 +483,29 @@ def base64_to_binary(data):
     return io.BytesIO(decoded_bytes)
 
 
+def write_df_to_buffer(df, file_name='raw', default_format=True,
+                       base_folder=''):
+    csv_file = '{}{}'.format(file_name, '.csv')
+    if default_format:
+        gzip_extension = '.gzip'
+    else:
+        gzip_extension = '.gz'
+    zip_file = '{}{}'.format(file_name, gzip_extension)
+    today_yr = dt.datetime.strftime(dt.datetime.today(), '%Y')
+    today_str = dt.datetime.strftime(dt.datetime.today(), '%m%d')
+    today_folder_name = '{}/{}/'.format(today_yr, today_str)
+    product_name = '{}_{}'.format(df['uploadid'].unique()[0],
+                                  '_'.join(df['productname'].unique()))
+    product_name = re.sub(r'\W+', '', product_name)
+    zip_file = '{}/{}{}/{}'.format(
+        base_folder, today_folder_name, product_name, zip_file)
+    buffer = io.BytesIO()
+    with gzip.GzipFile(filename=csv_file, fileobj=buffer, mode="wb") as f:
+        f.write(df.to_csv().encode())
+    buffer.seek(0)
+    return buffer, zip_file
+
+
 class SeleniumWrapper(object):
     def __init__(self, mobile=False, headless=True):
         self.mobile = mobile
@@ -589,6 +613,10 @@ class SeleniumWrapper(object):
         return elem_click
 
     def quit(self):
+        try:
+            self.browser.close()
+        except ex.WebDriverException as e:
+            logging.warning('Error closing: {}'.format(e))
         self.browser.quit()
 
     @staticmethod
@@ -653,7 +681,9 @@ class SeleniumWrapper(object):
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        went_to_url = self.go_to_url(url)
+        went_to_url = True
+        if url:
+            went_to_url = self.go_to_url(url)
         if went_to_url:
             self.accept_cookies()
             self.browser.execute_script("window.scrollTo(0, 0)")
@@ -712,8 +742,13 @@ class SeleniumWrapper(object):
                 elem_sent = True
         return elem_sent
 
+    def send_multiple_keys_wrapper(self, elem, items):
+        for item in items:
+            self.send_keys_wrapper(elem, item)
+            wd.ActionChains(self.browser).send_keys(Keys.TAB).perform()
+
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
-                            clear_existing=True):
+                            clear_existing=True, send_escape=True):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -733,10 +768,15 @@ class SeleniumWrapper(object):
             if elem.get_attribute('type') == 'checkbox':
                 self.click_on_xpath(elem=elem)
             else:
-                self.send_keys_wrapper(elem, item[0])
+                if type(item[0]) == list:
+                    self.send_multiple_keys_wrapper(elem, item[0])
+                else:
+                    self.send_keys_wrapper(elem, item[0])
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
-                wd.ActionChains(self.browser).send_keys(Keys.ESCAPE).perform()
+                if send_escape:
+                    wd.ActionChains(self.browser).send_keys(
+                        Keys.ESCAPE).perform()
 
     def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
         if load_elem_id:

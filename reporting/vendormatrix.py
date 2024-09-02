@@ -64,11 +64,15 @@ class VendorMatrix(object):
             vmc.api_ss_key: [],
             vmc.api_nz_key: [],
             vmc.api_ytd_key: [],
-            vmc.api_wal_key: []
+            vmc.api_wal_key: [],
+            vmc.api_sim_key: [],
+            vmc.api_azu_key: [],
+            vmc.api_pix_key: []
         }
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
+        self.azu_dna_key = []
         self.vm_rules_dict = {}
         self.ven_param = None
         self.plan_omit_list = None
@@ -140,6 +144,9 @@ class VendorMatrix(object):
             if vk_split[vk][0] == 'S3':
                 if vk_split[vk][1] == 'DNA':
                     self.s3_dna_key.append(vk)
+            if vk_split[vk][0] == 'AZU':
+                if vk_split[vk][1] == 'DNA':
+                    self.azu_dna_key.append(vk)
 
     def vm_rules(self):
         for key in self.vm:
@@ -995,10 +1002,16 @@ def df_single_transform(df, transform):
         tc.read(dctc.filename_tran_config)
         df = tc.apply_translation_to_dict(df)
     if transform_type == 'AddColumn':
+        if len(transform) < 3:
+            logging.warning('Not formed correctly: {}'.format(transform))
+            return df
         col_name = transform[1]
         col_val = transform[2]
         df[col_name] = col_val
     if transform_type == 'FilterCol':
+        if len(transform) < 3:
+            logging.warning('Not formed correctly: {}'.format(transform))
+            return df
         col_name = transform[1]
         col_val = transform[2]
         exclude_toggle = False
