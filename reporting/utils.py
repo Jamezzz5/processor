@@ -5,6 +5,7 @@ import gzip
 import json
 import time
 import shutil
+import random
 import logging
 import base64
 import pandas as pd
@@ -517,15 +518,32 @@ class SeleniumWrapper(object):
         self.select_xpath = By.XPATH
         self.select_css = By.CSS_SELECTOR
 
+    @staticmethod
+    def get_random_user_agent():
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/605.1.15 "
+            "(KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 "
+            "Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 "
+            "Firefox/89.0"
+        ]
+        random_user_agent = random.choice(user_agents)
+        return random_user_agent
+
     def init_browser(self, headless):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
         if headless:
             co.add_argument('--headless=new')
-        co.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 "
-            "Safari/537.36")
+        random_user_agent = self.get_random_user_agent()
+        co.add_argument('user-agent={}'.format(random_user_agent))
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
@@ -537,10 +555,21 @@ class SeleniumWrapper(object):
                  }
         co.add_experimental_option('prefs', prefs)
         co.add_experimental_option('excludeSwitches', ['enable-automation'])
+        co.add_experimental_option('useAutomationExtension', False)
+        co.add_argument('--disable-blink-features=AutomationControlled')
         if self.mobile:
             mobile_emulation = {"deviceName": "iPhone X"}
             co.add_experimental_option("mobileEmulation", mobile_emulation)
         browser = wd.Chrome(options=co)
+        browser.execute_script("""
+            Object.defineProperty(navigator, 'webdriver', 
+            { get: () => undefined });
+            window.navigator.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', 
+            { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'languages', 
+            { get: () => ['en-US', 'en'] });
+        """)
         browser.maximize_window()
         browser.set_script_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
@@ -554,6 +583,10 @@ class SeleniumWrapper(object):
         params = {'cmd': 'Page.setDownloadBehavior',
                   'params': {'behavior': 'allow', 'downloadPath': download_dir}}
         driver.execute("send_command", params)
+
+    @staticmethod
+    def random_delay(min_time=0.5, max_time=2.5):
+        time.sleep(random.uniform(min_time, max_time))
 
     def go_to_url(self, url, sleep=5, elem_id=''):
         logging.info('Going to url {}.'.format(url))
