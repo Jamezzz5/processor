@@ -284,10 +284,10 @@ class TtdApi(object):
         results, r = self.check_advertiser_id(
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
-            return pd.DataFrame(data=results, columns=vmc.r_cols[:2])
-        results = self.check_reports_id(
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results, r = self.check_reports_id(
             results, camp_col, success_msg, failure_msg)
-        return pd.DataFrame(data=results, columns=vmc.r_cols[:2])
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
 
     def walmart_check(self):
         if 'ttd_api' not in self.login and 'wmt_api' in self.login:
