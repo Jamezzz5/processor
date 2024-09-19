@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import pytz
 import json
 import time
 import logging
@@ -25,6 +26,7 @@ class AmzApi(object):
         'attributedConversions14d',
         'attributedConversions14dSameSKU', 'attributedUnitsOrdered14d',
         'attributedSales14d', 'attributedSales14dSameSKU']
+    default_config_file_name = 'amzapi.json'
 
     def __init__(self):
         self.config = None
@@ -43,6 +45,7 @@ class AmzApi(object):
         self.headers = None
         self.version = '2'
         self.amazon_dsp = False
+        self.timezone = None
         self.df = pd.DataFrame()
         self.r = None
 
@@ -142,10 +145,12 @@ class AmzApi(object):
                     profile = [x for x in r.json()['response'] if
                                self.advertiser_id in x['advertiserId']]
                     if profile:
-                        self.profile_id = profile[0]['advertiserId']
+                        profile = profile[0]
+                        self.profile_id = profile['advertiserId']
                         self.set_headers()
                         self.base_url = endpoint
                         self.amazon_dsp = True
+                        self.timezone = pytz.timezone(profile['timezone'])
                         return True
         logging.warning('Could not find the specified profile, check that '
                         'the provided account ID {} is correct and API has '
@@ -322,7 +327,7 @@ class AmzApi(object):
                         if self.amazon_dsp and 'date' in df.columns:
                             df['date'] = df['date'].apply(
                                 lambda x: dt.datetime.fromtimestamp(
-                                    x / 1000).date())
+                                    x / 1000, tz=pytz.UTC).date())
                     self.df = df
                     break
                 else:
