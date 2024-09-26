@@ -484,9 +484,11 @@ class ImportConfig(object):
                                                   cur_import[self.name])
                     drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
                                               key_name].copy()
-                    drop_idx = drop_idx.index.values[0]
-                    self.matrix_df = self.matrix_df.drop(drop_idx)
-                    self.matrix_df.reset_index()
+                    drop_idx = drop_idx.index.values
+                    if drop_idx:
+                        drop_idx = drop_idx[0]
+                        self.matrix_df = self.matrix_df.drop(drop_idx)
+                        self.matrix_df.reset_index()
         self.add_imports_to_vm(import_dicts)
 
     def add_imports_to_vm(self, import_dicts):
