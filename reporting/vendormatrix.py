@@ -369,6 +369,8 @@ class ImportConfig(object):
 
     @staticmethod
     def set_config_file_value(config_file, name, new_val, nest=None):
+        if not config_file:
+            config_file = {}
         if not pd.isna(nest):
             config_file[nest][name] = new_val
         else:
