@@ -6,7 +6,7 @@ import shutil
 import logging
 import pandas as pd
 import datetime as dt
-import reporting.utils as utl
+import processor.reporting.utils as utl
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
 

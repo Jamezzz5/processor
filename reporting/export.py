@@ -11,13 +11,13 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import sqlalchemy as sqa
-import reporting.ftp as ftp
-import reporting.utils as utl
-import reporting.models as mdl
-import reporting.awss3 as awss3
-import reporting.tbapi as tbapi
-import reporting.azapi as azu
-import reporting.expcolumns as exc
+import processor.reporting.ftp as ftp
+import processor.reporting.utils as utl
+import processor.reporting.models as mdl
+import processor.reporting.awss3 as awss3
+import processor.reporting.tbapi as tbapi
+import processor.reporting.azapi as azu
+import processor.reporting.expcolumns as exc
 
 log = logging.getLogger()
 config_path = utl.config_path

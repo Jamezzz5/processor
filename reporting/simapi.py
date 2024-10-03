@@ -6,8 +6,8 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-import reporting.utils as utl
-import reporting.vmcolumns as vmc
+import processor.reporting.utils as utl
+import processor.reporting.vmcolumns as vmc
 
 
 class SimApi(object):

@@ -5,8 +5,8 @@ import time
 import logging
 import requests
 import pandas as pd
-import reporting.utils as utl
-import reporting.vmcolumns as vmc
+import processor.reporting.utils as utl
+import processor.reporting.vmcolumns as vmc
 
 
 ttd_url = 'https://api.thetradedesk.com/v3'

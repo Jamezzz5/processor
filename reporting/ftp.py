@@ -7,7 +7,7 @@ import logging
 import pandas as pd
 import datetime as dt
 from io import BytesIO
-import reporting.utils as utl
+import processor.reporting.utils as utl
 
 config_path = utl.config_path
 

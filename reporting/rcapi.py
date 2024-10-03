@@ -5,7 +5,7 @@ import logging
 import requests
 import datetime as dt
 import pandas as pd
-import reporting.utils as utl
+import processor.reporting.utils as utl
 
 config_path = utl.config_path
 

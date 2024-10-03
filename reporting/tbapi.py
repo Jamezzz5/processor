@@ -5,10 +5,10 @@ import json
 import shutil
 import logging
 import requests
-import reporting.utils as utl
+import processor.reporting.utils as utl
 import tableaudocumentapi as tda
 import tableauserverclient as tsc
-import reporting.hyper.postgres_extractor as pge
+import processor.reporting.hyper.postgres_extractor as pge
 
 config_path = utl.config_path
 

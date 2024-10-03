@@ -4,7 +4,7 @@ import json
 import logging
 import requests
 import pandas as pd
-import reporting.utils as utl
+import processor.reporting.utils as utl
 
 config_path = utl.config_path
 

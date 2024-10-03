@@ -12,9 +12,9 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import selenium.webdriver as wd
-import reporting.vmcolumns as vmc
-import reporting.dictcolumns as dctc
-import reporting.expcolumns as exc
+import processor.reporting.vmcolumns as vmc
+import processor.reporting.dictcolumns as dctc
+import processor.reporting.expcolumns as exc
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys

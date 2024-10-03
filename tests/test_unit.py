@@ -5,19 +5,19 @@ import pytest
 import numpy as np
 import pandas as pd
 import datetime as dt
-import reporting.utils as utl
-import reporting.vendormatrix as vm
-import reporting.vmcolumns as vmc
-import reporting.dictionary as dct
-import reporting.dictcolumns as dctc
-import reporting.calc as cal
-import reporting.analyze as az
-import reporting.export as exp
-import reporting.expcolumns as exc
-import reporting.azapi as azapi
-import reporting.redapi as redapi
-import reporting.awapi as awapi
-import reporting.amzapi as amzapi
+import processor.reporting.utils as utl
+import processor.reporting.vendormatrix as vm
+import processor.reporting.vmcolumns as vmc
+import processor.reporting.dictionary as dct
+import processor.reporting.dictcolumns as dctc
+import processor.reporting.calc as cal
+import processor.reporting.analyze as az
+import processor.reporting.export as exp
+import processor.reporting.expcolumns as exc
+import processor.reporting.azapi as azapi
+import processor.reporting.redapi as redapi
+import processor.reporting.awapi as awapi
+import processor.reporting.amzapi as amzapi
 
 
 def func(x):

@@ -6,7 +6,7 @@ import requests
 import datetime as dt
 import pandas as pd
 from io import StringIO
-import reporting.utils as utl
+import processor.reporting.utils as utl
 
 config_path = utl.config_path
 

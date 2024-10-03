@@ -7,9 +7,9 @@ import logging
 import requests
 import pandas as pd
 from io import StringIO
-import reporting.utils as utl
-import reporting.vendormatrix as matrix
-import reporting.vmcolumns as vmc
+import processor.reporting.utils as utl
+import processor.reporting.vendormatrix as matrix
+import processor.reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path

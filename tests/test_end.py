@@ -2,12 +2,12 @@ import os
 import shutil
 import pytest
 import pandas as pd
-from main import main
-import reporting.utils as utl
-import reporting.analyze as az
-import reporting.vmcolumns as vmc
-import reporting.vendormatrix as vm
-import reporting.dictcolumns as dctc
+from processor.main import main
+import processor.reporting.utils as utl
+import processor.reporting.analyze as az
+import processor.reporting.vmcolumns as vmc
+import processor.reporting.vendormatrix as vm
+import processor.reporting.dictcolumns as dctc
 
 
 @pytest.fixture(scope='module')
