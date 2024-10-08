@@ -57,6 +57,15 @@ def load_config():
 
 @pytest.mark.usefixtures('load_config')
 class TestEndToEnd:
+    """
+    If test suite appears to run infinitely, check that the following files
+    are in the 'processor/tests/' directory and up to date:
+    * 'end_to_end_config.xlsx'
+    * 'rawfile.csv'
+    * 'results.csv'
+    Also, check that the file 'end_to_end_config.csv' is in the
+    'processor/config/' directory and up to date
+    """
     def test_load_config(self, load_config):
         config_cols = [vm.ImportConfig.key, vm.ImportConfig.account_id,
                        vm.ImportConfig.filter, vm.ImportConfig.name,
@@ -82,6 +91,12 @@ class TestEndToEnd:
         matrix.write()
 
     def test_run_processor(self):
+        """
+        If this test appears to be running infinitely, note this test takes a
+        much longer time than the others due to its large scope. If it
+        concerns you, run it on debug and monitor the console output as it runs
+        to ensure the test is progressing as expected.
+        """
         main('--api all --analyze')
 
     def test_check_results(self):
