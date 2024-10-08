@@ -123,25 +123,38 @@ class CriApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
-        self.df = self.request_and_get_data(sd, ed)
+        self.df = self.request_and_get_data(sd, ed, fields)
         return self.df
 
-    def request_data(self, sd, ed, base_url):
+    @staticmethod
+    def parse_fields(fields):
+        fields = fields.split(',')
+        return fields
+
+    def request_data(self, sd, ed, base_url, fields=None):
         logging.info('Getting data form {} to {}'.format(sd, ed))
         self.set_headers()
-        url = '{}/reports/campaigns'.format(base_url)
-        params = {'startDate': sd, 'endDate': ed,
-                  'timezone': 'America/New_York', 'id': self.advertiser_id,
-                  'format': 'json-compact'}
+        if fields is not None:
+            fields = ' '.join(fields)
+            fields = self.parse_fields(fields)
+            url = '{}/reports/line-items'.format(base_url)
+            params = {'startDate': sd, 'endDate': ed,
+                      'timezone': 'America/New_York', 'id': self.advertiser_id,
+                      'format': 'json-compact', 'ids': fields}
+        else:
+            url = '{}/reports/campaigns'.format(base_url)
+            params = {'startDate': sd, 'endDate': ed,
+                      'timezone': 'America/New_York', 'id': self.advertiser_id,
+                      'format': 'json-compact'}
         params = {'type': 'RetailMediaReportRequest', 'attributes': params}
         params = {'data': params}
         r = self.make_request(url, method='POST', headers=self.headers,
                               json_body=params)
         return r
 
-    def request_and_get_data(self, sd, ed):
+    def request_and_get_data(self, sd, ed, fields=None):
         base_url = '{}{}'.format(self.base_url, self.version_url)
-        r = self.request_data(sd, ed, base_url)
+        r = self.request_data(sd, ed, base_url, fields)
         if 'data' not in r.json():
             logging.warning('data was not in response returning blank df: '
                             '{}'.format(r.json()))

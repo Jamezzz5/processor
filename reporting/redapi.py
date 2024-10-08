@@ -84,15 +84,18 @@ class RedApi(object):
                      for x in login_sel]
         try:
             self.sw.click_on_xpath('//*[@id="Content"]/h2/a')
+            self.sw.random_delay()
         except ex.NoSuchElementException as e:
             logging.warning('No logo, attempting footer.  Error: {}'.format(e))
             try:
                 self.sw.click_on_xpath('//*[@id="Footer"]/p[2]/a')
+                self.sw.random_delay()
             except ex.NoSuchElementException as e:
                 logging.warning(
                     'No footer, attempting log in link.  Error: {}'.format(e))
                 try:
                     self.sw.click_on_xpath('//a{}'.format(login_sel[0]))
+                    self.sw.random_delay()
                 except ex.NoSuchElementException as e:
                     logging.warning('Could not find Log In, rechecking.'
                                     '  Error: {}'.format(e))
@@ -108,9 +111,11 @@ class RedApi(object):
         for item in user_pass:
             elem = self.browser.find_element_by_xpath(item[1])
             elem.send_keys(item[0])
+            self.sw.random_delay(0.3, 1)
             if item[0] == self.password:
                 try:
                     elem.send_keys(Keys.ENTER)
+                    self.sw.random_delay(1, 2)
                 except ex.ElementNotInteractableException:
                     logging.info('Could not find field for {}'.format(item))
                 except ex.StaleElementReferenceException:

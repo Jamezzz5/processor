@@ -1099,6 +1099,10 @@ class CheckAutoDictOrder(AnalyzeBase):
             auto_place = source.p[vmc.placement]
         if auto_place not in tdf.columns:
             return df
+        if tdf[auto_place].isnull().values.any():
+            msg = 'contains NaN, suggest choosing different placement column'
+            logging.warning('{} {}]'.format(auto_place, msg))
+            tdf[auto_place] = tdf[auto_place].astype(str)
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
         max_idx = 0
         max_val = 0
@@ -2758,10 +2762,12 @@ class AliChat(object):
                 break
         return table_response
 
-    def find_db_model(self, db_model, message, other_db_model=None):
+    def find_db_model(self, db_model, message, other_db_model=None,
+                      remove_punctuation=True):
         word_idx = self.index_db_model_by_word(db_model)
         words = self.remove_stop_words_from_message(
-            message, db_model, other_db_model, remove_punctuation=True)
+            message, db_model, other_db_model,
+            remove_punctuation=remove_punctuation)
         used_words = []
         model_ids = {}
         for word in words:
@@ -2936,8 +2942,10 @@ class AliChat(object):
                                         brand_new_ids=brand_new_ids)
         return response
 
-    def create_db_model_from_other(self, db_model, message, other_db_model):
-        model_ids, words = self.find_db_model(db_model, message)
+    def create_db_model_from_other(self, db_model, message, other_db_model,
+                                   remove_punctuation=True):
+        model_ids, words = self.find_db_model(
+            db_model, message, remove_punctuation=remove_punctuation)
         if model_ids:
             cur_model = self.db.session.get(db_model, next(iter(model_ids)))
             old_model = other_db_model.query.filter_by(

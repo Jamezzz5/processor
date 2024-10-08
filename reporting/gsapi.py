@@ -209,19 +209,22 @@ class GsApi(object):
         r = r[self.body_str][self.cont_str]
         paragraph = []
         new_paragraph = {}
+        text_run = 'textRun'
         for x in r:
             if self.para_str in x:
-                tc = x[self.para_str]['elements'][0]['textRun'][self.cont_str]
-                if tc == '\n':
-                    paragraph.append(new_paragraph)
-                    new_paragraph = {}
-                    continue
-                else:
-                    if new_paragraph:
-                        new_paragraph[self.cont_str] += tc
+                tc = x[self.para_str]['elements'][0]
+                if text_run in tc:
+                    tc = tc[text_run][self.cont_str]
+                    if tc == '\n':
+                        paragraph.append(new_paragraph)
+                        new_paragraph = {}
+                        continue
                     else:
-                        new_paragraph[self.head_str] = tc.strip('\n')
-                        new_paragraph[self.cont_str] = ''
+                        if new_paragraph:
+                            new_paragraph[self.cont_str] += tc
+                        else:
+                            new_paragraph[self.head_str] = tc.strip('\n')
+                            new_paragraph[self.cont_str] = ''
         self.df = pd.DataFrame(paragraph)
         return self.df
 

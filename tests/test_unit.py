@@ -16,6 +16,8 @@ import reporting.export as exp
 import reporting.expcolumns as exc
 import reporting.azapi as azapi
 import reporting.redapi as redapi
+import reporting.awapi as awapi
+import reporting.amzapi as amzapi
 
 
 def func(x):
@@ -202,6 +204,13 @@ class TestApis:
         except Exception as e:
             api.sw.quit()
             raise e
+
+    def test_amzapi(self, tmp_path_factory):
+        api = amzapi.AmzApi()
+        api.input_config(api.default_config_file_name)
+        sd = dt.datetime.today() - dt.timedelta(days=28)
+        ed = dt.datetime.today()
+        # df = api.get_data(sd, ed)
 
 
 class TestDictionary:

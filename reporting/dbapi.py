@@ -111,6 +111,17 @@ class DbApi(object):
                 'METRIC_ACTIVE_VIEW_UNVIEWABLE_IMPRESSIONS'
             ]
 
+    def refresh_client_token(self, extra):
+        token = None
+        for x in range(10):
+            try:
+                token = self.client.refresh_token(self.refresh_url, **extra)
+                break
+            except requests.exceptions.ConnectionError as e:
+                logging.warning('Connection error, retrying: {}'.format(e))
+                time.sleep(1)
+        return token
+
     def get_client(self):
         token = {'access_token': self.access_token,
                  'refresh_token': self.refresh_token,
@@ -120,7 +131,7 @@ class DbApi(object):
         extra = {'client_id': self.client_id,
                  'client_secret': self.client_secret}
         self.client = OAuth2Session(self.client_id, token=token)
-        token = self.client.refresh_token(self.refresh_url, **extra)
+        token = self.refresh_client_token(extra)
         self.client = OAuth2Session(self.client_id, token=token)
 
     @staticmethod
