@@ -20,7 +20,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import chromedriver_autoinstaller
 
 
 
@@ -539,7 +538,6 @@ class SeleniumWrapper(object):
         return random_user_agent
 
     def init_browser(self, headless):
-        chromedriver_autoinstaller.install()
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
         if headless:
@@ -549,7 +547,7 @@ class SeleniumWrapper(object):
         co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
-        # co.add_argument('--no-sandbox')
+        co.add_argument('--no-sandbox')
         co.add_argument('--disable-gpu')
         prefs = {'download.default_directory': download_path,
                  "credentials_enable_service": False,
