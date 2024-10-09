@@ -570,6 +570,10 @@ class TestAnalyze:
         return vm_df
 
     def test_double_fix_all_raw(self, test_vm):
+        """
+        If test is failing due to Vendor Key errors, ensure 'Vendormatrix.csv'
+        is in the 'processors/tests/' directory and up to date.
+        """
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
