@@ -11,12 +11,11 @@ config_path = utl.config_path
 
 
 class GaApi(object):
-    base_url = 'https://www.googleapis.com/analytics/v3/data/ga'
-    def_metrics = ['goal1Completions', 'goal2Completions', 'users',
-                   'newUsers', 'bounces', 'pageviews', 'totalEvents',
-                   'uniqueEvents', 'timeOnPage']
-    def_dims = ['date', 'campaign', 'source', 'medium', 'keyword', 'country']
+    base_url = 'https://analyticsdata.googleapis.com/v1beta/properties/'
+    def_metrics = ['totalUsers', 'bounceRate']
+    def_dims = ['date', 'campaignName', 'source', 'medium', 'country']
     dcm_dims = ['dcmClickSitePlacement']
+    default_config_file_name = 'gaapi.json'
 
     def __init__(self):
         self.config = None
@@ -109,67 +108,50 @@ class GaApi(object):
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         return sd, ed
 
-    def create_url(self, sd, ed, fields, start_index, metric):
-        ids_url = '?ids=ga:{}'.format(self.ga_id)
-        sd_url = '&start-date={}'.format(sd)
-        ed_url = '&end-date={}'.format(ed)
-        dim_url = '&dimensions={}'.format(','.join('ga:' + x
-                                                   for x in self.def_dims))
-        metrics_url = '&metrics={}'.format(','.join('ga:' + x
-                                                    for x in metric))
-        start_index_url = '&start-index={}'.format(start_index)
-        max_results_url = '&max-results=10000'
-        full_url = (self.base_url + ids_url + sd_url + ed_url + dim_url +
-                    metrics_url + start_index_url + max_results_url)
-        if fields:
-            filter_url = '&filters={}'.format(';'.join(fields))
-            full_url += filter_url
+    def create_url(self):
+        full_url = '{}{}:runReport'.format(self.base_url, self.ga_id)
         return full_url
+
+    def create_body(self, sd, ed):
+        body = {
+            "dateRanges": [
+                {"startDate": sd, "endDate": ed}
+            ],
+            "metrics": [{"name": m} for m in self.def_metrics],
+            "dimensions": [{"name": d} for d in self.def_dims]
+        }
+        return body
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         logging.info('Getting df from {} to {}'.format(sd, ed))
         self.get_client()
-        start_index = 1
-        metrics = [self.def_metrics[x:x + 10]
-                   for x in range(0, len(self.def_metrics), 10)]
-        self.get_df_for_all_metrics(sd, ed, fields, start_index, metrics)
-        start_indices = self.get_start_indices()
-        for start_index in start_indices:
-            self.get_df_for_all_metrics(sd, ed, fields, start_index, metrics)
-        return self.df
+        url = self.create_url()
+        body = self.create_body(sd, ed)
+        r = self.client.post(url, json=body)
+        df = self.data_to_df(r)
+        return df
 
-    def get_start_indices(self):
-        if 'totalResults' not in self.r.json():
-            logging.warning('Results not in response: \n{}'
-                            ''.format(self.r.json()))
-            return []
-        total_results = self.r.json()['totalResults']
-        total_pages = range(total_results // 10000 +
-                            ((total_results % 10000) > 0))[1:]
-        start_indices = [(10000 * x) + 1 for x in total_pages]
-        return start_indices
-
-    def get_df_for_all_metrics(self, sd, ed, fields, start_index, metrics):
-        for metric in metrics:
-            self.get_raw_data(sd, ed, fields, start_index, metric)
-
-    def get_raw_data(self, sd, ed, fields, start_index, metric):
-        full_url = self.create_url(sd, ed, fields, start_index, metric)
-        self.r = self.client.get(full_url)
-        tdf = self.data_to_df(self.r)
-        self.df = pd.concat([self.df, tdf])
-
-    def data_to_df(self, r):
-        if 'columnHeaders' not in self.r.json():
+    @staticmethod
+    def data_to_df(r):
+        dimension_header = 'dimensionHeaders'
+        if dimension_header not in r.json():
             logging.warning('Column headers not in response: \n{}'
-                            ''.format(self.r.json()))
+                            ''.format(r.json()))
             return pd.DataFrame()
-        cols = [x['name'][3:] for x in r.json()['columnHeaders']]
+        cols = [x['name'] for x in r.json()[dimension_header]]
+        cols += [header['name'] for header in r.json()['metricHeaders']]
         if 'rows' not in r.json():
             logging.warning('Rows not in response: \n{}'
-                            ''.format(self.r.json()))
-            return pd.DataFrame()
+                            ''.format(r.json()))
+            return pd.DataFrame(columns=cols)
         raw_data = r.json()['rows']
-        df = pd.DataFrame(raw_data, columns=cols)
+        parsed_data = []
+        for row in raw_data:
+            dimensions = row['dimensionValues']
+            metrics = row['metricValues']
+            new_data = [d['value'] for d in dimensions]
+            new_data += [m['value'] for m in metrics]
+            parsed_data.append(new_data)
+        df = pd.DataFrame(parsed_data, columns=cols)
         return df

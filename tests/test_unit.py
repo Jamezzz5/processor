@@ -18,6 +18,7 @@ import reporting.azapi as azapi
 import reporting.redapi as redapi
 import reporting.awapi as awapi
 import reporting.amzapi as amzapi
+import reporting.gaapi as gaapi
 
 
 def func(x):
@@ -207,6 +208,14 @@ class TestApis:
 
     def test_amzapi(self, tmp_path_factory):
         api = amzapi.AmzApi()
+        self.send_api_call(api)
+
+    def test_gaapi(self, tmp_path_factory):
+        api = gaapi.GaApi()
+        self.send_api_call(api)
+
+    @staticmethod
+    def send_api_call(api):
         api.input_config(api.default_config_file_name)
         sd = dt.datetime.today() - dt.timedelta(days=28)
         ed = dt.datetime.today()
