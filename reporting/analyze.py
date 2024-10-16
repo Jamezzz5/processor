@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import yaml
 import nltk
 import openai
 import shutil
@@ -17,6 +18,7 @@ import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
+from reporting.expcolumns import config_file
 
 
 class Analyze(object):
@@ -44,6 +46,7 @@ class Analyze(object):
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
     placement_col = 'placement_col'
+    api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
@@ -99,7 +102,8 @@ class Analyze(object):
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp]
+            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
+            CheckAdwordsSplit]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1525,6 +1529,48 @@ class CheckPackageCapping(AnalyzeBase):
             return None
         self.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
                                 write=write, aly_dict=aly_dict)
+
+
+class CheckAdwordsSplit(AnalyzeBase):
+    name = Analyze.api_split
+    fix = False
+    new_files = False
+
+    def do_analysis(self):
+        self.matrix = vm.VendorMatrix()
+        data_sources = self.matrix.get_all_data_sources()
+        df = []
+        for source in data_sources:
+            if 'API_Adwords' in source.key:
+                df = self.do_analysis_on_data_source(source, df)
+        df = pd.DataFrame(df[0])
+        if df.empty:
+            msg = 'Adwords does not contain multiple campaigns'
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following data sources contain multiple campaigns.'
+                   ' Please add a campaign filter')
+            logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    @staticmethod
+    def do_analysis_on_data_source(source, df):
+        if vmc.filename not in source.p:
+            return pd.DataFrame()
+        api_file = source.p[vmc.apifile]
+        ic = vm.ImportConfig()
+        api_config = ic.load_file(api_file, yaml)
+        adwords_filter = api_config['adwords']['campaign_filter']
+        file_path = source.p[vmc.filename]
+        if not adwords_filter and os.path.exists(file_path):
+            tdf = pd.read_csv(file_path)
+            tdf = tdf['Campaign'].drop_duplicates().to_frame()
+            tdf = tdf
+            count = tdf.count()
+            if count['Campaign'] > 1:
+                df.append(tdf)
+        return df
 
 
 class FindPlacementNameCol(AnalyzeBase):
