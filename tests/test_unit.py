@@ -18,6 +18,7 @@ import reporting.azapi as azapi
 import reporting.redapi as redapi
 import reporting.awapi as awapi
 import reporting.amzapi as amzapi
+import reporting.gaapi as gaapi
 
 
 def func(x):
@@ -207,6 +208,14 @@ class TestApis:
 
     def test_amzapi(self, tmp_path_factory):
         api = amzapi.AmzApi()
+        self.send_api_call(api)
+
+    def test_gaapi(self, tmp_path_factory):
+        api = gaapi.GaApi()
+        self.send_api_call(api)
+
+    @staticmethod
+    def send_api_call(api):
         api.input_config(api.default_config_file_name)
         sd = dt.datetime.today() - dt.timedelta(days=28)
         ed = dt.datetime.today()
@@ -570,6 +579,10 @@ class TestAnalyze:
         return vm_df
 
     def test_double_fix_all_raw(self, test_vm):
+        """
+        If test is failing due to Vendor Key errors, ensure 'Vendormatrix.csv'
+        is in the 'processors/tests/' directory and up to date.
+        """
         vm_df = self.vm_df
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_df)
