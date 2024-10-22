@@ -12,8 +12,11 @@ config_path = utl.config_path
 
 class GaApi(object):
     base_url = 'https://analyticsdata.googleapis.com/v1beta/properties/'
-    def_metrics = ['totalUsers', 'bounceRate']
-    def_dims = ['date', 'campaignName', 'source', 'medium', 'country']
+    def_metrics = ['totalUsers', 'eventCount', 'sessions', 'engagedSessions',
+                   'newUsers', 'averageSessionDuration', 'userEngagementDuration']
+    def_dims = ['date', 'country', 'sessionManualCampaignName',
+                'sessionManualMedium', 'sessionManualSource', 'sessionManualTerm', 'sessionManualAdContent',
+                'eventName']
     dcm_dims = ['dcmClickSitePlacement']
     default_config_file_name = 'gaapi.json'
 
@@ -118,7 +121,21 @@ class GaApi(object):
                 {"startDate": sd, "endDate": ed}
             ],
             "metrics": [{"name": m} for m in self.def_metrics],
-            "dimensions": [{"name": d} for d in self.def_dims]
+            "dimensions": [{"name": d} for d in self.def_dims],
+            "dimensionFilter": {
+                "filter": {
+                    "fieldName": "sessionManualCampaignName",
+                    "stringFilter": {
+                        "matchType": "FULL_REGEXP",
+                        "value": "^[^()]*$"
+                    },
+                    "fieldName": "sessionManualMedium",
+                    "stringFilter": {
+                        "matchType": "FULL_REGEXP",
+                        "value": "paidmedia"
+                    }
+                }
+            }
         }
         return body
 
