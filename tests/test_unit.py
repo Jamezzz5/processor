@@ -19,6 +19,7 @@ import reporting.redapi as redapi
 import reporting.awapi as awapi
 import reporting.amzapi as amzapi
 import reporting.gaapi as gaapi
+import reporting.fbapi as fbapi
 
 
 def func(x):
@@ -214,12 +215,20 @@ class TestApis:
         api = gaapi.GaApi()
         self.send_api_call(api)
 
+    def test_awapi(self, tmp_path_factory):
+        api = awapi.AwApi()
+        self.send_api_call(api, fields=['UAC'])
+
+    def test_fbapi(self, tmp_path_factory):
+        api = fbapi.FbApi()
+        self.send_api_call(api, fields=['Actions'])
+
     @staticmethod
-    def send_api_call(api):
+    def send_api_call(api, fields=None):
         api.input_config(api.default_config_file_name)
         sd = dt.datetime.today() - dt.timedelta(days=28)
         ed = dt.datetime.today()
-        # df = api.get_data(sd, ed)
+        # df = api.get_data(sd, ed, fields=fields)
 
 
 class TestDictionary:
