@@ -19,7 +19,6 @@ import processor.reporting.redapi as redapi
 import processor.reporting.awapi as awapi
 import processor.reporting.amzapi as amzapi
 
-
 def func(x):
     return x + 1
 
@@ -569,6 +568,99 @@ class TestAnalyze:
         self.vm_df = vm_df
         return vm_df
 
+    @pytest.fixture
+    def test_vm2(self):
+        vm_dict = {
+            'Vendor Key':
+                {0: 'API_Meta_Test', 1: 'API_Youtube_Test',
+                 2: 'API_Rawfile_Test', 3: 'Plan Net'},
+            'FILENAME': {0: 'meta_test.csv', 1: 'youtube_test.csv',
+                         2: 'rawfile_test.csv', 3: 'plannet_test.csv'},
+            'FIRSTROW': {0: 0, 1: 0, 2: 0, 3: 0},
+            'LASTROW': {0: 0, 1: 0, 2: 0, 3: 0},
+            'Full Placement Name': {0: '::Campaign Name|Ad Set Name|Ad Name',
+                                    1: '::Campaign|Ad group|Ad',
+                                    2: 'Placement Name',
+                                    3: 'mpCampaign|mpVendor'},
+            'Placement Name': {0: 'Ad Name', 1: 'Ad', 2: 'Placement Name',
+                               3: 'mpVendor'},
+            'FILENAME_DICTIONARY': {0: 'meta_dictionary_test.csv',
+                                    1: 'youtube_dictionary_test.csv',
+                                    2: 'rawfile_dictionary_test.csv',
+                                    3: 'plannet_dictionary.csv'},
+            'FILENAME_ERROR': {0: 'FACEBOOK_ERROR_REPORT.csv',
+                               1: 'YOUTUBE_ERROR_REPORT.csv',
+                               2: 'RAWFILE_ERROR_REPORT.csv',
+                               3: 'PLANNET_ERROR_REPORT.csv'},
+            'START DATE': {0: '10/7/2024', 1: '10/7/2024',
+                           2: '10/10/2024', 3: ''},
+            'END DATE': {0: '', 1: '', 2: '', 3: ''},
+            'DROP_COLUMNS': {0: 'ALL', 1: 'ALL', 2: 'ALL', 3: 'ALL'},
+            'AUTO DICTIONARY PLACEMENT': {0: 'Full Placement Name',
+                                          1: 'Full Placement Name',
+                                          2: 'Full Placement Name',
+                                          3: 'Full Placement Name'},
+            'AUTO DICTIONARY ORDER': {
+                0: 'mpBudget|mpVendor|mpCountry/Region|mpCampaign',
+                1: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
+                2: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
+                3: ''},
+            'API_FILE': {0: 'fbconfig_meta_test.json',
+                         1: 'awconfig_yt_test.yaml',
+                         2: 'rawfileapi_test.json', 3: ''},
+            'API_FIELDS': {0: 'Actions', 1: '', 2: '', 3: ''},
+            'API_MERGE': {0: '', 1: '', 2: '', 3: ''},
+            'TRANSFORM': {0: '', 1: '', 2: '', 3: ''},
+            'HEADER': {0: '', 1: '', 2: '', 3: ''},
+            'OMIT_PLAN': {0: '', 1: '', 2: '', 3: ''},
+            'Date': {0: 'Reporting Starts', 1: 'Day', 2: 'Day', 3: ''},
+            'Impressions': {0: 'Impressions', 1: 'Impressions',
+                            2: 'Impressions', 3: ''},
+            'Clicks': {0: 'Link Clicks', 1: 'Clicks', 2: 'Clicks', 3: ''},
+            'Net Cost': {0: 'Amount Spent (USD)', 1: 'Cost', 2: 'Cost', 3: ''},
+            'Video Views': {0: '10-Second Video Views', 1: 'Views',
+                            2: 'Video Starts', 3: ''},
+            'Video Views 25': {0: 'Video Watches at 25%',
+                               1: 'Video played to 25%',
+                               2: 'Video View 25%', 3: ''},
+            'Video Views 50': {0: 'Video Watches at 50%',
+                               1: 'Video played to 50%',
+                               2: 'Video View 50%', 3: ''},
+            'Video Views 75': {0: 'Video Watches at 75%',
+                               1: 'Video played to 75%',
+                               2: 'Video View 75%', 3: ''},
+            'Video Views 100': {0: 'Video Watches at 100%',
+                                1: 'Video played to 100%',
+                                2: 'Video View 100%', 3: ''},
+            'RULE_1_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_1_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_1_QUERY': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_2_FACTOR': {0: 0.0, 1: 0.0, 2: '', 3: 0.0},
+            'RULE_2_METRIC': {0: 'POST::Adserving Cost',
+                              1: 'POST::Adserving Cost', 2: '',
+                              3: 'POST::Adserving Cost'},
+            'RULE_2_QUERY': {0: 'mpAgency::Liquid Advertising',
+                             1: 'mpAgency::Liquid Advertising', 2: '',
+                             3: 'mpAgency::Liquid Advertising'},
+            'RULE_3_FACTOR': {0: 0.1, 1: '', 2: '', 3: ''},
+            'RULE_3_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_3_QUERY': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_4_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_4_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_4_QUERY': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_5_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_5_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_5_QUERY': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_6_FACTOR': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_6_METRIC': {0: '', 1: '', 2: '', 3: ''},
+            'RULE_6_QUERY': {0: '', 1: '', 2: '', 3: ''}
+        }
+        for key in vmc.datacol:
+            if key not in vm_dict:
+                vm_dict[key] = {0: '', 1: '', 2: ''}
+        vm_df = pd.DataFrame(vm_dict)
+        return vm_df
+
     def test_double_fix_all_raw(self, test_vm):
         """
         If test is failing due to Vendor Key errors, ensure 'Vendormatrix.csv'
@@ -796,6 +888,105 @@ class TestAnalyze:
         assert not df.empty
         assert df.equals(match_df)
         """
+
+    @pytest.fixture
+    def setup_autodict_files(self, test_vm2):
+        """ Creates meta_test.csv, youtube_test.csv, rawfile_test.csv,
+        and plannet_test.csv in raw_data and populates them with data for
+        test_autodict_analysis. """
+        meta_data = {
+            'Campaign Name':
+                {0: 'SegaMeta', 1: 'SegaMeta'},
+            'Ad Set Name':
+                {0: 'Set 1', 1: 'Set 2'},
+            'Ad Name':
+                {0: '01234567_YouTube_US_Pre-Launch',
+                 1: '01234567_YouTube_US_Post-Launch'}
+        }
+        yt_data = {
+            'Campaign':
+                {0: 'SegaYT', 1: 'SegaYT', 2: 'SegaYT'},
+            'Ad group':
+                {0: 'Group 1', 1: 'Group 2', 2: 'Group 3'},
+            'Ad':
+                {0: '01234567_You tube_MX_Pre-Launch',
+                 1: '01234567_You tube_BR_Pre-Order',
+                 2: '01234567_You tube_MX_Post-Launch'}
+        }
+        raw_data = {
+            'Placement Name':
+                {0: '01234567_PlayStation_GB_Pre-Order',
+                 1: '01234567_PlayStation_MX_Pre-Launch'}
+        }
+        plannet_data = {
+            'mpCampaign':
+                {0: 'Pre-Launch', 1: 'Pre-Launch', 2: 'Pre-Order',
+                 3: 'Pre-Order', 4: 'Post-Launch', 5: 'Post-Launch',
+                 6: 'Pre-Launch'},
+            'mpVendor':
+                {0: 'Meta', 1: 'YouTube', 2: 'PlayStation', 3: 'YouTube',
+                 4: 'YouTube', 5: 'Meta',  6: 'PlayStation'},
+            'Planned Net Cost':
+                {0: 6000, 1: 5000, 2: 7000, 3: 5000, 4: 4000, 5: 8000, 6: 6000},
+            'Full Placement Name':
+                {0: 'Pre-Launch_Meta_US', 1: 'Pre-Launch_YouTube_MX',
+                 2: 'Pre-Order_PlayStation_GB', 3: 'Pre-Order_YouTube_BR',
+                 4: 'Post-Launch_YouTube_MX', 5: 'Post-Launch_Meta_US',
+                 6: 'Pre-Launch_PlayStation_MX'},
+            'Uncapped':
+                {0: 'TRUE', 1: 'TRUE', 2: 'FALSE', 3: 'TRUE', 4: 'TRUE',
+                 5: 'TRUE', 6: 'FALSE'},
+            'index': {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6},
+        }
+
+        files_to_write = {
+            test_vm2[vmc.filename][0]: pd.DataFrame(meta_data),
+            test_vm2[vmc.filename][1]: pd.DataFrame(yt_data),
+            test_vm2[vmc.filename][2]: pd.DataFrame(raw_data),
+            test_vm2[vmc.filename][3]: pd.DataFrame(plannet_data)
+        }
+
+        for filename in files_to_write:
+            files_to_write[filename].to_csv('raw_data/{}'.format(filename),
+                                            index=False)
+        return test_vm2
+
+    def test_autodict_analysis(self, setup_autodict_files):
+        """
+        Tests CheckAutoDictOrder using auto dict order/data source
+        combinations that should result in a positive shift via Vendor
+        position (Meta test), a positive shift via Campaign position (Youtube
+        test), and a negative shift via Vendor position (Rawfile test) for
+        the suggested orders.
+
+        'positive shift' = suggests shifting order to the right by appending
+        'mpMisc' cells to the start of the list
+        'negative shift' = suggests shifting order cell to the left by removing
+        cells from the start of the list
+        """
+        vm_dict = setup_autodict_files
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_dict)
+        aly = az.Analyze(df=pd.DataFrame(), matrix=matrix)
+        aly.do_all_analysis()
+        suggested_orders = aly.analysis_dict[11]['data']
+        expected_orders = {
+            vm_dict[vmc.vendorkey][0]:
+                ('mpMisc|mpMisc|' + vm_dict[vmc.autodicord][0]).split('|'),
+            vm_dict[vmc.vendorkey][1]:
+                ('mpMisc|' + vm_dict[vmc.autodicord][1]).split('|'),
+            vm_dict[vmc.vendorkey][2]:
+                vm_dict[vmc.autodicord][2].split('|')[1::]
+        }
+        assert len(expected_orders) == len(suggested_orders[vmc.vendorkey])
+
+        for index in suggested_orders[vmc.vendorkey]:
+            expected = expected_orders[suggested_orders[vmc.vendorkey][index]]
+            suggested = suggested_orders['change_auto_order'][index]
+            assert expected == suggested
+
+        for file in vm_dict[vmc.filename]:
+            os.remove('raw_data/{}'.format(file))
 
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
