@@ -1138,7 +1138,7 @@ class CheckAutoDictOrder(AnalyzeBase):
             if total > max_val:
                 max_val = total
                 max_idx = col - 1
-            if camp_counts > camp_max_idx:
+            if camp_counts > camp_max_val:
                 camp_max_val = camp_counts
                 camp_max_idx = col
             ven_counts = tdf[col].isin(ven_list).sum()
