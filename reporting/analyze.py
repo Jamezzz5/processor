@@ -1063,6 +1063,7 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_vendor_list(col=dctc.VEN):
+        # Get from translational dictionary config
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
@@ -1075,20 +1076,41 @@ class CheckAutoDictOrder(AnalyzeBase):
             ven_list = [x for x in ven_list if x not in ['nan', '0', 'None']]
         return ven_list
 
+    def get_plannet_vendor_list(self, ven_list=None, col=dctc.VEN):
+        # Get from plannet or add them to existing list
+        if ven_list is None:
+            ven_list = []
+        plannet_filename = self.matrix.vendor_set(vm.plan_key)[vmc.filename]
+        if os.path.isfile(plannet_filename):
+            pc = utl.import_read_csv(plannet_filename)
+            if col not in pc.columns:
+                return ven_list
+            new_ven_list = pc[col].unique().tolist()
+            ven_list = list(set(ven_list + new_ven_list))
+            ven_list = [x for x in ven_list if x not in ['nan', '0', 'None']]
+        return ven_list
+
     def do_analysis_on_data_source(self, source, df, ven_list=None,
-                                   cou_list=None):
+                                   cou_list=None, camp_list=None):
         if vmc.autodicord not in source.p:
             return df
         if not ven_list:
             ven_list = self.get_vendor_list()
+            ven_list = self.get_plannet_vendor_list(ven_list)
         if not cou_list:
             cou_list = self.get_vendor_list(dctc.COU)
-        auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                         if dctc.VEN in source.p[vmc.autodicord] else None)
+            cou_list = self.get_plannet_vendor_list(cou_list, dctc.COU)
+        if not camp_list:
+            camp_list = self.get_vendor_list(dctc.CAM)
+            camp_list = self.get_plannet_vendor_list(camp_list, dctc.CAM)
+        ven_auto_dict_idx = (source.p[vmc.autodicord].index(dctc.VEN) if
+                             dctc.VEN in source.p[vmc.autodicord] else None)
+        camp_auto_dict_idx = (source.p[vmc.autodicord].index(dctc.CAM) if
+                              dctc.CAM in source.p[vmc.autodicord] else None)
         auto_order = source.p[vmc.autodicord]
-        if not auto_dict_idx or (len(auto_order) <= (auto_dict_idx + 1)):
+        if not ven_auto_dict_idx or (len(auto_order) <= (ven_auto_dict_idx + 1)):
             return df
-        cou_after_ven = auto_order[auto_dict_idx + 1] == dctc.COU
+        cou_after_ven = auto_order[ven_auto_dict_idx + 1] == dctc.COU
         if not cou_after_ven:
             return df
         tdf = source.get_raw_df()
@@ -1107,32 +1129,58 @@ class CheckAutoDictOrder(AnalyzeBase):
         max_idx = 0
         max_val = 0
         ven_counts = 0
+        camp_max_idx = 0
+        camp_max_val = 0
         for col in tdf.columns:
             cou_counts = tdf[col].isin(cou_list).sum()
+            camp_counts = tdf[col].isin(camp_list).sum()
             total = ven_counts + cou_counts
             if total > max_val:
                 max_val = total
                 max_idx = col - 1
+            if camp_counts > camp_max_val:
+                camp_max_val = camp_counts
+                camp_max_idx = col
             ven_counts = tdf[col].isin(ven_list).sum()
-        if auto_dict_idx and max_idx != auto_dict_idx and max_val > 0:
-            diff = auto_dict_idx - max_idx
-            if diff > 0:
-                new_order = auto_order[diff:]
-            else:
-                new_order = (diff * -1) * [dctc.MIS] + auto_order
-            data_dict = {vmc.vendorkey: source.key, self.name: new_order}
-            if df is None:
-                df = []
-            df.append(data_dict)
+        if camp_max_val > max_val:
+            # Shift order based on campaign name index
+            if (camp_auto_dict_idx and camp_max_idx != camp_auto_dict_idx and
+                    camp_max_val > 0):
+                diff = camp_auto_dict_idx - camp_max_idx
+                if diff > 0:
+                    new_order = auto_order[diff:]
+                else:
+                    new_order = (diff * -1) * [dctc.MIS] + auto_order
+                data_dict = {vmc.vendorkey: source.key, self.name: new_order}
+                if df is None:
+                    df = []
+                df.append(data_dict)
+        else:
+            if ven_auto_dict_idx and max_idx != ven_auto_dict_idx and max_val > 0:
+                # Shift order based on vendor name/country index
+                diff = ven_auto_dict_idx - max_idx
+                if diff > 0:
+                    new_order = auto_order[diff:]
+                else:
+                    new_order = (diff * -1) * [dctc.MIS] + auto_order
+                data_dict = {vmc.vendorkey: source.key, self.name: new_order}
+                if df is None:
+                    df = []
+                df.append(data_dict)
         return df
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
         df = []
         ven_list = self.get_vendor_list()
+        ven_list = self.get_plannet_vendor_list(ven_list)
         cou_list = self.get_vendor_list(dctc.COU)
+        cou_list = self.get_plannet_vendor_list(cou_list, dctc.COU)
+        camp_list = self.get_vendor_list(dctc.CAM)
+        camp_list = self.get_plannet_vendor_list(camp_list, dctc.CAM)
         for ds in data_sources:
-            df = self.do_analysis_on_data_source(ds, df, ven_list, cou_list)
+            df = self.do_analysis_on_data_source(ds, df, ven_list, cou_list,
+                                                 camp_list)
         df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
