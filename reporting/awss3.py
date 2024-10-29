@@ -1,11 +1,11 @@
-import re
-import io
+import os
 import sys
 import boto
 import json
 import logging
 import boto3
 import gzip
+from botocore.config import Config
 from io import BytesIO, StringIO
 import pandas as pd
 import datetime as dt
@@ -29,9 +29,10 @@ class S3(object):
         self.key_list = None
         self.df = pd.DataFrame()
 
-    def input_config(self, config='s3config_screenshots.json'):
+    def input_config(self, config='s3config_screenshots.json',
+                     path=config_path):
         logging.info('Loading S3 config file: {}'.format(config))
-        self.config_file = config_path + config
+        self.config_file = os.path.join(path, config)
         self.load_config()
         self.check_config()
 
@@ -94,11 +95,18 @@ class S3(object):
                 self.df = pd.concat([self.df, tdf])
         return self.df
 
-    def get_client(self):
-        client = boto3.client(service_name='s3',
-                              use_ssl=True,
-                              aws_access_key_id=self.access_key,
-                              aws_secret_access_key=self.access_secret)
+    def get_client(self, accelerate=False):
+        kwargs = {}
+        if accelerate:
+            kwargs['config'] = Config(
+                s3={'use_accelerate_endpoint': True}, max_pool_connections=50,
+                retries={
+                    'max_attempts': 10,
+                    'mode': 'adaptive'
+                }, connect_timeout=5,read_timeout=60)
+        client = boto3.client(
+            service_name='s3', use_ssl=True, aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.access_secret, **kwargs)
         return client
 
     def write_file(self, df, file_name='raw', default_format=True):
