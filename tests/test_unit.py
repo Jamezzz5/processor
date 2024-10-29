@@ -701,6 +701,23 @@ class TestAnalyze:
         cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
+
+    def test_adwords_split(self):
+        cas = az.CheckAdwordsSplit(az.Analyze(matrix=vm.VendorMatrix()))
+        # cas.do_analysis()
+        data = {
+            'Campaign': [
+                'ffxiv_awa_31719145_ft_evergreen_video_youtube',
+                'ffxiv_dwn_31719145_ft_evergreen_search_googlesem'],
+            'sem_check': ['False', 'True'],
+            'yt_check': ['True', 'False'],
+            'START_DATE': ['2024-10-29 00:00:00', '2024-10-29 00:00:00'],
+            'ID': ['633-959-8757', '633-959-8757']}
+        df = pd.DataFrame(data)
+        cas.fix_analysis(aly_dict=df)
+        #also make sure that we are removing the previous no-filter-api when fixing
+        #last thing check that the vm has updated with new keys and that the configs have the correct filter
+        assert None
         
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],

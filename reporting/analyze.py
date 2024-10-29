@@ -13,12 +13,12 @@ import pandas as pd
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
+import reporting.awapi as aw
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
-from reporting.expcolumns import config_file
 
 
 class Analyze(object):
@@ -1532,30 +1532,31 @@ class CheckPackageCapping(AnalyzeBase):
 
 
 class CheckAdwordsSplit(AnalyzeBase):
+    camp_col = aw.AwApi().campaign_col
+    sem_list = ['sem', 'googlesem', 'google sem', 'search']
+    yt_list = ['video', 'youtube', 'yt']
     name = Analyze.api_split
     fix = False
-    new_files = False
+    new_files = True
 
     def do_analysis(self):
         self.matrix = vm.VendorMatrix()
         data_sources = self.matrix.get_all_data_sources()
-        df = []
+        df = pd.DataFrame()
         for source in data_sources:
-            if 'API_Adwords' in source.key:
+            if vmc.api_aw_key in source.key:
                 df = self.do_analysis_on_data_source(source, df)
-        df = pd.DataFrame(df[0])
         if df.empty:
             msg = 'Adwords does not contain multiple campaigns'
             logging.info('{}'.format(msg))
         else:
-            msg = ('The following data sources contain multiple campaigns.'
+            msg = ('Adwords data contains multiple campaigns.'
                    ' Please add a campaign filter')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
+            logging.info('{}\n{}'.format(msg, df[self.camp_col].to_string()))
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    @staticmethod
-    def do_analysis_on_data_source(source, df):
+    def do_analysis_on_data_source(self, source, df):
         if vmc.filename not in source.p:
             return pd.DataFrame()
         api_file = source.p[vmc.apifile]
@@ -1563,14 +1564,47 @@ class CheckAdwordsSplit(AnalyzeBase):
         api_config = ic.load_file(api_file, yaml)
         adwords_filter = api_config['adwords']['campaign_filter']
         file_path = source.p[vmc.filename]
+        start_date = source.p[vmc.startdate]
+        account_id = source.ic_params[vm.ImportConfig().account_id]
         if not adwords_filter and os.path.exists(file_path):
-            tdf = pd.read_csv(file_path)
-            tdf = tdf['Campaign'].drop_duplicates().to_frame()
-            tdf = tdf
-            count = tdf.count()
-            if count['Campaign'] > 1:
-                df.append(tdf)
+            tdf = pd.read_csv(file_path, usecols = [self.camp_col])
+            tdf = tdf[self.camp_col].drop_duplicates().to_frame()
+            sem_pattern = '|'.join(self.sem_list)
+            yt_pattern = '|'.join(self.yt_list)
+            tdf['sem_check'] = tdf[self.camp_col].str.contains(sem_pattern,
+                                                               case=False,
+                                                               na=False)
+            tdf['yt_check'] = tdf[self.camp_col].str.contains(yt_pattern,
+                                                               case=False,
+                                                               na=False)
+            if tdf['sem_check'].any():
+                match_df = tdf[tdf['sem_check']]
+                df = pd.concat([df, match_df])
+            if tdf['yt_check'].any():
+                match_df = tdf[tdf['yt_check']]
+                df = pd.concat([df, match_df])
+            if not df.empty:
+                df[vmc.startdate] = start_date
+                df['ID'] = account_id
         return df
+
+    def fix_analysis(self, aly_dict, write=False):
+        aly_dict = aly_dict.to_dict(orient='records')
+        ic = vm.ImportConfig()
+        import_list = []
+        for x in aly_dict:
+            import_dict = {vmc.apifields: '',
+                           ic.filter: x['Campaign'],
+                           ic.account_id: x['ID'],
+                           ic.key: 'Adwords',
+                           vmc.startdate: x['START_DATE'],
+                           'Vendor Key': 'API_Adwords_auto',
+                           ic.name: 'auto'}
+            import_list.append(import_dict)
+        ic.add_and_remove_from_vm(import_list, matrix=self.matrix)
+        if write:
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
 
 
 class FindPlacementNameCol(AnalyzeBase):
