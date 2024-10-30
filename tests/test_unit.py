@@ -591,10 +591,10 @@ class TestAnalyze:
     def test_vm2(self):
         vm_dict = {
             'Vendor Key':
-                {0: 'API_Meta_Test', 1: 'API_Youtube_Test',
-                 2: 'API_Rawfile_Test', 3: 'Plan Net'},
-            'FILENAME': {0: 'meta_test.csv', 1: 'youtube_test.csv',
-                         2: 'rawfile_test.csv', 3: 'plannet_test.csv'},
+                {0: 'API_Ven1_Test', 1: 'API_Ven2_Test',
+                 2: 'API_Ven3_Test', 3: 'Plan Net'},
+            'FILENAME': {0: 'ven1_test.csv', 1: 'ven2_test.csv',
+                         2: 'ven3_test.csv', 3: 'plannet_test.csv'},
             'FIRSTROW': {0: 0, 1: 0, 2: 0, 3: 0},
             'LASTROW': {0: 0, 1: 0, 2: 0, 3: 0},
             'Full Placement Name': {
@@ -604,13 +604,13 @@ class TestAnalyze:
                 3: 'mpCampaign|mpVendor'},
             'Placement Name': {0: 'Ad Name', 1: 'Ad', 2: 'Placement Name',
                                3: 'mpVendor'},
-            'FILENAME_DICTIONARY': {0: 'meta_dictionary_test.csv',
-                                    1: 'youtube_dictionary_test.csv',
-                                    2: 'rawfile_dictionary_test.csv',
+            'FILENAME_DICTIONARY': {0: 'ven1_dictionary_test.csv',
+                                    1: 'ven2_dictionary_test.csv',
+                                    2: 'ven3_dictionary_test.csv',
                                     3: 'plannet_dictionary.csv'},
-            'FILENAME_ERROR': {0: 'FACEBOOK_ERROR_REPORT.csv',
-                               1: 'YOUTUBE_ERROR_REPORT.csv',
-                               2: 'RAWFILE_ERROR_REPORT.csv',
+            'FILENAME_ERROR': {0: 'VEN1_ERROR_REPORT.csv',
+                               1: 'VEN2_ERROR_REPORT.csv',
+                               2: 'VEN3_ERROR_REPORT.csv',
                                3: 'PLANNET_ERROR_REPORT.csv'},
             'START DATE': {0: '10/7/2024', 1: '10/7/2024',
                            2: '10/10/2024', 3: ''},
@@ -625,60 +625,13 @@ class TestAnalyze:
                 1: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
                 2: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
                 3: ''},
-            'API_FILE': {0: 'fbconfig_meta_test.json',
-                         1: 'awconfig_yt_test.yaml',
-                         2: 'rawfileapi_test.json', 3: ''},
-            'API_FIELDS': {0: 'Actions', 1: '', 2: '', 3: ''},
-            'API_MERGE': {0: '', 1: '', 2: '', 3: ''},
-            'TRANSFORM': {0: '', 1: '', 2: '', 3: ''},
-            'HEADER': {0: '', 1: '', 2: '', 3: ''},
-            'OMIT_PLAN': {0: '', 1: '', 2: '', 3: ''},
-            'Date': {0: 'Reporting Starts', 1: 'Day', 2: 'Day', 3: ''},
-            'Impressions': {0: 'Impressions', 1: 'Impressions',
-                            2: 'Impressions', 3: ''},
-            'Clicks': {0: 'Link Clicks', 1: 'Clicks', 2: 'Clicks', 3: ''},
-            'Net Cost': {0: 'Amount Spent (USD)', 1: 'Cost', 2: 'Cost',
-                         3: ''},
-            'Video Views': {0: '10-Second Video Views', 1: 'Views',
-                            2: 'Video Starts', 3: ''},
-            'Video Views 25': {0: 'Video Watches at 25%',
-                               1: 'Video played to 25%',
-                               2: 'Video View 25%', 3: ''},
-            'Video Views 50': {0: 'Video Watches at 50%',
-                               1: 'Video played to 50%',
-                               2: 'Video View 50%', 3: ''},
-            'Video Views 75': {0: 'Video Watches at 75%',
-                               1: 'Video played to 75%',
-                               2: 'Video View 75%', 3: ''},
-            'Video Views 100': {0: 'Video Watches at 100%',
-                                1: 'Video played to 100%',
-                                2: 'Video View 100%', 3: ''},
-            'RULE_1_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_1_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_1_QUERY': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_2_FACTOR': {0: 0.0, 1: 0.0, 2: '', 3: 0.0},
-            'RULE_2_METRIC': {0: 'POST::Adserving Cost',
-                              1: 'POST::Adserving Cost', 2: '',
-                              3: 'POST::Adserving Cost'},
-            'RULE_2_QUERY': {0: 'mpAgency::Liquid Advertising',
-                             1: 'mpAgency::Liquid Advertising', 2: '',
-                             3: 'mpAgency::Liquid Advertising'},
-            'RULE_3_FACTOR': {0: 0.1, 1: '', 2: '', 3: ''},
-            'RULE_3_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_3_QUERY': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_4_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_4_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_4_QUERY': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_5_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_5_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_5_QUERY': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_6_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_6_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_6_QUERY': {0: '', 1: '', 2: '', 3: ''}
+            'API_FILE': {0: 'ven1_config_test.json',
+                         1: 'ven2_config_test.yaml',
+                         2: 'ven3_config_test.json', 3: ''}
         }
-        for key in vmc.datacol:
+        for key in vmc.datacol + vmc.vmkeys:
             if key not in vm_dict:
-                vm_dict[key] = {0: '', 1: '', 2: ''}
+                vm_dict[key] = {0: '', 1: '', 2: '', 3: ''}
         vm_df = pd.DataFrame(vm_dict)
         return vm_df
 
@@ -912,32 +865,32 @@ class TestAnalyze:
 
     @pytest.fixture
     def setup_autodict_files(self, test_vm2):
-        """ Creates meta_test.csv, youtube_test.csv, rawfile_test.csv,
-        and plannet_test.csv in raw_data and populates them with data for
-        test_autodict_analysis. """
-        meta_data = {
+        """ Creates ven1_test.csv,ven2_test.csv, ven3_test.csv, and
+        plannet_test.csv in the raw_data folder and populates them with data
+        that should trigger new order suggestions for test_autodict_analysis. """
+        data1 = {
             'Campaign Name':
-                {0: 'SegaMeta', 1: 'SegaMeta'},
+                {0: 'Campaign 1', 1: 'Campaign 2'},
             'Ad Set Name':
                 {0: 'Set 1', 1: 'Set 2'},
             'Ad Name':
-                {0: '01234567_YouTube_US_Pre-Launch',
-                 1: '01234567_YouTube_US_Post-Launch'}
+                {0: '01234567_Vendor1_US_Pre-Launch',
+                 1: '01234567_Vendor1_US_Post-Launch'}
         }
-        yt_data = {
+        data2 = {
             'Campaign':
-                {0: 'SegaYT', 1: 'SegaYT', 2: 'SegaYT'},
+                {0: 'Campaign 1', 1: 'Campaign 2', 2: 'Campaign 3'},
             'Ad group':
                 {0: 'Group 1', 1: 'Group 2', 2: 'Group 3'},
             'Ad':
-                {0: '01234567_You tube_MX_Pre-Launch',
-                 1: '01234567_You tube_BR_Pre-Order',
-                 2: '01234567_You tube_MX_Post-Launch'}
+                {0: '01234567_Vendor 2_MX_Pre-Launch',
+                 1: '01234567_Vendor 2_BR_Pre-Order',
+                 2: '01234567_Vendor 2_MX_Post-Launch'}
         }
-        raw_data = {
+        data3 = {
             'Placement Name':
-                {0: '01234567_PlayStation_GB_Pre-Order',
-                 1: '01234567_PlayStation_MX_Pre-Launch'}
+                {0: '01234567_Vendor3_GB_Pre-Order',
+                 1: '01234567_Vendor3_MX_Pre-Launch'}
         }
         plannet_data = {
             'mpCampaign':
@@ -945,24 +898,13 @@ class TestAnalyze:
                  3: 'Pre-Order', 4: 'Post-Launch', 5: 'Post-Launch',
                  6: 'Pre-Launch'},
             'mpVendor':
-                {0: 'Meta', 1: 'YouTube', 2: 'PlayStation', 3: 'YouTube',
-                 4: 'YouTube', 5: 'Meta', 6: 'PlayStation'},
-            'Planned Net Cost':
-                {0: 6000, 1: 5000, 2: 7000, 3: 5000, 4: 4000, 5: 8000, 6: 6000},
-            'Full Placement Name':
-                {0: 'Pre-Launch_Meta_US', 1: 'Pre-Launch_YouTube_MX',
-                 2: 'Pre-Order_PlayStation_GB', 3: 'Pre-Order_YouTube_BR',
-                 4: 'Post-Launch_YouTube_MX', 5: 'Post-Launch_Meta_US',
-                 6: 'Pre-Launch_PlayStation_MX'},
-            'Uncapped':
-                {0: 'TRUE', 1: 'TRUE', 2: 'FALSE', 3: 'TRUE', 4: 'TRUE',
-                 5: 'TRUE', 6: 'FALSE'},
-            'index': {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6},
+                {0: 'Vendor1', 1: 'Vendor2', 2: 'Vendor3', 3: 'Vendor2',
+                 4: 'Vendor2', 5: 'Vendor1', 6: 'Vendor3'},
         }
         files_to_write = {
-            test_vm2[vmc.filename][0]: pd.DataFrame(meta_data),
-            test_vm2[vmc.filename][1]: pd.DataFrame(yt_data),
-            test_vm2[vmc.filename][2]: pd.DataFrame(raw_data),
+            test_vm2[vmc.filename][0]: pd.DataFrame(data1),
+            test_vm2[vmc.filename][1]: pd.DataFrame(data2),
+            test_vm2[vmc.filename][2]: pd.DataFrame(data3),
             test_vm2[vmc.filename][3]: pd.DataFrame(plannet_data)
         }
         for filename in files_to_write:
@@ -974,9 +916,9 @@ class TestAnalyze:
         """
         Tests CheckAutoDictOrder using auto dict order/data source
         combinations that should result in a positive shift via Vendor
-        position (Meta test), a positive shift via Campaign position (Youtube
-        test), and a negative shift via Vendor position (Rawfile test) for
-        the suggested orders.
+        position (Ven1 test), a positive shift via Campaign position (Ven2
+        test), and a negative shift via Vendor position (Ven3 test) for the
+        suggested orders.
         'positive shift' = suggests shifting order to the right by appending
         'mpMisc' cells to the start of the list
         'negative shift' = suggests shifting order cell to the left by removing
