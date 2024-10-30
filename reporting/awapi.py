@@ -63,6 +63,7 @@ class AwApiReportBuilder(object):
         'video_quartile_p75_rate', 'Video played to 75%', 'metrics')
     views100_rate = ReportColumn(
         'video_quartile_p100_rate', 'Video played to 100%', 'metrics')
+    engagements = ReportColumn('engagements', 'Engagements', 'metrics')
     account = ReportColumn('descriptive_name', 'Account', 'customer')
     campaign = ReportColumn('name', 'Campaign', 'campaign')
     ad_group = ReportColumn('name', 'Ad group', 'ad_group')
@@ -118,7 +119,8 @@ class AwApiReportBuilder(object):
         self.def_params = self.date_params + self.no_date_params
         self.def_metrics = [self.impressions, self.clicks, self.cost,
                             self.views, self.views25_rate, self.views50_rate,
-                            self.views75_rate, self.views100_rate]
+                            self.views75_rate, self.views100_rate,
+                            self.engagements]
         self.base_conv_metrics = [self.conversions, self.conversion_value]
         self.ext_conv_metrics = [self.conversion_name, self.all_conversions,
                                  self.view_conversions]
