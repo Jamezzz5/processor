@@ -13,12 +13,16 @@ config_path = utl.config_path
 class GaApi(object):
     base_url = 'https://analyticsdata.googleapis.com/v1beta/properties/'
     def_metrics = ['totalUsers', 'eventCount', 'sessions', 'engagedSessions',
-                   'newUsers', 'averageSessionDuration', 'userEngagementDuration']
+                   'newUsers', 'averageSessionDuration',
+                   'userEngagementDuration']
     def_dims = ['date', 'country', 'sessionManualCampaignName',
-                'sessionManualMedium', 'sessionManualSource', 'sessionManualTerm', 'sessionManualAdContent',
-                'eventName']
+                'sessionManualMedium', 'sessionManualSource',
+                'sessionManualTerm', 'sessionManualAdContent', 'eventName']
     dcm_dims = ['dcmClickSitePlacement']
     default_config_file_name = 'gaapi.json'
+    regex_filter_type = "FULL_REGEXP"
+    essential_data_filter = "^[^()]*$"
+    paid_media_filter = "paidmedia"
 
     def __init__(self):
         self.config = None
@@ -94,11 +98,10 @@ class GaApi(object):
             for field in fields:
                 if field == 'DCM':
                     self.def_dims = self.def_dims + self.dcm_dims
-                else:
-                    field = field.split('::')
-                    parsed_fields.append(
-                        ','.join('ga:{}=={}'.format(field[0], x)
-                                 for x in field[1].split(',')))
+                if field == 'paidmedia':
+                    parsed_fields.append(self.paid_media_filter)
+                if field == 'essential_data':
+                    parsed_fields.append(self.essential_data_filter)
         return parsed_fields
 
     @staticmethod
@@ -115,28 +118,37 @@ class GaApi(object):
         full_url = '{}{}:runReport'.format(self.base_url, self.ga_id)
         return full_url
 
-    def create_body(self, sd, ed):
+    def create_body(self, sd, ed, fields):
         body = {
             "dateRanges": [
                 {"startDate": sd, "endDate": ed}
             ],
             "metrics": [{"name": m} for m in self.def_metrics],
-            "dimensions": [{"name": d} for d in self.def_dims],
-            "dimensionFilter": {
-                "filter": {
-                    "fieldName": "sessionManualCampaignName",
-                    "stringFilter": {
-                        "matchType": "FULL_REGEXP",
-                        "value": "^[^()]*$"
-                    },
-                    "fieldName": "sessionManualMedium",
-                    "stringFilter": {
-                        "matchType": "FULL_REGEXP",
-                        "value": "paidmedia"
-                    }
-                }
-            }
+            "dimensions": [{"name": d} for d in self.def_dims]
         }
+        filter_conditions = []
+        if 'paidmedia' in fields:
+            filter_conditions.append({
+                "fieldName": "sessionManualMedium",
+                "stringFilter": {
+                    "matchType": self.regex_filter_type,
+                    "value": self.paid_media_filter
+                }
+            })
+        if 'essential_data' in fields:
+            filter_conditions.append({
+                "fieldName": "sessionManualCampaignName",
+                "stringFilter": {
+                    "matchType": self.regex_filter_type,
+                    "value": self.essential_data_filter
+                }
+            })
+        if filter_conditions:
+            filter_dict = {
+                "filter": {condition["fieldName"]: condition["stringFilter"] for
+                           condition in filter_conditions}
+            }
+            body["dimensionFilter"] = filter_dict
         return body
 
     def get_data(self, sd=None, ed=None, fields=None):
@@ -144,7 +156,7 @@ class GaApi(object):
         logging.info('Getting df from {} to {}'.format(sd, ed))
         self.get_client()
         url = self.create_url()
-        body = self.create_body(sd, ed)
+        body = self.create_body(sd, ed, fields)
         r = self.client.post(url, json=body)
         df = self.data_to_df(r)
         return df
