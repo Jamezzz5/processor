@@ -63,6 +63,7 @@ class AwApiReportBuilder(object):
         'video_quartile_p75_rate', 'Video played to 75%', 'metrics')
     views100_rate = ReportColumn(
         'video_quartile_p100_rate', 'Video played to 100%', 'metrics')
+    engagements = ReportColumn('engagements', 'Engagements', 'metrics')
     account = ReportColumn('descriptive_name', 'Account', 'customer')
     campaign = ReportColumn('name', 'Campaign', 'campaign')
     ad_group = ReportColumn('name', 'Ad group', 'ad_group')
@@ -101,6 +102,8 @@ class AwApiReportBuilder(object):
         'view_through_conversions', 'View-through conv.', 'metrics')
     conversion_name = ReportColumn(
         'conversion_action_name', 'Conversion name', 'segments')
+    conversion_value = ReportColumn('conversions_value', 'Conversions Value',
+                                    'metrics')
     device = ReportColumn('device', 'Device', 'segments')
 
     def __init__(self):
@@ -116,8 +119,9 @@ class AwApiReportBuilder(object):
         self.def_params = self.date_params + self.no_date_params
         self.def_metrics = [self.impressions, self.clicks, self.cost,
                             self.views, self.views25_rate, self.views50_rate,
-                            self.views75_rate, self.views100_rate]
-        self.base_conv_metrics = [self.conversions]
+                            self.views75_rate, self.views100_rate,
+                            self.engagements]
+        self.base_conv_metrics = [self.conversions, self.conversion_value]
         self.ext_conv_metrics = [self.conversion_name, self.all_conversions,
                                  self.view_conversions]
         self.conv_metrics = self.base_conv_metrics + self.ext_conv_metrics
@@ -137,6 +141,7 @@ class AwApi(object):
     report_url = '/googleAds:searchStream'
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
     access_url = '{}:listAccessibleCustomers'.format(base_url[:-1])
+    default_config_file_name = 'awconfig.yaml'
 
     def __init__(self):
         self.df = pd.DataFrame()

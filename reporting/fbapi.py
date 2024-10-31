@@ -38,7 +38,7 @@ nested_col = ['video_thruplay_watched_actions', 'video_p100_watched_actions',
               'video_p50_watched_actions', 'video_p25_watched_actions',
               'video_p75_watched_actions', 'video_play_actions']
 
-nested_dict_col = ['actions']
+nested_dict_col = ['actions', 'action_values']
 
 breakdown_age = ['age']
 breakdown_gender = ['gender']
@@ -77,6 +77,8 @@ config_path = utl.config_path
 
 
 class FbApi(object):
+    default_config_file_name = 'fbconfig.json'
+
     def __init__(self):
         self.df = pd.DataFrame()
         self.configfile = None
@@ -478,7 +480,7 @@ class FbApi(object):
 
     def nested_dicts_to_cols(self, nd_col):
         self.df[nd_col] = (self.df[nd_col]
-                               .apply(lambda x: self.convert_dictionary(x)))
+                           .apply(lambda x: self.convert_dictionary(x)))
         dict_df = self.df[nd_col].apply(pd.Series).fillna(0)
         column_list = dict_df.columns.values.tolist()
         column_list = [x for x in column_list if
@@ -491,8 +493,11 @@ class FbApi(object):
             if 'action_type' in dirty_df.columns:
                 dirty_df = utl.data_to_type(dirty_df, str_col=['action_type'])
                 clean_df = self.clean_nested_df(dirty_df, clean_df)
+        if nd_col == 'action_values':
+            clean_df.columns = ['{} - Value'.format(x) for x in
+                                clean_df.columns]
         self.df = pd.concat([clean_df, self.df], axis=1)  # type: pd.DataFrame
-        self.df = self.df.drop(nested_dict_col, axis=1)  # type: pd.DataFrame
+        self.df = self.df.drop(nd_col, axis=1)  # type: pd.DataFrame
 
     @staticmethod
     def clean_nested_df(dirty_df, clean_df):

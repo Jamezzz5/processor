@@ -134,18 +134,15 @@ class CriApi(object):
     def request_data(self, sd, ed, base_url, fields=None):
         logging.info('Getting data form {} to {}'.format(sd, ed))
         self.set_headers()
-        if fields is not None:
+        url = '{}/reports/campaigns'.format(base_url)
+        params = {'startDate': sd, 'endDate': ed,
+                  'timezone': 'America/New_York', 'id': self.advertiser_id,
+                  'format': 'json-compact'}
+        if fields:
             fields = ' '.join(fields)
             fields = self.parse_fields(fields)
             url = '{}/reports/line-items'.format(base_url)
-            params = {'startDate': sd, 'endDate': ed,
-                      'timezone': 'America/New_York', 'id': self.advertiser_id,
-                      'format': 'json-compact', 'ids': fields}
-        else:
-            url = '{}/reports/campaigns'.format(base_url)
-            params = {'startDate': sd, 'endDate': ed,
-                      'timezone': 'America/New_York', 'id': self.advertiser_id,
-                      'format': 'json-compact'}
+            params['ids'] = fields
         params = {'type': 'RetailMediaReportRequest', 'attributes': params}
         params = {'data': params}
         r = self.make_request(url, method='POST', headers=self.headers,
