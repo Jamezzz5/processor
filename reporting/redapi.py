@@ -28,7 +28,7 @@ class RedApi(object):
     username_str = 'username'
     password_str = 'password'
 
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.headless = headless
         self.sw = None
         self.browser = None
