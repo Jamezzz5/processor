@@ -120,7 +120,7 @@ class RedApi(object):
                     logging.info('Could not find field for {}'.format(item))
                 except ex.StaleElementReferenceException:
                     logging.info('Could not find field for {}'.format(item))
-        elem_id = 'dashboard-metrics'
+        elem_id = 'automation-dashboard-viewSetUp'
         elem_load = self.sw.wait_for_elem_load(elem_id=elem_id, attempts=200)
         if not elem_load:
             logging.warning('{} did not load'.format(elem_id))
@@ -236,10 +236,10 @@ class RedApi(object):
 
     def set_metrics(self):
         logging.info('Setting metrics.')
-        metric_xpath = '//*[@id="dashboard-metrics"]'
-        columns = self.browser.find_element_by_xpath(metric_xpath)
-        self.sw.scroll_to_elem(elem=columns)
-        self.sw.click_on_xpath('//*[@id="dashboard-metrics"]')
+        columns_xpath = '//div[text()="Columns"]'
+        customize_columns_xpath = '/html/body/div[13]/div/div/button[2]'
+        self.sw.click_on_xpath(columns_xpath)
+        self.sw.click_on_xpath(customize_columns_xpath)
         self.click_grouped_metrics()
         apply_button_xpath = '//div[text()="Apply"]'
         self.sw.click_on_xpath(apply_button_xpath)
