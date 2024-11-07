@@ -929,7 +929,10 @@ class TestAnalyze:
         matrix.vm_parse(vm_dict)
         aly = az.Analyze(df=pd.DataFrame(), matrix=matrix)
         aly.do_all_analysis()
-        suggested_orders = aly.analysis_dict[11]['data']
+        i = 0
+        while aly.analysis_dict[i]['key'] != 'change_auto_order':
+            i += 1
+        suggested_orders = aly.analysis_dict[i]['data']
         expected_orders = {
             vm_dict[vmc.vendorkey][0]:
                 ('mpMisc|mpMisc|' + vm_dict[vmc.autodicord][0]).split('|'),
