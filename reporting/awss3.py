@@ -10,7 +10,7 @@ from io import BytesIO, StringIO
 import pandas as pd
 import datetime as dt
 from boto.s3.connection import S3Connection
-import processor.reporting.utils as utl
+import reporting.utils as utl
 
 config_path = utl.config_path
 

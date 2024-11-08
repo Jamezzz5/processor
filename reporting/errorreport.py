@@ -2,8 +2,8 @@ import logging
 import os.path
 import sys
 import pandas as pd
-import processor.reporting.utils as utl
-import processor.reporting.dictcolumns as dctc
+import reporting.utils as utl
+import reporting.dictcolumns as dctc
 
 csv_path = utl.error_path
 

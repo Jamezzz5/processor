@@ -8,9 +8,9 @@ import calendar
 import pandas as pd
 import datetime as dt
 import selenium.common.exceptions
-import processor.reporting.utils as utl
+import reporting.utils as utl
 import selenium.common.exceptions as ex
-import processor.reporting.vmcolumns as vmc
+import reporting.vmcolumns as vmc
 from selenium.webdriver.common.keys import Keys
 
 

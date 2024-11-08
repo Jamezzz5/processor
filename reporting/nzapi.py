@@ -7,7 +7,7 @@ import requests
 import numpy as np
 import pandas as pd
 import datetime as dt
-import processor.reporting.utils as utl
+import reporting.utils as utl
 
 
 class NzApi(object):

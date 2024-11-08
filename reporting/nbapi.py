@@ -4,7 +4,7 @@ import time
 import logging
 import datetime as dt
 import pandas as pd
-import processor.reporting.utils as utl
+import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path

@@ -2,8 +2,8 @@ import os
 import logging
 import pandas as pd
 import datetime as dt
-import processor.reporting.utils as utl
-import processor.reporting.awss3 as awss3
+import reporting.utils as utl
+import reporting.awss3 as awss3
 import selenium.common.exceptions as ex
 
 class SsApi(object):

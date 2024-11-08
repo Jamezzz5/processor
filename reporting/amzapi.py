@@ -9,9 +9,9 @@ import requests
 import oauthlib
 import pandas as pd
 import datetime as dt
-import processor.reporting.utils as utl
+import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
-import processor.reporting.vmcolumns as vmc
+import reporting.vmcolumns as vmc
 
 config_path = utl.config_path
 

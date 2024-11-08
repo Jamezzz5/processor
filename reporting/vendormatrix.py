@@ -7,12 +7,12 @@ import logging
 import numpy as np
 import pandas as pd
 import datetime as dt
-import processor.reporting.utils as utl
-import processor.reporting.calc as cal
-import processor.reporting.vmcolumns as vmc
-import processor.reporting.dictionary as dct
-import processor.reporting.errorreport as er
-import processor.reporting.dictcolumns as dctc
+import reporting.utils as utl
+import reporting.calc as cal
+import reporting.vmcolumns as vmc
+import reporting.dictionary as dct
+import reporting.errorreport as er
+import reporting.dictcolumns as dctc
 
 log = logging.getLogger()
 

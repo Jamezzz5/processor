@@ -3,9 +3,9 @@ import os
 import logging
 import numpy as np
 import pandas as pd
-import processor.reporting.utils as utl
-import processor.reporting.dictcolumns as dctc
-import processor.reporting.vmcolumns as vmc
+import reporting.utils as utl
+import reporting.dictcolumns as dctc
+import reporting.vmcolumns as vmc
 
 csv_path = utl.dict_path
 

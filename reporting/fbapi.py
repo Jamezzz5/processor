@@ -7,11 +7,11 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-import processor.reporting.utils as utl
-import processor.reporting.awss3 as awss3
-import processor.reporting.gsapi as gsapi
-import processor.reporting.vendormatrix as matrix
-import processor.reporting.vmcolumns as vmc
+import reporting.utils as utl
+import reporting.awss3 as awss3
+import reporting.gsapi as gsapi
+import reporting.vendormatrix as matrix
+import reporting.vmcolumns as vmc
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.exceptions import FacebookRequestError,\

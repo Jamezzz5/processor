@@ -7,8 +7,8 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-import processor.reporting.vmcolumns as vmc
-import processor.reporting.utils as utl
+import reporting.vmcolumns as vmc
+import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
