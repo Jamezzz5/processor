@@ -6,8 +6,8 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-import processor.reporting.utils as utl
-import processor.reporting.vmcolumns as vmc
+import reporting.utils as utl
+import reporting.vmcolumns as vmc
 
 
 class SamApi(object):
@@ -76,8 +76,9 @@ class SamApi(object):
             report_id, error = self.create_report(sd, ed, campaign_id=camp_id)
             if error:
                 logging.warning('No report ID, returning blank df: {}', error)
-                return pd.DataFrame()
-            self.df.append(self.get_raw_data(report_id))
+            else:
+                self.df = pd.concat([self.df, self.get_raw_data(report_id)],
+                                ignore_index=True)
         self.check_empty_df()
         return self.df
 
