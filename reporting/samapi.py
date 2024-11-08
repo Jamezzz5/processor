@@ -27,7 +27,7 @@ class SamApi(object):
         self.author_id = None
         self.access_token = None
         self.author_name = None
-        self.campaign_id = None
+        self.campaign_ids = None
         self.config_list = None
         self.client = None
         self.df = pd.DataFrame()
@@ -54,9 +54,14 @@ class SamApi(object):
         self.author_id = self.config['author_id']
         self.author_name = self.config['author_name']
         self.access_token = self.config['access_token']
-        self.campaign_id = self.config['campaign_id']
+        self.campaign_ids = self.remove_space(self.config['campaign_id'])
+        self.campaign_ids = [x for x in self.campaign_ids.split(',')]
         self.config_list = [self.config, self.author_name, self.access_token,
-                            self.campaign_id]
+                            self.campaign_ids]
+
+    @staticmethod
+    def remove_space(val):
+        return str(val).replace(' ', '')
 
     def check_config(self):
         for item in self.config_list:
@@ -67,11 +72,12 @@ class SamApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)
-        report_id, error = self.create_report(sd, ed)
-        if error:
-            logging.warning('No report ID, returning blank df: {}', error)
-            return pd.DataFrame()
-        self.df = self.get_raw_data(report_id)
+        for camp_id in self.campaign_ids:
+            report_id, error = self.create_report(sd, ed, campaign_id=camp_id)
+            if error:
+                logging.warning('No report ID, returning blank df: {}', error)
+                return pd.DataFrame()
+            self.df.append(self.get_raw_data(report_id))
         self.check_empty_df()
         return self.df
 
@@ -89,14 +95,14 @@ class SamApi(object):
             logging.warning('No data in response, returning empty df.')
             self.df = pd.DataFrame()
 
-    def create_report(self, sd, ed, dimensions=None):
+    def create_report(self, sd, ed, dimensions=None, campaign_id=None):
         """
         Generates report for download.
 
         :returns: Report ID for retrieval if successful, any error messages
         """
         logging.info('Creating report.')
-        query = self.create_report_query(sd, ed, dimensions)
+        query = self.create_report_query(sd, ed, dimensions, campaign_id)
         header = self.create_header()
         body = {
             "title": "Report",
@@ -163,15 +169,14 @@ class SamApi(object):
             self.df = pd.DataFrame()
         return self.df
 
-    def create_report_query(self, sd, ed, dimensions=None):
+    def create_report_query(self, sd, ed, dimensions=None, campaign_id=None):
         query = {"type": "trader_delivery_all", "start_date": str(sd.date()),
                  "end_date": str(ed.date()), "time_zone": "America/New_York",
                  "metrics": self.default_metrics,
                  'dimensions': (dimensions if dimensions else
                                 self.default_dimensions)}
-        if self.campaign_id and not dimensions:
-            campaign_filters = "campaign_id = " + self.campaign_id
-            query['filter'] = campaign_filters
+        if campaign_id and not dimensions:
+            query['filter'] = "campaign_id = " + campaign_id
         return query
 
     def create_header(self):
@@ -184,24 +189,24 @@ class SamApi(object):
         success_msg = 'SUCCESS -- ID:'
         failure_msg = 'FAILURE:'
         auth_msg = 'Authentication Failed.'
-        missing_campaign = ('Campaign ID Not Found. '
-                            'Check for typo and ensure access granted.')
         sd = dt.datetime.today() - dt.timedelta(days=365)
         ed = dt.datetime.today()
-        report_id, error = self.create_report(
-            sd, ed, dimensions=[self.default_dimensions[0]])
-        if error:
-            row = [acc_col, ' '.join([failure_msg, auth_msg]), False]
-            results.append(row)
-            return pd.DataFrame(data=results, columns=vmc.r_cols)
-        df = self.get_raw_data(report_id)
-        if int(self.campaign_id) in df['Campaign ID'].to_list():
-            row = [acc_col, ' '.join([success_msg, str(self.campaign_id)]),
-                   True]
-            results.append(row)
-        else:
-            row = [acc_col, ' '.join([failure_msg, missing_campaign]),
-                   False]
-            results.append(row)
-            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        for camp_id in self.campaign_ids:
+            report_id, error = self.create_report(
+                sd, ed, dimensions=[self.default_dimensions[0]],
+                campaign_id=camp_id)
+            if error:
+                row = [acc_col, ' '.join([failure_msg, auth_msg]), False]
+                results.append(row)
+                return pd.DataFrame(data=results, columns=vmc.r_cols)
+            df = self.get_raw_data(report_id)
+            if int(camp_id) in df['Campaign ID'].to_list():
+                row = [acc_col, ' '.join([success_msg, str(camp_id)]), True]
+                results.append(row)
+            else:
+                missing_camp = ('Campaign ID {} Not Found. Check for typo and '
+                                'ensure access granted.').format(str(camp_id))
+                row = [acc_col, ' '.join([failure_msg, missing_camp]),
+                       False]
+                results.append(row)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
