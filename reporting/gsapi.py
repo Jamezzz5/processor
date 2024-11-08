@@ -4,8 +4,8 @@ import json
 import logging
 import time
 import pandas as pd
-import processor.reporting.utils as utl
-import processor.reporting.vmcolumns as vmc
+import reporting.utils as utl
+import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path

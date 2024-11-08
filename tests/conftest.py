@@ -1,6 +1,6 @@
 import os
 import pytest
-from processor.main import set_log
+from main import set_log
 
 
 @pytest.fixture(scope='session', autouse=True)

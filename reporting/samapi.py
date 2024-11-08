@@ -75,7 +75,8 @@ class SamApi(object):
         for camp_id in self.campaign_ids:
             report_id, error = self.create_report(sd, ed, campaign_id=camp_id)
             if error:
-                logging.warning('No report ID, returning blank df: {}', error)
+                logging.warning('No report ID, returning blank df for '
+                                'campaign ID {}: {}', camp_id, error)
             else:
                 self.df = pd.concat([self.df, self.get_raw_data(report_id)],
                                 ignore_index=True)
