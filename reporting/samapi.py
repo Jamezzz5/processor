@@ -161,6 +161,8 @@ class SamApi(object):
                 time.sleep(60)
             if response.get('urls') and response['urls']:
                 break
+            else:
+                time.sleep(0.5)
         report_url = (response['urls'])
         if report_url:
             logging.info('Found report url, downloading.')
