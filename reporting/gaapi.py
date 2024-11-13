@@ -97,7 +97,7 @@ class GaApi(object):
             for field in fields:
                 if field == 'DCM':
                     self.def_dims = self.def_dims + self.dcm_dims
-                elif field == 'paidmedia':
+                if field == 'paidmedia':
                     parsed_fields.append(self.paid_media_filter)
         return parsed_fields
 
