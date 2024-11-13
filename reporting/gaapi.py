@@ -142,7 +142,6 @@ class GaApi(object):
         self.get_client()
         url = self.create_url()
         body = self.create_body(sd, ed, fields)
-        print(body)
         r = self.client.post(url, json=body)
         df = self.data_to_df(r)
         return df
