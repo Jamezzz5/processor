@@ -19,6 +19,7 @@ import reporting.redapi as redapi
 import reporting.awapi as awapi
 import reporting.amzapi as amzapi
 import reporting.gaapi as gaapi
+import reporting.fbapi as fbapi
 
 
 def func(x):
@@ -214,12 +215,20 @@ class TestApis:
         api = gaapi.GaApi()
         self.send_api_call(api)
 
+    def test_awapi(self, tmp_path_factory):
+        api = awapi.AwApi()
+        self.send_api_call(api, fields=['UAC'])
+
+    def test_fbapi(self, tmp_path_factory):
+        api = fbapi.FbApi()
+        self.send_api_call(api, fields=['Actions'])
+
     @staticmethod
-    def send_api_call(api):
+    def send_api_call(api, fields=None):
         api.input_config(api.default_config_file_name)
         sd = dt.datetime.today() - dt.timedelta(days=28)
         ed = dt.datetime.today()
-        # df = api.get_data(sd, ed)
+        # df = api.get_data(sd, ed, fields=fields)
 
 
 class TestDictionary:
@@ -422,6 +431,30 @@ class TestCalc:
 
 class TestAnalyze:
     vm_df = None
+    
+    @staticmethod
+    def get_rule_names():
+        names = []
+        for x in range(1, 7):
+            for y in utl.RULE_CONST:
+                names.append('RULE_{}_{}'.format(x, y))
+        return names
+
+    def generate_test_vm(self, data_dict, num_rows):
+        vm_dict = {}
+        vm_keys = [vmc.vendorkey] + vmc.vmkeys + self.get_rule_names()
+        for key in vm_keys:
+            if key in data_dict:
+                vm_dict[key] = data_dict[key]
+            else:
+                val = ''
+                if key is vmc.firstrow or key is vmc.lastrow:
+                    val = 0
+                elif key is vmc.autodicplace:
+                    val = vmc.fullplacename
+                vm_dict[key] = {i: val for i in range(num_rows)}
+        vm_df = pd.DataFrame(vm_dict)
+        return vm_df
 
     def test_check_flat(self):
         df = pd.DataFrame({
@@ -490,59 +523,41 @@ class TestAnalyze:
     @pytest.fixture
     def test_vm(self):
         vm_dict = {
-            'Vendor Key':
+            vmc.vendorkey:
                 {0: 'API_DCM_Test', 1: 'API_Tiktok_Test',
                  2: 'API_Rawfile_Test', 3: 'Plan Net'},
-            'FILENAME': {0: 'dcm_Test', 1: 'tiktok_Test.csv',
-                         2: 'Rawfile_Test.csv', 3: 'plannet.csv'},
-            'FIRSTROW': {0: 0, 1: 0, 2: 0, 3: 0},
-            'LASTROW': {0: 0, 1: 0, 2: 0, 3: 0},
-            'Full Placement Name': {0: 'Placement', 1: 'ad_name',
-                                    2: 'ad_name', 3: 'mpCampaign|mpVendor'},
-            'Placement Name': {0: 'Placement', 1: 'ad_name',
-                               2: 'ad_name', 3: 'mpVendor'},
-            'FILENAME_DICTIONARY': {0: 'dcm_dictionary_Test',
-                                    1: 'tiktok_dictionary_Test.csv',
-                                    2: 'Rawfile_dictionary_Test.csv',
-                                    3: 'plannet_dictionary.csv'},
-            'FILENAME_ERROR': {0: 'DCM_ERROR_REPORT.csv',
-                               1: 'TIKTOK_ERROR_REPORT.csv',
-                               2: 'Rawfile_ERROR_REPORT.csv',
-                               3: 'PLANNET_ERROR_REPORT.csv'},
-            'START DATE': {0: '7/18/2022', 1: '7/1/2022',
+            vmc.filename: {0: 'dcm_Test', 1: 'tiktok_Test.csv',
+                           2: 'Rawfile_Test.csv', 3: 'plannet.csv'},
+            vmc.fullplacename: {0: 'Placement', 1: 'ad_name',
+                                2: 'ad_name', 3: 'mpCampaign|mpVendor'},
+            vmc.placement: {0: 'Placement', 1: 'ad_name',
+                            2: 'ad_name', 3: 'mpVendor'},
+            vmc.startdate: {0: '7/18/2022', 1: '7/1/2022',
                            2: '7/1/2022', 3: ''},
-            'END DATE': {0: '', 1: '7/27/2022', 2: '7/27/2022', 3: ''},
-            'DROP_COLUMNS': {0: 'ALL', 1: 'ALL', 2: 'ALL', 3: ''},
-            'AUTO DICTIONARY PLACEMENT': {0: 'Full Placement Name',
-                                          1: 'Full Placement Name',
-                                          2: 'Full Placement Name',
-                                          3: 'Full Placement Name'},
-            'AUTO DICTIONARY ORDER': {
+            vmc.enddate: {0: '', 1: '7/27/2022', 2: '7/27/2022', 3: ''},
+            vmc.dropcol: {0: 'ALL', 1: 'ALL', 2: 'ALL', 3: ''},
+            vmc.autodicord: {
                 0: 'mpCampaign|mpVendor', 1: 'mpCampaign|mpVendor',
                 2: 'mpCampaign|mpVendor', 3: 'mpCampaign|mpVendor'},
-            'API_FILE': {0: 'dcapi_Test.json', 1: 'tikapi_Test.json',
-                         2: 'tikapi_Test.json', 3: ''},
-            'API_FIELDS': {0: '', 1: '', 2: '', 3: ''},
-            'API_MERGE': {0: '', 1: '', 2: '', 3: ''},
-            'TRANSFORM': {0: '', 1: '', 2: '', 3: ''},
-            'HEADER': {0: '', 1: '', 2: '', 3: ''},
-            'OMIT_PLAN': {0: '', 1: '', 2: '', 3: ''},
-            'Date': {0: 'Date', 1: 'stat_datetime', 2: 'stat_datetime', 3: ''},
-            'Impressions': {0: 'Impressions', 1: 'show_cnt',
+            vmc.apifile: {0: 'dcapi_Test.json', 1: 'tikapi_Test.json',
+                          2: 'tikapi_Test.json', 3: ''},
+            vmc.date: {0: 'Date', 1: 'stat_datetime',
+                             2: 'stat_datetime', 3: ''},
+            vmc.impressions: {0: 'Impressions', 1: 'show_cnt',
                             2: 'show_cnt', 3: ''},
-            'Clicks': {0: 'Clicks', 1: 'click_cnt', 2: 'click_cnt', 3: ''},
-            'Net Cost': {0: '', 1: 'stat_cost', 2: 'stat_cost', 3: ''},
-            'Video Views': {0: 'TrueView Views', 1: 'total_play',
+            vmc.clicks: {0: 'Clicks', 1: 'click_cnt', 2: 'click_cnt', 3: ''},
+            vmc.cost: {0: '', 1: 'stat_cost', 2: 'stat_cost', 3: ''},
+            vmc.views: {0: 'TrueView Views', 1: 'total_play',
                             2: 'total_play', 3: ''},
-            'Video Views 25': {0: 'Video First Quartile Completions',
+            vmc.views25: {0: 'Video First Quartile Completions',
                                1: 'play_first_quartile',
                                2: 'play_first_quartile', 3: ''},
-            'Video Views 50': {0: 'Video Midpoints', 1: 'play_midpoint',
+            vmc.views50: {0: 'Video Midpoints', 1: 'play_midpoint',
                                2: 'play_midpoint', 3: ''},
-            'Video Views 75': {0: 'Video Third Quartile Completions',
+            vmc.views75: {0: 'Video Third Quartile Completions',
                                1: 'play_third_quartile',
                                2: 'play_third_quartile', 3: ''},
-            'Video Views 100': {0: 'Video Completions', 1: 'play_over',
+            vmc.views100: {0: 'Video Completions', 1: 'play_over',
                                 2: 'play_over', 3: ''},
             'RULE_1_METRIC': {0: 'POST::Impressions|Clicks', 1: '',
                               2: '', 3: ''},
@@ -560,24 +575,12 @@ class TestAnalyze:
             'RULE_3_METRIC': {0: 'POST::Adserving Cost::DCM Service Fee',
                               1: '', 2: '', 3: ''},
             'RULE_3_QUERY': {0: 'mpAgency::Liquid Advertising',
-                             1: '', 2: '', 3: ''},
-            'RULE_4_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_4_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_4_QUERY': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_5_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_5_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_5_QUERY': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_6_FACTOR': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_6_METRIC': {0: '', 1: '', 2: '', 3: ''},
-            'RULE_6_QUERY': {0: '', 1: '', 2: '', 3: ''}
+                             1: '', 2: '', 3: ''}
         }
-        for key in vmc.datacol:
-            if key not in vm_dict:
-                vm_dict[key] = {0: '', 1: '', 2: ''}
-        vm_df = pd.DataFrame(vm_dict)
-        self.vm_df = vm_df
-        return vm_df
 
+        self.vm_df = self.generate_test_vm(vm_dict, 4)
+        return self.vm_df
+        
     def test_double_fix_all_raw(self, test_vm):
         """
         If test is failing due to Vendor Key errors, ensure 'Vendormatrix.csv'
@@ -805,6 +808,122 @@ class TestAnalyze:
         assert not df.empty
         assert df.equals(match_df)
         """
+
+    @pytest.fixture
+    def setup_autodict_files(self):
+        """
+        Generates test vendormatrix for autodictionary order.
+        Creates ven1_test.csv, ven2_test.csv, ven3_test.csv, and
+        plannet_test.csv in the raw_data folder and populates them with data
+        that should trigger new order suggestions for test_autodict_analysis.
+
+        :returns: test vendormatrix as a dataframe
+        """
+        vm_dict = {
+            vmc.vendorkey:
+                {0: 'API_Ven1_Test', 1: 'API_Ven2_Test',
+                 2: 'API_Ven3_Test', 3: 'Plan Net'},
+            vmc.filename: {0: 'ven1_test.csv', 1: 'ven2_test.csv',
+                           2: 'ven3_test.csv', 3: 'plannet_test.csv'},
+            vmc.fullplacename: {
+                0: '::Campaign Name|Ad Set Name|Ad Name',
+                1: '::Campaign|Ad group|Ad',
+                2: 'Placement Name',
+                3: 'mpCampaign|mpVendor'},
+            vmc.placement: {0: 'Ad Name', 1: 'Ad',
+                            2: 'Placement Name', 3: 'mpVendor'},
+            vmc.autodicord: {
+                0: 'mpBudget|mpVendor|mpCountry/Region|mpCampaign',
+                1: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
+                2: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
+                3: ''}
+        }
+        test_vm = self.generate_test_vm(vm_dict, 4)
+        data1 = {
+            'Campaign Name':
+                {0: 'Campaign 1', 1: 'Campaign 2'},
+            'Ad Set Name':
+                {0: 'Set 1', 1: 'Set 2'},
+            'Ad Name':
+                {0: '01234567_Vendor1_US_Pre-Launch',
+                 1: '01234567_Vendor1_US_Post-Launch'}
+        }
+        data2 = {
+            'Campaign':
+                {0: 'Campaign 1', 1: 'Campaign 2', 2: 'Campaign 3'},
+            'Ad group':
+                {0: 'Group 1', 1: 'Group 2', 2: 'Group 3'},
+            'Ad':
+                {0: '01234567_Vendor 2_MX_Pre-Launch',
+                 1: '01234567_Vendor 2_BR_Pre-Order',
+                 2: '01234567_Vendor 2_MX_Post-Launch'}
+        }
+        data3 = {
+            'Placement Name':
+                {0: '01234567_Vendor3_GB_Pre-Order',
+                 1: '01234567_Vendor3_MX_Pre-Launch'}
+        }
+        plannet_data = {
+            'mpCampaign':
+                {0: 'Pre-Launch', 1: 'Pre-Launch', 2: 'Pre-Order',
+                 3: 'Pre-Order', 4: 'Post-Launch', 5: 'Post-Launch',
+                 6: 'Pre-Launch'},
+            'mpVendor':
+                {0: 'Vendor1', 1: 'Vendor2', 2: 'Vendor3', 3: 'Vendor2',
+                 4: 'Vendor2', 5: 'Vendor1', 6: 'Vendor3'},
+        }
+        files_to_write = {
+            test_vm[vmc.filename][0]: pd.DataFrame(data1),
+            test_vm[vmc.filename][1]: pd.DataFrame(data2),
+            test_vm[vmc.filename][2]: pd.DataFrame(data3),
+            test_vm[vmc.filename][3]: pd.DataFrame(plannet_data)
+        }
+        for filename in files_to_write:
+            files_to_write[filename].to_csv('raw_data/{}'.format(filename),
+                                            index=False)
+        return test_vm
+
+    def test_autodict_analysis(self, setup_autodict_files):
+        """
+        Tests CheckAutoDictOrder using auto dict order/data source
+        combinations that should result in a positive shift via Vendor
+        position (Ven1 test), a positive shift via Campaign position (Ven2
+        test), and a negative shift via Vendor position (Ven3 test) for the
+        suggested orders.
+        
+        'positive shift' = suggests shifting order to the right by appending
+        'mpMisc' cells to the start of the list
+        'negative shift' = suggests shifting order cell to the left by removing
+        cells from the start of the list
+
+        
+        :param setup_autodict_files: Fixture that sets up data files and
+        returns the vendormatrix for this test
+        """
+        vm_dict = setup_autodict_files
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_dict)
+        aly = az.Analyze(df=pd.DataFrame(), matrix=matrix)
+        aly.do_all_analysis()
+        i = 0
+        while aly.analysis_dict[i]['key'] != 'change_auto_order':
+            i += 1
+        suggested_orders = aly.analysis_dict[i]['data']
+        expected_orders = {
+            vm_dict[vmc.vendorkey][0]:
+                ('mpMisc|mpMisc|' + vm_dict[vmc.autodicord][0]).split('|'),
+            vm_dict[vmc.vendorkey][1]:
+                ('mpMisc|' + vm_dict[vmc.autodicord][1]).split('|'),
+            vm_dict[vmc.vendorkey][2]:
+                vm_dict[vmc.autodicord][2].split('|')[1::]
+        }
+        assert len(expected_orders) == len(suggested_orders[vmc.vendorkey])
+        for index in suggested_orders[vmc.vendorkey]:
+            expected = expected_orders[suggested_orders[vmc.vendorkey][index]]
+            suggested = suggested_orders['change_auto_order'][index]
+            assert expected == suggested
+        for file in vm_dict[vmc.filename]:
+            os.remove('raw_data/{}'.format(file))
 
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
