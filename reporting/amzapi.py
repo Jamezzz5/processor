@@ -15,6 +15,10 @@ import reporting.vmcolumns as vmc
 
 config_path = utl.config_path
 
+common_columns = ['date', 'impressions', 'clicks', 'cost',
+                  'campaignName', 'campaignId', 'adGroupName',
+                  'adGroupId']
+
 
 class AmzApi(object):
     base_url = 'https://advertising-api.amazon.com'
@@ -257,9 +261,10 @@ class AmzApi(object):
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         logging.info('Requesting DSP report for dates: {} to {}'.format(sd, ed))
-        body = {"endDate": ed, "startDate": sd}
+        sp_body = {"endDate": ed, "startDate": sd}
+        sb_body = {"endDate": ed, "startDate": sd}
         if self.amazon_dsp:
-            body.update({
+            sp_body.update({
                 "format": "JSON",
                 "metrics": ['totalCost', 'impressions', 'clickThroughs',
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
@@ -273,25 +278,51 @@ class AmzApi(object):
             self.headers['Accept'] = 'application/vnd.dspcreatereports.v3+json'
             url = '{}/accounts/{}/dsp/reports'.format(
                 self.base_url, self.profile_id)
+            return self.make_request_dsp_report(url, sp_body)
         else:
-            body['configuration'] = {
-                    'adProduct': 'SPONSORED_PRODUCTS',
-                    'columns':  ['date', 'impressions', 'clicks', 'cost',
-                                 'spend', 'campaignName', 'campaignId',
-                                 'adGroupName', 'adGroupId', 'purchases14d',
-                                 'purchasesSameSku14d', 'unitsSoldClicks14d',
-                                 'sales14d', 'attributedSalesSameSku14d'],
-                    'reportTypeId': 'spCampaigns',
-                    'format': 'GZIP_JSON',
-                    'groupBy': ['campaign', 'adGroup'],
-                    "timeUnit": "DAILY"
-                }
+            sp_body['configuration'] = {
+                'adProduct': 'SPONSORED_PRODUCTS',
+                'columns': common_columns + [
+                           'spend', 'purchases14d',
+                           'purchasesSameSku14d', 'unitsSoldClicks14d',
+                           'sales14d', 'attributedSalesSameSku14d'],
+                'reportTypeId': 'spCampaigns',
+                'format': 'GZIP_JSON',
+                'groupBy': ['campaign', 'adGroup'],
+                "timeUnit": "DAILY"
+            }
             self.headers['Accept'] = (
                 'application/vnd.createasyncreportrequest.v3+json')
             url = '{}/reporting/reports'.format(self.base_url)
-        return self.make_request_dsp_report(url, body)
+            sb_body['configuration'] = {
+                'adProduct': 'SPONSORED_BRANDS',
+                'columns': common_columns + [
+                           'detailPageViewsClicks', 'newToBrandDetailPageViews',
+                           'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
+                           'newToBrandPurchasesClicks', 'newToBrandSales',
+                           'newToBrandSalesClicks', 'newToBrandUnitsSold',
+                           'newToBrandUnitsSoldClicks', 'purchases', 'purchasesClicks',
+                           'purchasesPromoted', 'sales', 'salesClicks', 'salesPromoted',
+                           'unitsSold', 'unitsSoldClicks', 'video5SecondViews',
+                           'videoCompleteViews', 'videoFirstQuartileViews', 'detailPageViews',
+                           'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes'],
+                'reportTypeId': 'sbAdGroup',
+                'format': 'GZIP_JSON',
+                'groupBy': ['adGroup'],
+                'timeUnit': "DAILY"
+            }
+            logging.info("Requesting Sponsored Products report")
+            logging.info("Requesting Sponsored Brands report")
+            return [self.make_request_dsp_report(url, sp_body),
+                    self.make_request_dsp_report(url, sb_body)]
 
-    def get_dsp_report(self, report_id, attempts=100, wait=30):
+    def get_dsp_report(self, report_ids, attempts=100, wait=30):
+        if not isinstance(report_ids, list):
+            report_ids = [report_ids]
+        dfs = [self.check_report_status(report_id, attempts, wait) for report_id in report_ids]
+        self.df = self.merge_dataframes(dfs)
+
+    def check_report_status(self, report_id, attempts, wait):
         if self.amazon_dsp:
             self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
             url = '{}/accounts/{}/dsp/reports/{}'.format(
@@ -328,12 +359,11 @@ class AmzApi(object):
                             df['date'] = df['date'].apply(
                                 lambda x: dt.datetime.fromtimestamp(
                                     x / 1000, tz=pytz.UTC).date())
-                    self.df = df
-                    break
+                    return df
                 else:
                     time.sleep(wait)
             elif ('message' in r.json() and r.json()['message'] ==
-                    'Too Many Requests'):
+                  'Too Many Requests'):
                 logging.warning(
                     'Too many requests pausing.  Attempt: {}.  '
                     'Response: {}'.format((attempt + 1), r.json()))
@@ -341,7 +371,11 @@ class AmzApi(object):
             else:
                 logging.warning(
                     'No status in response as follows: {}'.format(r.json()))
-                self.df = pd.DataFrame()
+                return pd.DataFrame()
+
+    @staticmethod
+    def merge_dataframes(dfs):
+        return pd.concat(dfs, ignore_index=True, sort=False) if dfs else pd.DataFrame()
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
