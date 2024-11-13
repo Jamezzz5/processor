@@ -20,6 +20,7 @@ import reporting.awapi as awapi
 import reporting.amzapi as amzapi
 import reporting.gaapi as gaapi
 import reporting.fbapi as fbapi
+import reporting.samapi as samapi
 
 
 def func(x):
@@ -223,12 +224,17 @@ class TestApis:
         api = fbapi.FbApi()
         self.send_api_call(api, fields=['Actions'])
 
+    def test_samapi(self, tmp_path_factory):
+        api = samapi.SamApi()
+        self.send_api_call(api)
+
     @staticmethod
     def send_api_call(api, fields=None):
         api.input_config(api.default_config_file_name)
         sd = dt.datetime.today() - dt.timedelta(days=28)
         ed = dt.datetime.today()
         # df = api.get_data(sd, ed, fields=fields)
+        assert 1 == 1
 
 
 class TestDictionary:

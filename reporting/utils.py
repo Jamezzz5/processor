@@ -572,6 +572,7 @@ class SeleniumWrapper(object):
         """)
         browser.maximize_window()
         browser.set_script_timeout(10)
+        browser.set_page_load_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
         return browser, co
 
