@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import string
 import pytest
 import numpy as np
@@ -712,21 +713,59 @@ class TestAnalyze:
         assert df.empty
 
     def test_adwords_split(self):
+        df = pd.DataFrame()
+        ic = vm.ImportConfig()
+        test_config = 'test_config.yaml'
+        test_csv = 'split_test.csv'
+        test_api = 'Adwords_auto_auto'
         cas = az.CheckAdwordsSplit(az.Analyze(matrix=vm.VendorMatrix()))
-        # cas.do_analysis()
-        data = {
+        mock_config = {'adwords': {'campaign_filter': ''}}
+        with open('config/{}'.format(test_config), 'w') as file:
+            yaml.dump(mock_config, file, default_flow_style=False)
+        mock_data = {
             'Campaign': [
-                'ffxiv_awa_31719145_ft_evergreen_video_youtube',
-                'ffxiv_dwn_31719145_ft_evergreen_search_googlesem'],
-            'sem_check': ['False', 'True'],
-            'yt_check': ['True', 'False'],
-            'START_DATE': ['2024-10-29 00:00:00', '2024-10-29 00:00:00'],
-            'ID': ['633-959-8757', '633-959-8757']}
-        df = pd.DataFrame(data)
-        cas.fix_analysis(aly_dict=df)
-        #also make sure that we are removing the previous no-filter-api when fixing
-        #last thing check that the vm has updated with new keys and that the configs have the correct filter
-        assert None
+                'test_video_youtube',
+                'test_search_googlesem']}
+        mock_data = pd.DataFrame(mock_data)
+        mock_data.to_csv('raw_data/{}'.format(test_csv))
+        source = vm.DataSource(key='split_test', vm_rules={})
+        source.key = 'API_Adwords_auto'
+        source.p[vmc.apifile] = test_config
+        source.p[vmc.filename] = 'raw_data/{}'.format(test_csv)
+        source.p[vmc.startdate] = dt.datetime.strptime(
+            '2024-10-29 00:00:00', '%Y-%m-%d %H:%M:%S')
+        source.ic_params = {vmc.apifields: '',
+                            ic.filter: '',
+                            ic.account_id: '123', ic.key: 'adwords',
+                            vmc.startdate: '2024-10-29',
+                            'Vendor Key': 'API_Adwords_auto', ic.name: 'auto'}
+        tdf = cas.do_analysis_on_data_source(source, df)
+        assert not tdf.empty
+        vm_df = cas.aly.matrix.vm_df
+        vk = vmc.api_aw_key
+        ndf = vm_df[vm_df[vmc.vendorkey] == vk].reset_index(drop=True)
+        new_vk = 'API_Adwords_auto'
+        ndf.loc[0, vmc.vendorkey] = new_vk
+        new_config = source.p[vmc.apifile]
+        ndf.loc[0, vmc.apifile] = new_config
+        vm_df = pd.concat([vm_df, ndf]).reset_index(drop=True)
+        cas.aly.matrix.vm_df = vm_df
+        cas.aly.matrix.write()
+        vm_df = cas.fix_analysis(aly_dict=tdf, write=False)
+        assert vm_df[vmc.vendorkey].isin(['API_{}_1'.format(test_api)]).any()
+        assert vm_df[vmc.vendorkey].isin(['API_{}_2'.format(test_api)]).any()
+        assert os.path.exists('config/awconfig_{}_1.yaml'.format(test_api))
+        assert os.path.exists('config/awconfig_{}_2.yaml'.format(test_api))
+        os.remove('config/awconfig_{}_1.yaml'.format(test_api))
+        os.remove('config/awconfig_{}_2.yaml'.format(test_api))
+        os.remove('config/{}'.format(test_config))
+        os.remove('raw_data/{}'.format(test_csv))
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_1'.format(test_api))].index
+        vm_df.drop(index_vk, inplace=True)
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_2'.format(test_api))].index
+        vm_df.drop(index_vk, inplace=True)
+        cas.aly.matrix.vm_df = vm_df
+        cas.aly.matrix.write()
         
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],

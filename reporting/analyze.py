@@ -1532,19 +1532,19 @@ class CheckPackageCapping(AnalyzeBase):
 
 
 class CheckAdwordsSplit(AnalyzeBase):
+    """Checks Adwords/Google Ads APIs for multiple campaigns and splits"""
     camp_col = aw.AwApi().campaign_col
     sem_list = ['sem', 'googlesem', 'google sem', 'search']
     yt_list = ['video', 'youtube', 'yt']
     name = Analyze.api_split
-    fix = False
+    fix = True
     new_files = True
 
     def do_analysis(self):
-        self.matrix = vm.VendorMatrix()
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
-            if vmc.api_aw_key in source.key:
+            if 'API_{}'.format(vmc.api_aw_key) in source.key:
                 df = self.do_analysis_on_data_source(source, df)
         if df.empty:
             msg = 'Adwords does not contain multiple campaigns'
@@ -1552,11 +1552,20 @@ class CheckAdwordsSplit(AnalyzeBase):
         else:
             msg = ('Adwords data contains multiple campaigns.'
                    ' Please add a campaign filter')
-            logging.info('{}\n{}'.format(msg, df[self.camp_col].to_string()))
+            logging.warning('{}\n{}'.format(
+                msg, df[self.camp_col].to_string()))
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
     def do_analysis_on_data_source(self, source, df):
+        """
+        Checks active Adwords/Google Ads apis and reads their config
+        to see if campaign filter is empty.
+
+        :param df: dataframe containing previous sources campaigns
+        :param source: data source for api_adwords
+        :returns: a dataframe of campaigns that api is pulling
+         """
         if vmc.filename not in source.p:
             return pd.DataFrame()
         api_file = source.p[vmc.apifile]
@@ -1565,7 +1574,6 @@ class CheckAdwordsSplit(AnalyzeBase):
         adwords_filter = api_config['adwords']['campaign_filter']
         file_path = source.p[vmc.filename]
         start_date = source.p[vmc.startdate]
-        account_id = source.ic_params[vm.ImportConfig().account_id]
         if not adwords_filter and os.path.exists(file_path):
             tdf = pd.read_csv(file_path, usecols = [self.camp_col])
             tdf = tdf[self.camp_col].drop_duplicates().to_frame()
@@ -1585,23 +1593,51 @@ class CheckAdwordsSplit(AnalyzeBase):
                 df = pd.concat([df, match_df])
             if not df.empty:
                 df[vmc.startdate] = start_date
-                df['ID'] = account_id
+                df[vmc.startdate] = df[vmc.startdate].dt.strftime(
+                    '%Y-%m-%d %H:%M:%S')
+                df[vmc.vendorkey] = source.key
+                df['config'] = api_file
         return df
 
-    def fix_analysis(self, aly_dict, write=False):
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Creates new vendor keys, filenames, and configs for multiple campaign
+        Adwords/Google Ads in vendor matrix
+
+        :returns: new vendor matrix dataframe
+        """
+        df = self.aly.matrix.vm_df
         aly_dict = aly_dict.to_dict(orient='records')
         ic = vm.ImportConfig()
-        import_list = []
+        drop_idx = False
+        i = 1
         for x in aly_dict:
-            import_dict = {vmc.apifields: '',
-                           ic.filter: x['Campaign'],
-                           ic.account_id: x['ID'],
-                           ic.key: 'Adwords',
-                           vmc.startdate: x['START_DATE'],
-                           'Vendor Key': 'API_Adwords_auto',
-                           ic.name: 'auto'}
-            import_list.append(import_dict)
-        ic.add_and_remove_from_vm(import_list, matrix=self.matrix)
+            vk = x[vmc.vendorkey]
+            ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
+            new_vk = '{}_auto_{}'.format(vk, i)
+            ndf.loc[0, vmc.vendorkey] = new_vk
+            file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
+            new_fn = '{}{}'.format(new_vk.replace(
+                'API_', '').lower(), file_type)
+            ndf.loc[0, vmc.filename] = new_fn
+            new_config_name = 'awconfig_{}.yaml'.format(
+                new_vk.replace('API_', '').lower())
+            ndf.loc[0, vmc.apifile] = new_config_name
+            old_config = ic.load_file(x['config'], yaml)
+            old_config['adwords']['campaign_filter'] = x[self.camp_col]
+            new_config = old_config
+            with open('config/{}'.format(new_config_name), 'w') as file:
+                yaml.dump(new_config, file, default_flow_style=False)
+            i += 1
+            df = pd.concat([df, ndf]).reset_index(drop=True)
+            if df[vmc.vendorkey].str.contains(
+                    x[vmc.vendorkey], regex=False).any():
+                drop_idx = df[(df[vmc.vendorkey] == x[vmc.vendorkey])].index
+                drop_idx = drop_idx.values
+        if drop_idx.any():
+            drop_idx = drop_idx[0]
+            df.drop(drop_idx, inplace=True)
+        self.aly.matrix.vm_df = df
         if write:
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
