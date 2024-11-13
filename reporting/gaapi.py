@@ -122,7 +122,7 @@ class GaApi(object):
             ],
             "metrics": [{"name": m} for m in self.def_metrics],
             "dimensions": [{"name": d} for d in self.def_dims],
-            "limit": "100000"
+            "limit": "250000"
         }
         if 'paidmedia' in fields:
             body["dimensionFilter"] = {
