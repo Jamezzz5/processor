@@ -237,7 +237,8 @@ class RedApi(object):
     def set_metrics(self):
         logging.info('Setting metrics.')
         columns_xpath = '//div[text()="Columns"]'
-        customize_columns_xpath = '/html/body/div[13]/div/div/button[2]'
+        customize_columns_xpath = ('//button[contains(normalize-space(),'
+                                   '"Customize Columns")]')
         self.sw.click_on_xpath(columns_xpath)
         self.sw.click_on_xpath(customize_columns_xpath)
         self.click_grouped_metrics()
@@ -326,4 +327,3 @@ class RedApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-
