@@ -201,6 +201,7 @@ def string_to_date(my_string):
 
 def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
                  fill_empty=True):
+    df = df.loc[:, ~df.columns.duplicated()]
     if float_col is None:
         float_col = []
     if date_col is None:
