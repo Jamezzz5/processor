@@ -746,17 +746,17 @@ class TestAnalyze:
         cas.aly.matrix.vm_df = vm_df
         cas.aly.matrix.write()
         vm_df = cas.fix_analysis(aly_dict=tdf, write=False)
-        assert vm_df[vmc.vendorkey].isin(['API_{}_1'.format(test_api)]).any()
-        assert vm_df[vmc.vendorkey].isin(['API_{}_2'.format(test_api)]).any()
-        assert os.path.exists('config/awconfig_{}_1.yaml'.format(test_api))
-        assert os.path.exists('config/awconfig_{}_2.yaml'.format(test_api))
-        os.remove('config/awconfig_{}_1.yaml'.format(test_api))
-        os.remove('config/awconfig_{}_2.yaml'.format(test_api))
+        assert vm_df[vmc.vendorkey].isin(['API_{}_sem'.format(test_api)]).any()
+        assert vm_df[vmc.vendorkey].isin(['API_{}_video'.format(test_api)]).any()
+        assert os.path.exists('config/awconfig_{}_sem.yaml'.format(test_api))
+        assert os.path.exists('config/awconfig_{}_video.yaml'.format(test_api))
+        os.remove('config/awconfig_{}_sem.yaml'.format(test_api))
+        os.remove('config/awconfig_{}_video.yaml'.format(test_api))
         os.remove('config/{}'.format(test_config))
         os.remove('raw_data/{}'.format(test_csv))
-        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_1'.format(test_api))].index
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_sem'.format(test_api))].index
         vm_df.drop(index_vk, inplace=True)
-        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_2'.format(test_api))].index
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_video'.format(test_api))].index
         vm_df.drop(index_vk, inplace=True)
         cas.aly.matrix.vm_df = vm_df
         cas.aly.matrix.write()

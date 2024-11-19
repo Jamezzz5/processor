@@ -12,6 +12,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import datetime as dt
+
+from aiohttp.web_routedef import static
+
 import reporting.calc as cal
 import reporting.awapi as aw
 import reporting.utils as utl
@@ -1580,12 +1583,32 @@ class CheckPackageCapping(AnalyzeBase):
 
 class CheckAdwordsSplit(AnalyzeBase):
     """Checks Adwords/Google Ads APIs for multiple campaigns and splits"""
-    camp_col = aw.AwApi().campaign_col
+    camp_col = aw.campaign_col
     sem_list = ['sem', 'googlesem', 'google sem', 'search']
     yt_list = ['video', 'youtube', 'yt']
     name = Analyze.api_split
     fix = True
     new_files = True
+
+    @staticmethod
+    def find_matching_substring_in_column(string_list, target_column):
+        """
+        Goes through a dataframe string column to see if an item in the col
+        also appears in the provided list
+
+        :param string_list: list of strings to compare to items in df column
+        :param target_column: df column to search for strings
+
+        :returns: the string that appeared in df column
+        or None if no string found
+        """
+        def match_substring(cell):
+            for substring in string_list:
+                if substring in cell:
+                    return substring
+            return None
+
+        return target_column.apply(match_substring)
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
@@ -1594,10 +1617,10 @@ class CheckAdwordsSplit(AnalyzeBase):
             if 'API_{}'.format(vmc.api_aw_key) in source.key:
                 df = self.do_analysis_on_data_source(source, df)
         if df.empty:
-            msg = 'Adwords does not contain multiple campaigns'
+            msg = 'Adwords does not contain SEM and YT campaigns'
             logging.info('{}'.format(msg))
         else:
-            msg = ('Adwords data contains multiple campaigns.'
+            msg = ('Adwords data contains both SEM and YT campaigns.'
                    ' Please add a campaign filter')
             logging.warning('{}\n{}'.format(
                 msg, df[self.camp_col].to_string()))
@@ -1607,7 +1630,8 @@ class CheckAdwordsSplit(AnalyzeBase):
     def do_analysis_on_data_source(self, source, df):
         """
         Checks active Adwords/Google Ads apis and reads their config
-        to see if campaign filter is empty.
+        to see if campaign filter is empty and if the data contains both
+        SEM and YT.
 
         :param df: dataframe containing previous sources campaigns
         :param source: data source for api_adwords
@@ -1626,18 +1650,19 @@ class CheckAdwordsSplit(AnalyzeBase):
             tdf = tdf[self.camp_col].drop_duplicates().to_frame()
             sem_pattern = '|'.join(self.sem_list)
             yt_pattern = '|'.join(self.yt_list)
+            all_list = self.sem_list + self.yt_list
             tdf['sem_check'] = tdf[self.camp_col].str.contains(sem_pattern,
                                                                case=False,
                                                                na=False)
             tdf['yt_check'] = tdf[self.camp_col].str.contains(yt_pattern,
                                                                case=False,
                                                                na=False)
-            if tdf['sem_check'].any():
-                match_df = tdf[tdf['sem_check']]
-                df = pd.concat([df, match_df])
-            if tdf['yt_check'].any():
-                match_df = tdf[tdf['yt_check']]
-                df = pd.concat([df, match_df])
+            tdf['match_string'] = self.find_matching_substring_in_column(
+                all_list, tdf[self.camp_col])
+            if tdf['sem_check'].any() and tdf['yt_check'].any():
+                df = pd.concat([df, tdf])
+                df = df.drop_duplicates(subset=['match_string'])
+                df = df.dropna()
             if not df.empty:
                 df[vmc.startdate] = start_date
                 df[vmc.startdate] = df[vmc.startdate].dt.strftime(
@@ -1657,11 +1682,10 @@ class CheckAdwordsSplit(AnalyzeBase):
         aly_dict = aly_dict.to_dict(orient='records')
         ic = vm.ImportConfig()
         drop_idx = False
-        i = 1
         for x in aly_dict:
             vk = x[vmc.vendorkey]
             ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
-            new_vk = '{}_auto_{}'.format(vk, i)
+            new_vk = '{}_auto_{}'.format(vk, x['match_string'])
             ndf.loc[0, vmc.vendorkey] = new_vk
             file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
             new_fn = '{}{}'.format(new_vk.replace(
@@ -1671,11 +1695,11 @@ class CheckAdwordsSplit(AnalyzeBase):
                 new_vk.replace('API_', '').lower())
             ndf.loc[0, vmc.apifile] = new_config_name
             old_config = ic.load_file(x['config'], yaml)
-            old_config['adwords']['campaign_filter'] = x[self.camp_col]
+            old_config['adwords']['campaign_filter'] = x['match_string']
             new_config = old_config
-            with open('config/{}'.format(new_config_name), 'w') as file:
+            new_config_path = os.path.join(utl.config_path, new_config_name)
+            with open(new_config_path, 'w') as file:
                 yaml.dump(new_config, file, default_flow_style=False)
-            i += 1
             df = pd.concat([df, ndf]).reset_index(drop=True)
             if df[vmc.vendorkey].str.contains(
                     x[vmc.vendorkey], regex=False).any():
@@ -1686,6 +1710,7 @@ class CheckAdwordsSplit(AnalyzeBase):
             df.drop(drop_idx, inplace=True)
         self.aly.matrix.vm_df = df
         if write:
+            logging.info('Automatically creating new API cards for SEM and YT')
             self.aly.matrix.write()
         return self.aly.matrix.vm_df
 
