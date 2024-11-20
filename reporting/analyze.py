@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import yaml
 import nltk
 import openai
 import shutil
@@ -12,6 +13,7 @@ import pandas as pd
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
+import reporting.awapi as aw
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
@@ -44,6 +46,7 @@ class Analyze(object):
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
     placement_col = 'placement_col'
+    api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
@@ -99,7 +102,8 @@ class Analyze(object):
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp]
+            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
+            CheckAdwordsSplit]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1572,6 +1576,131 @@ class CheckPackageCapping(AnalyzeBase):
             return None
         self.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
                                 write=write, aly_dict=aly_dict)
+
+
+class CheckAdwordsSplit(AnalyzeBase):
+    """Checks Adwords/Google Ads APIs for multiple campaigns and splits"""
+    camp_col = aw.campaign_col
+    sem_list = ['sem', 'googlesem', 'google sem', 'search']
+    yt_list = ['video', 'youtube', 'yt']
+    name = Analyze.api_split
+    fix = True
+    new_files = True
+
+    def find_matching_substring_in_column(self, string_list, target_column):
+        return target_column.apply(
+            lambda cell: self.match_substring(cell, string_list))
+
+    @staticmethod
+    def match_substring(cell, string_list):
+        for substring in string_list:
+            if substring in cell:
+                return substring
+        return None
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            if 'API_{}'.format(vmc.api_aw_key) in source.key:
+                df = self.do_analysis_on_data_source(source, df)
+        if df.empty:
+            msg = 'Adwords does not contain SEM and YT campaigns'
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('Adwords data contains both SEM and YT campaigns.'
+                   ' Please add a campaign filter')
+            logging.warning('{}\n{}'.format(
+                msg, df[self.camp_col].to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def do_analysis_on_data_source(self, source, df):
+        """
+        Checks active Adwords/Google Ads apis and reads their config
+        to see if campaign filter is empty and if the data contains both
+        SEM and YT.
+
+        :param df: dataframe containing previous sources campaigns
+        :param source: data source for api_adwords
+        :returns: a dataframe of campaigns that api is pulling
+         """
+        if vmc.filename not in source.p:
+            return pd.DataFrame()
+        api_file = source.p[vmc.apifile]
+        ic = vm.ImportConfig()
+        api_config = ic.load_file(api_file, yaml)
+        adwords_filter = api_config['adwords']['campaign_filter']
+        file_path = source.p[vmc.filename]
+        start_date = source.p[vmc.startdate]
+        if not adwords_filter and os.path.exists(file_path):
+            tdf = pd.read_csv(file_path, usecols = [self.camp_col])
+            tdf = tdf[self.camp_col].drop_duplicates().to_frame()
+            sem_pattern = '|'.join(self.sem_list)
+            yt_pattern = '|'.join(self.yt_list)
+            all_list = self.sem_list + self.yt_list
+            tdf['sem_check'] = tdf[self.camp_col].str.contains(sem_pattern,
+                                                               case=False,
+                                                               na=False)
+            tdf['yt_check'] = tdf[self.camp_col].str.contains(yt_pattern,
+                                                               case=False,
+                                                               na=False)
+            tdf['match_string'] = self.find_matching_substring_in_column(
+                all_list, tdf[self.camp_col])
+            if tdf['sem_check'].any() and tdf['yt_check'].any():
+                df = pd.concat([df, tdf])
+                df = df.drop_duplicates(subset=['match_string'])
+                df = df.dropna()
+            if not df.empty:
+                df[vmc.startdate] = start_date
+                df[vmc.startdate] = df[vmc.startdate].dt.strftime(
+                    '%Y-%m-%d %H:%M:%S')
+                df[vmc.vendorkey] = source.key
+                df['config'] = api_file
+        return df
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Creates new vendor keys, filenames, and configs for multiple campaign
+        Adwords/Google Ads in vendor matrix
+
+        :returns: new vendor matrix dataframe
+        """
+        df = self.aly.matrix.vm_df
+        aly_dict = aly_dict.to_dict(orient='records')
+        ic = vm.ImportConfig()
+        drop_idx = False
+        for x in aly_dict:
+            vk = x[vmc.vendorkey]
+            ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
+            new_vk = '{}_auto_{}'.format(vk, x['match_string'])
+            ndf.loc[0, vmc.vendorkey] = new_vk
+            file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
+            new_fn = '{}{}'.format(new_vk.replace(
+                'API_', '').lower(), file_type)
+            ndf.loc[0, vmc.filename] = new_fn
+            new_config_name = 'awconfig_{}.yaml'.format(
+                new_vk.replace('API_', '').lower())
+            ndf.loc[0, vmc.apifile] = new_config_name
+            old_config = ic.load_file(x['config'], yaml)
+            old_config['adwords']['campaign_filter'] = x['match_string']
+            new_config = old_config
+            new_config_path = os.path.join(utl.config_path, new_config_name)
+            with open(new_config_path, 'w') as file:
+                yaml.dump(new_config, file, default_flow_style=False)
+            df = pd.concat([df, ndf]).reset_index(drop=True)
+            if df[vmc.vendorkey].str.contains(
+                    x[vmc.vendorkey], regex=False).any():
+                drop_idx = df[(df[vmc.vendorkey] == x[vmc.vendorkey])].index
+                drop_idx = drop_idx.values
+        if drop_idx.any():
+            drop_idx = drop_idx[0]
+            df.drop(drop_idx, inplace=True)
+        self.aly.matrix.vm_df = df
+        if write:
+            logging.info('Automatically creating new API cards for SEM and YT')
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
 
 
 class FindPlacementNameCol(AnalyzeBase):
