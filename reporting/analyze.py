@@ -1587,25 +1587,16 @@ class CheckAdwordsSplit(AnalyzeBase):
     fix = True
     new_files = True
 
+    def find_matching_substring_in_column(self, string_list, target_column):
+        return target_column.apply(
+            lambda cell: self.match_substring(cell, string_list))
+
     @staticmethod
-    def find_matching_substring_in_column(string_list, target_column):
-        """
-        Goes through a dataframe string column to see if an item in the col
-        also appears in the provided list
-
-        :param string_list: list of strings to compare to items in df column
-        :param target_column: df column to search for strings
-
-        :returns: the string that appeared in df column
-        or None if no string found
-        """
-        def match_substring(cell):
-            for substring in string_list:
-                if substring in cell:
-                    return substring
-            return None
-
-        return target_column.apply(match_substring)
+    def match_substring(cell, string_list):
+        for substring in string_list:
+            if substring in cell:
+                return substring
+        return None
 
     def do_analysis(self):
         data_sources = self.matrix.get_all_data_sources()
