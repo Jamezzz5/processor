@@ -12,9 +12,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import datetime as dt
-
-from aiohttp.web_routedef import static
-
 import reporting.calc as cal
 import reporting.awapi as aw
 import reporting.utils as utl
