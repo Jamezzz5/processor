@@ -1028,6 +1028,21 @@ def get_next_values_from_list(first_list, match_list=None, break_list=None,
     first_list = [x.strip(' ') for x in first_list]
     return first_list
 
+def clean_monetary_input(monetary_input):
+    """
+    Remove commas, spaces, dollar signs, and k/m from monetary input values.
+
+    :params monetary_input: Monetary input value to be cleaned
+    :return: Inputted value as string formatted as float
+    """
+    if monetary_input is None:
+        return '0'
+    cleaned_input = str(monetary_input).replace(',', '')
+    cleaned_input = cleaned_input.replace('$', '')
+    cleaned_input = cleaned_input.replace(' ', '').lower()
+    cleaned_input = cleaned_input.replace('k', '000')
+    cleaned_input = cleaned_input.replace('m', '000000')
+    return cleaned_input
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
