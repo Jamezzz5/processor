@@ -46,6 +46,7 @@ class TikApi(object):
                'purchase': 'purchase',
                'checkout': 'checkout',
                'view_content': 'view_content',
+               'engagements': 'Clicks (all)',
                'offline_shopping_events': 'offline_shopping_events'}
 
     def __init__(self):
