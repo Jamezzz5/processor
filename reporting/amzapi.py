@@ -270,7 +270,7 @@ class AmzApi(object):
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
                             'videoThirdQuartile', 'videoComplete',
                             'totalSales14d', 'totalPurchases14d',
-                            'totalROAS14d'],
+                            'totalROAS14d', 'sales14d', 'purchases14d'],
                 "type": "CAMPAIGN",
                 "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
                 "timeUnit": "DAILY"
