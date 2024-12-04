@@ -619,7 +619,12 @@ class SeleniumWrapper(object):
         self.browser.execute_script(scroll_script, elem)
 
     def click_error(self, elem, e, attempts=0):
-        logging.info('Element: {} Error: {}'.format(elem, e))
+        elem_id = elem.get_attribute('id')
+        if elem_id:
+            log_val = elem_id
+        else:
+            log_val = elem
+        logging.info('Element: {}\nError: {}'.format(log_val, e))
         scroll_script = "arguments[0].scrollIntoView();"
         if attempts > 5:
             scroll_script = "window.scrollTo(0, 0)"
@@ -846,7 +851,8 @@ class SeleniumWrapper(object):
         return '//*[@id="{}"]'.format(elem_id)
 
     def wait_for_elem_load(self, elem_id, selector=None, attempts=1000,
-                           sleep_time=.01, visible=False, new_value=''):
+                           sleep_time=.01, visible=False, new_value='',
+                           attribute='value'):
         selector = selector if selector else self.select_id
         elem_found = False
         for x in range(attempts):
@@ -861,10 +867,10 @@ class SeleniumWrapper(object):
                         elem_visible = e[0].is_displayed()
                 if new_value:
                     try:
-                        cur_value = e[0].get_attribute('value')
+                        cur_value = e[0].get_attribute(attribute)
                     except ex.StaleElementReferenceException:
                         cur_value = ''
-                    if cur_value != new_value:
+                    if new_value not in cur_value:
                         elem_visible = False
                 if elem_visible:
                     elem_found = True
