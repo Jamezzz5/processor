@@ -808,7 +808,8 @@ class SeleniumWrapper(object):
         return elem_type
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
-                            clear_existing=True, send_escape=True):
+                            clear_existing=True, send_escape=True,
+                            new_value=''):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem_xpath = item[1]
@@ -834,6 +835,8 @@ class SeleniumWrapper(object):
                 else:
                     self.send_keys_wrapper(elem, item[0], elem_xpath)
             if select_xpath in elem_xpath:
+                if new_value:
+                    self.wait_for_elem_load(item[1], new_value=item[0])
                 elem.send_keys(u'\ue007')
                 if send_escape:
                     wd.ActionChains(self.browser).send_keys(
