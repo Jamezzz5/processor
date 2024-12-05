@@ -807,36 +807,60 @@ class SeleniumWrapper(object):
                 time.sleep(.1)
         return elem_type
 
+    def send_key_from_list(self, item, get_xpath_from_id=True,
+                            clear_existing=True, send_escape=True):
+        select_xpath = 'selectized'
+        elem_xpath = item[1]
+        if get_xpath_from_id:
+            elem_xpath = self.get_xpath_from_id(elem_xpath)
+        elem = self.browser.find_element_by_xpath(elem_xpath)
+        clear_specified = len(item) > 2 and item[2] == 'clear'
+        elem_to_clear = select_xpath in elem_xpath or clear_specified
+        if clear_existing and elem_to_clear:
+            clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
+                        '../following-sibling::a[@class="clear"]']
+            for clear_x in clear_xs:
+                clear_val = elem.find_elements_by_xpath(clear_x)
+                if len(clear_val) > 0:
+                    self.click_on_xpath(elem=clear_val[0], sleep=.1)
+                    break
+        elem_type = self.get_elem_type(elem_xpath, elem)
+        if elem_type == 'checkbox':
+            self.click_on_xpath(elem=elem, sleep=.1)
+        else:
+            if type(item[0]) == list:
+                self.send_multiple_keys_wrapper(elem, item[0])
+            else:
+                self.send_keys_wrapper(elem, item[0], elem_xpath)
+        return elem
+
+    def send_key_new_value_check(self, item, get_xpath_from_id=True,
+                            clear_existing=True, send_escape=True, elem=None):
+        attempts = 2
+        for x in range(attempts):
+            try:
+                self.wait_for_elem_load(item[1], new_value=item[0],
+                                        attempts=25)
+                break
+            except:
+                logging.warning('{} could not load.'.format(item))
+                elem = self.send_key_from_list(item, get_xpath_from_id,
+                                               clear_existing, send_escape)
+        return elem
+
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
                             clear_existing=True, send_escape=True,
                             new_value=''):
         select_xpath = 'selectized'
         for item in elem_input_list:
+            elem = self.send_key_from_list(
+                item, get_xpath_from_id, clear_existing, send_escape)
             elem_xpath = item[1]
-            if get_xpath_from_id:
-                elem_xpath = self.get_xpath_from_id(elem_xpath)
-            elem = self.browser.find_element_by_xpath(elem_xpath)
-            clear_specified = len(item) > 2 and item[2] == 'clear'
-            elem_to_clear = select_xpath in elem_xpath or clear_specified
-            if clear_existing and elem_to_clear:
-                clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
-                            '../following-sibling::a[@class="clear"]']
-                for clear_x in clear_xs:
-                    clear_val = elem.find_elements_by_xpath(clear_x)
-                    if len(clear_val) > 0:
-                        self.click_on_xpath(elem=clear_val[0], sleep=.1)
-                        break
-            elem_type = self.get_elem_type(elem_xpath, elem)
-            if elem_type == 'checkbox':
-                self.click_on_xpath(elem=elem, sleep=.1)
-            else:
-                if type(item[0]) == list:
-                    self.send_multiple_keys_wrapper(elem, item[0])
-                else:
-                    self.send_keys_wrapper(elem, item[0], elem_xpath)
             if select_xpath in elem_xpath:
                 if new_value:
-                    self.wait_for_elem_load(item[1], new_value=item[0])
+                    elem = self.send_key_new_value_check(
+                        item, get_xpath_from_id, clear_existing, send_escape,
+                        elem=elem)
                 elem.send_keys(u'\ue007')
                 if send_escape:
                     wd.ActionChains(self.browser).send_keys(
