@@ -619,7 +619,12 @@ class SeleniumWrapper(object):
         self.browser.execute_script(scroll_script, elem)
 
     def click_error(self, elem, e, attempts=0):
-        logging.info('Element: {} Error: {}'.format(elem, e))
+        elem_id = elem.get_attribute('id')
+        if elem_id:
+            log_val = elem_id
+        else:
+            log_val = elem
+        logging.info('Element: {}\nError: {}'.format(log_val, e))
         scroll_script = "arguments[0].scrollIntoView();"
         if attempts > 5:
             scroll_script = "window.scrollTo(0, 0)"
@@ -802,33 +807,60 @@ class SeleniumWrapper(object):
                 time.sleep(.1)
         return elem_type
 
-    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
+    def send_key_from_list(self, item, get_xpath_from_id=True,
                             clear_existing=True, send_escape=True):
         select_xpath = 'selectized'
-        for item in elem_input_list:
-            elem_xpath = item[1]
-            if get_xpath_from_id:
-                elem_xpath = self.get_xpath_from_id(elem_xpath)
-            elem = self.browser.find_element_by_xpath(elem_xpath)
-            clear_specified = len(item) > 2 and item[2] == 'clear'
-            elem_to_clear = select_xpath in elem_xpath or clear_specified
-            if clear_existing and elem_to_clear:
-                clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
-                            '../following-sibling::a[@class="clear"]']
-                for clear_x in clear_xs:
-                    clear_val = elem.find_elements_by_xpath(clear_x)
-                    if len(clear_val) > 0:
-                        self.click_on_xpath(elem=clear_val[0], sleep=.1)
-                        break
-            elem_type = self.get_elem_type(elem_xpath, elem)
-            if elem_type == 'checkbox':
-                self.click_on_xpath(elem=elem, sleep=.1)
+        elem_xpath = item[1]
+        if get_xpath_from_id:
+            elem_xpath = self.get_xpath_from_id(elem_xpath)
+        elem = self.browser.find_element_by_xpath(elem_xpath)
+        clear_specified = len(item) > 2 and item[2] == 'clear'
+        elem_to_clear = select_xpath in elem_xpath or clear_specified
+        if clear_existing and elem_to_clear:
+            clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
+                        '../following-sibling::a[@class="clear"]']
+            for clear_x in clear_xs:
+                clear_val = elem.find_elements_by_xpath(clear_x)
+                if len(clear_val) > 0:
+                    self.click_on_xpath(elem=clear_val[0], sleep=.1)
+                    break
+        elem_type = self.get_elem_type(elem_xpath, elem)
+        if elem_type == 'checkbox':
+            self.click_on_xpath(elem=elem, sleep=.1)
+        else:
+            if type(item[0]) == list:
+                self.send_multiple_keys_wrapper(elem, item[0])
             else:
-                if type(item[0]) == list:
-                    self.send_multiple_keys_wrapper(elem, item[0])
-                else:
-                    self.send_keys_wrapper(elem, item[0], elem_xpath)
+                self.send_keys_wrapper(elem, item[0], elem_xpath)
+        return elem
+
+    def send_key_new_value_check(self, item, get_xpath_from_id=True,
+                            clear_existing=True, send_escape=True, elem=None):
+        attempts = 2
+        for x in range(attempts):
+            try:
+                self.wait_for_elem_load(item[1], new_value=item[0],
+                                        attempts=25)
+                break
+            except:
+                logging.warning('{} could not load.'.format(item))
+                elem = self.send_key_from_list(item, get_xpath_from_id,
+                                               clear_existing, send_escape)
+        return elem
+
+    def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
+                            clear_existing=True, send_escape=True,
+                            new_value=''):
+        select_xpath = 'selectized'
+        for item in elem_input_list:
+            elem = self.send_key_from_list(
+                item, get_xpath_from_id, clear_existing, send_escape)
+            elem_xpath = item[1]
             if select_xpath in elem_xpath:
+                if new_value:
+                    elem = self.send_key_new_value_check(
+                        item, get_xpath_from_id, clear_existing, send_escape,
+                        elem=elem)
                 elem.send_keys(u'\ue007')
                 if send_escape:
                     wd.ActionChains(self.browser).send_keys(
@@ -846,7 +878,8 @@ class SeleniumWrapper(object):
         return '//*[@id="{}"]'.format(elem_id)
 
     def wait_for_elem_load(self, elem_id, selector=None, attempts=1000,
-                           sleep_time=.01, visible=False, new_value=''):
+                           sleep_time=.01, visible=False, new_value='',
+                           attribute='value'):
         selector = selector if selector else self.select_id
         elem_found = False
         for x in range(attempts):
@@ -861,10 +894,10 @@ class SeleniumWrapper(object):
                         elem_visible = e[0].is_displayed()
                 if new_value:
                     try:
-                        cur_value = e[0].get_attribute('value')
+                        cur_value = e[0].get_attribute(attribute)
                     except ex.StaleElementReferenceException:
                         cur_value = ''
-                    if cur_value != new_value:
+                    if new_value not in cur_value:
                         elem_visible = False
                 if elem_visible:
                     elem_found = True
@@ -1060,6 +1093,24 @@ def get_next_values_from_list(first_list, match_list=None, break_list=None,
     first_list = delimit.join(first_list).split('.')[0].split(',')
     first_list = [x.strip(' ') for x in first_list]
     return first_list
+
+
+def clean_monetary_input(monetary_input):
+    """
+    Remove commas, spaces, dollar signs, and k/m from monetary input values.
+
+    :params monetary_input: Monetary input value to be cleaned
+    :return: Inputted value as string formatted as float
+    """
+    if monetary_input is None:
+        return '0'
+
+    cleaned_input = str(monetary_input).lower()
+    replace = [(',', ''), ('$', ''), (' ', ''), ('k', '000'),
+               ('m', '000000')]
+    for old, new in replace:
+        cleaned_input = cleaned_input.replace(old, new)
+    return cleaned_input
 
 
 class NpEncoder(json.JSONEncoder):

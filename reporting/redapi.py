@@ -39,30 +39,33 @@ class RedApi(object):
         self.config_list = None
         self.config = None
         self.key_list = [self.username_str, self.password_str]
+        self.aborted = False
 
     def input_config(self, config):
         logging.info('Loading Reddit config file: {}.'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        if not self.aborted:
+            self.check_config()
 
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
+            self.username = self.config[self.username_str]
+            self.password = self.config[self.password_str]
+            self.config_list = [self.username, self.password]
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
-        self.username = self.config[self.username_str]
-        self.password = self.config[self.password_str]
-        self.config_list = [self.username, self.password]
+            self.aborted = True
 
     def check_config(self):
         for item in self.config_list:
             if item == '':
                 logging.warning('{} not in config file. '
                                 ' Aborting.'.format(item))
-                sys.exit(0)
+                self.aborted = True
+                break
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -237,7 +240,8 @@ class RedApi(object):
     def set_metrics(self):
         logging.info('Setting metrics.')
         columns_xpath = '//div[text()="Columns"]'
-        customize_columns_xpath = '/html/body/div[13]/div/div/button[2]'
+        customize_columns_xpath = ('//button[contains(normalize-space(),'
+                                   '"Customize Columns")]')
         self.sw.click_on_xpath(columns_xpath)
         self.sw.click_on_xpath(customize_columns_xpath)
         self.click_grouped_metrics()
@@ -326,4 +330,3 @@ class RedApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-
