@@ -266,12 +266,21 @@ class VendorMatrix(object):
                                 sort=True)
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
+        if not self.df.empty and vmc.date in self.df.columns:
+            start_date = self.df[vmc.date].min()
+        else:
+            start_date = None
+            logging.warning("The DataFrame is empty or 'vmc.date' column is missing.")
         if not os.listdir(er.csv_path):
             if os.path.isdir(er.csv_path):
                 logging.info('All placements defined.  Deleting Error report'
                              ' directory.')
                 os.rmdir(er.csv_path)
-        self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
+        condition = self.df[dctc.PN].isnull() & self.df[dctc.FPN].notnull()
+        if condition.any() and start_date is not None:
+            self.df.loc[condition, vmc.date] = start_date
+        else:
+            self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
 
     @staticmethod
