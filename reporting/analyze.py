@@ -1669,7 +1669,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         df = self.aly.matrix.vm_df
         aly_dict = aly_dict.to_dict(orient='records')
         ic = vm.ImportConfig()
-        drop_idx = False
+        drop_idx = np.empty(0)
         for x in aly_dict:
             vk = x[vmc.vendorkey]
             ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
