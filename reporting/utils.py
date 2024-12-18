@@ -250,7 +250,7 @@ def first_last_adj(df, first_row, last_row):
     if first_row > 0:
         df.columns = df.loc[first_row - 1]
         df = df.iloc[first_row:]
-    if last_row > 0:
+    if 0 < last_row < len(df):
         df = df[:-last_row]
     if pd.isnull(df.columns.values).any():
         logging.warning('At least one column name is undefined.  Your first'

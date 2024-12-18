@@ -794,7 +794,7 @@ class Analyze(object):
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
                 find_blank = CheckFirstRow(Analyze())
-                first_row = find_blank.find_first_row(cds, pd.DataFrame())
+                first_row = find_blank.find_first_row(cds)
                 if not first_row.empty:
                     first_row = first_row.iloc[0][find_blank.new_first_line]
                     cds.p[vmc.firstrow] = first_row
@@ -802,6 +802,13 @@ class Analyze(object):
                     first_row = cds.p[vmc.firstrow]
                 cd[find_blank.new_first_line][cds_name] = (
                     True, '{}'.format(first_row))
+                find_total = CheckLastRow(Analyze())
+                last_row = find_total.check_total_row_exists(cds)
+                if not last_row.empty:
+                    last_row = last_row.iloc[0][find_total.new_last_line]
+                    cds.p[vmc.lastrow] = last_row
+                else:
+                    last_row = cds.p[vmc.lastrow]
                 df = cds.get_raw_df()
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
@@ -1223,7 +1230,7 @@ class CheckFirstRow(AnalyzeBase):
     all_files = True
     new_first_line = 'new_first_line'
 
-    def find_first_row(self, source, df):
+    def find_first_row(self, source, l_df=pd.DataFrame()):
         """
         finds the first row in a raw file where any column in FPN appears
         loops through only first 10 rows in case of major error
@@ -1233,7 +1240,6 @@ class CheckFirstRow(AnalyzeBase):
             vendor key and new_first_row
         returns empty df otherwise
         """
-        l_df = df
         if vmc.filename not in source.p:
             return l_df
         raw_file = source.p[vmc.filename]
@@ -1244,10 +1250,12 @@ class CheckFirstRow(AnalyzeBase):
         df = utl.import_read_csv(raw_file, nrows=10)
         if df.empty:
             return l_df
+        found_cols = False
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
             check = [x for x in place_cols if x in tdf.columns]
             if check:
+                found_cols = True
                 if idx == old_first_row:
                     break
                 new_first_row = str(idx)
@@ -1255,6 +1263,10 @@ class CheckFirstRow(AnalyzeBase):
                                           self.new_first_line: [new_first_row]})
                 l_df = pd.concat([data_dict, l_df], ignore_index=True)
                 break
+        if not found_cols and old_first_row is not 0:
+            data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                      self.new_first_line: ['0']})
+            l_df = pd.concat([data_dict, l_df], ignore_index=True)
         return l_df
 
     def do_analysis(self):
@@ -1271,7 +1283,7 @@ class CheckFirstRow(AnalyzeBase):
                                       message=msg, data=df.to_dict())
 
     def adjust_first_row_in_vm(self, vk, new_first_line, write=True):
-        if int(new_first_line) > 0:
+        if new_first_line:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.firstrow, new_first_line))
             self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
@@ -1305,15 +1317,14 @@ class CheckLastRow(AnalyzeBase):
     new_files = True
     all_files = True
 
-    def check_total_row_exists(self, source, df):
+    def check_total_row_exists(self, source, totals_df=pd.DataFrame()):
         """
         Sums all active metrics in every row except last
         compares to the values in last row
         if equal returns True
         """
-        totals_df = df
         old_last_row = source.p[vmc.lastrow]
-        if int(old_last_row) == 1 or vmc.filename not in source.p:
+        if vmc.filename not in source.p:
             return totals_df
         raw_file = source.p[vmc.filename]
         df = utl.import_read_csv(raw_file)
@@ -1323,21 +1334,33 @@ class CheckLastRow(AnalyzeBase):
         active_metrics = active_metrics.values()
         active_metrics = [item for s_list in active_metrics for item in s_list]
         active_metrics = [x for x in active_metrics if x in df.columns]
+        new_last_row = ''
         try:
             df = df[active_metrics]
         except KeyError:
             logging.debug("active metrics may be missing or mislabeled")
-            return totals_df
+            new_last_row = '0'
         if df.empty:
-            return totals_df
-        df = df.replace(',', '', regex=True)
-        df = df.apply(pd.to_numeric, errors='coerce')
-        df = df.round(decimals=2)
-        col_sums = df.iloc[:-1, :].sum(min_count=1)
-        totals_row = df.iloc[-1, :]
-        if col_sums.equals(totals_row):
+            new_last_row = '0'
+        if new_last_row is not '0':
+            row_count = len(df)
+            first_empty_row_idx = df.isna().all(axis=1).idxmax() \
+                if (df.isna().all(axis=1).any()) else None
+            if (first_empty_row_idx is not None and first_empty_row_idx >
+                    source.p[vmc.firstrow]):
+                df = df.iloc[:first_empty_row_idx]
+            df = df.replace(',', '', regex=True)
+            df = df.apply(pd.to_numeric, errors='coerce')
+            df = df.round(decimals=2)
+            col_sums = df.iloc[:-1, :].sum(min_count=1)
+            totals_row = df.iloc[-1, :]
+            if col_sums.equals(totals_row):
+                new_last_row = str(row_count - len(df) - 1)
+            else:
+                new_last_row = '0'
+        if old_last_row is not new_last_row:
             new_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                  self.new_last_line: ['1']})
+                                   self.new_last_line: [new_last_row]})
             totals_df = pd.concat([totals_df, new_df], ignore_index=True)
         return totals_df
 
@@ -1357,15 +1380,19 @@ class CheckLastRow(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    def fix_analysis_for_data_source(self, source, write=True):
-        vk = source[vmc.vendorkey]
-        new_last_line = source[self.new_last_line]
-        if int(new_last_line) > 0:
+    def adjust_last_row_in_vm(self, vk, new_last_line, write=True):
+        if new_last_line:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.lastrow, new_last_line))
             self.aly.matrix.vm_change_on_key(vk, vmc.lastrow, new_last_line)
         if write:
             self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis_for_data_source(self, source, write=True):
+        vk = source[vmc.vendorkey]
+        new_last_line = source[self.new_last_line]
+        self.adjust_last_row_in_vm(vk, new_last_line, write)
 
     def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='records')
