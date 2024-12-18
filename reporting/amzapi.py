@@ -375,7 +375,9 @@ class AmzApi(object):
 
     @staticmethod
     def merge_dataframes(dfs):
-        return pd.concat(dfs, ignore_index=True, sort=False) if dfs else pd.DataFrame()
+        valid_dfs = [df for df in dfs if df is not None and not df.empty]
+        return pd.concat(valid_dfs, ignore_index=True,
+                         sort=False) if valid_dfs else pd.DataFrame()
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:
