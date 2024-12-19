@@ -803,7 +803,7 @@ class Analyze(object):
                 cd[find_blank.new_first_line][cds_name] = (
                     True, '{}'.format(first_row))
                 find_total = CheckLastRow(Analyze())
-                last_row = find_total.check_total_row_exists(cds)
+                last_row = find_total.find_last_row(cds)
                 if not last_row.empty:
                     last_row = last_row.iloc[0][find_total.new_last_line]
                     cds.p[vmc.lastrow] = last_row
@@ -1232,13 +1232,15 @@ class CheckFirstRow(AnalyzeBase):
 
     def find_first_row(self, source, l_df=pd.DataFrame()):
         """
-        finds the first row in a raw file where any column in FPN appears
-        loops through only first 10 rows in case of major error
-        source -> an item from the VM
-        new_first_row -> row to be found
-        If first row is incorrect, returns a data frame containing:
-            vendor key and new_first_row
-        returns empty df otherwise
+        Finds the first row in a raw file where any column name in FPN appears,
+        looping through only the first 10 rows in case of a major error. If
+        none of the column names appear, the first row is set to 0 to prevent
+        unintentional deletions.
+
+        :param source:A data source object from the VM
+        :param l_df:Dataframe to hold suggested changes, if any arise
+        :returns:Dataframe containing vendor key and the new first row if the
+        first row is incorrect; otherwise an empty dataframe
         """
         if vmc.filename not in source.p:
             return l_df
@@ -1270,12 +1272,18 @@ class CheckFirstRow(AnalyzeBase):
         return l_df
 
     def do_analysis(self):
+        """
+        Iterates through data sources in VM and adds first row adjustments
+        (if any) to the analysis dictionary.
+
+        :returns:None
+        """
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
             df = self.find_first_row(source, df)
         if df.empty:
-            msg = 'All first and last rows seem correct'
+            msg = 'All first rows seem correct'
         else:
             msg = 'Suggested new row adjustments:'
         logging.info('{}\n{}'.format(msg, df.to_string()))
@@ -1283,6 +1291,15 @@ class CheckFirstRow(AnalyzeBase):
                                       message=msg, data=df.to_dict())
 
     def adjust_first_row_in_vm(self, vk, new_first_line, write=True):
+        """
+        Changes first row property of a data source in the VM.
+
+        :param vk:Vendor key of the data source to change
+        :param new_first_line:Value to set as the first row
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
         if new_first_line:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.firstrow, new_first_line))
@@ -1291,16 +1308,30 @@ class CheckFirstRow(AnalyzeBase):
             self.aly.matrix.write()
             self.matrix = vm.VendorMatrix(display_log=False)
 
-    def fix_analysis_for_data_source(self, source, write=True):
+    def fix_analysis_for_data_source(self, aly_source, write=True):
         """
-        Plugs in new first line from aly dict to the VM
-        source -> data source from aly dict (created from find_first_row)
+        Plugs in new first line from aly dict and applies changes to the VM.
+
+        :param aly_source:Data source from aly dict; aly_dict.iloc[source_index]
+        (created from find_first_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
         """
-        vk = source[vmc.vendorkey]
-        new_first_line = source[self.new_first_line]
+        vk = aly_source[vmc.vendorkey]
+        new_first_line = aly_source[self.new_first_line]
         self.adjust_first_row_in_vm(vk, new_first_line, write)
 
     def fix_analysis(self, aly_dict, write=True):
+        """
+        Plugs in new first lines from aly dict for each data source and applies
+        changes to the VM.
+
+        :param aly_dict:Analysis dictionary (created from find_first_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
             self.fix_analysis_for_data_source(x, write=write)
@@ -1317,11 +1348,17 @@ class CheckLastRow(AnalyzeBase):
     new_files = True
     all_files = True
 
-    def check_total_row_exists(self, source, totals_df=pd.DataFrame()):
+    def find_last_row(self, source, totals_df=pd.DataFrame()):
         """
-        Sums all active metrics in every row except last
-        compares to the values in last row
-        if equal returns True
+        Checks for a total row by summing all active metrics above the last
+        non-empty row and comparing to the values of that row. If a total row is
+        identified, asserts it matches the last row in the VM. Otherwise,
+        asserts the last row in the VM is '0' (no total row).
+
+        :param source:A data source object from the VM
+        :param totals_df:Dataframe to hold suggested changes, if any arise
+        :returns:Dataframe containing vendor key and the new last row if the
+        last row is incorrect; otherwise an empty dataframe
         """
         old_last_row = source.p[vmc.lastrow]
         if vmc.filename not in source.p:
@@ -1365,13 +1402,19 @@ class CheckLastRow(AnalyzeBase):
         return totals_df
 
     def do_analysis(self):
+        """
+        Iterates through data sources in VM and adds last row adjustments
+        (if any) to the analysis dictionary.
+
+        :returns:None
+        """
         data_sources = self.matrix.get_all_data_sources()
         data_sources = [ds for ds in data_sources
                         if 'Rawfile' in vmc.vendorkey
                         or 'GoogleSheets' in vmc.vendorkey]
         df = pd.DataFrame()
         for source in data_sources:
-            df = self.check_total_row_exists(source, df)
+            df = self.find_last_row(source, df)
         if df.empty:
             msg = 'All last rows seem correct'
         else:
@@ -1381,6 +1424,15 @@ class CheckLastRow(AnalyzeBase):
                                       message=msg, data=df.to_dict())
 
     def adjust_last_row_in_vm(self, vk, new_last_line, write=True):
+        """
+        Changes last row property of a data source in the VM.
+
+        :param vk:Vendor key of the data source to change
+        :param new_last_line:Value to set as the last row
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
         if new_last_line:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.lastrow, new_last_line))
@@ -1389,12 +1441,30 @@ class CheckLastRow(AnalyzeBase):
             self.aly.matrix.write()
             self.matrix = vm.VendorMatrix(display_log=False)
 
-    def fix_analysis_for_data_source(self, source, write=True):
-        vk = source[vmc.vendorkey]
-        new_last_line = source[self.new_last_line]
+    def fix_analysis_for_data_source(self, aly_source, write=True):
+        """
+        Plugs in new last line from aly dict and applies changes to the VM.
+
+        :param aly_source:Data source from aly dict; aly_dict.iloc[source_index]
+        (created from find_last_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
+        vk = aly_source[vmc.vendorkey]
+        new_last_line = aly_source[self.new_last_line]
         self.adjust_last_row_in_vm(vk, new_last_line, write)
 
     def fix_analysis(self, aly_dict, write=True):
+        """
+        Plugs in new last lines from aly dict for each data source and applies
+        changes to the VM.
+
+        :param aly_dict:Analysis dictionary (created from find_last_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:VM dataframe of analyze instance's matrix
+        """
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
             self.fix_analysis_for_data_source(x, write=write)
