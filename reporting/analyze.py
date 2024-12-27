@@ -1086,7 +1086,9 @@ class CheckAutoDictOrder(AnalyzeBase):
                 plan net and items in ven_list if it is passed in. """
         if not ven_list:
             ven_list = []
-        plannet_filename = self.matrix.vendor_set(vm.plan_key)[vmc.filename]
+        plannet_filename = self.matrix.vendor_set(vm.plan_key)
+        if vmc.filename in plannet_filename:
+            plannet_filename = plannet_filename[vmc.filename]
         if os.path.isfile(plannet_filename):
             pc = utl.import_read_csv(plannet_filename)
             if col not in pc.columns:
