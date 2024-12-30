@@ -3,6 +3,7 @@ import re
 import json
 import yaml
 import nltk
+import random
 import openai
 import shutil
 import logging
@@ -1067,8 +1068,10 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_vendor_list(col=dctc.VEN):
-        """ Returns list of unique items in mpVendor (or specified column) from
-                translational dictionary config. """
+        """
+        Returns list of unique items in mpVendor (or specified column) from
+        translational dictionary config.
+        """
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
@@ -1082,8 +1085,10 @@ class CheckAutoDictOrder(AnalyzeBase):
         return ven_list
 
     def get_plannet_vendor_list(self, ven_list=None, col=dctc.VEN):
-        """ Returns list of unique items in mpVendor (or specified column) from
-                plan net and items in ven_list if it is passed in. """
+        """
+        Returns list of unique items in mpVendor (or specified column) from
+        plan net and items in ven_list if it is passed in.
+         """
         if not ven_list:
             ven_list = []
         plannet_filename = self.matrix.vendor_set(vm.plan_key)
@@ -1099,8 +1104,10 @@ class CheckAutoDictOrder(AnalyzeBase):
         return ven_list
 
     def check_vendor_lists(self, ven_list=None, cou_list=None, camp_list=None):
-        """ Checks if vendor, country, and/or campaign lists are empty and
-        generates them if needed. Returns all three lists. """
+        """
+        Checks if vendor, country, and/or campaign lists are empty and
+        generates them if needed. Returns all three lists.
+        """
         if not ven_list:
             ven_list = self.get_vendor_list()
             ven_list = self.get_plannet_vendor_list(ven_list)
@@ -1114,11 +1121,13 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_raw_data_vendor_idx(tdf, camp_ven_diff, ven_list, cou_list,
-                                  camp_list):
-        """ Determines the vendor index of a data source in the full placement
+                                camp_list):
+        """
+        Determines the vendor index of a data source in the full placement
         names by checking for vendor, country/region, and campaign items at
         separation levels noted in the auto dictionary order. Returns the
-        index, or -1 if no item matches were found. """
+        index, or -1 if no item matches were found.
+        """
         max_idx, max_val = -1, 0
         for col in tdf.columns:
             ven_counts, cou_counts, camp_counts = 0, 0, 0
@@ -1135,9 +1144,11 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None, camp_list=None):
-        """ Checks a data source's raw data placement against its auto
+        """
+        Checks a data source's raw data placement against its auto
         dictionary order from the vendormatrix. Suggests a shifted order if
-        they differ. """
+        they differ.
+        """
         if vmc.autodicord not in source.p:
             return df
         ven_list, cou_list, camp_list = (
@@ -2851,8 +2862,19 @@ class ValueCalc(object):
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
-    found_model_msg = 'Here are some links:'
+    found_model_msg = 'Links are provided below.  '
     create_success_msg = 'The object has been successfully created.  '
+    ex_prompt_wrap = "<br>Ex. prompt: <div class='examplePrompt'>"
+    opening_phrases = [
+        "Certainly {user}!",
+        "Sure thing {user}!",
+        "Happy to help {user}!",
+    ]
+    closing_phrases = [
+        "Hope that helps {user}!",
+        "Let me know if you have any more questions {user}.",
+        "I hope this clarifies things {user}.",
+    ]
 
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
@@ -3379,6 +3401,7 @@ class AliChat(object):
         if not response:
             response, html_response = self.format_openai_response(
                 message, self.openai_msg)
+        response = self.polish_response(response)
         return response, html_response
 
     def train_tf(self, training_data):
@@ -3443,3 +3466,164 @@ class AliChat(object):
                 val_loss /= len(val_loader.dataset)
                 val_accuracy /= len(val_loader.dataset)
         return model
+
+    def add_bullet_response(self, response):
+        """
+        Formats responses as bullets
+
+        :param response: Current raw response as text.
+        :return: response as str with bullet points
+        """
+        split_val = '. '
+        response = response.split(split_val)
+        skip_vals = [self.found_model_msg, self.ex_prompt_wrap,
+                     self.create_success_msg]
+        skip_vals = [r.split(split_val) for r in skip_vals]
+        new_response = []
+        for r in response:
+            if r not in skip_vals:
+                r = '• {}.'.format(r)
+            new_response.append(r)
+        new_response = '<br>'.join(new_response)
+        return new_response
+
+    def add_polite_flair(self, response):
+        """
+        Adds opening and closing text to raw response
+
+        :param response: Current raw response as text.
+        :return: Text with opening and closing prepended and appended
+        """
+        cur_name = ''
+        for idx, x in enumerate([self.opening_phrases, self.closing_phrases]):
+            add_name = 0 if cur_name else random.randint(0, 1)
+            cur_name = self.current_user.username if add_name else ''
+            new_resp = random.choice(x).format(user=cur_name)
+            for punc in ['.', '!']:
+                for wrong_punc in [' {} '.format(punc), ' {}'.format(punc)]:
+                    new_resp = new_resp.replace(wrong_punc, punc)
+            if idx == 0:
+                response = '{}{}'.format(new_resp, response)
+            else:
+                response = '{}{}<br>'.format(response, new_resp)
+        return response
+
+    def polish_response(self, response):
+        """
+        Combine multiple formatting functions into one 'polish' step.
+
+        :param response: Current raw response as text.
+        :return: Text that has been edited
+        """
+        # response = self.add_bullet_response(response)
+        response = self.add_polite_flair(response)
+        return response
+
+
+class TfIdfTransformer(object):
+    def __init__(self, texts=None, ali_chat=None, eps=1e-6):
+        self.texts = texts
+        self.ali_chat = ali_chat
+        self.eps = eps
+        if not self.ali_chat:
+            self.ali_chat = AliChat()
+        self.tutorial_texts = []
+        self.doc_tokens = []
+        self.unique_words = set()
+        self.indexed_words = {}
+        self.idf = np.zeros(0)
+        self.tfidf_matrix = np.zeros(0)
+        if self.texts:
+            self.tfidf_matrix = self.train(texts)
+
+    def train(self, texts):
+        """
+        Create a tf-idf matrix based on texts
+
+        :param texts: List of documents/words
+        :return: tf-idf matrix
+        """
+        doc_tokens = []
+        for doc in texts:
+            doc = self.ali_chat.remove_stop_words_from_message(
+                doc, remove_punctuation=True)
+            doc_tokens.append(doc)
+        self.unique_words = set()
+        for tokens in doc_tokens:
+            self.unique_words.update(tokens)
+        self.unique_words = sorted(list(self.unique_words))
+        self.indexed_words = {w: i for i, w in enumerate(self.unique_words)}
+        doc_count = len(doc_tokens)
+        word_doc_counts = np.zeros(len(self.unique_words), dtype=np.float32)
+        for tokens in doc_tokens:
+            unique_in_doc = set(tokens)
+            for w in unique_in_doc:
+                word_doc_counts[self.indexed_words[w]] += 1
+        self.idf = np.log((doc_count + self.eps) / (word_doc_counts + self.eps))
+        self.tfidf_matrix = np.zeros((doc_count, len(self.unique_words)),
+                                     dtype=np.float32)
+        for d_idx, tokens in enumerate(doc_tokens):
+            freq_dict = {}
+            for w in tokens:
+                freq_dict[w] = freq_dict.get(w, 0) + 1
+            total_tokens = len(tokens)
+            for w, count in freq_dict.items():
+                w_idx = self.indexed_words[w]
+                tf = count / total_tokens
+                self.tfidf_matrix[d_idx, w_idx] = tf * self.idf[w_idx]
+        return self.tfidf_matrix
+
+    def compute_vector(self, text):
+        """
+        Compute the tf-idf vector for an arbitrary piece of text.
+
+        :param text: Text to compute
+        :return: vector
+        """
+        words = self.ali_chat.remove_stop_words_from_message(
+            text, remove_punctuation=True)
+        freq_dict = {}
+        for w in words:
+            if w in freq_dict:
+                freq_dict[w] += 1
+            else:
+                freq_dict[w] = 1
+        vec = np.zeros(len(self.unique_words), dtype=np.float32)
+        total_tokens = len(words)
+        if total_tokens:
+            for w, count in freq_dict.items():
+                if w in self.indexed_words:
+                    w_idx = self.indexed_words[w]
+                    tf = count / total_tokens
+                    vec[w_idx] = tf * self.idf[w_idx]
+        return vec
+
+    def search(self, text, top_k=1):
+        """
+        Given text returns most similar of the trained documents.
+
+        :param text: Text to search matrix for
+        :param top_k: Number of results to return
+        :return: List of the similar documents
+        """
+        if not self.tfidf_matrix.any() or self.tfidf_matrix.shape[0] == 0:
+            return []
+        query_vec = self.compute_vector(text)
+
+        # Cosine similarity with each doc
+        # sim = dot(query_vec, doc_vec) / (norm(query_vec)*norm(doc_vec))
+        query_norm = np.linalg.norm(query_vec)
+        if query_norm < 1e-10:
+            return []
+        similar_docs = []
+        for doc_idx, doc_vec in enumerate(self.tfidf_matrix):
+            dot_val = np.dot(query_vec, doc_vec)
+            doc_norm = np.linalg.norm(doc_vec)
+            if doc_norm < 1e-10:
+                sim_score = 0.0
+            else:
+                sim_score = dot_val / (query_norm * doc_norm)
+            similar_docs.append((doc_idx, sim_score))
+        similar_docs.sort(key=lambda x: x[1], reverse=True)
+        similar_docs = similar_docs[:top_k]
+        return similar_docs

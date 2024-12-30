@@ -1012,6 +1012,14 @@ class TestAnalyze:
         aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
         aly.do_all_analysis()
 
+    def test_train_tfidf(self):
+        texts = ['The file type for raw files are csv',
+                 'Add 40 to the topline',
+                 'Raw files are added on the import tab']
+        transformer = az.TfIdfTransformer(texts=texts)
+        scores = transformer.search('Where do I add a raw file?')
+        assert scores
+
 
 default_col_names = [
     '"lqadb"."event"."eventname"',
