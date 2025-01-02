@@ -6,6 +6,7 @@ import pytest
 import numpy as np
 import pandas as pd
 import datetime as dt
+from main import main
 import reporting.utils as utl
 import reporting.vendormatrix as vm
 import reporting.vmcolumns as vmc
@@ -22,6 +23,7 @@ import reporting.amzapi as amzapi
 import reporting.gaapi as gaapi
 import reporting.fbapi as fbapi
 import reporting.samapi as samapi
+import reporting.criapi as criapi
 
 
 def func(x):
@@ -93,7 +95,7 @@ class TestUtils:
         str_list = ['1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
                     '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
                     'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22',
-                    '2022-01-01 00:00:00']
+                    '2022-01-01 00:00:00', '2022-01-01 - 2022-01-01']
         str_list = nat_list + str_list
         float_list = [str(x) for x in range(len(str_list))]
         df_dict = {str_col: str_list, float_col: float_list,
@@ -203,8 +205,8 @@ class TestApis:
         sd = dt.datetime.today() - dt.timedelta(days=70)
         ed = dt.datetime.today() - dt.timedelta(days=35)
         try:
+            # df = api.get_data(sd=sd, ed=ed)
             assert 1 == 1
-            # api.get_data(sd=sd, ed=ed)
         except Exception as e:
             api.sw.quit()
             raise e
@@ -227,6 +229,10 @@ class TestApis:
 
     def test_samapi(self, tmp_path_factory):
         api = samapi.SamApi()
+        self.send_api_call(api)
+
+    def test_criapi(self, tmp_path_factory):
+        api = criapi.CriApi()
         self.send_api_call(api)
 
     @staticmethod
@@ -1496,3 +1502,8 @@ class TestExport():
         sb = exp.ScriptBuilder()
         append_tables = sb.get_active_event_tables(metrics)
         assert set(append_tables) == set(expected_tables)
+
+
+class TestBlankRun:
+    def test_run(self):
+        main('--analyze')

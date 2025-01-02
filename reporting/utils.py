@@ -6,8 +6,10 @@ import json
 import time
 import shutil
 import random
-import logging
 import base64
+import zipfile
+import logging
+import requests
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -16,6 +18,7 @@ import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
 import reporting.expcolumns as exc
 import selenium.common.exceptions as ex
+from subprocess import check_output
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -195,6 +198,9 @@ def string_to_date(my_string):
     elif len(my_string) == 24 and my_string[-3:] == 'GMT':
         my_string = my_string[4:-11]
         return dt.datetime.strptime(my_string, '%d%b%Y')
+    elif len(my_string) == 23 and ' - ' in my_string:
+        my_string = my_string.split(' - ')[0]
+        return dt.datetime.strptime(my_string, '%Y-%m-%d')
     else:
         return my_string
 
@@ -509,6 +515,8 @@ def write_df_to_buffer(df, file_name='raw', default_format=True,
 
 
 class SeleniumWrapper(object):
+    driver_path = 'drivers'
+
     def __init__(self, mobile=False, headless=True):
         self.mobile = mobile
         self.headless = headless
@@ -518,6 +526,58 @@ class SeleniumWrapper(object):
         self.select_class = By.CLASS_NAME
         self.select_xpath = By.XPATH
         self.select_css = By.CSS_SELECTOR
+
+    @staticmethod
+    def get_chrome_version():
+        """
+        Get the installed version of Chrome.
+        :return: version
+        """
+        win_path = 'HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon'
+        out_list = ['reg', 'query', win_path, '/v', 'version']
+        reg_search = r'(\d+\.\d+\.\d+\.\d+)'
+        output = check_output(out_list).decode()
+        version = re.search(reg_search, output).group(1)
+        return version
+
+    @staticmethod
+    def get_chromedriver_version(chrome_version):
+        """
+        Fetch the corresponding ChromeDriver version for the given Chrome version.
+        """
+        driver_version = chrome_version
+        major_version = chrome_version.split('.')[0]
+        url = (f'https://googlechromelabs.github.io/chrome-for-testing/'
+               f'known-good-versions-with-downloads.json')
+        r = requests.get(url)
+        for version in r.json()['versions']:
+            if version['version'].startswith(major_version):
+                driver_version =  version['version']
+                break
+        return driver_version
+
+    def download_chromedriver(self, version):
+        """
+        Download the correct version of ChromeDriver.
+        """
+        url = 'https://storage.googleapis.com/chrome-for-testing-public/'
+        file_name = 'chromedriver-win64.zip'
+        url = '{}{}/win64/{}'.format(url, version, file_name)
+        response = requests.get(url)
+        with open(file_name, "wb") as file:
+            file.write(response.content)
+        dir_check(self.driver_path)
+        with zipfile.ZipFile(file_name, 'r') as zip_ref:
+            zip_ref.extractall(self.driver_path)
+        os.remove(file_name)
+        logging.info(f"Downloaded ChromeDriver version {version}")
+        """
+        destination = 'C:/Windows/chromedriver.exe'
+        file_name = os.path.join(
+            self.driver_path, file_name.replace('.zip', ''),
+            file_name.replace('-win64.zip', '.exe'))
+        shutil.move(file_name, destination)
+        """
 
     @staticmethod
     def get_random_user_agent():
@@ -561,7 +621,14 @@ class SeleniumWrapper(object):
         if self.mobile:
             mobile_emulation = {"deviceName": "iPhone X"}
             co.add_experimental_option("mobileEmulation", mobile_emulation)
-        browser = wd.Chrome(options=co)
+        try:
+            browser = wd.Chrome(options=co)
+        except (ex.SessionNotCreatedException, FileNotFoundError) as e:
+            logging.warning(e)
+            chrome_version = self.get_chrome_version()
+            driver_version = self.get_chromedriver_version(chrome_version)
+            self.download_chromedriver(driver_version)
+            browser = wd.Chrome(options=co)
         browser.execute_script("""
             Object.defineProperty(navigator, 'webdriver', 
             { get: () => undefined });
