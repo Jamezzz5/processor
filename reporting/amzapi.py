@@ -231,6 +231,7 @@ class AmzApi(object):
         return df
 
     def make_request_dsp_report(self, url, body):
+        duplicate_str = 'The Request is a duplicate of : '
         for x in range(5):
             r = self.make_request(url, method='POST', body=body,
                                   headers=self.headers)
@@ -243,6 +244,10 @@ class AmzApi(object):
                     'Too many requests pausing.  Attempt: {}.  '
                     'Response: {}'.format((x + 1), r.json()))
                 time.sleep(30)
+            elif 'detail' in r.json() and duplicate_str in r.json()['detail']:
+                logging.warning('Duplicate request, attempting to pull.')
+                report_id = r.json()['detail'].split(duplicate_str)[1]
+                return report_id
             else:
                 logging.warning('Error in request as follows: {}'
                                 .format(r.json()))
@@ -270,7 +275,7 @@ class AmzApi(object):
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
                             'videoThirdQuartile', 'videoComplete',
                             'totalSales14d', 'totalPurchases14d',
-                            'totalROAS14d'],
+                            'totalROAS14d', 'sales14d', 'purchases14d'],
                 "type": "CAMPAIGN",
                 "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
                 "timeUnit": "DAILY"
@@ -297,15 +302,17 @@ class AmzApi(object):
             sb_body['configuration'] = {
                 'adProduct': 'SPONSORED_BRANDS',
                 'columns': common_columns + [
-                           'detailPageViewsClicks', 'newToBrandDetailPageViews',
-                           'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
-                           'newToBrandPurchasesClicks', 'newToBrandSales',
-                           'newToBrandSalesClicks', 'newToBrandUnitsSold',
-                           'newToBrandUnitsSoldClicks', 'purchases', 'purchasesClicks',
-                           'purchasesPromoted', 'sales', 'salesClicks', 'salesPromoted',
-                           'unitsSold', 'unitsSoldClicks', 'video5SecondViews',
-                           'videoCompleteViews', 'videoFirstQuartileViews', 'detailPageViews',
-                           'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes'],
+                    'detailPageViewsClicks', 'newToBrandDetailPageViews',
+                    'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
+                    'newToBrandPurchasesClicks', 'newToBrandSales',
+                    'newToBrandSalesClicks', 'newToBrandUnitsSold',
+                    'newToBrandUnitsSoldClicks', 'purchases',
+                    'purchasesClicks', 'purchasesPromoted', 'sales',
+                    'salesClicks', 'salesPromoted',
+                    'unitsSold', 'unitsSoldClicks', 'video5SecondViews',
+                    'videoCompleteViews', 'videoFirstQuartileViews',
+                    'detailPageViews', 'videoMidpointViews',
+                    'videoThirdQuartileViews', 'videoUnmutes'],
                 'reportTypeId': 'sbAdGroup',
                 'format': 'GZIP_JSON',
                 'groupBy': ['adGroup'],
@@ -319,7 +326,8 @@ class AmzApi(object):
     def get_dsp_report(self, report_ids, attempts=100, wait=30):
         if not isinstance(report_ids, list):
             report_ids = [report_ids]
-        dfs = [self.check_report_status(report_id, attempts, wait) for report_id in report_ids]
+        dfs = [self.check_report_status(report_id, attempts, wait) for report_id
+               in report_ids]
         self.df = self.merge_dataframes(dfs)
 
     def check_report_status(self, report_id, attempts, wait):
@@ -375,7 +383,9 @@ class AmzApi(object):
 
     @staticmethod
     def merge_dataframes(dfs):
-        return pd.concat(dfs, ignore_index=True, sort=False) if dfs else pd.DataFrame()
+        valid_dfs = [df for df in dfs if df is not None and not df.empty]
+        return pd.concat(valid_dfs, ignore_index=True,
+                         sort=False) if valid_dfs else pd.DataFrame()
 
     def request_reports_for_all_dates(self, date_list):
         for report_date in date_list:

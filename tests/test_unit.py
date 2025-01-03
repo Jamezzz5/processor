@@ -1,10 +1,12 @@
 import os
 import json
+import yaml
 import string
 import pytest
 import numpy as np
 import pandas as pd
 import datetime as dt
+from main import main
 import reporting.utils as utl
 import reporting.vendormatrix as vm
 import reporting.vmcolumns as vmc
@@ -21,6 +23,7 @@ import reporting.amzapi as amzapi
 import reporting.gaapi as gaapi
 import reporting.fbapi as fbapi
 import reporting.samapi as samapi
+import reporting.criapi as criapi
 
 
 def func(x):
@@ -92,7 +95,7 @@ class TestUtils:
         str_list = ['1/1/22', '1/1/2022', '44562', '20220101', '01.01.22',
                     '2022-01-01 00:00 + UTC', '1/01/2022 00:00',
                     'PST Sun Jan 01 00:00:00 2022', '2022-01-01', '1-Jan-22',
-                    '2022-01-01 00:00:00']
+                    '2022-01-01 00:00:00', '2022-01-01 - 2022-01-01']
         str_list = nat_list + str_list
         float_list = [str(x) for x in range(len(str_list))]
         df_dict = {str_col: str_list, float_col: float_list,
@@ -202,8 +205,8 @@ class TestApis:
         sd = dt.datetime.today() - dt.timedelta(days=70)
         ed = dt.datetime.today() - dt.timedelta(days=35)
         try:
+            # df = api.get_data(sd=sd, ed=ed)
             assert 1 == 1
-            # api.get_data(sd=sd, ed=ed)
         except Exception as e:
             api.sw.quit()
             raise e
@@ -226,6 +229,10 @@ class TestApis:
 
     def test_samapi(self, tmp_path_factory):
         api = samapi.SamApi()
+        self.send_api_call(api)
+
+    def test_criapi(self, tmp_path_factory):
+        api = criapi.CriApi()
         self.send_api_call(api)
 
     @staticmethod
@@ -710,6 +717,61 @@ class TestAnalyze:
         cdc = az.CheckDoubleCounting(az.Analyze())
         df = cdc.find_metric_double_counting(df)
         assert df.empty
+
+    def test_adwords_split(self):
+        df = pd.DataFrame()
+        ic = vm.ImportConfig()
+        test_config = 'test_config.yaml'
+        test_csv = 'split_test.csv'
+        test_api = 'Adwords_auto_auto'
+        cas = az.CheckAdwordsSplit(az.Analyze(matrix=vm.VendorMatrix()))
+        mock_config = {'adwords': {'campaign_filter': ''}}
+        with open('config/{}'.format(test_config), 'w') as file:
+            yaml.dump(mock_config, file, default_flow_style=False)
+        mock_data = {
+            'Campaign': [
+                'test_video_youtube',
+                'test_search_googlesem']}
+        mock_data = pd.DataFrame(mock_data)
+        mock_data.to_csv('raw_data/{}'.format(test_csv))
+        source = vm.DataSource(key='split_test', vm_rules={})
+        source.key = 'API_Adwords_auto'
+        source.p[vmc.apifile] = test_config
+        source.p[vmc.filename] = 'raw_data/{}'.format(test_csv)
+        source.p[vmc.startdate] = dt.datetime.strptime(
+            '2024-10-29 00:00:00', '%Y-%m-%d %H:%M:%S')
+        source.ic_params = {vmc.apifields: '',
+                            ic.filter: '',
+                            ic.account_id: '123', ic.key: 'adwords',
+                            vmc.startdate: '2024-10-29',
+                            'Vendor Key': 'API_Adwords_auto', ic.name: 'auto'}
+        tdf = cas.do_analysis_on_data_source(source, df)
+        assert not tdf.empty
+        vm_df = cas.aly.matrix.vm_df
+        vk = vmc.api_aw_key
+        ndf = vm_df[vm_df[vmc.vendorkey] == vk].reset_index(drop=True)
+        new_vk = 'API_Adwords_auto'
+        ndf.loc[0, vmc.vendorkey] = new_vk
+        new_config = source.p[vmc.apifile]
+        ndf.loc[0, vmc.apifile] = new_config
+        vm_df = pd.concat([vm_df, ndf]).reset_index(drop=True)
+        cas.aly.matrix.vm_df = vm_df
+        cas.aly.matrix.write()
+        vm_df = cas.fix_analysis(aly_dict=tdf, write=False)
+        assert vm_df[vmc.vendorkey].isin(['API_{}_sem'.format(test_api)]).any()
+        assert vm_df[vmc.vendorkey].isin(['API_{}_video'.format(test_api)]).any()
+        assert os.path.exists('config/awconfig_{}_sem.yaml'.format(test_api))
+        assert os.path.exists('config/awconfig_{}_video.yaml'.format(test_api))
+        os.remove('config/awconfig_{}_sem.yaml'.format(test_api))
+        os.remove('config/awconfig_{}_video.yaml'.format(test_api))
+        os.remove('config/{}'.format(test_config))
+        os.remove('raw_data/{}'.format(test_csv))
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_sem'.format(test_api))].index
+        vm_df.drop(index_vk, inplace=True)
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_video'.format(test_api))].index
+        vm_df.drop(index_vk, inplace=True)
+        cas.aly.matrix.vm_df = vm_df
+        cas.aly.matrix.write()
         
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
@@ -955,6 +1017,14 @@ class TestAnalyze:
             dctc.PFPN])
         aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
         aly.do_all_analysis()
+
+    def test_train_tfidf(self):
+        texts = ['The file type for raw files are csv',
+                 'Add 40 to the topline',
+                 'Raw files are added on the import tab']
+        transformer = az.TfIdfTransformer(texts=texts)
+        scores = transformer.search('Where do I add a raw file?')
+        assert scores
 
 
 default_col_names = [
@@ -1432,3 +1502,8 @@ class TestExport():
         sb = exp.ScriptBuilder()
         append_tables = sb.get_active_event_tables(metrics)
         assert set(append_tables) == set(expected_tables)
+
+
+class TestBlankRun:
+    def test_run(self):
+        main('--analyze')

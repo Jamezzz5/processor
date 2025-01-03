@@ -15,6 +15,7 @@ from requests_oauthlib import OAuth2Session
 from urllib3.exceptions import ConnectionError, NewConnectionError
 
 config_path = utl.config_path
+campaign_col = 'Campaign'
 
 
 class ReportColumn(object):

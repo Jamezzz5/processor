@@ -1,7 +1,9 @@
 import os
 import re
 import json
+import yaml
 import nltk
+import random
 import openai
 import shutil
 import logging
@@ -12,6 +14,7 @@ import pandas as pd
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
+import reporting.awapi as aw
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
@@ -44,6 +47,7 @@ class Analyze(object):
     missing_metrics = 'missing_metrics'
     flagged_metrics = 'flagged_metrics'
     placement_col = 'placement_col'
+    api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
@@ -99,7 +103,8 @@ class Analyze(object):
             CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp]
+            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
+            CheckAdwordsSplit]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -1063,8 +1068,10 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_vendor_list(col=dctc.VEN):
-        """ Returns list of unique items in mpVendor (or specified column) from
-                translational dictionary config. """
+        """
+        Returns list of unique items in mpVendor (or specified column) from
+        translational dictionary config.
+        """
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
@@ -1078,11 +1085,15 @@ class CheckAutoDictOrder(AnalyzeBase):
         return ven_list
 
     def get_plannet_vendor_list(self, ven_list=None, col=dctc.VEN):
-        """ Returns list of unique items in mpVendor (or specified column) from
-                plan net and items in ven_list if it is passed in. """
+        """
+        Returns list of unique items in mpVendor (or specified column) from
+        plan net and items in ven_list if it is passed in.
+         """
         if not ven_list:
             ven_list = []
-        plannet_filename = self.matrix.vendor_set(vm.plan_key)[vmc.filename]
+        plannet_filename = self.matrix.vendor_set(vm.plan_key)
+        if vmc.filename in plannet_filename:
+            plannet_filename = plannet_filename[vmc.filename]
         if os.path.isfile(plannet_filename):
             pc = utl.import_read_csv(plannet_filename)
             if col not in pc.columns:
@@ -1093,8 +1104,10 @@ class CheckAutoDictOrder(AnalyzeBase):
         return ven_list
 
     def check_vendor_lists(self, ven_list=None, cou_list=None, camp_list=None):
-        """ Checks if vendor, country, and/or campaign lists are empty and
-        generates them if needed. Returns all three lists. """
+        """
+        Checks if vendor, country, and/or campaign lists are empty and
+        generates them if needed. Returns all three lists.
+        """
         if not ven_list:
             ven_list = self.get_vendor_list()
             ven_list = self.get_plannet_vendor_list(ven_list)
@@ -1108,11 +1121,13 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_raw_data_vendor_idx(tdf, camp_ven_diff, ven_list, cou_list,
-                                  camp_list):
-        """ Determines the vendor index of a data source in the full placement
+                                camp_list):
+        """
+        Determines the vendor index of a data source in the full placement
         names by checking for vendor, country/region, and campaign items at
         separation levels noted in the auto dictionary order. Returns the
-        index, or -1 if no item matches were found. """
+        index, or -1 if no item matches were found.
+        """
         max_idx, max_val = -1, 0
         for col in tdf.columns:
             ven_counts, cou_counts, camp_counts = 0, 0, 0
@@ -1129,9 +1144,11 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None, camp_list=None):
-        """ Checks a data source's raw data placement against its auto
+        """
+        Checks a data source's raw data placement against its auto
         dictionary order from the vendormatrix. Suggests a shifted order if
-        they differ. """
+        they differ.
+        """
         if vmc.autodicord not in source.p:
             return df
         ven_list, cou_list, camp_list = (
@@ -1572,6 +1589,131 @@ class CheckPackageCapping(AnalyzeBase):
             return None
         self.fix_package_vendor(temp_package_cap, c, pdf, cap_file,
                                 write=write, aly_dict=aly_dict)
+
+
+class CheckAdwordsSplit(AnalyzeBase):
+    """Checks Adwords/Google Ads APIs for multiple campaigns and splits"""
+    camp_col = aw.campaign_col
+    sem_list = ['sem', 'googlesem', 'google sem', 'search']
+    yt_list = ['video', 'youtube', 'yt']
+    name = Analyze.api_split
+    fix = True
+    new_files = True
+
+    def find_matching_substring_in_column(self, string_list, target_column):
+        return target_column.apply(
+            lambda cell: self.match_substring(cell, string_list))
+
+    @staticmethod
+    def match_substring(cell, string_list):
+        for substring in string_list:
+            if substring in cell:
+                return substring
+        return None
+
+    def do_analysis(self):
+        data_sources = self.matrix.get_all_data_sources()
+        df = pd.DataFrame()
+        for source in data_sources:
+            if 'API_{}'.format(vmc.api_aw_key) in source.key:
+                df = self.do_analysis_on_data_source(source, df)
+        if df.empty:
+            msg = 'Adwords does not contain SEM and YT campaigns'
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('Adwords data contains both SEM and YT campaigns.'
+                   ' Please add a campaign filter')
+            logging.warning('{}\n{}'.format(
+                msg, df[self.camp_col].to_string()))
+        self.aly.add_to_analysis_dict(key_col=self.name,
+                                      message=msg, data=df.to_dict())
+
+    def do_analysis_on_data_source(self, source, df):
+        """
+        Checks active Adwords/Google Ads apis and reads their config
+        to see if campaign filter is empty and if the data contains both
+        SEM and YT.
+
+        :param df: dataframe containing previous sources campaigns
+        :param source: data source for api_adwords
+        :returns: a dataframe of campaigns that api is pulling
+         """
+        if vmc.filename not in source.p:
+            return pd.DataFrame()
+        api_file = source.p[vmc.apifile]
+        ic = vm.ImportConfig()
+        api_config = ic.load_file(api_file, yaml)
+        adwords_filter = api_config['adwords']['campaign_filter']
+        file_path = source.p[vmc.filename]
+        start_date = source.p[vmc.startdate]
+        if not adwords_filter and os.path.exists(file_path):
+            tdf = pd.read_csv(file_path, usecols = [self.camp_col])
+            tdf = tdf[self.camp_col].drop_duplicates().to_frame()
+            sem_pattern = '|'.join(self.sem_list)
+            yt_pattern = '|'.join(self.yt_list)
+            all_list = self.sem_list + self.yt_list
+            tdf['sem_check'] = tdf[self.camp_col].str.contains(sem_pattern,
+                                                               case=False,
+                                                               na=False)
+            tdf['yt_check'] = tdf[self.camp_col].str.contains(yt_pattern,
+                                                               case=False,
+                                                               na=False)
+            tdf['match_string'] = self.find_matching_substring_in_column(
+                all_list, tdf[self.camp_col])
+            if tdf['sem_check'].any() and tdf['yt_check'].any():
+                df = pd.concat([df, tdf])
+                df = df.drop_duplicates(subset=['match_string'])
+                df = df.dropna()
+            if not df.empty:
+                df[vmc.startdate] = start_date
+                df[vmc.startdate] = df[vmc.startdate].dt.strftime(
+                    '%Y-%m-%d %H:%M:%S')
+                df[vmc.vendorkey] = source.key
+                df['config'] = api_file
+        return df
+
+    def fix_analysis(self, aly_dict, write=True):
+        """
+        Creates new vendor keys, filenames, and configs for multiple campaign
+        Adwords/Google Ads in vendor matrix
+
+        :returns: new vendor matrix dataframe
+        """
+        df = self.aly.matrix.vm_df
+        aly_dict = aly_dict.to_dict(orient='records')
+        ic = vm.ImportConfig()
+        drop_idx = np.empty(0)
+        for x in aly_dict:
+            vk = x[vmc.vendorkey]
+            ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
+            new_vk = '{}_auto_{}'.format(vk, x['match_string'])
+            ndf.loc[0, vmc.vendorkey] = new_vk
+            file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
+            new_fn = '{}{}'.format(new_vk.replace(
+                'API_', '').lower(), file_type)
+            ndf.loc[0, vmc.filename] = new_fn
+            new_config_name = 'awconfig_{}.yaml'.format(
+                new_vk.replace('API_', '').lower())
+            ndf.loc[0, vmc.apifile] = new_config_name
+            old_config = ic.load_file(x['config'], yaml)
+            old_config['adwords']['campaign_filter'] = x['match_string']
+            new_config = old_config
+            new_config_path = os.path.join(utl.config_path, new_config_name)
+            with open(new_config_path, 'w') as file:
+                yaml.dump(new_config, file, default_flow_style=False)
+            df = pd.concat([df, ndf]).reset_index(drop=True)
+            if df[vmc.vendorkey].str.contains(
+                    x[vmc.vendorkey], regex=False).any():
+                drop_idx = df[(df[vmc.vendorkey] == x[vmc.vendorkey])].index
+                drop_idx = drop_idx.values
+        if drop_idx.any():
+            drop_idx = drop_idx[0]
+            df.drop(drop_idx, inplace=True)
+        self.aly.matrix.vm_df = df
+        if write:
+            logging.info('Automatically creating new API cards for SEM and YT')
+            self.aly.matrix.write()
+        return self.aly.matrix.vm_df
 
 
 class FindPlacementNameCol(AnalyzeBase):
@@ -2720,8 +2862,19 @@ class ValueCalc(object):
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
-    found_model_msg = 'Here are some links:'
+    found_model_msg = 'Links are provided below.  '
     create_success_msg = 'The object has been successfully created.  '
+    ex_prompt_wrap = "<br>Ex. prompt: <div class='examplePrompt'>"
+    opening_phrases = [
+        "Certainly {user}!",
+        "Sure thing {user}!",
+        "Happy to help {user}!",
+    ]
+    closing_phrases = [
+        "Hope that helps {user}!",
+        "Let me know if you have any more questions {user}.",
+        "I hope this clarifies things {user}.",
+    ]
 
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
@@ -2766,12 +2919,16 @@ class AliChat(object):
         db_all = db_model.query.all()
         for obj in db_all:
             if obj.name:
+                used_words = []
                 words = utl.lower_words_from_str(obj.name)
                 for word in words:
+                    if word in used_words:
+                        continue
                     if word in word_idx:
                         word_idx[word].append(obj.id)
                     else:
                         word_idx[word] = [obj.id]
+                    used_words.append(word)
         return word_idx
 
     def convert_model_ids_to_message(self, db_model, model_ids, message='',
@@ -3244,6 +3401,7 @@ class AliChat(object):
         if not response:
             response, html_response = self.format_openai_response(
                 message, self.openai_msg)
+        response = self.polish_response(response)
         return response, html_response
 
     def train_tf(self, training_data):
@@ -3308,3 +3466,164 @@ class AliChat(object):
                 val_loss /= len(val_loader.dataset)
                 val_accuracy /= len(val_loader.dataset)
         return model
+
+    def add_bullet_response(self, response):
+        """
+        Formats responses as bullets
+
+        :param response: Current raw response as text.
+        :return: response as str with bullet points
+        """
+        split_val = '. '
+        response = response.split(split_val)
+        skip_vals = [self.found_model_msg, self.ex_prompt_wrap,
+                     self.create_success_msg]
+        skip_vals = [r.split(split_val) for r in skip_vals]
+        new_response = []
+        for r in response:
+            if r not in skip_vals:
+                r = '• {}.'.format(r)
+            new_response.append(r)
+        new_response = '<br>'.join(new_response)
+        return new_response
+
+    def add_polite_flair(self, response):
+        """
+        Adds opening and closing text to raw response
+
+        :param response: Current raw response as text.
+        :return: Text with opening and closing prepended and appended
+        """
+        cur_name = ''
+        for idx, x in enumerate([self.opening_phrases, self.closing_phrases]):
+            add_name = 0 if cur_name else random.randint(0, 1)
+            cur_name = self.current_user.username if add_name else ''
+            new_resp = random.choice(x).format(user=cur_name)
+            for punc in ['.', '!']:
+                for wrong_punc in [' {} '.format(punc), ' {}'.format(punc)]:
+                    new_resp = new_resp.replace(wrong_punc, punc)
+            if idx == 0:
+                response = '{}{}'.format(new_resp, response)
+            else:
+                response = '{}{}<br>'.format(response, new_resp)
+        return response
+
+    def polish_response(self, response):
+        """
+        Combine multiple formatting functions into one 'polish' step.
+
+        :param response: Current raw response as text.
+        :return: Text that has been edited
+        """
+        # response = self.add_bullet_response(response)
+        response = self.add_polite_flair(response)
+        return response
+
+
+class TfIdfTransformer(object):
+    def __init__(self, texts=None, ali_chat=None, eps=1e-6):
+        self.texts = texts
+        self.ali_chat = ali_chat
+        self.eps = eps
+        if not self.ali_chat:
+            self.ali_chat = AliChat()
+        self.tutorial_texts = []
+        self.doc_tokens = []
+        self.unique_words = set()
+        self.indexed_words = {}
+        self.idf = np.zeros(0)
+        self.tfidf_matrix = np.zeros(0)
+        if self.texts:
+            self.tfidf_matrix = self.train(texts)
+
+    def train(self, texts):
+        """
+        Create a tf-idf matrix based on texts
+
+        :param texts: List of documents/words
+        :return: tf-idf matrix
+        """
+        doc_tokens = []
+        for doc in texts:
+            doc = self.ali_chat.remove_stop_words_from_message(
+                doc, remove_punctuation=True)
+            doc_tokens.append(doc)
+        self.unique_words = set()
+        for tokens in doc_tokens:
+            self.unique_words.update(tokens)
+        self.unique_words = sorted(list(self.unique_words))
+        self.indexed_words = {w: i for i, w in enumerate(self.unique_words)}
+        doc_count = len(doc_tokens)
+        word_doc_counts = np.zeros(len(self.unique_words), dtype=np.float32)
+        for tokens in doc_tokens:
+            unique_in_doc = set(tokens)
+            for w in unique_in_doc:
+                word_doc_counts[self.indexed_words[w]] += 1
+        self.idf = np.log((doc_count + self.eps) / (word_doc_counts + self.eps))
+        self.tfidf_matrix = np.zeros((doc_count, len(self.unique_words)),
+                                     dtype=np.float32)
+        for d_idx, tokens in enumerate(doc_tokens):
+            freq_dict = {}
+            for w in tokens:
+                freq_dict[w] = freq_dict.get(w, 0) + 1
+            total_tokens = len(tokens)
+            for w, count in freq_dict.items():
+                w_idx = self.indexed_words[w]
+                tf = count / total_tokens
+                self.tfidf_matrix[d_idx, w_idx] = tf * self.idf[w_idx]
+        return self.tfidf_matrix
+
+    def compute_vector(self, text):
+        """
+        Compute the tf-idf vector for an arbitrary piece of text.
+
+        :param text: Text to compute
+        :return: vector
+        """
+        words = self.ali_chat.remove_stop_words_from_message(
+            text, remove_punctuation=True)
+        freq_dict = {}
+        for w in words:
+            if w in freq_dict:
+                freq_dict[w] += 1
+            else:
+                freq_dict[w] = 1
+        vec = np.zeros(len(self.unique_words), dtype=np.float32)
+        total_tokens = len(words)
+        if total_tokens:
+            for w, count in freq_dict.items():
+                if w in self.indexed_words:
+                    w_idx = self.indexed_words[w]
+                    tf = count / total_tokens
+                    vec[w_idx] = tf * self.idf[w_idx]
+        return vec
+
+    def search(self, text, top_k=1):
+        """
+        Given text returns most similar of the trained documents.
+
+        :param text: Text to search matrix for
+        :param top_k: Number of results to return
+        :return: List of the similar documents
+        """
+        if not self.tfidf_matrix.any() or self.tfidf_matrix.shape[0] == 0:
+            return []
+        query_vec = self.compute_vector(text)
+
+        # Cosine similarity with each doc
+        # sim = dot(query_vec, doc_vec) / (norm(query_vec)*norm(doc_vec))
+        query_norm = np.linalg.norm(query_vec)
+        if query_norm < 1e-10:
+            return []
+        similar_docs = []
+        for doc_idx, doc_vec in enumerate(self.tfidf_matrix):
+            dot_val = np.dot(query_vec, doc_vec)
+            doc_norm = np.linalg.norm(doc_vec)
+            if doc_norm < 1e-10:
+                sim_score = 0.0
+            else:
+                sim_score = dot_val / (query_norm * doc_norm)
+            similar_docs.append((doc_idx, sim_score))
+        similar_docs.sort(key=lambda x: x[1], reverse=True)
+        similar_docs = similar_docs[:top_k]
+        return similar_docs

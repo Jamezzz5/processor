@@ -158,7 +158,7 @@ class TabApi(object):
                 time.sleep(120)
 
     def refresh_extract(self):
-        if self.datasource:
+        if self.datasource and self.username:
             header_set = self.set_headers()
             if not header_set:
                 logging.error('Extract not refreshed.')
@@ -286,6 +286,8 @@ class TabApi(object):
 
     def create_publish_workbook_hyper(self, db, table_name='auto_processor',
                                       wb_name='auto_template', new_wb_name=''):
+        if not self.username:
+            return False
         self.create_publish_hyper(db, table_name)
         file_path = self.download_workbook_with_error_catch(wb_name)
         if file_path:
