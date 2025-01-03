@@ -250,13 +250,25 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
 
 
 def first_last_adj(df, first_row, last_row):
+    """
+    Modifies dataframe based on the first and last rows provided. If first_row
+    is greater than zero, sets the dataframe's columns to the row above
+    first_row and removes any rows above first_row in the df. Logs a warning
+    if the df columns are null. If last_row is greater than zero, removes
+    last_row number of rows from the end of the df.
+
+    :param df:Dataframe to adjust
+    :param first_row:Index of first row of data in df
+    :param last_row:Index of last row of data in df
+    :returns:Adjusted dataframe
+    """
     logging.debug('Removing First & Last Rows')
     first_row = int(first_row)
     last_row = int(last_row)
     if first_row > 0:
         df.columns = df.loc[first_row - 1]
         df = df.iloc[first_row:]
-    if last_row > 0:
+    if 0 < last_row < len(df):
         df = df[:-last_row]
     if pd.isnull(df.columns.values).any():
         logging.warning('At least one column name is undefined.  Your first'
