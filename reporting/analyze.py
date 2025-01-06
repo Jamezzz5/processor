@@ -3105,7 +3105,7 @@ class AliChat(object):
 
     def remove_stop_words_from_message(
             self, message, db_model=None, other_db_model=None,
-            remove_punctuation=False):
+            remove_punctuation=False, lemmatize=False, ngrams=0):
         if remove_punctuation:
             message = re.sub(r'[^\w\s]', '', message)
         stop_words = self.stop_words.copy()
@@ -3117,6 +3117,12 @@ class AliChat(object):
             stop_words += other_db_model.get_name_list()
         words = utl.lower_words_from_str(message)
         words = [x for x in words if x not in stop_words]
+        if lemmatize:
+            lemmatizer = nltk.stem.WordNetLemmatizer()
+            words = [lemmatizer.lemmatize(x) for x in words]
+        if ngrams:
+            words = ["_".join(words[i:i + ngrams]) for i in
+                     range(len(words) - ngrams + 1)]
         return words
 
     def search_db_models(self, db_model, message, response, html_response):
@@ -3630,8 +3636,26 @@ class TfIdfTransformer(object):
         self.indexed_words = {}
         self.idf = np.zeros(0)
         self.tfidf_matrix = np.zeros(0)
+        self.doc_lengths = []
+        self.doc_freqs = []
+        self.avg_dl = 0.0
+        self.bm25_idf = {}
         if self.texts:
             self.tfidf_matrix = self.train(texts)
+
+    def get_unigrams_and_bigrams(self, text):
+        """
+        Gets both unigrams and bigrams for given text returns as a list.
+
+        :param text: Text to be split
+        :return: list of tokens to use
+        """
+        unigrams = self.ali_chat.remove_stop_words_from_message(
+            text, remove_punctuation=True, lemmatize=True)
+        bigrams = self.ali_chat.remove_stop_words_from_message(
+            text, remove_punctuation=True, lemmatize=True, ngrams=2)
+        tokens = unigrams + bigrams
+        return tokens
 
     def train(self, texts):
         """
@@ -3641,10 +3665,10 @@ class TfIdfTransformer(object):
         :return: tf-idf matrix
         """
         doc_tokens = []
-        for doc in texts:
-            doc = self.ali_chat.remove_stop_words_from_message(
-                doc, remove_punctuation=True)
-            doc_tokens.append(doc)
+        for text in texts:
+            tokens = self.get_unigrams_and_bigrams(text)
+            doc_tokens.append(tokens)
+        self.doc_tokens = doc_tokens
         self.unique_words = set()
         for tokens in doc_tokens:
             self.unique_words.update(tokens)
@@ -3652,22 +3676,35 @@ class TfIdfTransformer(object):
         self.indexed_words = {w: i for i, w in enumerate(self.unique_words)}
         doc_count = len(doc_tokens)
         word_doc_counts = np.zeros(len(self.unique_words), dtype=np.float32)
+        self.doc_lengths = []
+        total_length = 0
         for tokens in doc_tokens:
             unique_in_doc = set(tokens)
             for w in unique_in_doc:
                 word_doc_counts[self.indexed_words[w]] += 1
+            self.doc_lengths.append(len(tokens))
+            total_length += len(tokens)
+        self.avg_dl = (total_length / doc_count) if doc_count else 0.0
         self.idf = np.log((doc_count + self.eps) / (word_doc_counts + self.eps))
         self.tfidf_matrix = np.zeros((doc_count, len(self.unique_words)),
                                      dtype=np.float32)
+        self.doc_freqs = []
         for d_idx, tokens in enumerate(doc_tokens):
             freq_dict = {}
             for w in tokens:
                 freq_dict[w] = freq_dict.get(w, 0) + 1
+            self.doc_freqs.append(freq_dict)
             total_tokens = len(tokens)
             for w, count in freq_dict.items():
                 w_idx = self.indexed_words[w]
                 tf = count / total_tokens
                 self.tfidf_matrix[d_idx, w_idx] = tf * self.idf[w_idx]
+        self.bm25_idf = {}
+        for idx, term in enumerate(self.unique_words):
+            df = word_doc_counts[idx]
+            numerator = (doc_count - df + 0.5)
+            denominator = (df + 0.5)
+            self.bm25_idf[term] = np.log((numerator / denominator) + 1.0)
         return self.tfidf_matrix
 
     def compute_vector(self, text):
@@ -3677,8 +3714,7 @@ class TfIdfTransformer(object):
         :param text: Text to compute
         :return: vector
         """
-        words = self.ali_chat.remove_stop_words_from_message(
-            text, remove_punctuation=True)
+        words = self.get_unigrams_and_bigrams(text)
         freq_dict = {}
         for w in words:
             if w in freq_dict:
@@ -3724,3 +3760,37 @@ class TfIdfTransformer(object):
         similar_docs.sort(key=lambda x: x[1], reverse=True)
         similar_docs = similar_docs[:top_k]
         return similar_docs
+
+    def bm25_search(self, text, top_k=1, k1=1.5, b=0.75):
+        """
+        BM25-based retrieval,
+
+        :param text: Text to search matrix for
+        :param top_k: Number of results to return
+        :param k1: Term frequency saturation
+        :param b: Doc length normalization
+        :return: List of the similar documents
+        """
+        if not self.doc_tokens:
+            return []
+        q_tokens = self.get_unigrams_and_bigrams(text)
+        if not q_tokens:
+            return []
+        query_freqs = {}
+        for qt in q_tokens:
+            query_freqs[qt] = query_freqs.get(qt, 0) + 1
+        scores = []
+        for doc_idx, freq_dict in enumerate(self.doc_freqs):
+            score = 0.0
+            doc_len = self.doc_lengths[doc_idx]
+            for term, q_count in query_freqs.items():
+                if term not in freq_dict:
+                    continue
+                tf = freq_dict[term]
+                idf_val = self.bm25_idf.get(term, 0.0)
+                numerator = tf * (k1 + 1.0)
+                denominator = tf + k1 * (1.0 - b + b * (doc_len / self.avg_dl))
+                score += idf_val * (numerator / denominator)
+            scores.append((doc_idx, score))
+        scores.sort(key=lambda x: x[1], reverse=True)
+        return scores[:top_k]
