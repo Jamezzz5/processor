@@ -3,6 +3,7 @@ import re
 import json
 import yaml
 import nltk
+import random
 import openai
 import shutil
 import logging
@@ -794,7 +795,7 @@ class Analyze(object):
         for cds_name, cds in {'Old': ds, 'New': tds}.items():
             try:
                 find_blank = CheckFirstRow(Analyze())
-                first_row = find_blank.find_first_row(cds, pd.DataFrame())
+                first_row = find_blank.find_first_row(cds)
                 if not first_row.empty:
                     first_row = first_row.iloc[0][find_blank.new_first_line]
                     cds.p[vmc.firstrow] = first_row
@@ -802,6 +803,13 @@ class Analyze(object):
                     first_row = cds.p[vmc.firstrow]
                 cd[find_blank.new_first_line][cds_name] = (
                     True, '{}'.format(first_row))
+                find_total = CheckLastRow(Analyze())
+                last_row = find_total.find_last_row(cds)
+                if not last_row.empty:
+                    last_row = last_row.iloc[0][find_total.new_last_line]
+                    cds.p[vmc.lastrow] = last_row
+                else:
+                    last_row = cds.p[vmc.lastrow]
                 df = cds.get_raw_df()
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
@@ -1067,8 +1075,10 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_vendor_list(col=dctc.VEN):
-        """ Returns list of unique items in mpVendor (or specified column) from
-                translational dictionary config. """
+        """
+        Returns list of unique items in mpVendor (or specified column) from
+        translational dictionary config.
+        """
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         ven_list = []
@@ -1082,11 +1092,15 @@ class CheckAutoDictOrder(AnalyzeBase):
         return ven_list
 
     def get_plannet_vendor_list(self, ven_list=None, col=dctc.VEN):
-        """ Returns list of unique items in mpVendor (or specified column) from
-                plan net and items in ven_list if it is passed in. """
+        """
+        Returns list of unique items in mpVendor (or specified column) from
+        plan net and items in ven_list if it is passed in.
+         """
         if not ven_list:
             ven_list = []
-        plannet_filename = self.matrix.vendor_set(vm.plan_key)[vmc.filename]
+        plannet_filename = self.matrix.vendor_set(vm.plan_key)
+        if vmc.filename in plannet_filename:
+            plannet_filename = plannet_filename[vmc.filename]
         if os.path.isfile(plannet_filename):
             pc = utl.import_read_csv(plannet_filename)
             if col not in pc.columns:
@@ -1097,8 +1111,10 @@ class CheckAutoDictOrder(AnalyzeBase):
         return ven_list
 
     def check_vendor_lists(self, ven_list=None, cou_list=None, camp_list=None):
-        """ Checks if vendor, country, and/or campaign lists are empty and
-        generates them if needed. Returns all three lists. """
+        """
+        Checks if vendor, country, and/or campaign lists are empty and
+        generates them if needed. Returns all three lists.
+        """
         if not ven_list:
             ven_list = self.get_vendor_list()
             ven_list = self.get_plannet_vendor_list(ven_list)
@@ -1112,11 +1128,13 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     @staticmethod
     def get_raw_data_vendor_idx(tdf, camp_ven_diff, ven_list, cou_list,
-                                  camp_list):
-        """ Determines the vendor index of a data source in the full placement
+                                camp_list):
+        """
+        Determines the vendor index of a data source in the full placement
         names by checking for vendor, country/region, and campaign items at
         separation levels noted in the auto dictionary order. Returns the
-        index, or -1 if no item matches were found. """
+        index, or -1 if no item matches were found.
+        """
         max_idx, max_val = -1, 0
         for col in tdf.columns:
             ven_counts, cou_counts, camp_counts = 0, 0, 0
@@ -1133,9 +1151,11 @@ class CheckAutoDictOrder(AnalyzeBase):
 
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None, camp_list=None):
-        """ Checks a data source's raw data placement against its auto
+        """
+        Checks a data source's raw data placement against its auto
         dictionary order from the vendormatrix. Suggests a shifted order if
-        they differ. """
+        they differ.
+        """
         if vmc.autodicord not in source.p:
             return df
         ven_list, cou_list, camp_list = (
@@ -1223,17 +1243,18 @@ class CheckFirstRow(AnalyzeBase):
     all_files = True
     new_first_line = 'new_first_line'
 
-    def find_first_row(self, source, df):
+    def find_first_row(self, source, l_df=pd.DataFrame()):
         """
-        finds the first row in a raw file where any column in FPN appears
-        loops through only first 10 rows in case of major error
-        source -> an item from the VM
-        new_first_row -> row to be found
-        If first row is incorrect, returns a data frame containing:
-            vendor key and new_first_row
-        returns empty df otherwise
+        Finds the first row in a raw file where any column name in FPN appears,
+        looping through only the first 10 rows in case of a major error. If
+        none of the column names appear, the first row is set to 0 to prevent
+        unintentional deletions.
+
+        :param source:A data source object from the VM
+        :param l_df:Dataframe to hold suggested changes, if any arise
+        :returns:Dataframe containing vendor key and the new first row if the
+        first row is incorrect; otherwise an empty dataframe
         """
-        l_df = df
         if vmc.filename not in source.p:
             return l_df
         raw_file = source.p[vmc.filename]
@@ -1244,10 +1265,12 @@ class CheckFirstRow(AnalyzeBase):
         df = utl.import_read_csv(raw_file, nrows=10)
         if df.empty:
             return l_df
+        found_cols = False
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
             check = [x for x in place_cols if x in tdf.columns]
             if check:
+                found_cols = True
                 if idx == old_first_row:
                     break
                 new_first_row = str(idx)
@@ -1255,15 +1278,25 @@ class CheckFirstRow(AnalyzeBase):
                                           self.new_first_line: [new_first_row]})
                 l_df = pd.concat([data_dict, l_df], ignore_index=True)
                 break
+        if not found_cols and old_first_row is not 0:
+            data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                      self.new_first_line: ['0']})
+            l_df = pd.concat([data_dict, l_df], ignore_index=True)
         return l_df
 
     def do_analysis(self):
+        """
+        Iterates through data sources in VM and adds first row adjustments
+        (if any) to the analysis dictionary.
+
+        :returns:None
+        """
         data_sources = self.matrix.get_all_data_sources()
         df = pd.DataFrame()
         for source in data_sources:
             df = self.find_first_row(source, df)
         if df.empty:
-            msg = 'All first and last rows seem correct'
+            msg = 'All first rows seem correct'
         else:
             msg = 'Suggested new row adjustments:'
         logging.info('{}\n{}'.format(msg, df.to_string()))
@@ -1271,7 +1304,16 @@ class CheckFirstRow(AnalyzeBase):
                                       message=msg, data=df.to_dict())
 
     def adjust_first_row_in_vm(self, vk, new_first_line, write=True):
-        if int(new_first_line) > 0:
+        """
+        Changes first row property of a data source in the VM.
+
+        :param vk:Vendor key of the data source to change
+        :param new_first_line:Value to set as the first row
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
+        if new_first_line:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.firstrow, new_first_line))
             self.aly.matrix.vm_change_on_key(vk, vmc.firstrow, new_first_line)
@@ -1279,16 +1321,30 @@ class CheckFirstRow(AnalyzeBase):
             self.aly.matrix.write()
             self.matrix = vm.VendorMatrix(display_log=False)
 
-    def fix_analysis_for_data_source(self, source, write=True):
+    def fix_analysis_for_data_source(self, aly_source, write=True):
         """
-        Plugs in new first line from aly dict to the VM
-        source -> data source from aly dict (created from find_first_row)
+        Plugs in new first line from aly dict and applies changes to the VM.
+
+        :param aly_source:Data source from aly dict; aly_dict.iloc[source_index]
+        (created from find_first_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
         """
-        vk = source[vmc.vendorkey]
-        new_first_line = source[self.new_first_line]
+        vk = aly_source[vmc.vendorkey]
+        new_first_line = aly_source[self.new_first_line]
         self.adjust_first_row_in_vm(vk, new_first_line, write)
 
     def fix_analysis(self, aly_dict, write=True):
+        """
+        Plugs in new first lines from aly dict for each data source and applies
+        changes to the VM.
+
+        :param aly_dict:Analysis dictionary (created from find_first_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
             self.fix_analysis_for_data_source(x, write=write)
@@ -1305,15 +1361,20 @@ class CheckLastRow(AnalyzeBase):
     new_files = True
     all_files = True
 
-    def check_total_row_exists(self, source, df):
+    def find_last_row(self, source, totals_df=pd.DataFrame()):
         """
-        Sums all active metrics in every row except last
-        compares to the values in last row
-        if equal returns True
+        Checks for a total row by summing all active metrics above the last
+        non-empty row and comparing to the values of that row. If a total row is
+        identified, asserts it matches the last row in the VM. Otherwise,
+        asserts the last row in the VM is '0' (no total row).
+
+        :param source:A data source object from the VM
+        :param totals_df:Dataframe to hold suggested changes, if any arise
+        :returns:Dataframe containing vendor key and the new last row if the
+        last row is incorrect; otherwise an empty dataframe
         """
-        totals_df = df
         old_last_row = source.p[vmc.lastrow]
-        if int(old_last_row) == 1 or vmc.filename not in source.p:
+        if vmc.filename not in source.p:
             return totals_df
         raw_file = source.p[vmc.filename]
         df = utl.import_read_csv(raw_file)
@@ -1323,32 +1384,50 @@ class CheckLastRow(AnalyzeBase):
         active_metrics = active_metrics.values()
         active_metrics = [item for s_list in active_metrics for item in s_list]
         active_metrics = [x for x in active_metrics if x in df.columns]
+        new_last_row = ''
         try:
             df = df[active_metrics]
         except KeyError:
             logging.debug("active metrics may be missing or mislabeled")
-            return totals_df
+            new_last_row = '0'
         if df.empty:
-            return totals_df
-        df = df.replace(',', '', regex=True)
-        df = df.apply(pd.to_numeric, errors='coerce')
-        df = df.round(decimals=2)
-        col_sums = df.iloc[:-1, :].sum(min_count=1)
-        totals_row = df.iloc[-1, :]
-        if col_sums.equals(totals_row):
+            new_last_row = '0'
+        if new_last_row is not '0':
+            row_count = len(df)
+            first_empty_row_idx = df.isna().all(axis=1).idxmax() \
+                if (df.isna().all(axis=1).any()) else None
+            if (first_empty_row_idx is not None and first_empty_row_idx >
+                    source.p[vmc.firstrow]):
+                df = df.iloc[:first_empty_row_idx]
+            df = df.replace(',', '', regex=True)
+            df = df.apply(pd.to_numeric, errors='coerce')
+            df = df.round(decimals=2)
+            col_sums = df.iloc[:-1, :].sum(min_count=1)
+            totals_row = df.iloc[-1, :]
+            if col_sums.equals(totals_row):
+                new_last_row = str(row_count - len(df) - 1)
+            else:
+                new_last_row = '0'
+        if old_last_row is not new_last_row:
             new_df = pd.DataFrame({vmc.vendorkey: [source.key],
-                                  self.new_last_line: ['1']})
+                                   self.new_last_line: [new_last_row]})
             totals_df = pd.concat([totals_df, new_df], ignore_index=True)
         return totals_df
 
     def do_analysis(self):
+        """
+        Iterates through data sources in VM and adds last row adjustments
+        (if any) to the analysis dictionary.
+
+        :returns:None
+        """
         data_sources = self.matrix.get_all_data_sources()
         data_sources = [ds for ds in data_sources
                         if 'Rawfile' in vmc.vendorkey
                         or 'GoogleSheets' in vmc.vendorkey]
         df = pd.DataFrame()
         for source in data_sources:
-            df = self.check_total_row_exists(source, df)
+            df = self.find_last_row(source, df)
         if df.empty:
             msg = 'All last rows seem correct'
         else:
@@ -1357,17 +1436,48 @@ class CheckLastRow(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
-    def fix_analysis_for_data_source(self, source, write=True):
-        vk = source[vmc.vendorkey]
-        new_last_line = source[self.new_last_line]
-        if int(new_last_line) > 0:
+    def adjust_last_row_in_vm(self, vk, new_last_line, write=True):
+        """
+        Changes last row property of a data source in the VM.
+
+        :param vk:Vendor key of the data source to change
+        :param new_last_line:Value to set as the last row
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
+        if new_last_line:
             logging.info('Changing {} {} to {}'.format(
                 vk, vmc.lastrow, new_last_line))
             self.aly.matrix.vm_change_on_key(vk, vmc.lastrow, new_last_line)
         if write:
             self.aly.matrix.write()
+            self.matrix = vm.VendorMatrix(display_log=False)
+
+    def fix_analysis_for_data_source(self, aly_source, write=True):
+        """
+        Plugs in new last line from aly dict and applies changes to the VM.
+
+        :param aly_source:Data source from aly dict; aly_dict.iloc[source_index]
+        (created from find_last_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:None
+        """
+        vk = aly_source[vmc.vendorkey]
+        new_last_line = aly_source[self.new_last_line]
+        self.adjust_last_row_in_vm(vk, new_last_line, write)
 
     def fix_analysis(self, aly_dict, write=True):
+        """
+        Plugs in new last lines from aly dict for each data source and applies
+        changes to the VM.
+
+        :param aly_dict:Analysis dictionary (created from find_last_row)
+        :param write:Boolean representing whether to apply the changes to this
+        analyze instance's matrix
+        :returns:VM dataframe of analyze instance's matrix
+        """
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
             self.fix_analysis_for_data_source(x, write=write)
@@ -2849,8 +2959,19 @@ class ValueCalc(object):
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
-    found_model_msg = 'Here are some links:'
+    found_model_msg = 'Links are provided below.  '
     create_success_msg = 'The object has been successfully created.  '
+    ex_prompt_wrap = "<br>Ex. prompt: <div class='examplePrompt'>"
+    opening_phrases = [
+        "Certainly {user}!",
+        "Sure thing {user}!",
+        "Happy to help {user}!",
+    ]
+    closing_phrases = [
+        "Hope that helps {user}!",
+        "Let me know if you have any more questions {user}.",
+        "I hope this clarifies things {user}.",
+    ]
 
     def __init__(self, config_name='openai.json', config_path='reporting'):
         self.config_name = config_name
@@ -3377,6 +3498,7 @@ class AliChat(object):
         if not response:
             response, html_response = self.format_openai_response(
                 message, self.openai_msg)
+        response = self.polish_response(response)
         return response, html_response
 
     def train_tf(self, training_data):
@@ -3441,3 +3563,164 @@ class AliChat(object):
                 val_loss /= len(val_loader.dataset)
                 val_accuracy /= len(val_loader.dataset)
         return model
+
+    def add_bullet_response(self, response):
+        """
+        Formats responses as bullets
+
+        :param response: Current raw response as text.
+        :return: response as str with bullet points
+        """
+        split_val = '. '
+        response = response.split(split_val)
+        skip_vals = [self.found_model_msg, self.ex_prompt_wrap,
+                     self.create_success_msg]
+        skip_vals = [r.split(split_val) for r in skip_vals]
+        new_response = []
+        for r in response:
+            if r not in skip_vals:
+                r = '• {}.'.format(r)
+            new_response.append(r)
+        new_response = '<br>'.join(new_response)
+        return new_response
+
+    def add_polite_flair(self, response):
+        """
+        Adds opening and closing text to raw response
+
+        :param response: Current raw response as text.
+        :return: Text with opening and closing prepended and appended
+        """
+        cur_name = ''
+        for idx, x in enumerate([self.opening_phrases, self.closing_phrases]):
+            add_name = 0 if cur_name else random.randint(0, 1)
+            cur_name = self.current_user.username if add_name else ''
+            new_resp = random.choice(x).format(user=cur_name)
+            for punc in ['.', '!']:
+                for wrong_punc in [' {} '.format(punc), ' {}'.format(punc)]:
+                    new_resp = new_resp.replace(wrong_punc, punc)
+            if idx == 0:
+                response = '{}{}'.format(new_resp, response)
+            else:
+                response = '{}{}<br>'.format(response, new_resp)
+        return response
+
+    def polish_response(self, response):
+        """
+        Combine multiple formatting functions into one 'polish' step.
+
+        :param response: Current raw response as text.
+        :return: Text that has been edited
+        """
+        # response = self.add_bullet_response(response)
+        response = self.add_polite_flair(response)
+        return response
+
+
+class TfIdfTransformer(object):
+    def __init__(self, texts=None, ali_chat=None, eps=1e-6):
+        self.texts = texts
+        self.ali_chat = ali_chat
+        self.eps = eps
+        if not self.ali_chat:
+            self.ali_chat = AliChat()
+        self.tutorial_texts = []
+        self.doc_tokens = []
+        self.unique_words = set()
+        self.indexed_words = {}
+        self.idf = np.zeros(0)
+        self.tfidf_matrix = np.zeros(0)
+        if self.texts:
+            self.tfidf_matrix = self.train(texts)
+
+    def train(self, texts):
+        """
+        Create a tf-idf matrix based on texts
+
+        :param texts: List of documents/words
+        :return: tf-idf matrix
+        """
+        doc_tokens = []
+        for doc in texts:
+            doc = self.ali_chat.remove_stop_words_from_message(
+                doc, remove_punctuation=True)
+            doc_tokens.append(doc)
+        self.unique_words = set()
+        for tokens in doc_tokens:
+            self.unique_words.update(tokens)
+        self.unique_words = sorted(list(self.unique_words))
+        self.indexed_words = {w: i for i, w in enumerate(self.unique_words)}
+        doc_count = len(doc_tokens)
+        word_doc_counts = np.zeros(len(self.unique_words), dtype=np.float32)
+        for tokens in doc_tokens:
+            unique_in_doc = set(tokens)
+            for w in unique_in_doc:
+                word_doc_counts[self.indexed_words[w]] += 1
+        self.idf = np.log((doc_count + self.eps) / (word_doc_counts + self.eps))
+        self.tfidf_matrix = np.zeros((doc_count, len(self.unique_words)),
+                                     dtype=np.float32)
+        for d_idx, tokens in enumerate(doc_tokens):
+            freq_dict = {}
+            for w in tokens:
+                freq_dict[w] = freq_dict.get(w, 0) + 1
+            total_tokens = len(tokens)
+            for w, count in freq_dict.items():
+                w_idx = self.indexed_words[w]
+                tf = count / total_tokens
+                self.tfidf_matrix[d_idx, w_idx] = tf * self.idf[w_idx]
+        return self.tfidf_matrix
+
+    def compute_vector(self, text):
+        """
+        Compute the tf-idf vector for an arbitrary piece of text.
+
+        :param text: Text to compute
+        :return: vector
+        """
+        words = self.ali_chat.remove_stop_words_from_message(
+            text, remove_punctuation=True)
+        freq_dict = {}
+        for w in words:
+            if w in freq_dict:
+                freq_dict[w] += 1
+            else:
+                freq_dict[w] = 1
+        vec = np.zeros(len(self.unique_words), dtype=np.float32)
+        total_tokens = len(words)
+        if total_tokens:
+            for w, count in freq_dict.items():
+                if w in self.indexed_words:
+                    w_idx = self.indexed_words[w]
+                    tf = count / total_tokens
+                    vec[w_idx] = tf * self.idf[w_idx]
+        return vec
+
+    def search(self, text, top_k=1):
+        """
+        Given text returns most similar of the trained documents.
+
+        :param text: Text to search matrix for
+        :param top_k: Number of results to return
+        :return: List of the similar documents
+        """
+        if not self.tfidf_matrix.any() or self.tfidf_matrix.shape[0] == 0:
+            return []
+        query_vec = self.compute_vector(text)
+
+        # Cosine similarity with each doc
+        # sim = dot(query_vec, doc_vec) / (norm(query_vec)*norm(doc_vec))
+        query_norm = np.linalg.norm(query_vec)
+        if query_norm < 1e-10:
+            return []
+        similar_docs = []
+        for doc_idx, doc_vec in enumerate(self.tfidf_matrix):
+            dot_val = np.dot(query_vec, doc_vec)
+            doc_norm = np.linalg.norm(doc_vec)
+            if doc_norm < 1e-10:
+                sim_score = 0.0
+            else:
+                sim_score = dot_val / (query_norm * doc_norm)
+            similar_docs.append((doc_idx, sim_score))
+        similar_docs.sort(key=lambda x: x[1], reverse=True)
+        similar_docs = similar_docs[:top_k]
+        return similar_docs

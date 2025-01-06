@@ -602,6 +602,8 @@ class ImportConfig(object):
                     cur_import[vmc.startdate] = None
                 else:
                     start_date = utl.string_to_date(cur_import[vmc.startdate])
+                    if isinstance(cur_import[vmc.startdate], str):
+                        start_date = dt.datetime.today()
                     cur_import[vmc.startdate] = start_date.date()
         return import_dicts
 

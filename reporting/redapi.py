@@ -124,7 +124,7 @@ class RedApi(object):
                 except ex.StaleElementReferenceException:
                     logging.info('Could not find field for {}'.format(item))
         elem_id = 'automation-dashboard-viewSetUp'
-        elem_load = self.sw.wait_for_elem_load(elem_id=elem_id, attempts=200)
+        elem_load = self.sw.wait_for_elem_load(elem_id=elem_id)
         if not elem_load:
             logging.warning('{} did not load'.format(elem_id))
             self.sw.take_screenshot(file_name='reddit_error.jpg')
