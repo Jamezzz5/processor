@@ -838,8 +838,19 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
     dic.data_dict = utl.data_to_type(dic.data_dict, str_col=merge_col)
     dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
     dic.apply_functions()
+    dic.data_dict = set_start_date(dic.data_dict)
     dic.data_dict = utl.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
     return dic.data_dict
+
+
+def set_start_date(df):
+    if not df.empty and vmc.date in df.columns:
+        start_date = df[vmc.date].min()
+    else:
+        start_date = None
+        logging.warning("The DataFrame is empty or 'vmc.date' column is missing.")
+    df[vmc.date] = start_date
+    return df
 
 
 def vm_update_rule_check(vm, vm_col):
