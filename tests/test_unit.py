@@ -6,24 +6,24 @@ import pytest
 import numpy as np
 import pandas as pd
 import datetime as dt
-from main import main
-import reporting.utils as utl
-import reporting.vendormatrix as vm
-import reporting.vmcolumns as vmc
-import reporting.dictionary as dct
-import reporting.dictcolumns as dctc
-import reporting.calc as cal
-import reporting.analyze as az
-import reporting.export as exp
-import reporting.expcolumns as exc
-import reporting.azapi as azapi
-import reporting.redapi as redapi
-import reporting.awapi as awapi
-import reporting.amzapi as amzapi
-import reporting.gaapi as gaapi
-import reporting.fbapi as fbapi
-import reporting.samapi as samapi
-import reporting.criapi as criapi
+from processor.main import main
+import processor.reporting.utils as utl
+import processor.reporting.vendormatrix as vm
+import processor.reporting.vmcolumns as vmc
+import processor.reporting.dictionary as dct
+import processor.reporting.dictcolumns as dctc
+import processor.reporting.calc as cal
+import processor.reporting.analyze as az
+import processor.reporting.export as exp
+import processor.reporting.expcolumns as exc
+import processor.reporting.azapi as azapi
+import processor.reporting.redapi as redapi
+import processor.reporting.awapi as awapi
+import processor.reporting.amzapi as amzapi
+import processor.reporting.gaapi as gaapi
+import processor.reporting.fbapi as fbapi
+import processor.reporting.samapi as samapi
+import processor.reporting.criapi as criapi
 
 
 def func(x):
@@ -1021,10 +1021,14 @@ class TestAnalyze:
     def test_train_tfidf(self):
         texts = ['The file type for raw files are csv',
                  'Add 40 to the topline',
-                 'Raw files are added on the import tab']
+                 'Add raw file on the import tab']
+        user_text = 'Where do I add a raw file?'
+        top_k = len(texts) + 1
         transformer = az.TfIdfTransformer(texts=texts)
-        scores = transformer.search('Where do I add a raw file?')
+        scores = transformer.search(user_text, top_k=top_k)
         assert scores
+        bm25_scores = transformer.bm25_search(user_text, top_k=top_k)
+        assert bm25_scores
 
 
 default_col_names = [
