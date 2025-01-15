@@ -145,6 +145,9 @@ def string_to_date(my_string):
             return pd.NaT
     elif ('/' in my_string and my_string[-4:][:2] == '20' and
           ':' not in my_string):
+        if my_string[0] == '/':
+            new_month = '{:02d}'.format(dt.datetime.today().month)
+            my_string = '{}{}'.format(new_month, my_string)
         return dt.datetime.strptime(my_string, '%m/%d/%Y')
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
           ((len(my_string) == 7) and ('.' in my_string))):
