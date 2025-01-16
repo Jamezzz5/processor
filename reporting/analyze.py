@@ -3603,8 +3603,14 @@ class AliChat(object):
             cur_name = self.current_user.username if add_name else ''
             new_resp = random.choice(x).format(user=cur_name)
             for punc in ['.', '!']:
-                for wrong_punc in [' {} '.format(punc), ' {}'.format(punc)]:
-                    new_resp = new_resp.replace(wrong_punc, punc)
+                wrong_punctuations = [' {} '.format(punc), ' {}'.format(punc)]
+                right_punc = '{}  '.format(punc)
+                for wrong_punc in wrong_punctuations:
+                    new_resp = new_resp.replace(wrong_punc, right_punc)
+                if cur_name:
+                    wrong_punc = '{}{}'.format(cur_name, punc)
+                    right_punc = '{}{}'.format(cur_name, right_punc)
+                    new_resp = new_resp.replace(wrong_punc, right_punc)
             if idx == 0:
                 response = '{}{}'.format(new_resp, response)
             else:
