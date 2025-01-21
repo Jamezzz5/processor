@@ -1511,3 +1511,42 @@ class TestExport():
 class TestBlankRun:
     def test_run(self):
         main('--analyze')
+
+
+class TestImportPlanData:
+    """
+            Imports and cleans plan data
+            :param key: vendor key
+            :param df: data frame with plan net data
+            :param plan_omit_list: list with values to omit
+            :param kwargs: dictionary with keyword arguments
+    """
+    def test_import_plan_data(self):
+        df = {'Vendor Key': ['Plan Net', 'Plan Net', 'Plan Net',
+                             'API_DBM_PathofExile2EarlyAccess', 'API_Adwords_GW2'],
+              'mpCampaign': ['PoE 2 - Launch', 'PoE 2 - Pre-Launch',
+                             'PoE 2 - Post-Launch', 'PoE 2 - Early Access', 'GW2'],
+              'mpVendor': ['IGN', 'Fandom', 'Tencent', 'Facebook', 'Adwords']}
+        df = pd.DataFrame(df)
+        plan_omit_list = ['API_DBM_PathofExile2EarlyAccess', 'API_Adwords_GW2']
+        key = 'Plan Net'
+        cur_path = os.getcwd()
+        dic_path = 'dictionaries/'
+        filename = 'plannet_dictionary.csv'
+        error_path = 'ERROR_REPORTS/'
+        error_filename = 'PLANNET_ERROR_REPORT.csv'
+        kwargs = {
+            vmc.fullplacename: ['mpCampaign', 'mpVendor'],
+            vmc.vendorkey: ['Plan Net'],
+            vmc.filenamedict: os.path.join(cur_path, dic_path, filename),
+            vmc.filenameerror: os.path.join(cur_path, error_path, error_filename)
+        }
+        result = vm.import_plan_data(key, df, plan_omit_list, **kwargs)
+        assert isinstance(result, pd.DataFrame)
+        expected_columns = ['Full Placement Name', 'Planned Net Cost', 'Uncapped',
+                            'mpProduct Name', 'mpAgency', 'mpClient', 'mpAgency Fees Rate',
+                            'mpCampaign', 'mpVendor', 'mpCountry/Region', 'mpCampaign Timing',
+                            'mpCampaign Phase', 'mpCampaign Type', 'mpVendor Type']
+        assert all(col in result.columns for col in expected_columns)
+        assert not result.empty
+        assert result.dtypes['Planned Net Cost'] == 'int64'
