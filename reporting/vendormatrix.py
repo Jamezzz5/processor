@@ -447,6 +447,13 @@ class ImportConfig(object):
     def add_to_vm(self, import_key, new_file, start_date, api_fields,
                   key_name='', import_type='API'):
         df = self.get_default_vm_value(import_key, import_type)
+        if df.empty:
+            logging.warning('No VM values using rawfile.')
+            df = self.get_default_vm_value(vmc.api_raw_key, import_type)
+            df[vmc.vendorkey] = import_key
+            for col in [vmc.filename, vmc.filenamedict]:
+                df[col] = df[col].str.replace(
+                    vmc.api_raw_key.lower(), import_key.lower())
         for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
             df = self.set_new_value(df, col, key_name)
         df[vmc.vendorkey] = '{}_{}'.format(import_type, df[vmc.vendorkey][0])
@@ -461,6 +468,11 @@ class ImportConfig(object):
     def add_import_to_vm(self, import_key, account_id, import_filter=None,
                          start_date=None, api_fields=None, key_name=''):
         params = self.get_default_params(import_key)
+        if not params:
+            msg = 'Key {} not in config using raw file'.format(import_key)
+            logging.warning(msg)
+            params = self.get_default_params(vmc.api_raw_key)
+            params[ImportConfig.key] = import_key
         search_name = self.append_str_before_filetype(
             params[self.config_file], key_name)
         file_name = self.get_new_name(search_col=vmc.apifile,
@@ -570,7 +582,7 @@ class ImportConfig(object):
     def get_import_params_from_config_file(self, params, def_params):
         f_lib = self.set_config_file_lib(params[self.config_file])
         config_file = self.load_file(params[self.config_file], f_lib)
-        if not config_file:
+        if not config_file or not def_params:
             return '', ''
         account_id = self.get_config_file_value(
             config_file, def_params[self.account_id],
