@@ -1511,3 +1511,45 @@ class TestExport():
 class TestBlankRun:
     def test_run(self):
         main('--analyze')
+
+
+class TestImportPlanData:
+    """
+            Imports and cleans plan data
+            :param key: vendor key
+            :param df: data frame with plan net data
+            :param plan_omit_list: list with values to omit
+            :param kwargs: dictionary with keyword arguments
+    """
+    cur_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    df = pd.read_csv(os.path.join(cur_path, vmc.output_file))
+
+    def test_import_plan_data(self):
+        vm_in = vm.VendorMatrix()
+        plan_omit_list = vm_in.plan_omit_list
+        key = vm.plan_key
+        error_filename = 'PLANNET_ERROR_REPORT.csv'
+        kwargs = {
+            vmc.fullplacename: ['mpCampaign', 'mpVendor'],
+            vmc.vendorkey: [key],
+            vmc.filenamedict: os.path.join(self.cur_path, utl.dict_path,
+                                           dctc.PFN),
+            vmc.filenameerror: os.path.join(self.cur_path, utl.error_path,
+                                            error_filename)
+        }
+        result = vm.import_plan_data(key, self.df, plan_omit_list, **kwargs)
+        assert isinstance(result, pd.DataFrame)
+        expected_columns = ['Full Placement Name', 'Planned Net Cost',
+                            'Uncapped', 'mpProduct Name', 'mpAgency',
+                            'mpClient', 'mpAgency Fees Rate', 'mpVendor',
+                            'mpCampaign', 'mpCampaign Timing',
+                            'mpCampaign Phase', 'mpCampaign Type',
+                            'mpVendor Type']
+        assert all(col in result.columns for col in expected_columns)
+        assert not result.empty
+        assert result.dtypes['Planned Net Cost'] == 'float'
+
+    def test_set_start_date(self):
+        start_date = vm.set_start_date(self.df)
+        assert pd.notnull(start_date)
+        assert isinstance(start_date, pd.Timestamp)
