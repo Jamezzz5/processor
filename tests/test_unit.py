@@ -1511,3 +1511,51 @@ class TestExport():
 class TestBlankRun:
     def test_run(self):
         main('--analyze')
+
+
+class TestImportPlanData:
+    """
+            Imports and cleans plan data
+            :param key: vendor key
+            :param df: data frame with plan net data
+            :param plan_omit_list: list with values to omit
+            :param kwargs: dictionary with keyword arguments
+    """
+    def test_import_plan_data(self):
+        df = pd.DataFrame({
+            vmc.vendorkey: ['API_Test1', 'API_Test2', 'API_Test3'],
+            dctc.CAM: ['Camp1', 'Camp2', 'Camp3'],
+            dctc.VEN: ['Ven1', 'Ven2', 'Ven3'],
+            vmc.date: pd.to_datetime(["2025-01-01", "2025-01-02",
+                                      "2025-01-03"]),
+        })
+        cur_path = os.getcwd()
+        plan_omit_list = ['API_Test1']
+        key = vm.plan_key
+        error_filename = 'PLANNET_ERROR_REPORT.csv'
+        kwargs = {
+            vmc.fullplacename: [dctc.CAM, dctc.VEN],
+            vmc.vendorkey: [key],
+            vmc.filenamedict: os.path.join(cur_path, utl.dict_path,
+                                           dctc.PFN),
+            vmc.filenameerror: os.path.join(cur_path, utl.error_path,
+                                            error_filename)
+        }
+        result = vm.import_plan_data(key, df, plan_omit_list, **kwargs)
+        assert isinstance(result, pd.DataFrame)
+        expected_columns = [dctc.FPN, dctc.PNC, dctc.UNC, dctc.PRN,
+                            dctc.AGY, dctc.CLI, dctc.AGF, dctc.VEN,
+                            dctc.CAM, dctc.CTIM, dctc.CP, dctc.CT,
+                            dctc.VT, vmc.date]
+        assert all(col in result.columns for col in expected_columns)
+        assert not result.empty
+        assert result[dctc.PNC].sum() != 0
+
+    def test_set_start_date(self):
+        test_data = {
+            vmc.date: ['2024-12-17', '2024-12-16', '2024-12-18']
+        }
+        df = pd.DataFrame(test_data)
+        start_date = vm.set_start_date(df)
+        assert pd.notnull(start_date)
+        assert isinstance(start_date, pd.Timestamp)
