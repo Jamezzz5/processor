@@ -839,6 +839,7 @@ class DataSource(object):
 def import_plan_data(key, df, plan_omit_list, **kwargs):
     if df is None or df.empty:
         df = pd.DataFrame(columns=kwargs[vmc.fullplacename] + [vmc.vendorkey])
+    start_date = set_start_date(df)
     df = df.loc[~df[vmc.vendorkey].isin(plan_omit_list)]
     df = df.loc[:, kwargs[vmc.fullplacename]]
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
@@ -850,8 +851,19 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
     dic.data_dict = utl.data_to_type(dic.data_dict, str_col=merge_col)
     dic.data_dict = dic.data_dict.merge(df, on=merge_col, how='left')
     dic.apply_functions()
+    dic.data_dict[vmc.date] = start_date
     dic.data_dict = utl.data_to_type(dic.data_dict, date_col=vmc.datadatecol)
     return dic.data_dict
+
+
+def set_start_date(df):
+    if not df.empty and vmc.date in df.columns:
+        df[vmc.date] = pd.to_datetime(df[vmc.date])
+        start_date = df[vmc.date].min()
+    else:
+        start_date = None
+        logging.warning("The DataFrame is empty or 'Date' column is missing.")
+    return start_date
 
 
 def vm_update_rule_check(vm, vm_col):
