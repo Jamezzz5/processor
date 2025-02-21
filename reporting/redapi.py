@@ -1,10 +1,11 @@
 import os
-import sys
+import pytz
 import json
-import time
 import logging
 import operator
 import calendar
+import requests
+from requests.auth import HTTPBasicAuth
 import pandas as pd
 import datetime as dt
 import selenium.common.exceptions
@@ -27,6 +28,16 @@ class RedApi(object):
         'videoWatches3Secs', 'videoWatches10Secs']
     username_str = 'username'
     password_str = 'password'
+    code_str = 'code'
+    client_id_str = 'client_id'
+    client_secret_str = 'client_secret'
+    redirect_uri_str = 'redirect_uri'
+    refresh_token_str = 'refresh_token'
+    access_token_str = 'access_token'
+    access_token_url = 'https://www.reddit.com/api/v1/access_token'
+    version = '3'
+    base_api_url = 'https://ads-api.reddit.com/api/v{}/'.format(version)
+    business_url = '{}me/businesses'.format(base_api_url)
 
     def __init__(self, headless=True):
         self.headless = headless
@@ -40,6 +51,14 @@ class RedApi(object):
         self.config = None
         self.key_list = [self.username_str, self.password_str]
         self.aborted = False
+        self.api = False
+        self.code = None
+        self.client_id = None
+        self.client_secret = None
+        self.redirect_uri = None
+        self.access_token = None
+        self.refresh_token = None
+        self.headers = {}
 
     def input_config(self, config):
         logging.info('Loading Reddit config file: {}.'.format(config))
@@ -49,23 +68,23 @@ class RedApi(object):
             self.check_config()
 
     def load_config(self):
-        try:
-            with open(self.config_file, 'r') as f:
-                self.config = json.load(f)
-            self.username = self.config[self.username_str]
-            self.password = self.config[self.password_str]
-            self.config_list = [self.username, self.password]
-        except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            self.aborted = True
+        with open(self.config_file, 'r') as f:
+            self.config = json.load(f)
+        self.username = self.config.get(self.username_str)
+        self.password = self.config.get(self.password_str)
+        self.code = self.config.get(self.code)
+        self.client_id = self.config.get(self.client_id_str)
+        self.client_secret = self.config.get(self.client_secret_str)
+        self.redirect_uri = self.config.get(self.redirect_uri_str)
+        self.code = self.config.get(self.code_str)
+        self.access_token = self.config.get(self.access_token_str)
+        self.refresh_token = self.config.get(self.refresh_token_str)
+        self.config_list = [ self.username, self.password]
 
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in config file. '
-                                ' Aborting.'.format(item))
-                self.aborted = True
-                break
+                logging.warning('{} not in config file.'.format(item))
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -128,6 +147,9 @@ class RedApi(object):
         if not elem_load:
             logging.warning('{} did not load'.format(elem_id))
             self.sw.take_screenshot(file_name='reddit_error.jpg')
+            self.sw.browser.execute_script(
+                "window.scrollTo(0, document.body.scrollHeight);")
+            self.sw.take_screenshot(file_name='reddit_error_2.jpg')
             return False
         error_xpath = '/html/body/div/div/div[2]/div/form/fieldset[2]/div'
         try:
@@ -285,10 +307,202 @@ class RedApi(object):
         account_xpath = '//a[text()="{}"]'.format(self.account)
         self.sw.click_on_xpath(account_xpath)
 
+    def get_access_token(self):
+        url = self.access_token_url
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': self.redirect_uri
+        }
+        data = {
+            'grant_type': 'refresh_token',
+            'refresh_token': self.refresh_token
+        }
+        auth = HTTPBasicAuth(self.client_id, self.client_secret)
+        r = requests.post(url, headers=headers, data=data, auth=auth)
+        self.access_token = r.json()['access_token']
+        self.headers = {'Accept': 'application/json',
+                        'Authorization': 'Bearer {}'.format(self.access_token)}
+
+    def get_all_business_ids(self):
+        """
+        Get request to business url to retrieve list of business ids
+
+        :return: business ids as a list
+        """
+        if not self.headers:
+            self.get_access_token()
+        r = requests.get(self.business_url, headers=self.headers)
+        business_ids = [x['id'] for x in r.json()['data']]
+        return business_ids
+
+    def get_ad_accounts_by_business(self, business_ids):
+        """
+        Loops through provided business ids list to get account id of username
+
+        :param business_ids: List of business ids
+        :return: account_id that matches username or blank
+        """
+        account_id = ''
+        for business_id in business_ids:
+            url = '{}businesses/{}/ad_accounts'.format(
+                self.base_api_url, business_id)
+            r = requests.get(url, headers=self.headers)
+            account_ids = [x['id'] for x in r.json()['data']
+                           if x['name'].lower() == self.username.lower()]
+            if account_ids:
+                account_id = account_ids[0]
+                break
+        return account_id
+
+    @staticmethod
+    def timezone_to_utc(dt_naive, timezone='America/Los_Angeles'):
+        """
+        Converts a datetime to the specified timezone dt str
+
+        :param dt_naive: A datetime without timezone information
+        :param timezone: Str of the timezone to convert
+        :return: The full str of the datetime with timezone
+        """
+        la_tz = pytz.timezone(timezone)
+        dt_la = la_tz.localize(dt_naive)
+        dt_utc = dt_la.astimezone(pytz.UTC)
+        dt_utc = dt_utc.replace(minute=0, second=0, microsecond=0)
+        return dt_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    def get_report(self, account_id, sd, ed):
+        """
+        Given an account_id requests a report for the start and end dates.
+
+        :param account_id: Account ID to pull as a str
+        :param sd: Start date to pull from
+        :param ed: End date to pull from
+        :return:
+        """
+        response_list = []
+        next_url = '{}ad_accounts/{}/reports'.format(self.base_api_url, account_id)
+        breakdowns = ['AD_ID', 'DATE']
+        fields = ['IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_STARTED',
+                  'VIDEO_WATCHED_25_PERCENT', 'VIDEO_WATCHED_50_PERCENT',
+                  'VIDEO_WATCHED_75_PERCENT', 'VIDEO_WATCHED_100_PERCENT']
+        data = {'starts_at': self.timezone_to_utc(sd),
+                'ends_at': self.timezone_to_utc(ed),
+                'breakdowns': breakdowns,
+                'fields': fields,
+                'time_zone_id': 'America/Los_Angeles'}
+        data = {'data': data}
+        params = {'page.size': 1000}
+        for attempt in range(1000):
+            msg = 'Getting account {} data from {} to {}.  Attempt {}'.format(
+                account_id, sd, ed, attempt + 1)
+            logging.info(msg)
+            r = requests.post(next_url, headers=self.headers, json=data, params=params)
+            response_list.extend(r.json()['data']['metrics'])
+            next_url = r.json()['pagination']['next_url']
+            if not next_url:
+                break
+        if next_url:
+            logging.warning('Additional pages not retrieved.')
+        logging.info('All reports retrieved.')
+        return response_list
+
+    def get_object_names_from_df(self, df, col='ad_id', new_col='ad_group_id'):
+        """
+        Loops through unique values in col of dataframe to get names from api
+
+        :param df: Dataframe to loop over
+        :param col: Column with id to get names from
+        :param new_col: New id column created
+        :return: Dataframe with the name added
+        """
+        ad_info_list = []
+        url_str = col.replace('_id', 's')
+        new_col_name = col.replace('_id', '')
+        ad_ids = df[col].unique()
+        logging.info('Getting names for {} {}'.format(len(ad_ids), url_str))
+        for ad_id in ad_ids:
+            url = '{}{}/{}'.format(self.base_api_url, url_str, ad_id)
+            r = requests.get(url, headers=self.headers)
+            resp_json = r.json()
+            ad_data = resp_json.get('data', {})
+            name = ad_data.get('name')
+            ad_info = {
+                col: ad_id,
+                new_col_name: name
+            }
+            if new_col:
+                ad_info[new_col] = ad_data.get(new_col)
+            ad_info_list.append(ad_info)
+        tdf = pd.DataFrame(ad_info_list)
+        df = pd.merge(df, tdf, on=col, how='left')
+        return df
+
+    def add_names_to_df(self, df):
+        """
+        Takes a dataframe with ad_id, adds names for ad, adgroup and campaign
+
+        :param df: Dataframe with ad_id
+        :return: Dataframe with names added
+        """
+        object_types = [
+            ('ad_id', 'ad_group_id'),
+            ('ad_group_id', 'campaign_id'),
+            ('campaign_id', '')]
+        for object_type in object_types:
+            col = object_type[0]
+            new_col = object_type[1]
+            df = self.get_object_names_from_df(df, col=col, new_col=new_col)
+        return df
+
+    def report_to_df(self, response_list):
+        """
+        Creates a dataframe from a list of dicts.
+
+        :param response_list: List of dicts with ad_id date and metrics
+        :return: The dataframe with all requested data
+        """
+        logging.info('Attempting to create df of {} rows'.format(
+            len(response_list)))
+        df = pd.DataFrame(response_list)
+        df['spend'] = df['spend'] / 1_000_000
+        df = self.add_names_to_df(df)
+        return df
+
+    def get_data_api(self, sd, ed):
+        """
+        Pulls data for specified start and end date from api using requests.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :return: df The dataframe of data from the platform
+        """
+        df = pd.DataFrame()
+        self.get_access_token()
+        business_ids = self.get_all_business_ids()
+        account_id = self.get_ad_accounts_by_business(business_ids)
+        if account_id:
+            r = self.get_report(account_id, sd, ed)
+            df = self.report_to_df(r)
+        return df
+
     def get_data(self, sd=None, ed=None, fields=None):
+        """
+        Main function to get data. Checks whether to use api or selenium.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :param fields: Additional field information
+        :return: The dataframe of data from the platform.
+        """
+        sd, ed = self.get_data_default_check(sd, ed, fields)
+        if self.api:
+            df = self.get_data_api(sd, ed)
+        else:
+            df = self.get_data_selenium(sd, ed)
+        return df
+
+    def get_data_selenium(self, sd, ed):
         self.sw = utl.SeleniumWrapper(headless=self.headless)
         self.browser = self.sw.browser
-        sd, ed = self.get_data_default_check(sd, ed, fields)
         sign_in_result = False
         for x in range(3):
             self.sw.go_to_url(self.base_url)
