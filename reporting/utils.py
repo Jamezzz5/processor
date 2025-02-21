@@ -961,7 +961,7 @@ class SeleniumWrapper(object):
 
     def wait_for_elem_load(self, elem_id, selector=None, attempts=1000,
                            sleep_time=.01, visible=False, new_value='',
-                           attribute='value'):
+                           attribute='value', raise_exception=True):
         selector = selector if selector else self.select_id
         elem_found = False
         for x in range(attempts):
@@ -988,7 +988,8 @@ class SeleniumWrapper(object):
         if not elem_found:
             tt = attempts * sleep_time
             msg = 'Element {} not found in {}s.'.format(elem_id, tt)
-            raise Exception(msg)
+            if raise_exception:
+                raise Exception(msg)
         return elem_found
 
     def drag_and_drop(self, elem, target):

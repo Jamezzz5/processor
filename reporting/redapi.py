@@ -51,7 +51,7 @@ class RedApi(object):
         self.config = None
         self.key_list = [self.username_str, self.password_str]
         self.aborted = False
-        self.api = False
+        self.api = True
         self.code = None
         self.client_id = None
         self.client_secret = None
@@ -90,12 +90,50 @@ class RedApi(object):
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=1)
         if ed is None or ed.date() == dt.datetime.today().date():
-            ed = dt.datetime.today() - dt.timedelta(days=1)
+            ed = dt.datetime.today()
         if fields:
             for val in fields:
                 if str(val) != 'nan':
                     self.account = val
         return sd, ed
+
+    def authorize_api(self, username, password, new_email):
+        self.username = username
+        self.password = password
+        self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.browser = self.sw.browser
+        self.sw.go_to_url(self.base_url)
+        sign_in_result = self.sign_in()
+        if sign_in_result:
+            ham_xpath = '//*[@id="app"]/div/div/div[1]/div/div[1]/button[1]'
+            users_xpath = ('/html/body/div[12]/div/div[2]/div/nav/div/'
+                           'div[2]/div/div[1]/a/div/span')
+            invite_xpath = ('//*[@id="app"]/div/div/div[2]/div[2]/div/'
+                            'div/div[1]/div/button/div')
+            admin_xpath = ('/html/body/div[5]/div/div/div/div/div[2]'
+                           '/div[2]/div/div/div[2]/div')
+            xpaths = [ham_xpath, users_xpath, invite_xpath, admin_xpath]
+            for xpath in xpaths:
+                self.sw.click_on_xpath(xpath)
+            email_xpath = """//*[@id="react-select-9-input"]"""
+            elem = self.browser.find_element_by_xpath(email_xpath)
+            elem.send_keys(new_email)
+            next_xpath = ('/html/body/div[5]/div/div/div/div/'
+                          'span[2]/button[2]/div')
+            account_xpath = ('/html/body/div[5]/div/div/div/div/div[1]/div[1]/'
+                             'div[2]/div[2]/div[1]/div[2]/div/div/label/input')
+            new_admin_xpath = ('/html/body/div[5]/div/div/div/div/div[1]/'
+                               'div[2]/div[2]/div/div/div[3]')
+            confirm_xpath = ('/html/body/div[5]/div/div/div/div/span[2]/'
+                             'button[3]/div')
+            xpaths = [admin_xpath, next_xpath, account_xpath, new_admin_xpath,
+                      confirm_xpath]
+            for xpath in xpaths:
+                self.sw.click_on_xpath(xpath)
+            logging.info('Successfully invited for {}'.format(username))
+        else:
+            logging.warning('Sign in failed for {}'.format(username))
+        self.sw.quit()
 
     def sign_in(self, attempt=0):
         logging.info('Signing in.: Attempt {}'.format(attempt))
@@ -143,7 +181,8 @@ class RedApi(object):
                 except ex.StaleElementReferenceException:
                     logging.info('Could not find field for {}'.format(item))
         elem_id = 'automation-dashboard-viewSetUp'
-        elem_load = self.sw.wait_for_elem_load(elem_id=elem_id)
+        elem_load = self.sw.wait_for_elem_load(
+            elem_id=elem_id, raise_exception=False)
         if not elem_load:
             logging.warning('{} did not load'.format(elem_id))
             self.sw.take_screenshot(file_name='reddit_error.jpg')
@@ -363,11 +402,10 @@ class RedApi(object):
         :param timezone: Str of the timezone to convert
         :return: The full str of the datetime with timezone
         """
-        la_tz = pytz.timezone(timezone)
-        dt_la = la_tz.localize(dt_naive)
-        dt_utc = dt_la.astimezone(pytz.UTC)
-        dt_utc = dt_utc.replace(minute=0, second=0, microsecond=0)
-        return dt_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+        tz = pytz.timezone(timezone)
+        dt_local = tz.localize(dt_naive)
+        dt_local = dt_local.replace(minute=0, second=0, microsecond=0)
+        return dt_local.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     def get_report(self, account_id, sd, ed):
         """
@@ -383,7 +421,11 @@ class RedApi(object):
         breakdowns = ['AD_ID', 'DATE']
         fields = ['IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_STARTED',
                   'VIDEO_WATCHED_25_PERCENT', 'VIDEO_WATCHED_50_PERCENT',
-                  'VIDEO_WATCHED_75_PERCENT', 'VIDEO_WATCHED_100_PERCENT']
+                  'VIDEO_WATCHED_75_PERCENT', 'VIDEO_WATCHED_100_PERCENT',
+                  'VIDEO_WATCHED_3_SECONDS', 'VIDEO_WATCHED_5_SECONDS',
+                  'VIDEO_WATCHED_10_SECONDS',
+                  'VIDEO_VIEW_RATE', 'VIDEO_VIEWABLE_IMPRESSIONS',
+                  'VIDEO_PLAYS_EXPANDED']
         data = {'starts_at': self.timezone_to_utc(sd),
                 'ends_at': self.timezone_to_utc(ed),
                 'breakdowns': breakdowns,
@@ -395,9 +437,13 @@ class RedApi(object):
             msg = 'Getting account {} data from {} to {}.  Attempt {}'.format(
                 account_id, sd, ed, attempt + 1)
             logging.info(msg)
-            r = requests.post(next_url, headers=self.headers, json=data, params=params)
-            response_list.extend(r.json()['data']['metrics'])
-            next_url = r.json()['pagination']['next_url']
+            r = requests.post(next_url, headers=self.headers, json=data,
+                              params=params)
+            response = r.json()
+            if 'data' not in response:
+                logging.warning('Data not in response: {}'.format(response))
+            response_list.extend(response['data']['metrics'])
+            next_url = response['pagination']['next_url']
             if not next_url:
                 break
         if next_url:
@@ -465,6 +511,33 @@ class RedApi(object):
         df = pd.DataFrame(response_list)
         df['spend'] = df['spend'] / 1_000_000
         df = self.add_names_to_df(df)
+        df = self.rename_columns(df)
+        return df
+
+    @staticmethod
+    def rename_columns(df):
+        """
+        Renames the df columns to match manual export
+
+        :param df: The dataframe for columns to change
+        :return: Dataframe with renamed columns
+        """
+        cols = {
+            'clicks': 'Clicks',
+            'date': 'Date',
+            'impressions': 'Impressions',
+            'spend': 'Amount Spent (USD)',
+            'video_started': 'Video Starts',
+            'video_viewable_impressions': 'Video Views',
+            'video_watched_100_percent': 'Watches at 100%',
+            'video_watched_25_percent': 'Watches at 25%',
+            'video_watched_50_percent': 'Watches at 50%',
+            'video_watched_75_percent': 'Watches at 75%',
+            'ad': 'Ad Name',
+            'ad_group': 'Ad Group Name',
+            'campaign': 'Campaign Name'
+        }
+        df = df.rename(columns=cols)
         return df
 
     def get_data_api(self, sd, ed):

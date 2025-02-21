@@ -3,6 +3,7 @@ import json
 import yaml
 import string
 import pytest
+import logging
 import numpy as np
 import pandas as pd
 import datetime as dt
@@ -196,6 +197,7 @@ class TestApis:
 
     def test_redapi(self, tmp_path_factory):
         api = redapi.RedApi(headless=False)
+        api.api = False
         file_name = os.path.join(utl.config_path, api.default_config_file_name)
         with open(file_name, 'r') as f:
             credentials = json.load(f)
@@ -203,13 +205,35 @@ class TestApis:
             api.key_list, tmp_path_factory, credentials)
         api.input_config(file_name)
         sd = dt.datetime.today() - dt.timedelta(days=70)
-        ed = dt.datetime.today() - dt.timedelta(days=35)
+        ed = dt.datetime.today()
         try:
             # df = api.get_data(sd=sd, ed=ed)
             assert 1 == 1
         except Exception as e:
             api.sw.quit()
             raise e
+
+    def test_authorize_api(self, tmp_path_factory):
+        auth_email = ''
+        file_name = 'reddit_credentials.csv'
+        if not os.path.exists(file_name):
+            return True
+        df = pd.read_csv(file_name)
+        df = df[['account_id', 'account_filter', 'skip']].drop_duplicates()
+        user_passes = df.to_dict(orient='records')
+        for user_pass in user_passes:
+            username = user_pass['account_id']
+            password = user_pass['account_filter']
+            if 'skip' in user_pass:
+                skip = user_pass['skip']
+                if str(skip) == 'True':
+                    logging.info('Skipped for {} {}'.format(skip, username))
+                    continue
+            api = redapi.RedApi(headless=False)
+            try:
+                api.authorize_api(username, password, auth_email)
+            except:
+                logging.warning('Failed for {}'.format(username))
 
     def test_amzapi(self, tmp_path_factory):
         api = amzapi.AmzApi()
@@ -242,6 +266,11 @@ class TestApis:
         ed = dt.datetime.today()
         # df = api.get_data(sd, ed, fields=fields)
         assert 1 == 1
+
+    def test_redapi_new(self):
+        api = redapi.RedApi()
+        api.api = True
+        self.send_api_call(api)
 
 
 class TestDictionary:
