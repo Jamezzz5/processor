@@ -114,12 +114,14 @@ def write_file(df, file_name):
     """
     logging.debug('Writing {}'.format(file_name))
     file_type = os.path.splitext(file_name)[1].lower()
+    kwargs = {}
     if file_type == '.xlsx':
         write_func = df.to_excel
     else:
         write_func = df.to_csv
+        kwargs['encoding'] = 'utf-8'
     try:
-        write_func(file_name, index=False, encoding='utf-8')
+        write_func(file_name, index=False, **kwargs)
         return True
     except IOError:
         logging.warning('{} could not be opened.  This file was not saved.'

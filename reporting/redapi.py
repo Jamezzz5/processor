@@ -1,5 +1,6 @@
 import os
 import pytz
+import time
 import json
 import logging
 import operator
@@ -38,6 +39,22 @@ class RedApi(object):
     version = '3'
     base_api_url = 'https://ads-api.reddit.com/api/v{}/'.format(version)
     business_url = '{}me/businesses'.format(base_api_url)
+    spend_col = 'spend'
+    cols = {
+        'clicks': 'Clicks',
+        'date': 'Date',
+        'impressions': 'Impressions',
+        'spend': 'Amount Spent (USD)',
+        'video_started': 'Video Starts',
+        'video_viewable_impressions': 'Video Views',
+        'video_watched_100_percent': 'Watches at 100%',
+        'video_watched_25_percent': 'Watches at 25%',
+        'video_watched_50_percent': 'Watches at 50%',
+        'video_watched_75_percent': 'Watches at 75%',
+        'ad': 'Ad Name',
+        'ad_group': 'Ad Group Name',
+        'campaign': 'Campaign Name'
+    }
 
     def __init__(self, headless=True):
         self.headless = headless
@@ -385,7 +402,17 @@ class RedApi(object):
         for business_id in business_ids:
             url = '{}businesses/{}/ad_accounts'.format(
                 self.base_api_url, business_id)
-            r = requests.get(url, headers=self.headers)
+            r = None
+            for x in range(5):
+                r = requests.get(url, headers=self.headers)
+                if 'data' in r.json():
+                    break
+                else:
+                    logging.warning('Data not in response: {}'.format(r.json()))
+                    time.sleep(5)
+            if not r:
+                logging.warning('Could not get business {}'.format(business_id))
+                continue
             account_ids = [x['id'] for x in r.json()['data']
                            if x['name'].lower() == self.username.lower()]
             if account_ids:
@@ -442,6 +469,7 @@ class RedApi(object):
             response = r.json()
             if 'data' not in response:
                 logging.warning('Data not in response: {}'.format(response))
+                break
             response_list.extend(response['data']['metrics'])
             next_url = response['pagination']['next_url']
             if not next_url:
@@ -463,6 +491,9 @@ class RedApi(object):
         ad_info_list = []
         url_str = col.replace('_id', 's')
         new_col_name = col.replace('_id', '')
+        if col not in df.columns:
+            logging.warning('Column {} not in dataframe'.format(col))
+            return df
         ad_ids = df[col].unique()
         logging.info('Getting names for {} {}'.format(len(ad_ids), url_str))
         for ad_id in ad_ids:
@@ -509,35 +540,22 @@ class RedApi(object):
         logging.info('Attempting to create df of {} rows'.format(
             len(response_list)))
         df = pd.DataFrame(response_list)
-        df['spend'] = df['spend'] / 1_000_000
+        if df.empty:
+            df = pd.DataFrame(columns=list(self.cols.keys()))
+        if self.spend_col in df.columns:
+            df[self.spend_col] = df[self.spend_col] / 1_000_000
         df = self.add_names_to_df(df)
         df = self.rename_columns(df)
         return df
 
-    @staticmethod
-    def rename_columns(df):
+    def rename_columns(self, df):
         """
         Renames the df columns to match manual export
 
         :param df: The dataframe for columns to change
         :return: Dataframe with renamed columns
         """
-        cols = {
-            'clicks': 'Clicks',
-            'date': 'Date',
-            'impressions': 'Impressions',
-            'spend': 'Amount Spent (USD)',
-            'video_started': 'Video Starts',
-            'video_viewable_impressions': 'Video Views',
-            'video_watched_100_percent': 'Watches at 100%',
-            'video_watched_25_percent': 'Watches at 25%',
-            'video_watched_50_percent': 'Watches at 50%',
-            'video_watched_75_percent': 'Watches at 75%',
-            'ad': 'Ad Name',
-            'ad_group': 'Ad Group Name',
-            'campaign': 'Campaign Name'
-        }
-        df = df.rename(columns=cols)
+        df = df.rename(columns=self.cols)
         return df
 
     def get_data_api(self, sd, ed):
