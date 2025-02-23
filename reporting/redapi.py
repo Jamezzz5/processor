@@ -498,10 +498,17 @@ class RedApi(object):
         logging.info('Getting names for {} {}'.format(len(ad_ids), url_str))
         for ad_id in ad_ids:
             url = '{}{}/{}'.format(self.base_api_url, url_str, ad_id)
-            r = requests.get(url, headers=self.headers)
-            resp_json = r.json()
-            ad_data = resp_json.get('data', {})
-            name = ad_data.get('name')
+            name = ''
+            ad_data = {}
+            for x in range(5):
+                r = requests.get(url, headers=self.headers)
+                resp_json = r.json()
+                ad_data = resp_json.get('data', {})
+                name = ad_data.get('name')
+                if name:
+                    break
+                logging.warning('No name in response: {}'.format(resp_json))
+                time.sleep(1)
             ad_info = {
                 col: ad_id,
                 new_col_name: name
