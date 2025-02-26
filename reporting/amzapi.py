@@ -124,6 +124,36 @@ class AmzApi(object):
         if self.profile_id:
             self.headers['Amazon-Advertising-API-Scope'] = str(self.profile_id)
 
+    def get_dsp_profiles(self, dsp_profiles, endpoint=None):
+        """
+        Loops through list of dsp_profiles to match requested one
+
+        :param dsp_profiles: List of dsp profiles
+        :param endpoint: Endpoint to check
+        :return: The profile if it exists else None
+        """
+        profile = None
+        for dsp_profile in dsp_profiles:
+            dsp_id = str(dsp_profile['profileId'])
+            self.headers['Amazon-Advertising-API-Scope'] = dsp_id
+            url = '{}/dsp/advertisers'.format(endpoint)
+            r = self.make_request(
+                url, method='GET', headers=self.headers,
+                json_response_key='response',
+                skip_error_type='ENTITY_NOT_SUPPORTED')
+            if 'response' in r.json():
+                profile = [x for x in r.json()['response'] if
+                           self.advertiser_id in x['advertiserId']]
+            if profile:
+                profile = profile[0]
+                self.profile_id = profile['advertiserId']
+                self.set_headers()
+                self.base_url = endpoint
+                self.amazon_dsp = True
+                self.timezone = pytz.timezone(profile['timezone'])
+                break
+        return profile
+
     def get_profiles(self):
         self.set_headers()
         for endpoint in [self.base_url, self.eu_url, self.fe_url]:
@@ -139,23 +169,9 @@ class AmzApi(object):
             dsp_profiles = [x for x in r.json() if 'agency'
                             in x['accountInfo']['type']]
             if dsp_profiles:
-                for dsp_profile in dsp_profiles:
-                    dsp_id = str(dsp_profile['profileId'])
-                    self.headers['Amazon-Advertising-API-Scope'] = dsp_id
-                    url = '{}/dsp/advertisers'.format(endpoint)
-                    r = self.make_request(url, method='GET',
-                                          headers=self.headers,
-                                          json_response_key='response')
-                    profile = [x for x in r.json()['response'] if
-                               self.advertiser_id in x['advertiserId']]
-                    if profile:
-                        profile = profile[0]
-                        self.profile_id = profile['advertiserId']
-                        self.set_headers()
-                        self.base_url = endpoint
-                        self.amazon_dsp = True
-                        self.timezone = pytz.timezone(profile['timezone'])
-                        return True
+                profile = self.get_dsp_profiles(dsp_profiles, endpoint)
+                if profile:
+                    return True
         logging.warning('Could not find the specified profile, check that '
                         'the provided account ID {} is correct and API has '
                         'access.'.format(self.advertiser_id))
@@ -479,7 +495,8 @@ class AmzApi(object):
             time.sleep(30)
 
     def make_request(self, url, method, body=None, params=None, headers=None,
-                     attempt=1, json_response=True, json_response_key=''):
+                     attempt=1, json_response=True, json_response_key='',
+                     skip_error_type=''):
         self.get_client()
         attempts = 10
         for x in range(attempts):
@@ -494,7 +511,15 @@ class AmzApi(object):
             json_error = json_response and 'error' in self.r.json()
             json_error_2 = (json_response_key and
                             json_response_key not in self.r.json())
-            if json_error or json_error_2:
+            skip_error = False
+            if skip_error_type:
+                if 'errors' in self.r.json():
+                    error_response = self.r.json()['errors']
+                    if error_response:
+                        error_response = error_response[0]['errorType']
+                        if error_response == skip_error_type:
+                            skip_error = True
+            if json_error or json_error_2 and not skip_error:
                 logging.warning(
                     'Request error.  Retrying {}'.format(self.r.json()))
                 request_success = False
