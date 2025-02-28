@@ -114,12 +114,14 @@ def write_file(df, file_name):
     """
     logging.debug('Writing {}'.format(file_name))
     file_type = os.path.splitext(file_name)[1].lower()
+    kwargs = {}
     if file_type == '.xlsx':
         write_func = df.to_excel
     else:
         write_func = df.to_csv
+        kwargs['encoding'] = 'utf-8'
     try:
-        write_func(file_name, index=False, encoding='utf-8')
+        write_func(file_name, index=False, **kwargs)
         return True
     except IOError:
         logging.warning('{} could not be opened.  This file was not saved.'
@@ -961,7 +963,7 @@ class SeleniumWrapper(object):
 
     def wait_for_elem_load(self, elem_id, selector=None, attempts=1000,
                            sleep_time=.01, visible=False, new_value='',
-                           attribute='value'):
+                           attribute='value', raise_exception=True):
         selector = selector if selector else self.select_id
         elem_found = False
         for x in range(attempts):
@@ -988,7 +990,8 @@ class SeleniumWrapper(object):
         if not elem_found:
             tt = attempts * sleep_time
             msg = 'Element {} not found in {}s.'.format(elem_id, tt)
-            raise Exception(msg)
+            if raise_exception:
+                raise Exception(msg)
         return elem_found
 
     def drag_and_drop(self, elem, target):
