@@ -25,6 +25,8 @@ import processor.reporting.gaapi as gaapi
 import processor.reporting.fbapi as fbapi
 import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
+import processor.reporting.rsapi as rsapi
+import processor.reporting.dcapi as dcapi
 
 
 def func(x):
@@ -260,6 +262,10 @@ class TestApis:
         api = criapi.CriApi()
         self.send_api_call(api)
 
+    def test_rsapi(self, tmp_path_factory):
+        api = rsapi.RsApi()
+        self.send_api_call(api)
+
     @staticmethod
     def send_api_call(api, fields=None):
         api.input_config(api.default_config_file_name)
@@ -271,6 +277,10 @@ class TestApis:
     def test_redapi_new(self):
         api = redapi.RedApi()
         api.api = True
+        self.send_api_call(api)
+
+    def test_dcapi(self):
+        api = dcapi.DcApi()
         self.send_api_call(api)
 
 
