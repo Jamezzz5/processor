@@ -39,6 +39,7 @@ class TikApi(object):
                'comments': 'ad_comment',
                'likes': 'ad_like',
                'shares': 'ad_share',
+               'follows': 'ad_follows',
                'frequency': 'frequency',
                'real_time_app_install': 'real_time_app_install',
                'app_install': 'app_install',
