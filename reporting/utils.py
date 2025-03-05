@@ -150,7 +150,17 @@ def string_to_date(my_string):
         if my_string[0] == '/':
             new_month = '{:02d}'.format(dt.datetime.today().month)
             my_string = '{}{}'.format(new_month, my_string)
-        return dt.datetime.strptime(my_string, '%m/%d/%Y')
+        if '//' in my_string:
+            my_string = my_string.replace('//', '/01/')
+        try:
+            return dt.datetime.strptime(my_string, '%m/%d/%Y')
+        except ValueError:
+            logging.info(f"Retrying date as day/month/year for {my_string}")
+            try:
+                return dt.datetime.strptime(my_string, '%d/%m/%Y')
+            except ValueError:
+                logging.warning('Could not parse date: {}'.format(my_string))
+                return pd.NaT
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
           ((len(my_string) == 7) and ('.' in my_string))):
         return exceldate_to_datetime(float(my_string))
