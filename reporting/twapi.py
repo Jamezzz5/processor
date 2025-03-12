@@ -583,7 +583,7 @@ class TwApi(object):
         """
         authenticates new Twitter/X accounts that are not in the base processor
         """
-        self.sw = utl.SeleniumWrapper(headless=False)
+        self.sw = utl.SeleniumWrapper(headless=True)
         self.browser = self.sw.browser
         tw_url = 'https://x.com/i/flow/login'
         self.sw.go_to_url(tw_url, sleep=1)
