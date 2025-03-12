@@ -10,9 +10,13 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
+import oauth2 as oauth
 import reporting.utils as utl
+from selenium.webdriver.common.by import By
 from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
+from selenium.webdriver.common.keys import Keys
+
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
@@ -104,6 +108,10 @@ class TwApi(object):
         self.tweet_dict = None
         self.usernames = None
         self.async_requests = []
+        self.user = None
+        self.password = None
+        self.sw = None
+        self.browser = None
         self.v = 11
 
     def reset_dicts(self):
@@ -563,7 +571,62 @@ class TwApi(object):
                 with open(old_config, 'w') as f:
                     json.dump(self.config, f)
                 return timezone
+        self.user = self.config['USERNAME']
+        self.password = self.config['PASSWORD']
+        self.authenticate_account(self.user, self.password)
+        timezone = self.get_account_timezone()
+        if timezone:
+            return timezone
         return False
+
+    def authenticate_account(self, username, password):
+        """
+        authenticates new Twitter/X accounts that are not in the base processor
+        """
+        self.sw = utl.SeleniumWrapper(headless=False)
+        self.browser = self.sw.browser
+        tw_url = 'https://x.com/i/flow/login'
+        self.sw.go_to_url(tw_url, sleep=1)
+        user_xpath = '//label[normalize-space(.)="Phone, email, or username"]'
+        next_button_xpath = '//button[normalize-space(.)="Next"]'
+        password_xpath = '//label[normalize-space(.)="Password"]'
+        login_xpath = '//button[normalize-space(.)="Log in"]'
+        self.sw.wait_for_elem_load(user_xpath, selector=By.XPATH)
+        self.sw.click_on_xpath(user_xpath)
+        elem = self.browser.find_element_by_xpath(user_xpath)
+        elem.send_keys(username)
+        self.sw.click_on_xpath(next_button_xpath)
+        self.sw.click_on_xpath(password_xpath)
+        elem = self.browser.find_element_by_xpath(password_xpath)
+        elem.send_keys(password)
+        self.sw.click_on_xpath(login_xpath)
+        url = "https://api.twitter.com/oauth/request_token"
+        token = oauth.Token(key=self.access_token,
+                            secret=self.access_token_secret)
+        consumer = oauth.Consumer(key=self.consumer_key,
+                                  secret=self.consumer_secret)
+        client = oauth.Client(consumer, token)
+        r, c = client.request(url, method='GET')
+        token = str(c).split("&")[0].split("=")[1]
+        url = 'https://api.twitter.com/oauth/authorize?oauth_token={}'.format(
+            token)
+        self.sw.go_to_url(url)
+        self.sw.xpath_from_id_and_click(elem_id='allow')
+        lqa_url = self.sw.browser.current_url
+        oauth_verifier = lqa_url.split("oauth_verifier=", 1)[1]
+        access_token_url = (
+            'https://api.twitter.com/oauth/access_token?oauth_consumer_key={}'
+            '&oauth_token={}&oauth_verifier={}'.format(self.consumer_key,
+                                                       token, oauth_verifier))
+        token_request = requests.get(access_token_url)
+        strings = token_request.text.split('&')
+        new_token = strings[0].split('=')[1]
+        new_secret = strings[1].split('=')[1]
+        self.config['ACCESS_TOKEN'] = new_token
+        self.config['ACCESS_TOKEN_SECRET'] = new_secret
+        with open(self.configfile, 'w') as f:
+            json.dump(self.config, f)
+        return self.configfile
 
     def get_account_timezone(self):
         url, params = self.create_base_url()
