@@ -733,6 +733,7 @@ class Analyze(object):
 
     @staticmethod
     def check_combine_col_totals(cd, df, cds_name, c_cols):
+        df = utl.data_to_type(df, float_col=c_cols)
         for col in c_cols:
             if col in df.columns:
                 total = df[col].sum()
