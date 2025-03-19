@@ -195,10 +195,10 @@ class TestApis:
         username = ''
         password = ''
         api = twapi.TwApi()
-        api.input_config(config_file)
-        api.authenticate_accounts()
-        api.authenticate_account(username=username,
-                                 password=password)
+        if config_file:
+            api.input_config(config_file)
+            api.authenticate_account(username=username,
+                                     password=password)
 
     def test_azapi(self, tmp_path_factory):
         api = azapi.AzuApi()
