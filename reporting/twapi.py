@@ -11,7 +11,10 @@ import requests
 import pandas as pd
 import datetime as dt
 import oauth2 as oauth
+from openai import client_id
 import reporting.utils as utl
+import reporting.gsapi as gsapi
+import reporting.dictcolumns as dctc
 from selenium.webdriver.common.by import By
 from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
@@ -108,10 +111,6 @@ class TwApi(object):
         self.tweet_dict = None
         self.usernames = None
         self.async_requests = []
-        self.user = None
-        self.password = None
-        self.sw = None
-        self.browser = None
         self.v = 11
 
     def reset_dicts(self):
@@ -571,37 +570,83 @@ class TwApi(object):
                 with open(old_config, 'w') as f:
                     json.dump(self.config, f)
                 return timezone
-        self.user = self.config['USERNAME']
-        self.password = self.config['PASSWORD']
-        self.authenticate_account(self.user, self.password)
+        self.authenticate_accounts()
         timezone = self.get_account_timezone()
         if timezone:
             return timezone
         return False
 
+    @staticmethod
+    def get_passwords_df():
+        df = gsapi.GsApi().get_passwords_df()
+        df.columns = df.iloc[0]
+        df = df[1:].reset_index(drop=True)
+        df = df.iloc[:, [0,1,4,5]]
+        df.columns = df.iloc[0]
+        df.columns.values[0] = 'Client'
+        df.columns.values[1] = 'Campaign'
+        df = df.dropna(how='all')
+        return df
+
+    @staticmethod
+    def get_client_name():
+        const_config = os.path.join(utl.config_path, dctc.filename_con_config)
+        df = pd.read_csv(const_config)
+        client_name = (
+            df.loc[df[dctc.DICT_COL_NAME] == dctc.CLI,
+            dctc.DICT_COL_VALUE].values[0])
+        client_name = client_name.lower()
+        client_name = client_name.replace(' ', '')
+        return client_name
+
+    def find_password(self):
+        df = self.get_passwords_df()
+        client_name = self.get_client_name()
+        df['Client'] = df['Client'].astype(str).str.lower()
+        df['Client'] = df['Client'].astype(str).str.replace(' ','')
+        client_match = df.loc[df['Client'] == client_name]
+        password_df = client_match[['Username','Password']]
+        return password_df
+
+    def authenticate_accounts(self):
+        """
+        Finds username and password for client in Constant Dictionary.
+        Currently, will break out once first password is found and authenticated
+        """
+        df = self.find_password()
+        df.replace('', pd.NA, inplace=True)
+        df = df.dropna()
+        for index, row in df.iterrows():
+            username = row['Username']
+            password = row['Password']
+            self.configfile = self.authenticate_account(username, password)
+            break
+        return self.configfile
+
     def authenticate_account(self, username, password):
         """
-        authenticates new Twitter/X accounts that are not in the base processor
+        authenticates new Twitter/X accounts that are not in the base processor,
+        sets current config file with new values
         """
         if not username or not password:
             return self.configfile
-        self.sw = utl.SeleniumWrapper(headless=True)
-        self.browser = self.sw.browser
+        sw = utl.SeleniumWrapper(headless=False)
+        browser = sw.browser
         tw_url = 'https://x.com/i/flow/login'
-        self.sw.go_to_url(tw_url, sleep=1)
+        sw.go_to_url(tw_url)
         user_xpath = '//label[normalize-space(.)="Phone, email, or username"]'
         next_button_xpath = '//button[normalize-space(.)="Next"]'
         password_xpath = '//label[normalize-space(.)="Password"]'
         login_xpath = '//button[normalize-space(.)="Log in"]'
-        self.sw.wait_for_elem_load(user_xpath, selector=By.XPATH)
-        self.sw.click_on_xpath(user_xpath)
-        elem = self.browser.find_element_by_xpath(user_xpath)
+        sw.wait_for_elem_load(user_xpath, selector=By.XPATH)
+        sw.click_on_xpath(user_xpath)
+        elem = browser.find_element_by_xpath(user_xpath)
         elem.send_keys(username)
-        self.sw.click_on_xpath(next_button_xpath)
-        self.sw.click_on_xpath(password_xpath)
-        elem = self.browser.find_element_by_xpath(password_xpath)
+        sw.click_on_xpath(next_button_xpath)
+        sw.click_on_xpath(password_xpath)
+        elem = browser.find_element_by_xpath(password_xpath)
         elem.send_keys(password)
-        self.sw.click_on_xpath(login_xpath)
+        sw.click_on_xpath(login_xpath)
         url = "https://api.twitter.com/oauth/request_token"
         token = oauth.Token(key=self.access_token,
                             secret=self.access_token_secret)
@@ -612,9 +657,9 @@ class TwApi(object):
         token = str(c).split("&")[0].split("=")[1]
         url = 'https://api.twitter.com/oauth/authorize?oauth_token={}'.format(
             token)
-        self.sw.go_to_url(url)
-        self.sw.xpath_from_id_and_click(elem_id='allow')
-        lqa_url = self.sw.browser.current_url
+        sw.go_to_url(url)
+        sw.xpath_from_id_and_click(elem_id='allow')
+        lqa_url = sw.browser.current_url
         oauth_verifier = lqa_url.split("oauth_verifier=", 1)[1]
         access_token_url = (
             'https://api.twitter.com/oauth/access_token?oauth_consumer_key={}'
@@ -628,6 +673,7 @@ class TwApi(object):
         self.config['ACCESS_TOKEN_SECRET'] = new_secret
         with open(self.configfile, 'w') as f:
             json.dump(self.config, f)
+        sw.quit()
         return self.configfile
 
     def get_account_timezone(self):

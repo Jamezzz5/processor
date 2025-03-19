@@ -120,6 +120,13 @@ class GsApi(object):
         self.df = self.parse_response(response)
         return self.df
 
+    def get_passwords_df(self):
+        self.input_config('gsapi.json')
+        self.sheet_id = '18dt84mxha8fAVuhTxMaGcaMBHwf0_mhTS7q7XMadg2o'
+        df = self.get_data()
+        return df
+
+
     def create_presentation(self, presentation_name=None):
         logging.info('Creating GSlides Presentation: {}'.format(
             presentation_name))
