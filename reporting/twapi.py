@@ -20,7 +20,6 @@ from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
 from selenium.webdriver.common.keys import Keys
 
-
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']
 user_field = 'USER_STATS'

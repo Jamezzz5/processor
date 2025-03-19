@@ -126,7 +126,6 @@ class GsApi(object):
         df = self.get_data()
         return df
 
-
     def create_presentation(self, presentation_name=None):
         logging.info('Creating GSlides Presentation: {}'.format(
             presentation_name))
