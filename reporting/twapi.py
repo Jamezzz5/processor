@@ -629,7 +629,7 @@ class TwApi(object):
         """
         if not username or not password:
             return self.configfile
-        sw = utl.SeleniumWrapper(headless=True
+        sw = utl.SeleniumWrapper(headless=True)
         browser = sw.browser
         tw_url = 'https://x.com/i/flow/login'
         sw.go_to_url(tw_url)
