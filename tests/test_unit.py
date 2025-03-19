@@ -27,6 +27,7 @@ import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
+import reporting.twapi as twapi
 
 
 def func(x):
@@ -188,6 +189,16 @@ class TestApis:
         with open(file_name, 'w') as f:
             json.dump(json_data, f)
         return file_name, json_data
+
+    def test_twapi_auth(self, tmp_path_factory):
+        config_file = ''
+        username = ''
+        password = ''
+        api = twapi.TwApi()
+        if config_file:
+            api.input_config(config_file)
+            api.authenticate_account(username=username,
+                                     password=password)
 
     def test_azapi(self, tmp_path_factory):
         api = azapi.AzuApi()
