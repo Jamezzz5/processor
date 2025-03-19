@@ -42,6 +42,7 @@ class RsApi(object):
     display_fields = ['impressions', 'clicks']
     display_nested_cols = ['network_reported_performance', 'goals']
     display_fields.extend(display_nested_cols)
+    default_config_file_name = 'rsapi.json'
 
     def __init__(self):
         self.config = None
@@ -97,12 +98,14 @@ class RsApi(object):
 
     def get_id(self):
         r = requests.get(self.games_url, headers=self.headers)
-        self.game_id = [x['id'] for x in r.json()['games']
-                        if x['name'] == self.game_name]
+        response = r.json()
+        if 'games' in response:
+            self.game_id = [x['id'] for x in response['games']
+                            if x['name'].lower() == self.game_name.lower()]
         if len(self.game_id) > 0:
             self.game_id = int(self.game_id[0])
         else:
-            logging.warning('Game ID not in response: {}'.format(r.json()))
+            logging.warning('Game ID not in response: {}'.format(response))
         return
 
     def date_check(self, sd, ed):

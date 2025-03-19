@@ -673,8 +673,14 @@ class Analyze(object):
                 {vmc.date: [np.min, np.max]})
             df.columns = [' - '.join(col).strip() for col in df.columns]
             tdf = df.reset_index()
-            max_date = tdf['{} - amax'.format(vmc.date)][0].date()
-            min_date = tdf['{} - amin'.format(vmc.date)][0].date()
+            max_col = '{} - amax'.format(vmc.date)
+            if max_col not in tdf.columns:
+                max_col = max_col.replace('amax', 'max')
+            min_col = '{} - amin'.format(vmc.date)
+            if min_col not in tdf.columns:
+                min_col = min_col.replace('amin', 'min')
+            max_date = tdf[max_col][0].date()
+            min_date = tdf[min_col][0].date()
             sd = cds.p[vmc.startdate].date()
             ed = cds.p[vmc.enddate].date()
             if any(pd.isnull(x) for x in [max_date, min_date]):
@@ -727,6 +733,7 @@ class Analyze(object):
 
     @staticmethod
     def check_combine_col_totals(cd, df, cds_name, c_cols):
+        df = utl.data_to_type(df, float_col=c_cols)
         for col in c_cols:
             if col in df.columns:
                 total = df[col].sum()
@@ -3471,6 +3478,7 @@ class AliChat(object):
     @staticmethod
     def get_stop_words():
         nltk.download('stopwords')
+        nltk.download('wordnet')
         stop_words = list(nltk.corpus.stopwords.words('english'))
         return stop_words
 
