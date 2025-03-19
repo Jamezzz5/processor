@@ -16,8 +16,7 @@ import reporting.vmcolumns as vmc
 config_path = utl.config_path
 
 common_columns = ['date', 'impressions', 'clicks', 'cost',
-                  'campaignName', 'campaignId', 'adGroupName',
-                  'adGroupId']
+                  'campaignName', 'adGroupName']
 
 
 class AmzApi(object):
@@ -28,7 +27,7 @@ class AmzApi(object):
     def_metrics = [
         'campaignName', 'adGroupName', 'impressions', 'clicks', 'cost',
         'attributedConversions14d',
-        'attributedConversions14dSameSKU', 'attributedUnitsOrdered14d',
+        'attributedConversions14dSameSKU',
         'attributedSales14d', 'attributedSales14dSameSKU']
     default_config_file_name = 'amzapi.json'
 
@@ -291,7 +290,7 @@ class AmzApi(object):
                             'videoStart', 'videoFirstQuartile', 'videoMidpoint',
                             'videoThirdQuartile', 'videoComplete',
                             'totalSales14d', 'totalPurchases14d',
-                            'totalROAS14d', 'sales14d', 'purchases14d'],
+                            'sales14d', 'purchases14d'],
                 "type": "CAMPAIGN",
                 "dimensions": ["ORDER", "LINE_ITEM", "CREATIVE"],
                 "timeUnit": "DAILY"
@@ -305,7 +304,7 @@ class AmzApi(object):
                 'adProduct': 'SPONSORED_PRODUCTS',
                 'columns': common_columns + [
                            'spend', 'purchases14d',
-                           'purchasesSameSku14d', 'unitsSoldClicks14d',
+                           'purchasesSameSku14d',
                            'sales14d', 'attributedSalesSameSku14d'],
                 'reportTypeId': 'spCampaigns',
                 'format': 'GZIP_JSON',
@@ -318,17 +317,12 @@ class AmzApi(object):
             sb_body['configuration'] = {
                 'adProduct': 'SPONSORED_BRANDS',
                 'columns': common_columns + [
-                    'detailPageViewsClicks', 'newToBrandDetailPageViews',
-                    'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
-                    'newToBrandPurchasesClicks', 'newToBrandSales',
-                    'newToBrandSalesClicks', 'newToBrandUnitsSold',
-                    'newToBrandUnitsSoldClicks', 'purchases',
-                    'purchasesClicks', 'purchasesPromoted', 'sales',
-                    'salesClicks', 'salesPromoted',
-                    'unitsSold', 'unitsSoldClicks', 'video5SecondViews',
+                    'purchasesPromoted', 'sales',
+                    'salesPromoted', 'purchases',
+                    'unitsSold', 'video5SecondViews',
                     'videoCompleteViews', 'videoFirstQuartileViews',
                     'detailPageViews', 'videoMidpointViews',
-                    'videoThirdQuartileViews', 'videoUnmutes'],
+                    'videoThirdQuartileViews'],
                 'reportTypeId': 'sbAdGroup',
                 'format': 'GZIP_JSON',
                 'groupBy': ['adGroup'],
