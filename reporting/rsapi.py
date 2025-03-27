@@ -19,7 +19,7 @@ class RsApi(object):
     stats_version = '3.0.0'
     def_groups = [
         "game_id", "team_id", "network", "campaign", "ad_group", "ad",
-        "platform", "ad_type", "placement", "creative",
+        "platform", "touchpoint_type", "ad_type", "placement", "creative",
         "sub1", "sub2", "sub3", "sub4", "sub5", "sub6", "sub7", "sub8", "sub9",
         "sub10"]
     def_fields = [
