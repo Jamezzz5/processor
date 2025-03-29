@@ -39,9 +39,21 @@ class DcApi(object):
         'Site (CM360)': 'Site (DCM)', 'DV360 Cost USD': 'DBM Cost USD',
         'DV360 Cost (Account Currency)': 'DBM Cost (Account Currency)'
     }
+    reach_metrics = ['impressionsCoviewed',
+                     'uniqueReachAverageImpressionFrequency',
+                     'uniqueReachAverageImpressionFrequencyCoviewed',
+                     'uniqueReachImpressionReach',
+                     'uniqueReachImpressionReachCoviewed',
+                     'uniqueReachIncrementalClickReach',
+                     'uniqueReachIncrementalImpressionReach',
+                     'uniqueReachIncrementalTotalReach',
+                     'uniqueReachIncrementalViewableImpressionReach',
+                     'uniqueReachTotalReachCoviewed',
+                     'uniqueReachViewableImpressionReach']
     report_path = 'reports/'
     ad_path = 'advertisers/'
     camp_path = 'campaigns/'
+    default_config_file_name = 'dcapi.json'
 
     def __init__(self):
         self.config = None
@@ -159,7 +171,7 @@ class DcApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.parse_fields(sd, ed, fields)
-        report_created = self.create_report()
+        report_created = self.create_report(reach_report=True)
         if not report_created:
             logging.warning('Report not created returning blank df.')
             return pd.DataFrame()
@@ -264,17 +276,15 @@ class DcApi(object):
     def request_error(self):
         logging.warning('Unknown error: {}'.format(self.r.text))
 
-    def create_report(self):
+    def create_report(self, reach_report=False):
         if self.report_id:
             return True
-        report = self.create_report_params()
+        report = self.create_report_params(reach_report)
         full_url = self.create_url(self.report_id)
         self.r = self.make_request(full_url, method='post', body=report)
         if not self.r:
             return False
         self.report_id = self.r.json()['id']
-        with open(self.config_file, 'w') as f:
-            json.dump(self.config, f)
         return True
 
     def get_floodlight_tag_ids(self, fl_ids=None, next_page=None):
@@ -298,7 +308,7 @@ class DcApi(object):
                 fl_ids, next_page=self.r.json()['nextPageToken'])
         return fl_ids
 
-    def create_report_params(self):
+    def create_report_params(self, reach_report=False):
         report_name = ''
         for name in [self.advertiser_id, self.campaign_id]:
             name = re.sub(r'\W+', '', name)
@@ -310,35 +320,48 @@ class DcApi(object):
             'fileName': report_name,
             'format': 'CSV'
         }
-        criteria = self.create_report_criteria()
-        report['criteria'] = criteria
+        if reach_report:
+            report['type'] = 'REACH'
+            report['name'] = '{}_reach'.format(report['name'])
+        criteria = self.create_report_criteria(reach_report)
+        criteria_str = 'criteria'
+        if reach_report:
+            criteria_str = 'reachCriteria'
+        report[criteria_str] = criteria
         return report
 
-    def create_report_criteria(self):
+    def create_report_criteria(self, reach_report=False):
+        metrics = self.default_metrics
+        dimensions = self.default_fields
+        if reach_report:
+            metrics = self.reach_metrics
+            dimensions = [x for x in dimensions
+                          if 'creative' not in x and 'ad' not in x]
         criteria = {
             'dateRange': self.date_range,
             'dimensions': [{'kind': 'dfareporting#sortedDimension', 'name': x}
-                           for x in self.default_fields],
-            'metricNames': self.default_metrics,
-            'activities': {
-                'metricNames': self.default_conversion_metrics,
-                'kind': 'dfareporting#activities',
-                'filters': []
-            },
+                           for x in dimensions],
+            'metricNames': metrics,
             'dimensionFilters': [{
                 'dimensionName': 'advertiser',
                 'id': self.advertiser_id,
                 'kind': 'dfareporting#dimensionValue'}]
         }
-        fl_ids = self.get_floodlight_tag_ids()
-        if fl_ids:
-            criteria['activities']['filters'] = [
-                {'dimensionName': 'activity',
-                 'id': x,
-                 'kind': 'dfareporting#dimensionValue'} for x in fl_ids]
-        else:
-            logging.warning('No floodlight conversions found.')
-            criteria.pop('activities')
+        if not reach_report:
+            criteria['activities'] = {
+                'metricNames': self.default_conversion_metrics,
+                'kind': 'dfareporting#activities',
+                'filters': []
+            }
+            fl_ids = self.get_floodlight_tag_ids()
+            if fl_ids:
+                criteria['activities']['filters'] = [
+                    {'dimensionName': 'activity',
+                     'id': x,
+                     'kind': 'dfareporting#dimensionValue'} for x in fl_ids]
+            else:
+                logging.warning('No floodlight conversions found.')
+                criteria.pop('activities')
         if self.campaign_id:
             campaign_filters = [
                 {'dimensionName': 'campaign',
