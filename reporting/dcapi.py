@@ -19,7 +19,9 @@ base_url = 'https://www.googleapis.com/dfareporting'
 class DcApi(object):
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
-        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId']
+        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId',
+        'packageRoadblock', 'contentCategory', 'creativeType']
+    pos = 'positionInContent'
     default_metrics = [
         'impressions', 'clicks', 'clickRate',
         'activeViewViewableImpressions',
@@ -66,7 +68,8 @@ class DcApi(object):
         self.usr_id = None
         self.advertiser_id = None
         self.campaign_id = None
-        self.report_id = None
+        self.original_report_id = None
+        self.report_ids = []
         self.config_list = None
         self.client = None
         self.date_range = None
@@ -97,7 +100,7 @@ class DcApi(object):
         self.refresh_token = self.config['refresh_token']
         self.refresh_url = self.config['refresh_url']
         self.usr_id = self.config['usr_id']
-        self.report_id = self.config['report_id']
+        self.original_report_id = self.config['report_id']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.usr_id]
         if 'advertiser_id' in self.config:
@@ -170,21 +173,30 @@ class DcApi(object):
                     self.date_range['relativeDateRange'] = 'LAST_30_DAYS'
 
     def get_data(self, sd=None, ed=None, fields=None):
+        df = pd.DataFrame()
         self.parse_fields(sd, ed, fields)
-        report_created = self.create_report(reach_report=True)
+        if self.original_report_id:
+            self.report_ids.append(self.original_report_id)
+        for x in [False, True]:
+            report_created = self.create_report(reach_report=x)
         if not report_created:
             logging.warning('Report not created returning blank df.')
-            return pd.DataFrame()
-        files_url = self.get_files_url()
-        if not files_url:
-            logging.warning('Report not created returning blank df.')
-            return pd.DataFrame()
-        self.r = self.get_report(files_url)
-        if not self.r:
-            return pd.DataFrame()
-        self.df = self.get_df_from_response()
-        self.df = self.rename_cols()
-        return self.df
+            return df
+        for report_id in self.report_ids:
+            logging.info('Getting report id: {}'.format(report_id))
+            self.df = pd.DataFrame()
+            files_url = self.get_files_url(report_id)
+            if not files_url:
+                logging.warning('Report not created returning blank df.')
+                continue
+            self.r = self.get_report(files_url)
+            if not self.r:
+                continue
+            self.get_df_from_response()
+            tdf = self.rename_cols()
+            tdf = utl.first_last_adj(tdf, first_row=1, last_row=1)
+            df = pd.concat([df, tdf], ignore_index=True)
+        return df
 
     def find_first_line(self):
         for idx, x in enumerate(self.r.text.splitlines()):
@@ -227,8 +239,8 @@ class DcApi(object):
             time.sleep(30)
             return False
 
-    def get_files_url(self):
-        full_url = self.create_url(self.report_id)
+    def get_files_url(self, report_id):
+        full_url = self.create_url(report_id)
         self.r = self.make_request('{}/run'.format(full_url), 'post')
         if not self.r:
             logging.warning('No files URL returning.')
@@ -277,14 +289,14 @@ class DcApi(object):
         logging.warning('Unknown error: {}'.format(self.r.text))
 
     def create_report(self, reach_report=False):
-        if self.report_id:
+        if self.original_report_id:
             return True
         report = self.create_report_params(reach_report)
-        full_url = self.create_url(self.report_id)
+        full_url = self.create_url('')
         self.r = self.make_request(full_url, method='post', body=report)
         if not self.r:
             return False
-        self.report_id = self.r.json()['id']
+        self.report_ids.append(self.r.json()['id'])
         return True
 
     def get_floodlight_tag_ids(self, fl_ids=None, next_page=None):
