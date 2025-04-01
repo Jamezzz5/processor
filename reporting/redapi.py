@@ -388,13 +388,15 @@ class RedApi(object):
         business_ids = []
         if not self.headers:
             self.get_access_token()
-        r = requests.get(self.business_url, headers=self.headers)
-        if r.status_code == 200:
-            json_response = r.json()
-            if 'data' in json_response:
-                business_ids = [x['id'] for x in r.json()['data']]
-            else:
-                logging.warning('Data not in response: {}'.format(r.json()))
+        for x in range(10):
+            r = requests.get(self.business_url, headers=self.headers)
+            if r.status_code == 200:
+                if 'data' in r.json():
+                    business_ids = [x['id'] for x in r.json()['data']]
+                    break
+                else:
+                    logging.warning('Data not in response: {}'.format(r.json()))
+                    time.sleep(5)
         return business_ids
 
     def get_ad_accounts_by_business(self, business_ids):
