@@ -411,11 +411,15 @@ class RedApi(object):
             r = None
             for x in range(5):
                 r = requests.get(url, headers=self.headers)
-                if 'data' in r.json():
-                    break
-                else:
-                    logging.warning('Data not in response: {}'.format(r.json()))
-                    time.sleep(5)
+                try:
+                    if 'data' in r.json():
+                        break
+                    else:
+                        logging.warning(
+                            'Data not in response: {}'.format(r.json()))
+                except requests.exceptions.JSONDecodeError:
+                    logging.warning('Invalid JSON response, retrying')
+                time.sleep(5)
             if not r:
                 logging.warning('Could not get business {}'.format(business_id))
                 continue
