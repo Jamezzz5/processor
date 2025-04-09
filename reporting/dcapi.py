@@ -5,10 +5,10 @@ import json
 import time
 import logging
 import requests
+import numpy as np
 import pandas as pd
 from io import StringIO
 import reporting.utils as utl
-import reporting.vendormatrix as matrix
 import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 
@@ -19,7 +19,9 @@ base_url = 'https://www.googleapis.com/dfareporting'
 class DcApi(object):
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
-        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId']
+        'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId',
+        'packageRoadblock', 'contentCategory', 'creativeType']
+    pos = 'positionInContent'
     default_metrics = [
         'impressions', 'clicks', 'clickRate',
         'activeViewViewableImpressions',
@@ -35,21 +37,28 @@ class DcApi(object):
         'activityClickThroughConversions', 'totalConversions',
         'totalConversionsRevenue', 'activityViewThroughConversions',
         'activityViewThroughRevenue', 'activityClickThroughRevenue']
-    col_rename_dict = {
-        'Site (CM360)': 'Site (DCM)', 'DV360 Cost USD': 'DBM Cost USD',
-        'DV360 Cost (Account Currency)': 'DBM Cost (Account Currency)'
-    }
-    reach_metrics = ['impressionsCoviewed',
-                     'uniqueReachAverageImpressionFrequency',
-                     'uniqueReachAverageImpressionFrequencyCoviewed',
-                     'uniqueReachImpressionReach',
-                     'uniqueReachImpressionReachCoviewed',
-                     'uniqueReachIncrementalClickReach',
-                     'uniqueReachIncrementalImpressionReach',
-                     'uniqueReachIncrementalTotalReach',
-                     'uniqueReachIncrementalViewableImpressionReach',
-                     'uniqueReachTotalReachCoviewed',
-                     'uniqueReachViewableImpressionReach']
+    col_rename_dict = {}
+    reach_metrics = {
+        'impressionsCoviewed':  'Impressions (Co-Viewed)',
+        'uniqueReachAverageImpressionFrequency':
+            'Unique Reach: Average Impression Frequency',
+        'uniqueReachAverageImpressionFrequencyCoviewed':
+            'Unique Reach: Average Impression Frequency (Co-Viewed)',
+        'uniqueReachImpressionReach': 'Unique Reach: Impression Reach',
+        'uniqueReachImpressionReachCoviewed':
+            'Unique Reach: Impression Reach (Co-Viewed)',
+        'uniqueReachIncrementalClickReach':
+            'Unique Reach: Incremental Click Reach',
+        'uniqueReachIncrementalImpressionReach':
+            'Unique Reach: Incremental Impression Reach',
+        'uniqueReachIncrementalTotalReach':
+            'Unique Reach: Incremental Total Reach',
+        'uniqueReachIncrementalViewableImpressionReach':
+            'Unique Reach: Incremental Viewable Impression Reach',
+        'uniqueReachTotalReachCoviewed':
+            'Unique Reach: Total Reach (Co-Viewed)',
+        'uniqueReachViewableImpressionReach':
+            'Unique Reach: Viewable Impression Reach'}
     report_path = 'reports/'
     ad_path = 'advertisers/'
     camp_path = 'campaigns/'
@@ -66,13 +75,17 @@ class DcApi(object):
         self.usr_id = None
         self.advertiser_id = None
         self.campaign_id = None
-        self.report_id = None
+        self.original_report_id = None
+        self.report_ids = []
         self.config_list = None
         self.client = None
         self.date_range = None
         self.version = '4'
         self.df = pd.DataFrame()
         self.r = None
+        self.report_id_dict = {}
+        self.vendor_dict = {}
+        self.campaign_dict = {}
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -97,7 +110,7 @@ class DcApi(object):
         self.refresh_token = self.config['refresh_token']
         self.refresh_url = self.config['refresh_url']
         self.usr_id = self.config['usr_id']
-        self.report_id = self.config['report_id']
+        self.original_report_id = self.config['report_id']
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.usr_id]
         if 'advertiser_id' in self.config:
@@ -170,21 +183,84 @@ class DcApi(object):
                     self.date_range['relativeDateRange'] = 'LAST_30_DAYS'
 
     def get_data(self, sd=None, ed=None, fields=None):
+        df = pd.DataFrame()
         self.parse_fields(sd, ed, fields)
-        report_created = self.create_report(reach_report=True)
+        if self.original_report_id:
+            self.report_ids.append(self.original_report_id)
+        report_created = False
+        report_types = [(False, False, False, False),
+                        (True, False, False, False),
+                        (True, True, False, False),
+                        (True, True, True, False),
+                        (True, True, False, True)]
+        for report_type in report_types:
+            reach_report = report_type[0]
+            no_date = report_type[1]
+            campaign_report = report_type[2]
+            vendor_report = report_type[3]
+            report_created = self.create_report(
+                reach_report=reach_report, no_date=no_date,
+                campaign_report=campaign_report, vendor_report=vendor_report)
         if not report_created:
             logging.warning('Report not created returning blank df.')
-            return pd.DataFrame()
-        files_url = self.get_files_url()
-        if not files_url:
-            logging.warning('Report not created returning blank df.')
-            return pd.DataFrame()
-        self.r = self.get_report(files_url)
-        if not self.r:
-            return pd.DataFrame()
-        self.df = self.get_df_from_response()
-        self.df = self.rename_cols()
-        return self.df
+            return df
+        for report_id in self.report_ids:
+            logging.info('Getting report id: {}'.format(report_id))
+            self.df = pd.DataFrame()
+            files_url = self.get_files_url(report_id)
+            if not files_url:
+                logging.warning('Report not created returning blank df.')
+                continue
+            self.report_id_dict[report_id]['url'] = files_url
+        for report_id, report_param in self.report_id_dict.items():
+            files_url = report_param['url']
+            self.r = self.get_report(files_url)
+            if not self.r:
+                continue
+            tdf = self.get_df_from_response()
+            last_row = 1
+            if 'A dash' in str(tdf.iloc[-1, 0]):
+                last_row = 2
+            tdf = utl.first_last_adj(tdf, first_row=1, last_row=last_row)
+            tdf = self.rename_cols(tdf, report_param)
+            if not report_param['reach_report']:
+                self.check_for_campaign_vendor_dicts(tdf)
+            else:
+                tdf = self.add_placement_name(tdf)
+            df = pd.concat([df, tdf], ignore_index=True)
+        return df
+
+    def check_for_campaign_vendor_dicts(self, tdf):
+        temp_col = 'PlacementPart'
+        cols = [('Site (CM360)', 1, self.vendor_dict),
+                ('Campaign', 15, self.campaign_dict)]
+        for col_name, place_idx, storage_dict in cols:
+            second_parts = tdf['Placement'].str.split('_').str[place_idx]
+            pair_df = tdf[[col_name]].copy()
+            pair_df[temp_col] = second_parts
+            unique_pairs = pair_df.drop_duplicates(subset=[col_name])
+            res = unique_pairs.set_index(col_name)[temp_col].to_dict()
+            storage_dict.update(res)
+
+    def add_placement_name(self, tdf):
+        place_col = 'Placement'
+        if place_col in tdf.columns:
+            return tdf
+        else:
+            tdf[place_col] = ''
+        is_blank = tdf[place_col].isna() | (
+                    tdf[place_col].str.strip() == '')
+        placement_parts = [[''] * 16 for _ in range(len(tdf))]
+        campaign_parts = tdf['Campaign'].map(self.campaign_dict)
+        for i, val in enumerate(campaign_parts):
+            placement_parts[i][15] = val
+        if 'Site (CM360)' in tdf.columns:
+            vendor_parts = tdf['Site (CM360)'].map(self.vendor_dict)
+            for i, val in enumerate(vendor_parts):
+                placement_parts[i][1] = val
+        new_placements = ['_'.join(parts) for parts in placement_parts]
+        tdf[place_col] = np.where(is_blank, new_placements, tdf[place_col])
+        return tdf
 
     def find_first_line(self):
         for idx, x in enumerate(self.r.text.splitlines()):
@@ -198,7 +274,7 @@ class DcApi(object):
         first_line = self.find_first_line()
         if first_line:
             self.df = pd.read_csv(StringIO(self.r.text), skiprows=first_line)
-            self.df = self.df.reset_index()
+            self.df = self.df.reset_index().copy()
         else:
             self.df = pd.DataFrame()
         return self.df
@@ -224,11 +300,11 @@ class DcApi(object):
         else:
             logging.info('Report unavailable.  Attempt {}.  '
                          'Response: {}'.format(attempt, r.json()))
-            time.sleep(30)
+            time.sleep(15)
             return False
 
-    def get_files_url(self):
-        full_url = self.create_url(self.report_id)
+    def get_files_url(self, report_id):
+        full_url = self.create_url(report_id)
         self.r = self.make_request('{}/run'.format(full_url), 'post')
         if not self.r:
             logging.warning('No files URL returning.')
@@ -276,15 +352,23 @@ class DcApi(object):
     def request_error(self):
         logging.warning('Unknown error: {}'.format(self.r.text))
 
-    def create_report(self, reach_report=False):
-        if self.report_id:
+    def create_report(self, reach_report=False, no_date=False,
+                      campaign_report=False, vendor_report=False):
+        if self.original_report_id:
             return True
-        report = self.create_report_params(reach_report)
-        full_url = self.create_url(self.report_id)
+        report = self.create_report_params(reach_report, no_date,
+                                           campaign_report, vendor_report)
+        full_url = self.create_url('')
         self.r = self.make_request(full_url, method='post', body=report)
         if not self.r:
             return False
-        self.report_id = self.r.json()['id']
+        report_id = self.r.json()['id']
+        self.report_ids.append(report_id)
+        report_params = {'reach_report': reach_report,
+                         'no_date': no_date,
+                         'campaign_report': campaign_report,
+                         'vendor_report': vendor_report}
+        self.report_id_dict[report_id] = report_params
         return True
 
     def get_floodlight_tag_ids(self, fl_ids=None, next_page=None):
@@ -308,7 +392,8 @@ class DcApi(object):
                 fl_ids, next_page=self.r.json()['nextPageToken'])
         return fl_ids
 
-    def create_report_params(self, reach_report=False):
+    def create_report_params(self, reach_report=False, no_date=False,
+                             campaign_report=False, vendor_report=False):
         report_name = ''
         for name in [self.advertiser_id, self.campaign_id]:
             name = re.sub(r'\W+', '', name)
@@ -323,20 +408,34 @@ class DcApi(object):
         if reach_report:
             report['type'] = 'REACH'
             report['name'] = '{}_reach'.format(report['name'])
-        criteria = self.create_report_criteria(reach_report)
+        if no_date:
+            report['name'] = '{}_no_date'.format(report['name'])
+        if campaign_report:
+            report['name'] = '{}_campaign'.format(report['name'])
+        if vendor_report:
+            report['name'] = '{}_vendor'.format(report['name'])
+        criteria = self.create_report_criteria(reach_report, no_date,
+                                               campaign_report, vendor_report)
         criteria_str = 'criteria'
         if reach_report:
             criteria_str = 'reachCriteria'
         report[criteria_str] = criteria
         return report
 
-    def create_report_criteria(self, reach_report=False):
+    def create_report_criteria(self, reach_report=False, no_date=False,
+                               campaign_report=False, vendor_report=False):
         metrics = self.default_metrics
         dimensions = self.default_fields
         if reach_report:
-            metrics = self.reach_metrics
+            metrics = list(self.reach_metrics.keys())
             dimensions = [x for x in dimensions
                           if 'creative' not in x and 'ad' not in x]
+        if no_date:
+            dimensions = [x for x in dimensions if 'date' not in x]
+        if campaign_report:
+            dimensions = [x for x in dimensions if x == 'campaign']
+        if vendor_report:
+            dimensions = [x for x in dimensions if x in ['campaign', 'site']]
         criteria = {
             'dateRange': self.date_range,
             'dimensions': [{'kind': 'dfareporting#sortedDimension', 'name': x}
@@ -371,9 +470,18 @@ class DcApi(object):
             criteria['dimensionFilters'].extend(campaign_filters)
         return criteria
 
-    def rename_cols(self):
-        self.df.iloc[0] = self.df.iloc[0].replace(self.col_rename_dict)
-        return self.df
+    def rename_cols(self, tdf, report_param):
+        rename_dict = self.col_rename_dict.copy()
+        if report_param['reach_report']:
+            col_str = ''
+            for report_type in ['no_date', 'campaign_report', 'vendor_report']:
+                if report_param[report_type]:
+                    col_str = '{} - {}'.format(col_str, report_type)
+            if col_str:
+                for k, v in self.reach_metrics.items():
+                    rename_dict[v] = '{}{}'.format(v, col_str)
+        tdf.rename(columns=rename_dict, inplace=True)
+        return tdf
 
     def test_connection(self, acc_col, camp_col, pre_col):
         success_msg = 'SUCCESS -- ID:'
