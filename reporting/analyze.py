@@ -326,7 +326,8 @@ class Analyze(object):
         self.make_heat_map(df, cost_cols)
 
     def generate_df_table(self, group, metrics, sort=None, data_filter=None,
-                          df=pd.DataFrame()):
+                          df=pd.DataFrame(), sd_col='start_date',
+                          ed_col='end_date'):
         base_metrics = [x for x in metrics if x not in self.vc.metric_names]
         calc_metrics = [x for x in metrics if x not in base_metrics]
         if df.empty:
@@ -345,7 +346,16 @@ class Analyze(object):
                 logging.warning('{} not in df columns'.format(group))
                 columns = group + metrics
                 return pd.DataFrame({x: [] for x in columns})
-        df = df.groupby(group)[base_metrics].sum()
+        has_start = sd_col in df.columns
+        has_end = ed_col in df.columns
+        agg_dict = {col: 'sum' for col in base_metrics}
+        if has_start:
+            df = utl.data_to_type(df, date_col=[sd_col])
+            agg_dict[sd_col] = 'min'
+        if has_end:
+            df = utl.data_to_type(df, date_col=[ed_col])
+            agg_dict[ed_col] = 'max'
+        df = df.groupby(group).agg(agg_dict)
         df = self.vc.calculate_all_metrics(calc_metrics, df)
         if sort:
             df = df.sort_values(sort, ascending=False)
