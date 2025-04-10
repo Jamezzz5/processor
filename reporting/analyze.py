@@ -355,7 +355,10 @@ class Analyze(object):
         if has_end:
             df = utl.data_to_type(df, date_col=[ed_col])
             agg_dict[ed_col] = 'max'
-        df = df.groupby(group).agg(agg_dict)
+        if not df.empty and agg_dict:
+            df = df.groupby(group).agg(agg_dict)
+        else:
+            return df
         df = self.vc.calculate_all_metrics(calc_metrics, df)
         if sort:
             df = df.sort_values(sort, ascending=False)
