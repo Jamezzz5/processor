@@ -326,7 +326,8 @@ class Analyze(object):
         self.make_heat_map(df, cost_cols)
 
     def generate_df_table(self, group, metrics, sort=None, data_filter=None,
-                          df=pd.DataFrame()):
+                          df=pd.DataFrame(), sd_col='start_date',
+                          ed_col='end_date', min_max_dates=False):
         base_metrics = [x for x in metrics if x not in self.vc.metric_names]
         calc_metrics = [x for x in metrics if x not in base_metrics]
         if df.empty:
@@ -345,7 +346,19 @@ class Analyze(object):
                 logging.warning('{} not in df columns'.format(group))
                 columns = group + metrics
                 return pd.DataFrame({x: [] for x in columns})
-        df = df.groupby(group)[base_metrics].sum()
+        has_start = sd_col in df.columns
+        has_end = ed_col in df.columns
+        agg_dict = {col: 'sum' for col in base_metrics}
+        if has_start and min_max_dates:
+            df = utl.data_to_type(df, date_col=[sd_col])
+            agg_dict[sd_col] = 'min'
+        if has_end and min_max_dates:
+            df = utl.data_to_type(df, date_col=[ed_col])
+            agg_dict[ed_col] = 'max'
+        if not df.empty and agg_dict:
+            df = df.groupby(group).agg(agg_dict)
+        else:
+            return pd.DataFrame()
         df = self.vc.calculate_all_metrics(calc_metrics, df)
         if sort:
             df = df.sort_values(sort, ascending=False)
@@ -405,6 +418,7 @@ class Analyze(object):
                'linear fit').format(kpi, trend, format_map(abs(fit[0])))
         logging.info(msg)
         df['fit'] = fit[0] * df['index'] + fit[1]
+        df = utl.data_to_type(df, date_col=[vmc.date])
         df[vmc.date] = df[vmc.date].dt.strftime('%Y-%m-%d')
         self.add_to_analysis_dict(
             key_col=self.kpi_col, message=msg, data=df.to_dict(),
@@ -445,6 +459,7 @@ class Analyze(object):
                                          filter_val, small_large='Smallest'):
         format_df = self.give_df_default_format(df, columns=[kpi])
         if split == vmc.date:
+            df = utl.data_to_type(df, date_col=[split])
             df[split] = df[split].dt.strftime('%Y-%m-%d')
         split_values = ['{} ({})'.format(x, y) for x, y in
                         format_df[[split, kpi]].values]
