@@ -1069,6 +1069,27 @@ class TestAnalyze:
         aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
         aly.do_all_analysis()
 
+    def test_all_analysis_on_df(self):
+        d = {vmc.clicks: [38, 2078, 2428, 0, 399, 405],
+             vmc.date: ['4/9/2025' for x in range(6)],
+             vmc.impressions: [1000, 120000, 0, 2500, 750, 0],
+             vmc.cost: [1820.50, 8170.01, 0, 750.00, 8390.93, 0],
+             vmc.vendorkey: ['API_Vendor1_Q1', 'API_Vendor1_Q1', 'API_DCM_Q1',
+                             'API_Vendor1_Q1', 'API_Vendor1_Q1',
+                             'API_DCM_Q1'],
+             vmc.views: [100, 250, 0, 110, 253, 0],
+             vmc.views100: [0, 2, 0, 35, 46, 0],
+             dctc.CAM: ['Launch' for x in range(6)],
+             dctc.PN: ['place_name_1', 'place_name_2', 'place_name_2',
+                       'place_name_3', 'place_name_4', 'place_name_4'],
+             dctc.VEN: ['Vendor1', 'Vendor1', 'Vendor1', 'Vendor2',
+                        'Vendor2', 'Vendor2'],
+             dctc.PNC: [0 for x in range(6)],
+             'Net Cost Final': [1820.50, 8170.01, 0, 750.00, 8390.93, 0]}
+        df = pd.DataFrame(data=d)
+        aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
+        aly.do_all_analysis()
+
     def test_train_tfidf(self):
         texts = ['The file type for raw files are csv',
                  'Add 40 to the topline',

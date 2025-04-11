@@ -85,7 +85,7 @@ class Analyze(object):
                        [vmc.purchase, 'CPP']]
     topline_metrics_final = [vmc.impressions, 'CPM', vmc.clicks, 'CTR', 'CPC',
                              vmc.views, vmc.views100, 'VCR', 'CPV', 'CPCV',
-                             vmc.landingpage,  vmc.btnclick, vmc.purchase,
+                             vmc.landingpage, vmc.btnclick, vmc.purchase,
                              'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
@@ -610,9 +610,65 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.missing_metrics,
                                   message=missing_msg, data=mdf.to_dict())
 
+    @staticmethod
+    def classify_serve_type(vk):
+        ad_servers = [vmc.api_dc_key, vmc.api_szk_key]
+        api_type = vk.split('_')[1]
+        return 'Ad Serving' if api_type in ad_servers else 'Platform'
+
+    def flag_ad_serving_platform_differences(self):
+        all_threshold = 'All'
+        threshold_col = 'threshold'
+        metrics = [vmc.clicks]
+        if [metric for metric in metrics if metric not in self.df.columns]:
+            logging.warning('Missing metric, could not determine flags.')
+            return False
+        cols = [dctc.PN, vmc.vendorkey]
+        if [col for col in cols if col not in self.df.columns]:
+            logging.warning('Missing necessary column, could not determine '
+                            'ad serving/ platform flags.')
+            return False
+        df = self.generate_df_table(group=cols, metrics=metrics)
+        df = df.reset_index()
+        if df.empty:
+            logging.warning('Dataframe empty, could not determine ad serving/ '
+                            'platform flags.')
+            return False
+        df['Serving Type'] = df[vmc.vendorkey].apply(self.classify_serve_type)
+        thresholds = {vmc.clicks: {all_threshold: 0.1}}
+        for metric_name, threshold_dict in thresholds.items():
+            edf = df.copy()
+            edf = edf.pivot_table(index=dctc.PN, columns='Serving Type',
+                                  values=metric_name, aggfunc='sum')
+            edf = edf.dropna(subset=['Ad Serving', 'Platform'])
+            edf.columns = [f'{col} {metric_name}' for col in edf.columns]
+            ad_serv_col_name = f'Ad Serving {metric_name}'
+            plat_col_name = f'Platform {metric_name}'
+            rate_col_name = f'{metric_name} Differ Rate'
+            edf[rate_col_name] = edf.apply(
+                lambda row: 2 * abs(row[ad_serv_col_name] - row[plat_col_name])
+                            / (row[ad_serv_col_name] + row[plat_col_name]),
+                axis=1)
+            edf[threshold_col] = edf.index.map(threshold_dict).fillna(
+                threshold_dict[all_threshold])
+            edf = edf[edf[rate_col_name] > edf[threshold_col]]
+            if not edf.empty:
+                edf = edf[[rate_col_name, threshold_col]]
+                edf = edf.replace([np.inf, -np.inf], np.nan).fillna(0)
+                flagged_msg = ('The following placement names have unusually '
+                               'different ad serving {} compared to platform '
+                               '{}'.format(rate_col_name, metric_name))
+                logging.info('{}\n{}'.format(
+                    flagged_msg, edf.to_string()))
+                self.add_to_analysis_dict(
+                    key_col=self.flagged_metrics, param=metric_name,
+                    message=flagged_msg, data=edf.to_dict())
+        return True
+
     def flag_errant_metrics(self):
-        metrics = [vmc.impressions, vmc.clicks, 'CTR']
-        if [metric for metric in metrics[:2] if metric not in self.df.columns]:
+        metrics = [vmc.impressions, vmc.clicks, vmc.views, vmc.views100, 'CTR',
+                   'VCR']
+        if [metric for metric in metrics[:4] if metric not in self.df.columns]:
             logging.warning('Missing metric, could not determine flags.')
             return False
         df = self.generate_df_table(group=[dctc.VEN, dctc.CAM], metrics=metrics)
@@ -621,24 +677,31 @@ class Analyze(object):
             return False
         all_threshold = 'All'
         threshold_col = 'threshold'
-        thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06}}
+        lower_thresholds = ['VCR']
+        thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06},
+                      'VCR': {all_threshold: 0.01}}
         for metric_name, threshold_dict in thresholds.items():
             edf = df.copy()
             edf = edf.reset_index().set_index(dctc.VEN)
             edf[threshold_col] = edf.index.map(threshold_dict).fillna(
                 threshold_dict[all_threshold])
-            edf = edf[edf['CTR'] > edf[threshold_col]]
+            if metric_name in lower_thresholds:
+                edf = edf[edf[metric_name] < edf[threshold_col]]
+                error_type = 'low'
+            else:
+                edf = edf[edf[metric_name] > edf[threshold_col]]
+                error_type = 'high'
             if not edf.empty:
                 edf = edf[[metric_name, threshold_col]]
                 edf = edf.replace([np.inf, -np.inf], np.nan).fillna(0)
-                flagged_msg = ('The following vendors have unusually high {}s'
-                               '.'.format(metric_name))
+                flagged_msg = ('The following vendors have unusually {} {}s'
+                               '.'.format(error_type, metric_name))
                 logging.info('{}\n{}'.format(
                     flagged_msg, edf.to_string()))
                 self.add_to_analysis_dict(
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
-        return True
+        return self.flag_ad_serving_platform_differences()
 
     @staticmethod
     def processor_clean_functions(df, cd, cds_name, clean_functions):
@@ -1921,7 +1984,7 @@ class CheckApiDateLength(AnalyzeBase):
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey:  vk_list})
+        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -1997,7 +2060,7 @@ class CheckColumnNames(AnalyzeBase):
             transforms = [x for x in transforms if x.split('::')[0]
                           in ['FilterCol', 'MergeReplaceExclude']]
             missing_cols = []
-            tdf = source.get_raw_df(nrows=first_row+5)
+            tdf = source.get_raw_df(nrows=first_row + 5)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
             cols = [str(x) for x in tdf.columns if str(x) != 'nan']
