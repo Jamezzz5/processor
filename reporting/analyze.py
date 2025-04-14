@@ -628,7 +628,7 @@ class Analyze(object):
     @staticmethod
     def classify_serve_type(vk):
         ad_servers = [vmc.api_dc_key, vmc.api_szk_key]
-        api_type = vk.split('_')[1]
+        api_type = vk.split('_')[1] if '_' in vk else vk
         return 'Ad Serving' if api_type in ad_servers else 'Platform'
 
     def flag_ad_serving_platform_differences(self):
@@ -655,6 +655,9 @@ class Analyze(object):
             edf = df.copy()
             edf = edf.pivot_table(index=dctc.PN, columns='Serving Type',
                                   values=metric_name, aggfunc='sum')
+            for col_name in ['Ad Serving', 'Platform']:
+                if col_name not in edf.columns:
+                    edf[col_name] = None
             edf = edf.dropna(subset=['Ad Serving', 'Platform'])
             edf.columns = [f'{col} {metric_name}' for col in edf.columns]
             ad_serv_col_name = f'Ad Serving {metric_name}'
@@ -681,20 +684,30 @@ class Analyze(object):
         return True
 
     def flag_errant_metrics(self):
-        metrics = [vmc.impressions, vmc.clicks, vmc.views, vmc.views100, 'CTR',
-                   'VCR']
-        if [metric for metric in metrics[:4] if metric not in self.df.columns]:
+        all_threshold = 'All'
+        threshold_col = 'threshold'
+        lower_thresholds = ['VCR']
+        thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06},
+                      'VCR': {all_threshold: 0.01}}
+        metric_dependencies = {'CTR': [vmc.impressions, vmc.clicks],
+                               'VCR': [vmc.views, vmc.views100]}
+        metrics = []
+        for calc_metric in metric_dependencies.keys():
+            if [metric for metric in metric_dependencies[calc_metric] if
+                    metric not in self.df.columns]:
+                logging.warning('Missing metric, could not determine {} '
+                                'flag.'.format(calc_metric))
+                thresholds.pop(calc_metric)
+            else:
+                metrics += metric_dependencies[calc_metric]
+                metrics += [calc_metric]
+        if not metrics:
             logging.warning('Missing metric, could not determine flags.')
             return False
         df = self.generate_df_table(group=[dctc.VEN, dctc.CAM], metrics=metrics)
         if df.empty:
             logging.warning('Dataframe empty, could not determine flags.')
             return False
-        all_threshold = 'All'
-        threshold_col = 'threshold'
-        lower_thresholds = ['VCR']
-        thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06},
-                      'VCR': {all_threshold: 0.01}}
         for metric_name, threshold_dict in thresholds.items():
             edf = df.copy()
             edf = edf.reset_index().set_index(dctc.VEN)
