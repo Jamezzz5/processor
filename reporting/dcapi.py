@@ -185,14 +185,16 @@ class DcApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         df = pd.DataFrame()
         self.parse_fields(sd, ed, fields)
-        if self.original_report_id:
-            self.report_ids.append(self.original_report_id)
         report_created = False
         report_types = [(False, False, False, False),
                         (True, False, False, False),
                         (True, True, False, False),
                         (True, True, True, False),
                         (True, True, False, True)]
+        if self.original_report_id:
+            self.report_ids.append(self.original_report_id)
+            report_types = []
+            report_created = True
         for report_type in report_types:
             reach_report = report_type[0]
             no_date = report_type[1]
@@ -211,6 +213,8 @@ class DcApi(object):
             if not files_url:
                 logging.warning('Report not created returning blank df.')
                 continue
+            if report_id not in self.report_id_dict:
+                self.report_id_dict[report_id] = {}
             self.report_id_dict[report_id]['url'] = files_url
         for report_id, report_param in self.report_id_dict.items():
             files_url = report_param['url']
@@ -223,10 +227,11 @@ class DcApi(object):
                 last_row = 2
             tdf = utl.first_last_adj(tdf, first_row=1, last_row=last_row)
             tdf = self.rename_cols(tdf, report_param)
-            if not report_param['reach_report']:
-                self.check_for_campaign_vendor_dicts(tdf)
-            else:
-                tdf = self.add_placement_name(tdf)
+            if 'reach_report' in report_param:
+                if not report_param['reach_report']:
+                    self.check_for_campaign_vendor_dicts(tdf)
+                else:
+                    tdf = self.add_placement_name(tdf)
             df = pd.concat([df, tdf], ignore_index=True)
         return df
 
@@ -258,7 +263,8 @@ class DcApi(object):
             vendor_parts = tdf['Site (CM360)'].map(self.vendor_dict)
             for i, val in enumerate(vendor_parts):
                 placement_parts[i][1] = val
-        new_placements = ['_'.join(parts) for parts in placement_parts]
+        new_placements = ['_'.join(map(str, parts))
+                          for parts in placement_parts]
         tdf[place_col] = np.where(is_blank, new_placements, tdf[place_col])
         return tdf
 
@@ -472,7 +478,7 @@ class DcApi(object):
 
     def rename_cols(self, tdf, report_param):
         rename_dict = self.col_rename_dict.copy()
-        if report_param['reach_report']:
+        if 'reach_report' in report_param and report_param['reach_report']:
             col_str = ''
             for report_type in ['no_date', 'campaign_report', 'vendor_report']:
                 if report_param[report_type]:
