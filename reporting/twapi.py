@@ -11,14 +11,12 @@ import requests
 import pandas as pd
 import datetime as dt
 import oauth2 as oauth
-from openai import client_id
 import reporting.utils as utl
 import reporting.gsapi as gsapi
 import reporting.dictcolumns as dctc
 from selenium.webdriver.common.by import By
 from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
-from selenium.webdriver.common.keys import Keys
 
 def_fields = ['ENGAGEMENT', 'BILLING', 'VIDEO']
 conv_fields = ['MOBILE_CONVERSION', 'WEB_CONVERSION']

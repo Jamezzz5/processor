@@ -397,12 +397,12 @@ class DB(object):
         self.output.seek(0)
 
     def copy_from(self, table, df, columns):
-        table_path = self.schema + '.' + table
         self.connect()
         logging.info('Writing ' + str(len(df)) + ' row(s) to ' + table)
         self.df_to_output(df)
         cur = self.connection.cursor()
-        cur.copy_from(self.output, table=table_path, columns=columns)
+        cur.execute(f'SET search_path TO {self.schema}')
+        cur.copy_from(self.output, table=table, columns=columns)
         self.connection.commit()
         cur.close()
 
