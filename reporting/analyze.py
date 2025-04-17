@@ -909,6 +909,8 @@ class Analyze(object):
                 else:
                     last_row = cds.p[vmc.lastrow]
                 df = cds.get_raw_df()
+                if last_row == '-1' and not df.empty:
+                    df = df.iloc[:-1]
             except Exception as e:
                 logging.warning('Unknown exception: {}'.format(e))
                 if cds_name == 'New':
