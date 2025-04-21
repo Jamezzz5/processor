@@ -713,7 +713,11 @@ class SeleniumWrapper(object):
         self.browser.execute_script(scroll_script, elem)
 
     def click_error(self, elem, e, attempts=0):
-        elem_id = elem.get_attribute('id')
+        elem_id = ''
+        try:
+            elem_id = elem.get_attribute('id')
+        except ex.StaleElementReferenceException as stale_error:
+            logging.warning(stale_error)
         if elem_id:
             log_val = elem_id
         else:
