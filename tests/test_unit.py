@@ -116,7 +116,7 @@ class TestUtils:
                    float_col: [float(x) for x in float_list],
                    int_col: [np.int32(x) for x in float_list]}
         df = pd.DataFrame(df_dict)
-        df[int_col] = df[int_col].astype('int32')
+        df[int_col] = df[int_col].astype('int64')
         for col in [str_col, float_col, date_col, int_col]:
             assert pd.testing.assert_series_equal(df[col], ndf[col]) is None
 

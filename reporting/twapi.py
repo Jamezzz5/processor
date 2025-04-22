@@ -10,7 +10,6 @@ import logging
 import requests
 import pandas as pd
 import datetime as dt
-import oauth2 as oauth
 import reporting.utils as utl
 import reporting.gsapi as gsapi
 import reporting.dictcolumns as dctc
@@ -196,7 +195,7 @@ class TwApi(object):
                 x for x in data['data'] if
                 (x[et] and dt.datetime.strptime(x[et], week_fmt) > last_week_sd)
                 or not x[et]]
-        if 'data' in data:
+        if data and 'data' in data:
             if ad_name:
                 id_dict = {x[eid]: {
                     'parent': x[parent],

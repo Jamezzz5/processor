@@ -1030,7 +1030,7 @@ class SeleniumWrapper(object):
         return len(rows)
 
 
-def copy_file(old_file, new_file, attempt=1, max_attempts=100):
+def copy_file(old_file, new_file, attempt=1, max_attempts=100, sleep=60):
     try:
         shutil.copy(old_file, new_file)
     except PermissionError as e:
@@ -1044,7 +1044,7 @@ def copy_file(old_file, new_file, attempt=1, max_attempts=100):
         else:
             logging.warning('Attempt {}: could not copy {} due to OSError '
                             'retrying in 60s: {}'.format(attempt, old_file, e))
-            time.sleep(60)
+            time.sleep(sleep)
             copy_file(old_file, new_file, attempt=attempt,
                       max_attempts=max_attempts)
 

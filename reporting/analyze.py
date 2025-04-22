@@ -590,7 +590,10 @@ class Analyze(object):
         df.columns = [x[:-6] if x[-6:] == ' - sum' else x for x in df.columns]
         df = df.reset_index()
         for col in [' - amin', ' - amax']:
-            df[vmc.date + col] = df[vmc.date + col].astype('U')
+            col_name = vmc.date + col
+            if col_name not in df.columns:
+                col_name = col_name.replace(' - a', ' - ')
+            df[col_name] = df[col_name].astype('U')
         update_msg = 'Metrics by vendor key are as follows:'
         logging.info('{}\n{}'.format(update_msg, df.to_string()))
         self.add_to_analysis_dict(key_col=self.vk_metrics,

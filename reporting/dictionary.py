@@ -723,6 +723,8 @@ class DictTranslationConfig(object):
 
     def clean_df(self):
         col = dctc.DICT_COL_VALUE
+        if col not in self.df.columns:
+            self.df[col] = ''
         self.df[col] = np.where(self.df[col].isna(), self.df[col].astype('U'),
                                 self.df[col])
 
