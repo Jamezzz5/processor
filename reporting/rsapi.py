@@ -102,8 +102,10 @@ class RsApi(object):
         if 'games' in response:
             self.game_id = [x['id'] for x in response['games']
                             if x['name'].lower() == self.game_name.lower()]
-        if len(self.game_id) > 0:
+        if isinstance(self.game_id, list) and len(self.game_id) > 0:
             self.game_id = int(self.game_id[0])
+        elif isinstance(self.game_id, int):
+            logging.info('Game ID found, continuing')
         else:
             logging.warning('Game ID not in response: {}'.format(response))
         return
@@ -114,8 +116,12 @@ class RsApi(object):
             logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed - dt.timedelta(days=1)
-        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
-        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        if isinstance(sd, str):
+            sd = dt.datetime.strptime(sd, '%Y-%m-%d')
+        if isinstance(ed, str):
+            ed = dt.datetime.strptime(ed, '%Y-%m-%d')
+        sd = sd.strftime('%Y-%m-%d')
+        ed = ed.strftime('%Y-%m-%d')
         return sd, ed
 
     @staticmethod
