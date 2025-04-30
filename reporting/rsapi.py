@@ -102,10 +102,8 @@ class RsApi(object):
         if 'games' in response:
             self.game_id = [x['id'] for x in response['games']
                             if x['name'].lower() == self.game_name.lower()]
-        if isinstance(self.game_id, list) and len(self.game_id) > 0:
+        if len(self.game_id) > 0:
             self.game_id = int(self.game_id[0])
-        elif isinstance(self.game_id, int):
-            logging.info('Game ID found, continuing')
         else:
             logging.warning('Game ID not in response: {}'.format(response))
         return
@@ -116,12 +114,8 @@ class RsApi(object):
             logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed - dt.timedelta(days=1)
-        if isinstance(sd, str):
-            sd = dt.datetime.strptime(sd, '%Y-%m-%d')
-        if isinstance(ed, str):
-            ed = dt.datetime.strptime(ed, '%Y-%m-%d')
-        sd = sd.strftime('%Y-%m-%d')
-        ed = ed.strftime('%Y-%m-%d')
+        sd = dt.datetime.strftime(sd, '%Y-%m-%d')
+        ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         return sd, ed
 
     @staticmethod
@@ -212,25 +206,22 @@ class RsApi(object):
 
     def get_raw_data(self, sd, ed, fields):
         logging.info('Getting data from {} to ed {}'.format(sd, ed))
-        r_data = self.get_request_data(sd, ed, fields)
-        self.r = self.make_request(self.stats_url, method='POST', body=r_data)
-        if self.r.status_code != 500:
-            self.df = self.data_to_df(fields)
-            if self.campaign_filter:
-                self.filter_df_on_campaign()
-            logging.info('Data successfully retrieved returning dataframe.')
-            return
-        elif self.r.status_code == 500:
-            logging.warning('Connection refused, waiting and retrying.  '
-                            'Response: {}'.format(self.r.text))
-            time.sleep(30)
-            attempt = 0
-            attempt += 1
-            if attempt > 10:
-                logging.warning('Connection refused, returning blank df')
-                self.df = pd.DataFrame()
+        for x in range(3):
+            r_data = self.get_request_data(sd, ed, fields)
+            self.r = self.make_request(self.stats_url, method='POST', body=r_data)
+            if self.r.status_code != 500:
+                self.df = self.data_to_df(fields)
+                if self.campaign_filter:
+                    self.filter_df_on_campaign()
+                logging.info('Data successfully retrieved returning dataframe.')
                 return
-            self.get_data(sd, ed, fields)
+            elif self.r.status_code == 500:
+                logging.warning('Connection refused, waiting and retrying.  '
+                                'Response: {}'.format(self.r.text))
+                time.sleep(30)
+        logging.warning('Connection refused, returning blank df')
+        self.df = pd.DataFrame()
+        return
 
     def data_to_df(self, fields):
         try:
