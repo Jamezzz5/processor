@@ -232,11 +232,16 @@ class AmzApi(object):
                 return self.df
             self.check_and_get_all_reports(self.report_ids)
         else:
-            report_id = self.request_dsp_report(sd, ed)
-            if not report_id:
+            date_list = self.list_dates(sd, ed)
+            report_ids = []
+            for cur_date in date_list:
+                end_date = dt.datetime.combine(cur_date, dt.time.max)
+                report_id = self.request_dsp_report(cur_date, end_date)
+                report_ids.extend(report_id)
+            if not report_ids:
                 logging.warning('Could not generate report, returning blank df')
                 return self.df
-            self.get_dsp_report(report_id)
+            self.get_dsp_report(report_ids)
         logging.info('All reports downloaded - returning dataframe.')
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
@@ -334,8 +339,8 @@ class AmzApi(object):
                 'groupBy': ['adGroup'],
                 'timeUnit': "DAILY"
             }
-            logging.info("Requesting Sponsored Products report")
-            logging.info("Requesting Sponsored Brands report")
+            logging.debug("Requesting Sponsored Products report")
+            logging.debug("Requesting Sponsored Brands report")
             return [self.make_request_dsp_report(url, sp_body),
                     self.make_request_dsp_report(url, sb_body)]
 
