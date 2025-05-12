@@ -265,7 +265,7 @@ class AwApi(object):
                     yaml.dump({'adwords': self.config}, f)
                 return r
         logging.warning('Could not find customer ID exiting.')
-        sys.exit(0)
+        return None
 
     @staticmethod
     def get_data_default_check(sd, ed):
@@ -325,6 +325,9 @@ class AwApi(object):
         logging.info('Getting Adwords data from {} until {}'.format(sd, ed))
         report = self.get_report_request_dict(sd, ed, fields)
         r = self.request_report(report)
+        if not r:
+            logging.warning('No response returning blank df.')
+            return self.df
         r = self.check_report(r, report)
         if not r:
             logging.warning('No response returning blank df.')
