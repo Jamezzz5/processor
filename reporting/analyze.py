@@ -3571,8 +3571,8 @@ class AliChat(object):
 
     @staticmethod
     def get_stop_words():
-        nltk.download('stopwords')
-        nltk.download('wordnet')
+        nltk.download('stopwords', quiet=True)
+        nltk.download('wordnet', quiet=True)
         stop_words = list(nltk.corpus.stopwords.words('english'))
         return stop_words
 
