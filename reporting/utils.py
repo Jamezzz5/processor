@@ -162,7 +162,7 @@ def string_to_date(my_string):
                 logging.warning('Could not parse date: {}'.format(my_string))
                 return pd.NaT
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
-          ((len(my_string) == 7) and ('.' in my_string))):
+          ((len(my_string) == 7) and (my_string.count('.') == 1))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
         try:
