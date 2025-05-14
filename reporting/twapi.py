@@ -644,13 +644,10 @@ class TwApi(object):
         elem.send_keys(password)
         sw.click_on_xpath(login_xpath)
         url = "https://api.twitter.com/oauth/request_token"
-        token = oauth.Token(key=self.access_token,
-                            secret=self.access_token_secret)
-        consumer = oauth.Consumer(key=self.consumer_key,
-                                  secret=self.consumer_secret)
-        client = oauth.Client(consumer, token)
-        r, c = client.request(url, method='GET')
-        token = str(c).split("&")[0].split("=")[1]
+        oauth = OAuth1Session(client_key=self.consumer_key,
+                              client_secret=self.consumer_secret)
+        fetch_response = oauth.fetch_request_token(url)
+        token = fetch_response.get('oauth_token')
         url = 'https://api.twitter.com/oauth/authorize?oauth_token={}'.format(
             token)
         sw.go_to_url(url)
