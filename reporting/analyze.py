@@ -585,6 +585,10 @@ class Analyze(object):
         metrics = [x for x in metrics if x in df.columns]
         agg_map = {x: [np.min, np.max] if (x == vmc.date) else np.sum
                    for x in metrics}
+        if vmc.vendorkey not in df.columns or not agg_map:
+            msg = '{} not in df could not get metrics'.format(vmc.vendorkey)
+            logging.warning(msg)
+            return False
         df = df.groupby([vmc.vendorkey]).agg(agg_map)
         df.columns = [' - '.join(col).strip() for col in df.columns]
         df.columns = [x[:-6] if x[-6:] == ' - sum' else x for x in df.columns]

@@ -170,7 +170,7 @@ def string_to_date(my_string):
         except ValueError:
             logging.warning('Could not parse date: {}'.format(my_string))
             return pd.NaT
-    elif len(my_string) == 8 and '.' in my_string:
+    elif len(my_string) in [7, 8] and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
     elif my_string == '0' or my_string == '0.0':
         return pd.NaT
@@ -959,7 +959,12 @@ class SeleniumWrapper(object):
                     elem = self.send_key_new_value_check(
                         item, get_xpath_from_id, clear_existing, send_escape,
                         elem=elem)
-                elem.send_keys(u'\ue007')
+                for _ in range(3):
+                    try:
+                        elem.send_keys(u'\ue007')
+                        break
+                    except ex.ElementNotInteractableException as e:
+                        logging.warning(e)
                 if send_escape:
                     wd.ActionChains(self.browser).send_keys(
                         Keys.ESCAPE).perform()
