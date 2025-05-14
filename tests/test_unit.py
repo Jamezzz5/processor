@@ -172,6 +172,20 @@ class TestUtils:
         words = utl.get_next_values_from_list(words, )
         assert words[0] == plan_name
 
+    def test_first_last_adj(self):
+        data = {
+            "col1": [vmc.placement, 'Placement Value 1', 'Placement Value 2', None],
+            "col2": [vmc.date, pd.to_datetime("2025-05-01"), pd.to_datetime("2025-05-02"), None],
+            "col3": [vmc.impressions, '1', '2', '3']
+        }
+        df = pd.DataFrame(data)
+        first_row = 1
+        last_row = -1
+        df_adj = utl.first_last_adj(df, first_row, last_row)
+        assert len(df_adj) == 2
+        expected_columns = [vmc.placement, vmc.date, vmc.impressions]
+        assert list(df_adj.columns) == expected_columns
+
 
 class TestApis:
 
