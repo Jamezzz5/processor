@@ -690,14 +690,29 @@ class Analyze(object):
                     message=flagged_msg, data=edf.to_dict())
         return True
 
+    def compare_metrics(self, df, metric_1, metric_2):
+        check = df[metric_2] > df[metric_1]
+        df = df[[metric_1, metric_2]]
+        df = df[check]
+        if not df.empty:
+            flagged_msg = 'The following vendors have {} greater than {}'.format(metric_2, metric_1)
+            logging.info('{}\n{}'.format(
+                flagged_msg, df.to_string()))
+            self.add_to_analysis_dict(
+                key_col=self.flagged_metrics, param=metric_1,
+                message=flagged_msg, data=df.to_dict())
+        return
+
     def flag_errant_metrics(self):
         all_threshold = 'All'
         threshold_col = 'threshold'
-        lower_thresholds = ['VCR']
+        lower_thresholds = ['VCR', 'Net Cost']
         thresholds = {'CTR': {'Google SEM': 0.2, all_threshold: 0.06},
-                      'VCR': {all_threshold: 0.01}}
+                      'VCR': {all_threshold: 0.01},
+                      'Net Cost': {all_threshold: 1}}
         metric_dependencies = {'CTR': [vmc.impressions, vmc.clicks],
-                               'VCR': [vmc.views, vmc.views100]}
+                               'VCR': [vmc.views, vmc.views100],
+                               'Net Cost': [vmc.cost]}
         metrics = []
         for calc_metric in metric_dependencies.keys():
             if [metric for metric in metric_dependencies[calc_metric] if
@@ -720,6 +735,8 @@ class Analyze(object):
             edf = edf.reset_index().set_index(dctc.VEN)
             edf[threshold_col] = edf.index.map(threshold_dict).fillna(
                 threshold_dict[all_threshold])
+            if metric_name == 'VCR':
+                self.compare_metrics(edf, vmc.views, vmc.views100)
             if metric_name in lower_thresholds:
                 edf = edf[edf[metric_name] < edf[threshold_col]]
                 error_type = 'low'
