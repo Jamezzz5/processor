@@ -506,6 +506,14 @@ class TestCalc:
         df = df[[x for x in edf.columns]]
         assert pd.testing.assert_frame_equal(df, edf) is None
 
+    def test_prog_fees_calculation(self):
+        prog_fee = .05
+        net_cost = 100
+        df = pd.DataFrame({dctc.PGF: [prog_fee], cal.NCF: [net_cost]})
+        df = cal.prog_fees_calculation(df)
+        assert cal.PROG_FEES in df.columns
+        assert df[cal.PROG_FEES].sum() == prog_fee * net_cost
+
 
 class TestAnalyze:
     vm_df = None

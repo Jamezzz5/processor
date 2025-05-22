@@ -108,4 +108,18 @@ class TestEndToEnd:
         file_name = os.path.join('tests', 'results.csv')
         rdf = utl.import_read_csv(file_name)
         rdf = rdf.groupby(group_cols)[metric_cols].sum().reset_index()
-        assert pd.testing.assert_frame_equal(df, rdf) is None
+        vk_df_mismatch = []
+        for vendor_key in rdf[vmc.vendorkey].unique():
+            df_vk = df[df[vmc.vendorkey] == vendor_key].sort_values(
+                group_cols).reset_index(drop=True)
+            rdf_vk = rdf[rdf[vmc.vendorkey] == vendor_key].sort_values(
+                group_cols).reset_index(drop=True)
+            try:
+                pd.testing.assert_frame_equal(df_vk, rdf_vk)
+            except AssertionError as e:
+                vk_df_mismatch.append(f"vendorkey={vendor_key}:\n{str(e)}")
+        if vk_df_mismatch:
+            full_msg = "\n\n".join(vk_df_mismatch)
+            full_msg = (f"Mismatch found for the following "
+                        f"vendorkeys:\n\n{full_msg}")
+            pytest.fail(full_msg)

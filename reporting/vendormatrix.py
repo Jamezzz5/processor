@@ -98,12 +98,17 @@ class VendorMatrix(object):
         logging.info('Writing vendormatrix to {}.'.format(csv_full_file))
         rules = [x for x in self.vm_df.columns if 'RULE' in x]
         cols = [vmc.vendorkey] + vmc.vmkeys + rules
+        miss_cols = [x for x in cols if x not in self.vm_df.columns]
+        if miss_cols:
+            for miss_col in miss_cols:
+                self.vm_df[miss_col] = ''
         self.vm_df[cols].to_csv(csv_full_file, index=False, encoding='utf-8')
 
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
             logging.warning('No Plan Net key in Vendor Matrix.  Add it.')
             return False
+        return True
 
     def add_file_name_col(self):
         self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
@@ -126,6 +131,8 @@ class VendorMatrix(object):
         self.vl = self.vm[vmc.vendorkey].tolist()
         self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
         for col in vmc.barsplitcol:
+            if col not in self.vm:
+                self.vm[col] = {}
             self.vm[col] = ({key: list(value.split('|')) for key, value in
                             self.vm[col].items()})
 
@@ -631,10 +638,12 @@ def full_placement_creation(df, key, full_col, full_place_cols):
             if col in df.columns:
                 df[col] = df[col].str.replace('_', '', regex=True)
         if col not in df:
-            logging.warning('{} was not in {}.  It was not included in '
-                            'Full Placement Name.  For reference column names'
-                            ' are as follows: \n {}'
-                            .format(col, key, df.columns.values.tolist()))
+            msg = '{} was not in {}.  It was not included in {}'.format(
+                col, key, dctc.FPN)
+            logging.warning(msg)
+            msg = 'For reference column names are as follows: \n {}'.format(
+                df.columns.values.tolist())
+            logging.debug(msg)
             continue
         if idx == 0:
             df[full_col] = df[col]
@@ -645,7 +654,7 @@ def full_placement_creation(df, key, full_col, full_place_cols):
 
 def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
-    combine_cols = [x for x in columns if kwargs[x] != ['nan']]
+    combine_cols = [x for x in columns if x in kwargs and kwargs[x] != ['nan']]
     for col in combine_cols:
         if col in df.columns and col not in kwargs[col]:
             df[col] = 0

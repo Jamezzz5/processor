@@ -160,7 +160,7 @@ month_avg_user = 'Monthly Average Users'
 stickiness = 'Stickiness'
 days_played = 'Days Played'
 play_intent = 'Intent to Play (Non-Players)'
-
+site_clicks = 'Site Clicks'
 
 vmkeys = [filename, firstrow, lastrow, fullplacename, placement, filenamedict,
           filenameerror, startdate, enddate, dropcol, autodicplace, autodicord,
@@ -192,7 +192,7 @@ datacol = [date, impressions, clicks, cost, views, views25, views50, views75,
            conv10, media_spend, youtube_subscribers, twitter_followers,
            twitch_views, twitch_viewers, subreddit_members, player_share,
            nz_awareness, np_score, coverage, month_avg_user, stickiness,
-           days_played, play_intent]
+           days_played, play_intent, site_clicks]
 
 vmkeys += datacol
 barsplitcol = ([fullplacename, dropcol, autodicord, apifields] + datacol)

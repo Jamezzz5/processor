@@ -36,6 +36,7 @@ BUY_MODELS = [BM_CPM, BM_CPC, BM_CPV, BM_CPCV, BM_CPLP, BM_CPVM, BM_AV, BM_FLAT,
 AGENCY_FEES = 'Agency Fees'
 AGENCY_THRESH = 'Agency Fee Threshold'
 agency_fee_file = 'agencyfee_threshold.csv'
+PROG_FEES = 'Programmatic Fees'
 
 NCF = 'Net Cost Final'
 TOTAL_COST = 'Total Cost'
@@ -256,6 +257,17 @@ def agency_fees_calculation(df):
     return df
 
 
+def prog_fees_calculation(df):
+    logging.info('Calculating {}'.format(PROG_FEES))
+    if dctc.PGF not in df.columns:
+        msg = '{} Rates not in dict and were not calculated.'.format(PROG_FEES)
+        logging.warning(msg)
+        return df
+    df = utl.data_to_type(df, float_col=[NCF, dctc.PGF])
+    df[PROG_FEES] = df[dctc.PGF] * df[NCF]
+    return df
+
+
 def total_cost_calculation(df):
     logging.info('Calculating Total Cost')
     if AGENCY_FEES not in df.columns:
@@ -266,7 +278,9 @@ def total_cost_calculation(df):
                                          vmc.dcm_service_fee, vmc.REP_COST,
                                          vmc.VER_COST])
     df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES]
-    for col in [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST, vmc.VER_COST]:
+    cost_cols = [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST, vmc.VER_COST,
+                 PROG_FEES]
+    for col in cost_cols:
         if col in df.columns:
             df[TOTAL_COST] += df[col]
     return df
@@ -336,6 +350,7 @@ def calculate_cost(df):
     df = MetricCap().apply_all_caps(df)
     df = net_cost_final_calculation(df)
     df = agency_fees_calculation(df)
+    df = prog_fees_calculation(df)
     df = total_cost_calculation(df)
     return df
 

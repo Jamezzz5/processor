@@ -200,9 +200,11 @@ class DcApi(object):
             no_date = report_type[1]
             campaign_report = report_type[2]
             vendor_report = report_type[3]
-            report_created = self.create_report(
+            single_report_created = self.create_report(
                 reach_report=reach_report, no_date=no_date,
                 campaign_report=campaign_report, vendor_report=vendor_report)
+            if single_report_created:
+                report_created = True
         if not report_created:
             logging.warning('Report not created returning blank df.')
             return df
@@ -331,9 +333,14 @@ class DcApi(object):
                                        params=params, attempt=attempt,
                                        json_response=json_response)
         if json_response and 'error' in self.r.json():
-            logging.warning('Request error.  Retrying {}'.format(self.r.json()))
-            time.sleep(10)
-            attempt += 1
+            reach_error_str = "reach reports can't span more than 93 days."
+            if reach_error_str in self.r.json()['error']['message']:
+                attempt = 100
+            else:
+                logging.warning(
+                    'Request error.  Retrying {}'.format(self.r.json()))
+                time.sleep(10)
+                attempt += 1
             if attempt > 10:
                 self.request_error()
                 return None

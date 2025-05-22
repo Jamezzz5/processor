@@ -34,6 +34,7 @@ RFR = 'mpReporting Fee Rate'
 VFM = 'mpVerification Fee Model'
 VFR = 'mpVerification Fee Rate'
 AGF = 'mpAgency Fees Rate'
+PGF = 'mpProgrammatic Fees Rate'
 AGE = 'mpAge'
 DEM = 'mpDemographic'
 GEN = 'mpGender'
@@ -90,9 +91,9 @@ COLS = [FPN, PN, AGY, CLI, BUD, FRA, CAM, CTIM, CT, CQ, CP, VEN, COU, REG,
         RFT, RFM, RFR, VFM, VFR, AGF, AGE, DEM, GEN, CTA, URL, PRN, PRD, FOR,
         ENV, DT1, DT2, TB, GT, GTF, KPI, FAC, PLA, TP, TPB, TPF, AT, AF, CD, CH,
         CM, LI, LEN, CURL, AD, MN, MT, DL1, DL2, HL1, HL2, DUL, SD, ED, BR2,
-        BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6]
+        BR3, BR4, BR5, PD2, PD3, PD4, PD5, MIS2, MIS3, MIS4, MIS5, MIS6, PGF]
 
-floatcol = [BR, AR, RFR, VFR, BR2, BR3, BR4, BR5, AGF]
+floatcol = [BR, AR, RFR, VFR, BR2, BR3, BR4, BR5, AGF, PGF]
 datecol = [PD, SD, ED, PD2, PD3, PD4, PD5]
 strcol = [BM, AM, RFM, VFM]
 
