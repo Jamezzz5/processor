@@ -4,6 +4,7 @@ import sys
 import pytz
 import json
 import time
+import copy
 import logging
 import requests
 import oauthlib
@@ -339,8 +340,9 @@ class AmzApi(object):
         sb_items = ['SPONSORED_BRANDS', self.sb_columns, 'sbCampaigns', False]
         request_bodies = []
         for ad_product, cols, report_type, group_by in [sp_items, sb_items]:
+            body_copy = copy.deepcopy(body)
             request_body = self.get_sponsored_body(
-                body, ad_product, cols, report_type, group_by)
+                body_copy, ad_product, cols, report_type, group_by)
             request_bodies.append(request_body)
         return request_bodies
 
