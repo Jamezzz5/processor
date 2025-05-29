@@ -75,6 +75,7 @@ class RedApi(object):
         self.redirect_uri = None
         self.access_token = None
         self.refresh_token = None
+        self.time_zone_id = 'America/Los_Angeles'
         self.headers = {}
 
     def input_config(self, config):
@@ -433,6 +434,7 @@ class RedApi(object):
                            if x['name'].lower() == self.username.lower()]
             if account_ids:
                 account_id = account_ids[0]
+                self.time_zone_id = r.json()['data'][0]['time_zone_id']
                 break
         return account_id
 
@@ -446,9 +448,10 @@ class RedApi(object):
         :return: The full str of the datetime with timezone
         """
         tz = pytz.timezone(timezone)
-        dt_local = tz.localize(dt_naive)
-        dt_local = dt_local.replace(minute=0, second=0, microsecond=0)
-        return dt_local.strftime('%Y-%m-%dT%H:%M:%SZ')
+        zero_time = dt_naive.replace(minute=0, second=0, microsecond=0)
+        dt_local = tz.localize(zero_time)
+        dt_utc = dt_local.astimezone(pytz.utc)
+        return dt_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     def get_report(self, account_id, sd, ed):
         """
@@ -462,6 +465,8 @@ class RedApi(object):
         response_list = []
         next_url = '{}ad_accounts/{}/reports'.format(self.base_api_url, account_id)
         breakdowns = ['AD_ID', 'DATE']
+        starts_at = self.timezone_to_utc(sd, timezone=self.time_zone_id)
+        ends_at = self.timezone_to_utc(ed, timezone=self.time_zone_id)
         fields = ['IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_STARTED',
                   'VIDEO_WATCHED_25_PERCENT', 'VIDEO_WATCHED_50_PERCENT',
                   'VIDEO_WATCHED_75_PERCENT', 'VIDEO_WATCHED_100_PERCENT',
@@ -469,16 +474,17 @@ class RedApi(object):
                   'VIDEO_WATCHED_10_SECONDS',
                   'VIDEO_VIEW_RATE', 'VIDEO_VIEWABLE_IMPRESSIONS',
                   'VIDEO_PLAYS_EXPANDED']
-        data = {'starts_at': self.timezone_to_utc(sd),
-                'ends_at': self.timezone_to_utc(ed),
+        data = {'starts_at': starts_at,
+                'ends_at': ends_at,
                 'breakdowns': breakdowns,
                 'fields': fields,
-                'time_zone_id': 'America/Los_Angeles'}
+                'time_zone_id': self.time_zone_id}
         data = {'data': data}
         params = {'page.size': 1000}
         for attempt in range(1000):
-            msg = 'Getting account {} data from {} to {}.  Attempt {}'.format(
-                account_id, sd, ed, attempt + 1)
+            msg = ('Getting account {} data from {} to {} {}.  '
+                   'Attempt {}').format(
+                account_id, sd, ed, self.time_zone_id, attempt + 1)
             logging.info(msg)
             r = requests.post(next_url, headers=self.headers, json=data,
                               params=params)
