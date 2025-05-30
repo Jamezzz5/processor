@@ -105,7 +105,7 @@ class DbApi(object):
                                 .total_seconds() * 1000)
         self.end_time = round((ed - dt.datetime.utcfromtimestamp(0))
                               .total_seconds() * 1000)
-        if 'YOUTUBE' in fields:
+        if fields and 'YOUTUBE' in fields:
             self.default_groups = [
                 'FILTER_DATE',
                 'FILTER_TRUEVIEW_AD_GROUP',
