@@ -50,6 +50,7 @@ class DbApi(object):
         self.client = None
         self.start_time = None
         self.end_time = None
+        self.query_type = 'STANDARD'
         self.df = pd.DataFrame()
         self.r = None
         self.v = 1
@@ -104,6 +105,22 @@ class DbApi(object):
                                 .total_seconds() * 1000)
         self.end_time = round((ed - dt.datetime.utcfromtimestamp(0))
                               .total_seconds() * 1000)
+        if 'YOUTUBE' in fields:
+            self.default_groups = [
+                'FILTER_DATE',
+                'FILTER_TRUEVIEW_AD_GROUP',
+                'FILTER_TRUEVIEW_AD',
+                'FILTER_TRUEVIEW_AD_GROUP_ID']
+            self.default_metrics = [
+                'METRIC_TRUEVIEW_VIEWS',
+                'METRIC_CLICKS',
+                'METRIC_IMPRESSIONS',
+                'METRIC_REVENUE_USD',
+                'METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES',
+                'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
+                'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
+                'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS']
+            self.query_type = 'YOUTUBE'
         if fields and fields != ['nan']:
             self.default_metrics += [
                 'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
@@ -250,7 +267,7 @@ class DbApi(object):
                          'value': self.advertiser_id}],
             'groupBys': self.default_groups,
             'metrics': self.default_metrics,
-            'type': 'STANDARD'}
+            'type': self.query_type}
         if self.campaign_id:
             campaign_filters = [
                 {'type': 'FILTER_MEDIA_PLAN',
