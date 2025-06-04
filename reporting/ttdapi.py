@@ -296,3 +296,56 @@ class TtdApi(object):
             url = ttd_url
         return url
 
+    def test_create_report_using_graphql(self):
+        self.input_config('ttdconfig.json')
+        production_url = 'https://api.gen.adsrvr.org/graphql'
+        sandbox_url = 'https://ext-api.sb.thetradedesk.com/graphql'
+        self.authenticate()
+        query = '''
+        query GetAdvertiserMetrics {
+            advertiser(id: ID!) {
+                id
+                name
+                campaigns {
+                    edges {
+                        node {
+                            id
+                            name
+                            reporting {
+                                generalReporting {
+                                    nodes {
+                                        dimensions {
+                                            time {
+                                                day
+                                            }
+                                        }
+                                        metrics {
+                                            clicks
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        '''
+        variables = {
+            "advertiserId": self.ad_id
+        }
+        data = {
+            'query': query,
+            'variables': variables
+        }
+        headers = {
+            'TTD-Auth': self.auth_token
+        }
+        r = requests.post(url=sandbox_url, json=data, headers=headers)
+        if r.status_code == 200:
+            result = r.json()
+            print(result)
+        else:
+            print('Request failed with status code: {}'.format(r.status_code))
+            print(r.text)
+        return None
