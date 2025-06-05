@@ -473,7 +473,12 @@ class RedApi(object):
                   'VIDEO_WATCHED_3_SECONDS', 'VIDEO_WATCHED_5_SECONDS',
                   'VIDEO_WATCHED_10_SECONDS',
                   'VIDEO_VIEW_RATE', 'VIDEO_VIEWABLE_IMPRESSIONS',
-                  'VIDEO_PLAYS_EXPANDED']
+                  'VIDEO_PLAYS_EXPANDED', 'CONVERSION_PAGE_VISIT_CLICKS',
+                  'CONVERSION_PAGE_VISIT_ECPA', 'CONVERSION_PAGE_VISIT_VIEWS',
+                  'CONVERSION_VIEW_CONTENT_CLICKS', 'CONVERSION_VIEW_CONTENT_ECPA',
+                  'CONVERSION_VIEW_CONTENT_VIEWS']
+        extra_fields = self.custom_events_dict()
+        fields += extra_fields
         data = {'starts_at': starts_at,
                 'ends_at': ends_at,
                 'breakdowns': breakdowns,
@@ -599,6 +604,7 @@ class RedApi(object):
         self.get_access_token()
         business_ids = self.get_all_business_ids()
         account_id = self.get_ad_accounts_by_business(business_ids)
+        # self.get_last_fired_at('t2_5ezjtnr0')
         if account_id:
             r = self.get_report(account_id, sd, ed)
             df = self.report_to_df(r)
@@ -664,3 +670,36 @@ class RedApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
+
+    def get_last_fired_at(self, pixel_id):
+        conversions = None
+        headers = {
+            'Authorization': 'Bearer {}'.format(self.access_token),
+            'Accept': 'application/json'
+        }
+        url = 'https://ads-api.reddit.com/api/v3/pixels/{}/last_fired_at'.format(pixel_id)
+        r = requests.get(url, headers=headers)
+        if r.ok:
+            conversions = r.json()['data']
+        else:
+            print('Failed to fetch conversions:', r.status_code,
+                  r.text)
+        return conversions
+
+    @staticmethod
+    def custom_events_dict():
+        fields = [
+            'AVG_VALUE',
+            'CLICKS',
+            'ECPA',
+            'ROAS',
+            'TOTAL_ITEMS',
+            'TOTAL_VALUE',
+            'VIEWS'
+        ]
+        custom_conversion_fields = {}
+        for i in range(1, 21):
+            for f in fields:
+                key = 'CONVERSION_CUSTOM_EVENT_{}_{}'.format(i,f)
+                custom_conversion_fields[key] = key
+        return custom_conversion_fields
