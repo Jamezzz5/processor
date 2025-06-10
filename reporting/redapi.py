@@ -604,7 +604,6 @@ class RedApi(object):
         self.get_access_token()
         business_ids = self.get_all_business_ids()
         account_id = self.get_ad_accounts_by_business(business_ids)
-        # self.get_last_fired_at('t2_5ezjtnr0')
         if account_id:
             r = self.get_report(account_id, sd, ed)
             df = self.report_to_df(r)
