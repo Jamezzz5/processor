@@ -5,7 +5,7 @@ psycopg2-binary==2.9.10
 pyyaml==6.0.2
 sqlalchemy==2.0.29
 boto==2.49.0
-requests==2.32.3
+requests==2.32.4
 requests_oauthlib==1.0.0
 pytz==2022.7
 selenium==3.12.0
