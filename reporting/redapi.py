@@ -671,24 +671,9 @@ class RedApi(object):
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
 
-    def get_last_fired_at(self, pixel_id):
-        conversions = None
-        headers = {
-            'Authorization': 'Bearer {}'.format(self.access_token),
-            'Accept': 'application/json'
-        }
-        url = 'https://ads-api.reddit.com/api/v3/pixels/{}/last_fired_at'.format(pixel_id)
-        r = requests.get(url, headers=headers)
-        if r.ok:
-            conversions = r.json()['data']
-        else:
-            print('Failed to fetch conversions:', r.status_code,
-                  r.text)
-        return conversions
-
     @staticmethod
     def custom_events_dict():
-        fields = [
+        items = [
             'AVG_VALUE',
             'CLICKS',
             'ECPA',
@@ -697,9 +682,9 @@ class RedApi(object):
             'TOTAL_VALUE',
             'VIEWS'
         ]
-        custom_conversion_fields = {}
+        custom_conversions = {}
         for i in range(1, 21):
-            for f in fields:
-                key = 'CONVERSION_CUSTOM_EVENT_{}_{}'.format(i,f)
-                custom_conversion_fields[key] = key
-        return custom_conversion_fields
+            for item in items:
+                conversion = 'CONVERSION_CUSTOM_EVENT_{}_{}'.format(i,item)
+                custom_conversions[conversion] = conversion
+        return custom_conversions
