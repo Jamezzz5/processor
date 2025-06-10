@@ -327,10 +327,12 @@ class AwApi(object):
         r = self.request_report(report)
         if not r:
             logging.warning('No response returning blank df.')
+            self.df = pd.DataFrame()
             return self.df
         r = self.check_report(r, report)
         if not r:
             logging.warning('No response returning blank df.')
+            self.df = pd.DataFrame()
             return self.df
         self.df = self.report_to_df(r, fields)
         return self.df
@@ -347,6 +349,12 @@ class AwApi(object):
             report_url = self.get_report_url()
             try:
                 r = self.client.post(report_url, json=report, headers=headers)
+                attempt = 0
+                while r.status_code != 200 and attempt < 10:
+                    time.sleep(0.1)
+                    r = self.client.post(report_url, json=report,
+                                         headers=headers)
+                    attempt += 1
             except (ConnectionError, NewConnectionError) as e:
                 logging.warning('Connection error, retrying: \n{}'.format(e))
                 r = self.request_report(report)
@@ -495,6 +503,11 @@ class AwApi(object):
         headers = self.get_client()
         try:
             r = self.client.get(self.access_url, headers=headers)
+            attempt = 0
+            while r.status_code != 200 and attempt < 10:
+                time.sleep(0.1)
+                r = self.client.get(self.access_url, headers=headers)
+                attempt += 1
             df = self.get_campaign_and_client_ids()
         except (ConnectionError, NewConnectionError, TypeError) as e:
             row = self.return_row(acc_col, False,
