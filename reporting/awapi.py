@@ -327,7 +327,6 @@ class AwApi(object):
                             'was set to end date.')
             sd = ed
         logging.info('Getting Adwords data from {} until {}'.format(sd, ed))
-        self.df = pd.DataFrame()
         report = self.get_report_request_dict(sd, ed, fields)
         r = self.request_report(report)
         if not r:
