@@ -473,7 +473,12 @@ class RedApi(object):
                   'VIDEO_WATCHED_3_SECONDS', 'VIDEO_WATCHED_5_SECONDS',
                   'VIDEO_WATCHED_10_SECONDS',
                   'VIDEO_VIEW_RATE', 'VIDEO_VIEWABLE_IMPRESSIONS',
-                  'VIDEO_PLAYS_EXPANDED']
+                  'VIDEO_PLAYS_EXPANDED', 'CONVERSION_PAGE_VISIT_CLICKS',
+                  'CONVERSION_PAGE_VISIT_ECPA', 'CONVERSION_PAGE_VISIT_VIEWS',
+                  'CONVERSION_VIEW_CONTENT_CLICKS', 'CONVERSION_VIEW_CONTENT_ECPA',
+                  'CONVERSION_VIEW_CONTENT_VIEWS']
+        extra_fields = self.custom_events_dict()
+        fields += extra_fields
         data = {'starts_at': starts_at,
                 'ends_at': ends_at,
                 'breakdowns': breakdowns,
@@ -664,3 +669,21 @@ class RedApi(object):
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
+
+    @staticmethod
+    def custom_events_dict():
+        items = [
+            'AVG_VALUE',
+            'CLICKS',
+            'ECPA',
+            'ROAS',
+            'TOTAL_ITEMS',
+            'TOTAL_VALUE',
+            'VIEWS'
+        ]
+        custom_conversions = {}
+        for i in range(1, 21):
+            for item in items:
+                conversion = 'CONVERSION_CUSTOM_EVENT_{}_{}'.format(i,item)
+                custom_conversions[conversion] = conversion
+        return custom_conversions
