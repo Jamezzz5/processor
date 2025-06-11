@@ -327,6 +327,7 @@ class AwApi(object):
                             'was set to end date.')
             sd = ed
         logging.info('Getting Adwords data from {} until {}'.format(sd, ed))
+        self.df = pd.DataFrame()
         report = self.get_report_request_dict(sd, ed, fields)
         r = self.request_report(report)
         if not r:
@@ -360,6 +361,7 @@ class AwApi(object):
                     break
                 else:
                     logging.warning(r.json())
+                time.sleep(0.1)
         else:
             logging.warning('No login customer id, attempting to find.')
             r = self.find_correct_login_customer_id(report)
@@ -504,7 +506,11 @@ class AwApi(object):
         results = []
         headers = self.get_client()
         try:
-            r = self.client.get(self.access_url, headers=headers)
+            for x in range(10):
+                r = self.client.get(self.access_url, headers=headers)
+                if r and r.status_code == 200:
+                    break
+                time.sleep(0.1)
             df = self.get_campaign_and_client_ids()
         except (ConnectionError, NewConnectionError, TypeError) as e:
             row = self.return_row(acc_col, False,
