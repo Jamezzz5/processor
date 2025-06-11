@@ -1,4 +1,3 @@
-import json.decoder
 import os
 import ast
 import sys
@@ -6,7 +5,7 @@ import yaml
 import time
 import logging
 import requests
-import numpy as np
+import json.decoder
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -137,7 +136,7 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
-    version = 17
+    version = 20
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
@@ -253,7 +252,11 @@ class AwApi(object):
     def find_correct_login_customer_id(self, report):
         headers = self.get_client()
         r = self.client.get(self.access_url, headers=headers)
-        customer_ids = r.json()['resourceNames']
+        customer_ids = []
+        if 'resourceNames' in r.json():
+            customer_ids = r.json()['resourceNames']
+        else:
+            logging.warning(r.json())
         for customer_id in customer_ids:
             customer_id = customer_id.replace('customers/', '')
             logging.info('Attempting customer id: {}'.format(customer_id))
@@ -314,6 +317,7 @@ class AwApi(object):
         return report
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.df = pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         sd = sd.date()
         ed = ed.date()
@@ -349,11 +353,14 @@ class AwApi(object):
             r = None
             for x in range(10):
                 try:
-                    r = self.client.post(report_url, json=report, headers=headers)
+                    r = self.client.post(report_url, json=report,
+                                         headers=headers)
                 except (ConnectionError, NewConnectionError) as e:
                     logging.warning('Connection error, retrying: \n{}'.format(e))
                 if r and r.status_code == 200:
                     break
+                else:
+                    logging.warning(r.json())
                 time.sleep(0.1)
         else:
             logging.warning('No login customer id, attempting to find.')
