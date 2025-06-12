@@ -15,8 +15,9 @@ config_path = utl.config_path
 class CriApi(object):
     base_url = 'https://api.criteo.com'
     auth_url = '{}/oauth2/token'.format(base_url)
-    version_url = '/2023-07/retail-media'
+    version_url = '/2025-04/retail-media'
     default_config_file_name = 'criapi.json'
+    line_item_str = 'Line'
 
     def __init__(self):
         self.config = None
@@ -123,6 +124,7 @@ class CriApi(object):
         return sd, ed
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.df = pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         self.df = self.request_and_get_data(sd, ed, fields)
         return self.df
@@ -132,16 +134,23 @@ class CriApi(object):
         fields = fields.split(',')
         return fields
 
-    def request_data(self, sd, ed, base_url, fields=None):
-        logging.info('Getting data form {} to {}'.format(sd, ed))
+    def request_data(self, sd, ed, base_url, fields=None, campaign_id=''):
+        msg = 'Getting campaign {} data form {} to {}'.format(
+            campaign_id, sd, ed)
+        logging.info(msg)
         self.set_headers()
         url = '{}/reports/campaigns'.format(base_url)
-        params = {'startDate': sd, 'endDate': ed,
-                  'timezone': 'America/New_York', 'id': self.advertiser_id,
+        params = {'startDate': sd,
+                  'endDate': ed,
+                  'timezone': 'America/New_York',
+                  'id': campaign_id,
                   'format': 'json-compact'}
         if fields:
-            fields = ' '.join(fields)
-            fields = self.parse_fields(fields)
+            if self.line_item_str in fields:
+                fields = [campaign_id]
+            else:
+                fields = ' '.join(fields)
+                fields = self.parse_fields(fields)
             url = '{}/reports/line-items'.format(base_url)
             params['ids'] = fields
         params = {'type': 'RetailMediaReportRequest', 'attributes': params}
@@ -150,16 +159,40 @@ class CriApi(object):
                               json_body=params)
         return r
 
+    def check_if_advertiser_id(self, base_url, fields):
+        """
+        Checks if the supplied advertiser_id is advertiser or campaign
+
+        :returns: All campaign ids for the advertiser
+        """
+        campaign_ids = [self.advertiser_id]
+        self.set_headers()
+        object_type = 'campaigns'
+        if fields:
+            object_type = 'line-items'
+        url = '{}/accounts/{}/{}'.format(
+            base_url, self.advertiser_id, object_type)
+        r = self.make_request(url, method='GET', headers=self.headers)
+        if 'data' in r.json():
+            campaign_ids = [x['id'] for x in r.json()['data']]
+        logging.info('Found {} {}'.format(
+            len(campaign_ids), object_type))
+        return campaign_ids
+
     def request_and_get_data(self, sd, ed, fields=None):
+        df = pd.DataFrame()
         base_url = '{}{}'.format(self.base_url, self.version_url)
-        r = self.request_data(sd, ed, base_url, fields)
-        if 'data' not in r.json():
-            logging.warning('data was not in response returning blank df: '
-                            '{}'.format(r.json()))
-            df = pd.DataFrame()
-        else:
-            report_id = r.json()['data']['id']
-            df = self.check_and_get_report(report_id, base_url)
+        campaign_ids = self.check_if_advertiser_id(base_url, fields)
+        for campaign_id in campaign_ids:
+            r = self.request_data(sd, ed, base_url, fields, campaign_id)
+            if 'data' not in r.json():
+                logging.warning('data was not in response returning blank df: '
+                                '{}'.format(r.json()))
+                tdf = pd.DataFrame()
+            else:
+                report_id = r.json()['data']['id']
+                tdf = self.check_and_get_report(report_id, base_url)
+            df = pd.concat([df, tdf], ignore_index=True)
         return df
 
     def check_and_get_report(self, report_id, base_url):
