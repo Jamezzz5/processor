@@ -26,6 +26,7 @@ def_fields = add_fields
 class ScApi(object):
     campaign_filter_col = 'campaign_filter'
     campaign_col = 'Campaign'
+    default_config_file_name = 'scconfig.json'
 
     def __init__(self):
         self.config = None
@@ -88,15 +89,25 @@ class ScApi(object):
         extra = {'client_id': self.client_id,
                  'client_secret': self.client_secret}
         self.client = OAuth2Session(self.client_id, token=token)
-        token = self.client.refresh_token(access_token_url, **extra)
+        token_refreshed = False
+        for x in range(10):
+            try:
+                token = self.client.refresh_token(access_token_url, **extra)
+                token_refreshed = True
+                break
+            except Exception as e:
+                logging.warning(e)
+                time.sleep(1)
+        if not token_refreshed:
+            return token_refreshed
         self.client = OAuth2Session(self.client_id, token=token)
+        return token_refreshed
 
-    def date_check(self, sd, ed):
+    def date_check(self, sd, ed, timezone):
         if sd > ed:
             logging.warning('Start date greater than end date.  Start date '
                             'was set to end date.')
             sd = ed - dt.timedelta(days=1)
-        timezone = self.get_account_timezone()
         sd = pytz.timezone(timezone).localize(sd).isoformat()
         ed = pytz.timezone(timezone).localize(ed).isoformat()
         return sd, ed
@@ -144,7 +155,9 @@ class ScApi(object):
 
     def make_request(self, add_url):
         act_url = base_url + add_url
-        self.get_client()
+        token_refreshed = self.get_client()
+        if not token_refreshed:
+            return None
         try:
             r = self.client.get(act_url)
         except requests.exceptions.SSLError as e:
@@ -154,9 +167,11 @@ class ScApi(object):
         return r
 
     def get_account_timezone(self):
+        timezone = None
         act_url = 'adaccounts/{}'.format(self.ad_account_id)
         r = self.make_request(act_url)
-        timezone = r.json()['adaccounts'][0]['adaccount']['timezone']
+        if r:
+            timezone = r.json()['adaccounts'][0]['adaccount']['timezone']
         return timezone
 
     def get_campaign_ids(self):
@@ -196,7 +211,11 @@ class ScApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         self.set_initial_params()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        sd, ed = self.date_check(sd, ed)
+        timezone = self.get_account_timezone()
+        if not timezone:
+            logging.warning('Warning no timezone, returning blank df.')
+            return pd.DataFrame()
+        sd, ed = self.date_check(sd, ed, timezone)
         cids = self.get_campaigns()
         logging.info('Getting data from {} to {} for granularity {} breakdown '
                      '{}.'.format(sd, ed, self.granularity, self.breakdown))
