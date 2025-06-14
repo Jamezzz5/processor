@@ -27,7 +27,7 @@ import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
-import reporting.twapi as twapi
+import processor.reporting.twapi as twapi
 
 
 def func(x):
@@ -478,6 +478,37 @@ class TestDictionary:
         expected = pd.DataFrame(expected_data)
         pd.testing.assert_frame_equal(output, expected, check_like=True,
                                       check_column_type=False)
+
+    def test_select_translation(self):
+        col = dctc.TAR
+        col_val = ''
+        new_value = 'B'
+        part_name = 'PARTNER'
+        dict_row = {
+            dctc.DICT_COL_NAME: [col],
+            dctc.DICT_COL_VALUE: [col_val],
+            dctc.DICT_COL_NVALUE: [new_value],
+            dctc.DICT_COL_FNC: ['Set::{}'.format(dctc.VEN)],
+            dctc.DICT_COL_SEL: [part_name],
+        }
+        tdf = pd.DataFrame(dict_row)
+        data_dict = {dctc.VEN: [part_name, 'NOT', part_name],
+                     dctc.PKD: [dctc.PKD, dctc.PKD, 'NOT'],
+                     dctc.TAR: ['', '', '']}
+        data_dict_df = pd.DataFrame(data_dict)
+        df = dct.DictTranslationConfig.select_translation(
+            tdf, col, data_dict_df, fnc_type='Set')
+        assert df[col][0] == new_value
+        assert df[col][1] != new_value
+        assert df[col][2] == new_value
+        tdf[dctc.DICT_COL_FNC] += '||{}'.format(dctc.PKD)
+        tdf[dctc.DICT_COL_SEL] += '||{}'.format(dctc.PKD)
+        data_dict_df = pd.DataFrame(data_dict)
+        df = dct.DictTranslationConfig.select_translation(
+            tdf, col, data_dict_df, fnc_type='Set')
+        assert df[col][0] == new_value
+        assert df[col][1] != new_value
+        assert df[col][2] != new_value
 
 
 class TestCalc:
