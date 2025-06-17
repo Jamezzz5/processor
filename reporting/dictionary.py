@@ -96,6 +96,7 @@ class Dict(object):
             self.data_dict = self.data_dict[dctc.COLS]
             err.dic = self
             err.reset()
+        return True
 
     def auto_combine(self, error, rc_auto):
         sorted_missing = self.sort_relation_cols(
@@ -759,6 +760,15 @@ class DictTranslationConfig(object):
 
     @staticmethod
     def select_translation(tdf, col, data_dict, fnc_type='Select'):
+        """
+        Does a special translation based on function type
+
+        :param tdf: The translation dictionary as a df
+        :param col: The column that is being changed
+        :param data_dict: The dictionary (as df) that is being changed
+        :param fnc_type: Select, Set or Append.
+        :return: The dictionary with the col changed if conditions match
+        """
         if dctc.DICT_COL_SEL not in tdf.columns:
             return data_dict
         tdf = tdf.copy()
@@ -773,13 +783,25 @@ class DictTranslationConfig(object):
             col2_q = sel[s][dctc.DICT_COL_SEL]
             val = sel[s][dctc.DICT_COL_VALUE]
             nval = sel[s][dctc.DICT_COL_NVALUE]
-            if col2 not in data_dict.columns:
+            if col2 not in data_dict.columns and '||' not in col2:
                 continue
             if fnc_type == 'Select':
                 data_dict.loc[(data_dict[col2].astype('U') == col2_q) &
                               (data_dict[col] == val), col] = nval
             if fnc_type == 'Set':
-                data_dict.loc[data_dict[col2].astype('U') == col2_q, col] = nval
+                if '||' in col2:
+                    col2 = col2.split('||')
+                    col2_q = col2_q.split('||')
+                else:
+                    col2 = [col2]
+                    col2_q = [col2_q]
+                mask = pd.Series(True, index=data_dict.index)
+                for c, q in zip(col2, col2_q):
+                    if c not in data_dict.columns:
+                        mask &= False
+                    else:
+                        mask &= (data_dict[c].astype('U') == q)
+                data_dict.loc[mask, col] = nval
             if fnc_type == 'Append':
                 mask = ((data_dict[col2].astype('U') == col2_q) &
                         (data_dict[col].str[-len(nval):] != nval))

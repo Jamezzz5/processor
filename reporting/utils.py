@@ -665,6 +665,7 @@ class SeleniumWrapper(object):
             Object.defineProperty(navigator, 'languages', 
             { get: () => ['en-US', 'en'] });
         """)
+        co.page_load_strategy = 'eager'
         browser.maximize_window()
         browser.set_script_timeout(10)
         browser.set_page_load_timeout(10)

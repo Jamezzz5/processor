@@ -892,7 +892,11 @@ class Analyze(object):
     @staticmethod
     def check_sheet_names(tds, sheet_names):
         missing_sheets = []
-        xl = pd.read_excel(tds.p[vmc.filename], None)
+        try:
+            xl = pd.read_excel(tds.p[vmc.filename], None)
+        except ValueError as e:
+            logging.warning(e)
+            return missing_sheets
         sheet_lists = list(xl.keys())
         for sheet_name in sheet_names:
             if sheet_name not in sheet_lists:
