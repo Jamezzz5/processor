@@ -28,6 +28,7 @@ import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
 import processor.reporting.twapi as twapi
+import processor.reporting.scapi as scapi
 
 
 def func(x):
@@ -285,7 +286,7 @@ class TestApis:
 
     def test_criapi(self, tmp_path_factory):
         api = criapi.CriApi()
-        self.send_api_call(api)
+        self.send_api_call(api, fields=[api.line_item_str])
 
     def test_rsapi(self, tmp_path_factory):
         api = rsapi.RsApi()
@@ -306,6 +307,10 @@ class TestApis:
 
     def test_dcapi(self):
         api = dcapi.DcApi()
+        self.send_api_call(api)
+
+    def test_scapi(self):
+        api = scapi.ScApi()
         self.send_api_call(api)
 
 

@@ -209,8 +209,9 @@ class TwApi(object):
         else:
             logging.warning('Data not in response: {}'.format(data))
             id_dict = {}
-        id_dict = self.page_through_ids(data, id_dict, url, eid, name, parent,
-                                        sd, params)
+        if data:
+            id_dict = self.page_through_ids(data, id_dict, url, eid, name,
+                                            parent, sd, params)
         return id_dict
 
     def get_user_stats(self, usernames):
@@ -438,7 +439,7 @@ class TwApi(object):
             fields, ids, sd, ed, entity=entity, placement=place,
             async_request=True)
         data = self.request(url, params=params, method='POST')
-        if ('data' in data and isinstance(data['data'], dict)
+        if (data and 'data' in data and isinstance(data['data'], dict)
                 and 'id' in data['data']):
             twitter_request.data = data
             self.async_requests.append(twitter_request)

@@ -217,6 +217,7 @@ class CriApi(object):
                 if error_count > 10:
                     logging.warning('Too many errors returning blank df.')
                     break
+            time.sleep(1)
         return df
 
     def download_report(self, url):
