@@ -15,6 +15,7 @@ import processor.reporting.dictionary as dct
 import processor.reporting.dictcolumns as dctc
 import processor.reporting.calc as cal
 import processor.reporting.analyze as az
+import processor.reporting.errorreport as er
 import processor.reporting.export as exp
 import processor.reporting.expcolumns as exc
 import processor.reporting.azapi as azapi
@@ -514,6 +515,24 @@ class TestDictionary:
         assert df[col][0] == new_value
         assert df[col][1] != new_value
         assert df[col][2] != new_value
+
+
+class TestErrorReport:
+    def test_error_report(self, tmp_path_factory):
+        file_path = tmp_path_factory.mktemp(utl.error_path)
+        error_filename = '{}/ER.csv'.format(file_path)
+        place_col = 'b'
+        place_exist = 'a_b'
+        place_miss = 'b_c'
+        df = pd.DataFrame({'a': [1, 2], place_col: [place_exist, place_miss]})
+        df[dctc.FPN] = df[place_col]
+        dic = pd.DataFrame({dctc.FPN: [place_miss]})
+        err = er.ErrorReport(df, dic, place_col, error_filename)
+        assert not err.data_err.empty
+        assert len(err.data_err) == 1
+        df = pd.DataFrame({dctc.FPN: []})
+        err = er.ErrorReport(df, dic, place_col, error_filename)
+        assert err.data_err.empty
 
 
 class TestCalc:

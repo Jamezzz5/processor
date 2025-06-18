@@ -51,12 +51,13 @@ class ErrorReport(object):
                 on=self.merge_col, how='left', indicator=True)
         data_err = self.merge_df[self.merge_df['_merge'] == 'left_only']
         if self.pn is None:
-            data_err = self.drop_error_df_duplicates(data_err,
-                                                     [self.merge_col])
+            merge_col = [self.merge_col]
         else:
+            if self.pn not in data_err.columns:
+                data_err[self.pn] = ''
             data_err.loc[:, dctc.PN] = data_err.loc[:, self.pn]
-            data_err = self.drop_error_df_duplicates(data_err,
-                                                     [self.merge_col, dctc.PN])
+            merge_col = [self.merge_col, dctc.PN]
+        data_err = self.drop_error_df_duplicates(data_err, merge_col=merge_col)
         return data_err
 
     @staticmethod

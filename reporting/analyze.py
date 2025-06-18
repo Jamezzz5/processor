@@ -20,6 +20,7 @@ import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
+import xml.etree.ElementTree as et
 
 
 class Analyze(object):
@@ -894,7 +895,7 @@ class Analyze(object):
         missing_sheets = []
         try:
             xl = pd.read_excel(tds.p[vmc.filename], None)
-        except ValueError as e:
+        except (ValueError, et.ParseError, FileNotFoundError) as e:
             logging.warning(e)
             return missing_sheets
         sheet_lists = list(xl.keys())

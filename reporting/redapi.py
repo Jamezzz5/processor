@@ -419,22 +419,28 @@ class RedApi(object):
         for business_id in business_ids:
             url = '{}businesses/{}/ad_accounts'.format(
                 self.base_api_url, business_id)
-            r = None
+            resp = None
             for x in range(5):
                 r = requests.get(url, headers=self.headers)
-                if 'data' in r.json():
+                try:
+                    resp = r.json()
+                except json.decoder.JSONDecodeError as e:
+                    logging.warning(e)
+                    time.sleep(1)
+                    continue
+                if 'data' in resp:
                     break
                 else:
-                    logging.warning('Data not in response: {}'.format(r.json()))
+                    logging.warning('Data not in response: {}'.format(resp))
                     time.sleep(5)
-            if not r:
+            if not resp:
                 logging.warning('Could not get business {}'.format(business_id))
                 continue
-            account_ids = [x['id'] for x in r.json()['data']
+            account_ids = [x['id'] for x in resp['data']
                            if x['name'].lower() == self.username.lower()]
             if account_ids:
                 account_id = account_ids[0]
-                self.time_zone_id = r.json()['data'][0]['time_zone_id']
+                self.time_zone_id = resp['data'][0]['time_zone_id']
                 break
         return account_id
 
