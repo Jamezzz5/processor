@@ -301,36 +301,14 @@ class TtdApi(object):
         production_url = 'https://api.gen.adsrvr.org/graphql'
         sandbox_url = 'https://ext-api.sb.thetradedesk.com/graphql'
         self.authenticate()
-        query = '''
-        query GetAdvertiserMetrics {
-            advertiser(id: ID!) {
+        query = """
+        query GetAdvertiser($advertiserId: ID!) {
+            advertiser(id: $advertiserId) {
                 id
                 name
-                campaigns {
-                    edges {
-                        node {
-                            id
-                            name
-                            reporting {
-                                generalReporting {
-                                    nodes {
-                                        dimensions {
-                                            time {
-                                                day
-                                            }
-                                        }
-                                        metrics {
-                                            clicks
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
-        '''
+        """
         variables = {
             "advertiserId": self.ad_id
         }
