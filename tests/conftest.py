@@ -1,7 +1,7 @@
 import os
+import sys
 import pytest
-from main import set_log
-
+from processor.main import set_log
 
 @pytest.fixture(scope='session', autouse=True)
 def ensure_correct_directory():
@@ -13,6 +13,11 @@ def ensure_correct_directory():
     main_file = 'main.py'
     if not os.path.exists(main_file):
         os.chdir('..')
+    processor_dir = 'processor'
+    if os.path.exists(processor_dir):
+        os.chdir(processor_dir)
+    if processor_dir not in sys.path:
+        sys.path.insert(0, processor_dir)
     assert os.path.exists(main_file)
 
 
