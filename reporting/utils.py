@@ -919,7 +919,14 @@ class SeleniumWrapper(object):
             clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
                         '../following-sibling::a[@class="clear"]']
             for clear_x in clear_xs:
-                clear_val = elem.find_elements_by_xpath(clear_x)
+                clear_val = []
+                for x in range(5):
+                    try:
+                        clear_val = elem.find_elements_by_xpath(clear_x)
+                        break
+                    except ex.StaleElementReferenceException as e:
+                        logging.warning(e)
+                    time.sleep(.1)
                 if len(clear_val) > 0:
                     self.click_on_xpath(elem=clear_val[0], sleep=.1)
                     break
