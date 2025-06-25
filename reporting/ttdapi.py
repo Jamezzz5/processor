@@ -300,24 +300,56 @@ class TtdApi(object):
         self.input_config('ttdconfig.json')
         production_url = 'https://api.gen.adsrvr.org/graphql'
         sandbox_url = 'https://ext-api.sb.thetradedesk.com/graphql'
-        self.authenticate()
+        auth_token = ''
+        self.headers = {'Content-Type': 'application/json',
+                        'TTD-Auth': auth_token}
         query = """
-        query GetAdvertiser($advertiserId: ID!) {
-            advertiser(id: $advertiserId) {
-                id
-                name
+            query MyQuery($campaignId: ID!) {
+              campaign(id: $campaignId) {
+                adGroups {
+                  nodes {
+                    name
+                    creatives {
+                      nodes {
+                        name
+                        adGroups {
+                          edges {
+                            node {
+                              reporting {
+                                generalReporting {
+                                  nodes {
+                                    dimensions {
+                                      time {
+                                        day
+                                      }
+                                    }
+                                    metrics {
+                                      clicks
+                                      impressions
+                                      revenue
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
-        }
         """
         variables = {
-            "advertiserId": self.ad_id
+            "campaignId": '0n0tyao'
         }
         data = {
             'query': query,
             'variables': variables
         }
         headers = {
-            'TTD-Auth': self.auth_token
+            'TTD-Auth': auth_token
         }
         r = requests.post(url=sandbox_url, json=data, headers=headers)
         if r.status_code == 200:
