@@ -276,6 +276,7 @@ class Analyze(object):
         self.add_to_analysis_dict(key_col=self.unknown_col,
                                   message=undefined_msg,
                                   data=df.to_dict())
+        return True
 
     def backup_files(self):
         bu = os.path.join(utl.backup_path, dt.date.today().strftime('%Y%m%d'))
@@ -1944,9 +1945,34 @@ class FindPlacementNameCol(AnalyzeBase):
     name = Analyze.placement_col
     fix = True
     new_files = True
+    suggested_col = 'Suggested Col'
 
     @staticmethod
-    def do_analysis_on_data_source(source, df):
+    def find_placement_col_in_df(
+            df, result_df, placement_col=vmc.placement,
+            vk_name='test', max_underscore=30):
+        df = df.drop([vmc.fullplacename], axis=1, errors='ignore')
+        total_rows = len(df)
+        if df.empty:
+            return result_df
+        df = df.applymap(
+            lambda x: str(x).count('_')).apply(lambda x: sum(x) / total_rows)
+        max_col = df[df < max_underscore].idxmax()
+        max_exists = max_col in df
+        p_exists = placement_col in df
+        no_p_check = (not p_exists and max_exists)
+        p_check = (
+            max_exists and p_exists and
+            df[max_col] >= (df[placement_col] + 9)
+            and 18 <= df[max_col] <= max_underscore)
+        if no_p_check or p_check:
+            data_dict = {vmc.vendorkey: vk_name,
+                         'Current Placement Col': placement_col,
+                         FindPlacementNameCol.suggested_col: max_col}
+            result_df.append(data_dict)
+        return result_df
+
+    def do_analysis_on_data_source(self, source, df):
         if vmc.filename not in source.p:
             return pd.DataFrame()
         file_name = source.p[vmc.filename]
@@ -1959,23 +1985,8 @@ class FindPlacementNameCol(AnalyzeBase):
             tdf = source.get_raw_df(nrows=first_row + 3)
             if tdf.empty and transforms:
                 tdf = source.get_raw_df()
-            tdf = tdf.drop([vmc.fullplacename], axis=1, errors='ignore')
-            if tdf.empty:
-                return df
-            tdf = tdf.applymap(
-                lambda x: str(x).count('_')).apply(lambda x: sum(x))
-            max_col = tdf.idxmax()
-            max_exists = max_col in tdf
-            p_exists = p_col in tdf
-            no_p_check = (not p_exists and max_exists)
-            p_check = (max_exists and p_exists and
-                       tdf[max_col] >= (tdf[p_col] + 9)
-                       and 75 <= tdf[max_col] <= 105)
-            if no_p_check or p_check:
-                data_dict = {vmc.vendorkey: source.key,
-                             'Current Placement Col': p_col,
-                             'Suggested Col': max_col}
-                df.append(data_dict)
+            df = self.find_placement_col_in_df(
+                df=tdf, result_df=df, placement_col=p_col, vk_name=source.key)
         return df
 
     def do_analysis(self):
@@ -2000,7 +2011,7 @@ class FindPlacementNameCol(AnalyzeBase):
     def fix_analysis_for_data_source(self, source_aly_dict, write=True,
                                      col=vmc.placement):
         vk = source_aly_dict[vmc.vendorkey]
-        new_col = source_aly_dict['Suggested Col']
+        new_col = source_aly_dict[self.suggested_col]
         logging.info('Changing {} {} to {}'.format(vk, col, new_col))
         self.aly.matrix.vm_change_on_key(vk, col, new_col)
         if write:
@@ -2872,6 +2883,7 @@ class CheckRawFileUpdateTime(AnalyzeBase):
         logging.info('{}\n{}'.format(update_msg, df.to_string()))
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=update_msg, data=df.to_dict())
+        return True
 
 
 class GetDailyPacingAlerts(AnalyzeBase):
