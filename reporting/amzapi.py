@@ -160,7 +160,7 @@ class AmzApi(object):
                 profile = profile[0]
                 self.profile_id = profile['advertiserId']
                 self.set_headers()
-                self.base_url = endpoint
+                self.base_url = self.check_correct_endpoint([dsp_profile], endpoint)
                 self.amazon_dsp = True
                 self.timezone = pytz.timezone(profile['timezone'])
                 break
