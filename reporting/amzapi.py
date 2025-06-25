@@ -160,7 +160,7 @@ class AmzApi(object):
                 profile = profile[0]
                 self.profile_id = profile['advertiserId']
                 self.set_headers()
-                self.base_url = endpoint
+                self.base_url = self.check_correct_endpoint([dsp_profile], endpoint)
                 self.amazon_dsp = True
                 self.timezone = pytz.timezone(profile['timezone'])
                 break
@@ -181,6 +181,19 @@ class AmzApi(object):
                         break
         return profile
 
+    def check_correct_endpoint(self, profile, url):
+        region_map = {'NA': ['US', 'CA', 'MX'],
+                      'EU': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'SE', 'PL', 'BE'],
+                      'FE': ['JP', 'SG', 'AU']}
+        endpoints = {'NA': self.base_url,
+                     'EU': self.eu_url,
+                     'FE': self.fe_url}
+        country_code = profile[0]['countryCode']
+        for region, countries in region_map.items():
+            if country_code in countries:
+                url = endpoints[region]
+        return url
+
     def get_profiles(self):
         self.set_headers()
         for endpoint in [self.base_url, self.eu_url, self.fe_url]:
@@ -193,7 +206,7 @@ class AmzApi(object):
             if profile:
                 self.profile_id = profile[0]['profileId']
                 self.set_headers()
-                self.base_url = endpoint
+                self.base_url = self.check_correct_endpoint(profile, endpoint)
                 return True
             dsp_profiles = [x for x in r.json() if 'agency'
                             in x['accountInfo']['type']]
