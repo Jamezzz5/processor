@@ -846,6 +846,13 @@ class DataSource(object):
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
+    """
+    Imports and cleans plan data
+    :param key: vendor key
+    :param df: data frame with plan net data
+    :param plan_omit_list: list with values to omit
+    :param kwargs: dictionary with keyword arguments
+    """
     if df is None or df.empty:
         df = pd.DataFrame(columns=kwargs[vmc.fullplacename] + [vmc.vendorkey])
     start_date = set_start_date(df)

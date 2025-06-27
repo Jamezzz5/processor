@@ -1081,9 +1081,13 @@ def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
                                    overwrite=overwrite)
 
 
-def lower_words_from_str(word_str):
-    words = re.findall(r"[\w']+|[.,!?;/]", word_str)
-    words = [x.lower() for x in words]
+def lower_words_from_str(word_str, split_underscore=False):
+    if split_underscore:
+        words = re.split(r"[^a-z0-9']+", word_str.lower())
+        words = [w for w in words if w]
+    else:
+        pattern = r"[\w']+|[.,!?;/]"
+        words = re.findall(pattern, word_str.lower())
     return words
 
 

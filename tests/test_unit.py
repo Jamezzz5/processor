@@ -831,6 +831,25 @@ class TestAnalyze:
         rdf = place_analyze.find_placements_not_in_mp(df)
         assert new_place in rdf[dctc.PN].values
 
+    def test_placement_not_in_mp_fix(self):
+        creative_names = ['a', 'b', 'c']
+        copy_names = ['1', '2', '3']
+        target_names = ['aaa', 'jrpg']
+        names = [
+            f'{tgt}_{cname} {cpy}'
+            for tgt in target_names
+            for cname in creative_names
+            for cpy in copy_names
+        ]
+        mp_names = ['123_456_{}'.format(name) for name in names]
+        place_analyze = az.CheckPlacementsNotInMp(az.Analyze())
+        rdf = place_analyze.find_closest_name_match(names, mp_names)
+        assert len(rdf) == len(names)
+        rdf_dict = rdf.set_index('Value').to_dict(orient='dict')
+        rdf_dict = rdf_dict[dctc.DICT_COL_NVALUE]
+        for idx, name in enumerate(names):
+            assert rdf_dict[name] == mp_names[idx]
+
     def test_find_double_counting_empty(self):
         df = pd.DataFrame()
         cdc = az.CheckDoubleCounting(az.Analyze())
@@ -1169,6 +1188,19 @@ class TestAnalyze:
         assert scores
         bm25_scores = transformer.bm25_search(user_text, top_k=top_k)
         assert bm25_scores
+
+
+class TestAliChat:
+    def test_index_db_model_by_word(self):
+        word_str = 'item'
+        item_num = 5
+        db_model = ['{} {}'.format(word_str, x) for x in range(item_num)]
+        word_idx = az.AliChat.index_db_model_by_word(
+            db_model, model_is_list=True)
+        assert word_idx
+        assert len(word_idx[word_str]) == len(db_model)
+        for i in range(item_num):
+            assert word_idx[str(i)] == [i]
 
 
 default_col_names = [
