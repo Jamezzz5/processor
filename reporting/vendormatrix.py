@@ -1043,7 +1043,7 @@ def df_single_transform(df, transform):
                      var_name='{}-variable'.format(header_col_name),
                      value_name='{}-value'.format(header_col_name))
         df = df.reset_index(drop=True)
-    if transform_type == 'RawTranslate':
+    if transform_type == vmc.transform_raw_translate:
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         df = tc.apply_translation_to_dict(df)

@@ -30,6 +30,7 @@ import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
 import processor.reporting.twapi as twapi
 import processor.reporting.scapi as scapi
+import processor.reporting.awss3 as awss3
 
 
 def func(x):
@@ -221,6 +222,11 @@ class TestApis:
         file_name, json_data = self.make_fake_config(
             api.key_list, tmp_path_factory)
         api.input_config(file_name)
+        df = pd.DataFrame({'uploadid': ['a'], 'productname': ['b']})
+        # api.write_file(df)
+
+    def test_awss3(self, tmp_path_factory):
+        api = awss3.S3()
         df = pd.DataFrame({'uploadid': ['a'], 'productname': ['b']})
         # api.write_file(df)
 
@@ -813,10 +819,12 @@ class TestAnalyze:
     def test_placement_not_in_mp(self):
         date_val = dt.datetime.today().strftime('%m/%d/%Y')
         df = pd.DataFrame()
-        for col in [dctc.VEN, dctc.PN, vmc.vendorkey]:
+        for col in [dctc.VEN, dctc.PN]:
             df[col] = [col]
+        df[vmc.vendorkey] = [vmc.api_raw_key]
         df[vmc.date] = [date_val]
-        place_analyze = az.CheckPlacementsNotInMp(az.Analyze())
+        base_analyze = az.Analyze(matrix=vm.VendorMatrix())
+        place_analyze = az.CheckPlacementsNotInMp(base_analyze)
         rdf = place_analyze.find_placements_not_in_mp(df)
         assert rdf.empty
         tdf = df.copy()
@@ -826,10 +834,14 @@ class TestAnalyze:
         assert dctc.PN not in rdf[dctc.PN].values
         new_place = '{}NEW'.format(dctc.PN)
         tdf[dctc.PN] = new_place
-        tdf[vmc.vendorkey] = [vmc.vendorkey]
+        tdf[vmc.vendorkey] = [vmc.api_raw_key]
         df = pd.concat([df, tdf], ignore_index=True)
         rdf = place_analyze.find_placements_not_in_mp(df)
         assert new_place in rdf[dctc.PN].values
+        place_analyze.aly.df = df
+        place_analyze.do_analysis()
+        rdf = place_analyze.fix_analysis(rdf, write=False)
+        assert new_place in rdf[dctc.DICT_COL_VALUE].values
 
     def test_placement_not_in_mp_fix(self):
         creative_names = ['a', 'b', 'c']

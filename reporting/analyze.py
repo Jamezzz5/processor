@@ -269,6 +269,8 @@ class Analyze(object):
         for col in df.columns:
             df[col] = "'" + df[col] + "'"
         df = df.dropna()
+        df = df[~df.astype(str).apply(
+            lambda row: row.str.lower().eq('nan')).any(axis=1)]
         df_dict = '\n'.join(['{}{}'.format(k, v)
                              for k, v in df.to_dict(orient='index').items()])
         undefined_msg = 'Missing planned spends have the following keys:'
@@ -617,7 +619,12 @@ class Analyze(object):
                                   data=format_df.T.to_dict())
         mdf = []
         for col in df.columns:
+            if str(col) == 'nan':
+                continue
             missing_metrics = df[df[col] == 0][col].index.to_list()
+            if 'sem' in col.lower():
+                missing_metrics = [x for x in missing_metrics
+                                   if 'view' not in x.lower()]
             if missing_metrics:
                 miss_dict = {dctc.VEN: col,
                              self.missing_metrics: missing_metrics}
@@ -3023,16 +3030,30 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         match_df = self.find_closest_name_match(df[dctc.PN], mp_names)
         msg = "Suggested matches for placements not in media plan:"
         logging.info(f"{msg}\n{match_df.to_string(index=False)}")
+        data_source = self.aly.matrix.get_data_source(vk)
+        match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
+        old_transform = str(data_source.p[vmc.transform])
+        if vmc.transform_raw_translate not in old_transform:
+            if str(old_transform) == 'nan':
+                old_transform = ''
+            new_transform = vmc.transform_raw_translate
+            if old_transform:
+                new_transform = '{}:::{}'.format(old_transform, new_transform)
+            self.aly.matrix.vm_change_on_key(vk, vmc.transform, new_transform)
+            self.aly.matrix.write()
+        if write:
+            tc = dct.DictTranslationConfig()
+            tc.add_and_write(match_df)
         return match_df
 
     def fix_analysis(self, aly_dict, write=True):
         vks = aly_dict[vmc.vendorkey].unique()
+        change_df = pd.DataFrame()
         for vk in vks:
             df = aly_dict[aly_dict[vmc.vendorkey] == vk]
-            self.fix_analysis_for_data_source(df, vk, False)
-        if write:
-            self.aly.matrix.write()
-        return self.aly.matrix.vm_df
+            df = self.fix_analysis_for_data_source(df, vk, write)
+            change_df = pd.concat([change_df, df], ignore_index=True)
+        return change_df
 
 
 class ValueCalc(object):
