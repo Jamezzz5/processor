@@ -30,6 +30,7 @@ import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
 import processor.reporting.twapi as twapi
 import processor.reporting.scapi as scapi
+import processor.reporting.awss3 as awss3
 
 
 def func(x):
@@ -221,6 +222,11 @@ class TestApis:
         file_name, json_data = self.make_fake_config(
             api.key_list, tmp_path_factory)
         api.input_config(file_name)
+        df = pd.DataFrame({'uploadid': ['a'], 'productname': ['b']})
+        # api.write_file(df)
+
+    def test_awss3(self, tmp_path_factory):
+        api = awss3.S3()
         df = pd.DataFrame({'uploadid': ['a'], 'productname': ['b']})
         # api.write_file(df)
 
@@ -799,46 +805,62 @@ class TestAnalyze:
         assert 'API_Tiktok_Test' in df[vmc.vendorkey][0]
         assert 'API_Rawfile_Test' in df[vmc.vendorkey][0]
 
+    def test_find_placement_name(self):
+        other_col = 'other_col'
+        df = pd.DataFrame({vmc.placement: ['_' * 10],
+                           other_col: ['_' * 20],
+                           'wrong': ['_' * 35]})
+        place_analyze = az.FindPlacementNameCol(az.Analyze())
+        rdf = place_analyze.find_placement_col_in_df(
+            df, result_df=[])
+        assert rdf
+        assert rdf[0][place_analyze.suggested_col] == other_col
+
     def test_placement_not_in_mp(self):
-        df = pd.DataFrame({
-            dctc.VEN: {0: 'TikTok', 1: 'TikTok', 2: 'TikTok'},
-            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Tiktok_Test',
-                            2: vmc.api_mp_key},
-            vmc.clicks: {0: 15.0, 1: 15.0, 2: 0},
-            vmc.date: {0: '7/27/2022', 1: '7/27/2022', 2: '7/27/2022'},
-            dctc.PN: {0: 'Test', 1: 'Test1', 2: 'Test'}})
-        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cpmp = az.CheckPlacementsNotInMp(az.Analyze())
-        df = cpmp.find_placements_not_in_mp(df)
-        assert 'Test1' in df[dctc.PN].values
-        assert 'Test' not in df[dctc.PN].values
+        date_val = dt.datetime.today().strftime('%m/%d/%Y')
+        df = pd.DataFrame()
+        for col in [dctc.VEN, dctc.PN]:
+            df[col] = [col]
+        df[vmc.vendorkey] = [vmc.api_raw_key]
+        df[vmc.date] = [date_val]
+        base_analyze = az.Analyze(matrix=vm.VendorMatrix())
+        place_analyze = az.CheckPlacementsNotInMp(base_analyze)
+        rdf = place_analyze.find_placements_not_in_mp(df)
+        assert rdf.empty
+        tdf = df.copy()
+        tdf[vmc.vendorkey] = [vmc.api_mp_key]
+        df = pd.concat([df, tdf], ignore_index=True)
+        rdf = place_analyze.find_placements_not_in_mp(df)
+        assert dctc.PN not in rdf[dctc.PN].values
+        new_place = '{}NEW'.format(dctc.PN)
+        tdf[dctc.PN] = new_place
+        tdf[vmc.vendorkey] = [vmc.api_raw_key]
+        df = pd.concat([df, tdf], ignore_index=True)
+        rdf = place_analyze.find_placements_not_in_mp(df)
+        assert new_place in rdf[dctc.PN].values
+        place_analyze.aly.df = df
+        place_analyze.do_analysis()
+        rdf = place_analyze.fix_analysis(rdf, write=False)
+        assert new_place in rdf[dctc.DICT_COL_VALUE].values
 
-    def test_placement_not_in_mp_empty(self):
-        df = pd.DataFrame({
-            dctc.VEN: {0: 'TikTok', 1: 'TikTok'},
-            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Tiktok_Test'},
-            vmc.clicks: {0: 15.0, 1: 15.0},
-            vmc.date: {0: '7/27/2022', 1: '7/27/2022'},
-            dctc.PN: {0: 'Test', 1: 'Test1'}})
-        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cpmp = az.CheckPlacementsNotInMp(az.Analyze())
-        df = cpmp.find_placements_not_in_mp(df)
-        assert df.empty
-
-    def test_all_placement_in_mp(self):
-        df = pd.DataFrame({
-            dctc.VEN: {0: 'TikTok', 1: 'TikTok', 2: 'TikTok', 3: 'TikTok'},
-            vmc.vendorkey: {0: 'API_Tiktok_Test', 1: 'API_Tiktok_Test',
-                            2: vmc.api_mp_key, 3: vmc.api_mp_key},
-            vmc.clicks: {0: 15.0, 1: 15.0, 2: 0, 3: 0},
-            vmc.date: {0: '7/27/2022', 1: '7/27/2022', 2: '7/27/2022',
-                       3: '7/27/2022'},
-            dctc.PN: {0: 'Test', 1: 'Test1', 2: 'Test', 3: 'Test1'}})
-        df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
-        cpmp = az.CheckPlacementsNotInMp(az.Analyze())
-        df = cpmp.find_placements_not_in_mp(df)
-        assert 'Test' not in df[dctc.PN].values
-        assert 'Test1' not in df[dctc.PN].values
+    def test_placement_not_in_mp_fix(self):
+        creative_names = ['a', 'b', 'c']
+        copy_names = ['1', '2', '3']
+        target_names = ['aaa', 'jrpg']
+        names = [
+            f'{tgt}_{cname} {cpy}'
+            for tgt in target_names
+            for cname in creative_names
+            for cpy in copy_names
+        ]
+        mp_names = ['123_456_{}'.format(name) for name in names]
+        place_analyze = az.CheckPlacementsNotInMp(az.Analyze())
+        rdf = place_analyze.find_closest_name_match(names, mp_names)
+        assert len(rdf) == len(names)
+        rdf_dict = rdf.set_index('Value').to_dict(orient='dict')
+        rdf_dict = rdf_dict[dctc.DICT_COL_NVALUE]
+        for idx, name in enumerate(names):
+            assert rdf_dict[name] == mp_names[idx]
 
     def test_find_double_counting_empty(self):
         df = pd.DataFrame()
@@ -1178,6 +1200,19 @@ class TestAnalyze:
         assert scores
         bm25_scores = transformer.bm25_search(user_text, top_k=top_k)
         assert bm25_scores
+
+
+class TestAliChat:
+    def test_index_db_model_by_word(self):
+        word_str = 'item'
+        item_num = 5
+        db_model = ['{} {}'.format(word_str, x) for x in range(item_num)]
+        word_idx = az.AliChat.index_db_model_by_word(
+            db_model, model_is_list=True)
+        assert word_idx
+        assert len(word_idx[word_str]) == len(db_model)
+        for i in range(item_num):
+            assert word_idx[str(i)] == [i]
 
 
 default_col_names = [
@@ -1663,14 +1698,7 @@ class TestBlankRun:
 
 
 class TestImportPlanData:
-    """
-            Imports and cleans plan data
-            :param key: vendor key
-            :param df: data frame with plan net data
-            :param plan_omit_list: list with values to omit
-            :param kwargs: dictionary with keyword arguments
-    """
-    def test_import_plan_data(self):
+    def test_import_plan_data(self, tmp_path_factory):
         df = pd.DataFrame({
             vmc.vendorkey: ['API_Test1', 'API_Test2', 'API_Test3'],
             dctc.CAM: ['Camp1', 'Camp2', 'Camp3'],
@@ -1690,6 +1718,7 @@ class TestImportPlanData:
             vmc.filenameerror: os.path.join(cur_path, utl.error_path,
                                             error_filename)
         }
+        dic = dct.Dict(kwargs[vmc.filenamedict])
         result = vm.import_plan_data(key, df, plan_omit_list, **kwargs)
         assert isinstance(result, pd.DataFrame)
         expected_columns = [dctc.FPN, dctc.PNC, dctc.UNC, dctc.PRN,
@@ -1697,8 +1726,8 @@ class TestImportPlanData:
                             dctc.CAM, dctc.CTIM, dctc.CP, dctc.CT,
                             dctc.VT, vmc.date]
         assert all(col in result.columns for col in expected_columns)
-        assert not result.empty
-        assert result[dctc.PNC].sum() != 0
+        assert len(dic.data_dict) == len(result)
+        assert result[dctc.PNC].sum() == dic.data_dict[dctc.PNC].sum()
 
     def test_set_start_date(self):
         test_data = {

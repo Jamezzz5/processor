@@ -215,6 +215,7 @@ REP_COST = 'Reporting Cost'
 VER_COST = 'Verification Cost'
 ad_rep_cols = [AD_COST, REP_COST, VER_COST]
 
+transform_raw_translate = 'RawTranslate'
 
 api_aw_key = 'Adwords'
 api_goad_key = 'GoogleAds'
