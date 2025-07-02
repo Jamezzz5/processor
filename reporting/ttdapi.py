@@ -296,3 +296,91 @@ class TtdApi(object):
             url = ttd_url
         return url
 
+    def temp_get_report_using_graphql(self):
+        self.input_config('ttdconfig.json')
+        production_url = 'https://api.gen.adsrvr.org/graphql'
+        sandbox_url = 'https://ext-api.sb.thetradedesk.com/graphql'
+        auth_token = self.report_name
+        self.headers = {'Content-Type': 'application/json',
+                        'TTD-Auth': auth_token}
+        result = []
+        query = """
+            query MyQuery($campaignId: ID!) {
+              campaign(id: $campaignId) {
+                adGroups {
+                  nodes {
+                    name
+                    creatives {
+                      nodes {
+                        name
+                        adGroups {
+                          edges {
+                            node {
+                              reporting {
+                                generalReporting {
+                                  nodes {
+                                    dimensions {
+                                      time {
+                                        day
+                                      }
+                                    }
+                                    metrics {
+                                      clicks
+                                      impressions
+                                      revenue
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """
+        variables = {
+            "campaignId": self.ad_id
+        }
+        data = {
+            'query': query,
+            'variables': variables
+        }
+        headers = {
+            'TTD-Auth': auth_token
+        }
+        r = requests.post(url=sandbox_url, json=data, headers=headers)
+        if r.status_code == 200:
+            result = r.json()
+        else:
+            logging.warning('Request failed with status code: {}'.format(r.status_code))
+        return result
+
+    def temp_parse_json(self):
+        data = self.temp_get_report_using_graphql()
+        rows = []
+        adgroups = data['data']['campaign']['adGroups']['nodes']
+        for adgroup in adgroups:
+            creatives = adgroup.get('creatives', {}).get('nodes', [])
+            for creative in creatives:
+                name = creative['name']
+                adgroup_edges = creative.get('adGroups', {}).get('edges', [])
+                for edge in adgroup_edges:
+                    reporting_nodes = edge['node']['reporting']['generalReporting']['nodes']
+                    for report in reporting_nodes:
+                        date = report['dimensions']['time']['day']
+                        clicks = report['metrics']['clicks']
+                        imps = report['metrics']['impressions']
+                        revenue = report['metrics']['revenue']
+                        rows.append({
+                            'date': date,
+                            'name': name,
+                            'clicks': clicks,
+                            'imps': imps,
+                            'revenue': revenue
+                        })
+        df = pd.DataFrame(rows)
+        return df
