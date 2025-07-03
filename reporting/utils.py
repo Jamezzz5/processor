@@ -696,8 +696,20 @@ class SeleniumWrapper(object):
                 msg = 'Exception attempt: {}, retrying: \n {}'.format(x + 1, e)
                 logging.warning(msg)
                 if x > (max_attempts - 2):
-                    logging.warning('More than ten attempts returning.')
-                    return False
+                    logging.warning(
+                        'Reached max attempts. Restarting browser...')
+                    try:
+                        self.quit()
+                    except Exception as e:
+                        logging.warning(f'Error during browser quit: {e}')
+                    try:
+                        self.browser, self.co = self.init_browser(
+                            self.headless)
+                        self.base_window = self.browser.window_handles[0]
+                        self.browser.get(url)
+                    except Exception as e:
+                        logging.error(f'Restart and reload failed: {e}')
+                        return False
         if elem_id:
             self.wait_for_elem_load(elem_id)
         else:

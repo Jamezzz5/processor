@@ -180,6 +180,7 @@ class Analyze(object):
                                           param=self.over_delivery_col,
                                           message=delivery_msg,
                                           data=data.to_dict())
+        return True
 
     @staticmethod
     def get_start_end_dates(df, plan_names):
@@ -2966,6 +2967,8 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         """
         Find placements in full output not included in the media plan.
 
+        :param df: The df to check media plan names from
+        :return:
         """
         if df.empty:
             return pd.DataFrame(columns=self.cols)
@@ -2998,10 +3001,12 @@ class CheckPlacementsNotInMp(AnalyzeBase):
                                       message=msg, data=rdf.to_dict())
 
     @staticmethod
-    def find_closest_name_match(names, mp_names):
+    def find_closest_name_match(names, mp_names, underscore_min=10):
         match_table = []
         ali_chat = AliChat()
         for name in names:
+            if name.count('_') > underscore_min:
+                continue
             closest, words = ali_chat.find_db_model(
                 mp_names, message=name, model_is_list=True,
                 split_underscore=True)

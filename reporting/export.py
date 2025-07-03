@@ -29,12 +29,16 @@ class ExportHandler(object):
         self.config = None
         self.args = None
         self.config_file = 'config/export_handler.csv'
-        self.load_config(self.config_file)
+        self.config_loaded = self.load_config(self.config_file)
 
     def load_config(self, config_file):
+        if os.path.exists(config_file):
+            logging.warning('File does not exist {}'.format(config_file))
+            return False
         df = pd.read_csv(config_file)
         self.export_list = df[exc.export_key].tolist()
         self.config = df.set_index(exc.export_key).to_dict()
+        return True
 
     def export_loop(self, args):
         self.args = args

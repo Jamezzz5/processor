@@ -189,6 +189,14 @@ class TestUtils:
         expected_columns = [vmc.placement, vmc.date, vmc.impressions]
         assert list(df_adj.columns) == expected_columns
 
+    def test_col_removal(self):
+        df = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+        tdf = utl.col_removal(df, key='None', removal_cols=['ALL'])
+        assert tdf.empty
+        df[vmc.date] = 'x'
+        tdf = utl.col_removal(df, key='None', removal_cols=['ALL'])
+        assert vmc.date in tdf.columns
+
 
 class TestApis:
 
@@ -270,6 +278,7 @@ class TestApis:
                 1 == 1
             except:
                 logging.warning('Failed for {}'.format(username))
+        return True
 
     def test_amzapi(self, tmp_path_factory):
         api = amzapi.AmzApi()
