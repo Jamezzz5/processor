@@ -32,7 +32,7 @@ class ExportHandler(object):
         self.config_loaded = self.load_config(self.config_file)
 
     def load_config(self, config_file):
-        if os.path.exists(config_file):
+        if not os.path.exists(config_file):
             logging.warning('File does not exist {}'.format(config_file))
             return False
         df = pd.read_csv(config_file)
