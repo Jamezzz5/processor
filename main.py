@@ -118,7 +118,8 @@ def main(arguments=None):
                 df = matrix.vm_loop_with_costs(OUTPUT_FILE)
     if args.exp:
         exp_class = exp.ExportHandler()
-        exp_class.export_loop(args.exp)
+        if exp_class.config_loaded:
+            exp_class.export_loop(args.exp)
     if args.tab:
         tb = tbapi.TabApi()
         tb.refresh_extract()
