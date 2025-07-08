@@ -25,6 +25,8 @@ class TtdApi(object):
         self.ad_id = None
         self.report_name = None
         self.auth_token = None
+        self.query_token = None
+        self.query_url = 'https://api.gen.adsrvr.org/graphql'
         self.headers = None
 
     def input_config(self, config):
@@ -44,6 +46,7 @@ class TtdApi(object):
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
         self.report_name = self.config['Report Name']
+        self.query_token = self.config['Token']
         self.config_list = [self.login, self.password]
 
     def check_config(self):
@@ -132,13 +135,17 @@ class TtdApi(object):
         return self.df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        logging.info('Getting TTD data for: {}'.format(self.report_name))
-        dl_url = self.get_download_url()
-        if dl_url is None:
-            logging.warning('Could not retrieve url, returning blank df.')
-            return pd.DataFrame()
-        r = requests.get(dl_url, headers=self.headers)
-        self.df = self.get_df_from_response(r)
+        if not self.report_name:
+            logging.info('Getting data for campaign {}'.format(self.ad_id))
+            self.df = self.parse_json()
+        else:
+            logging.info('Getting TTD data for: {}'.format(self.report_name))
+            dl_url = self.get_download_url()
+            if dl_url is None:
+                logging.warning('Could not retrieve url, returning blank df.')
+                return pd.DataFrame()
+            r = requests.get(dl_url, headers=self.headers)
+            self.df = self.get_df_from_response(r)
         return self.df
 
     def check_partner_id(self):
@@ -296,13 +303,7 @@ class TtdApi(object):
             url = ttd_url
         return url
 
-    def temp_get_report_using_graphql(self):
-        self.input_config('ttdconfig.json')
-        production_url = 'https://api.gen.adsrvr.org/graphql'
-        sandbox_url = 'https://ext-api.sb.thetradedesk.com/graphql'
-        auth_token = self.report_name
-        self.headers = {'Content-Type': 'application/json',
-                        'TTD-Auth': auth_token}
+    def get_report_using_graphql(self):
         result = []
         query = """
             query MyQuery($campaignId: ID!) {
@@ -313,22 +314,20 @@ class TtdApi(object):
                     creatives {
                       nodes {
                         name
-                        adGroups {
-                          edges {
-                            node {
-                              reporting {
-                                generalReporting {
-                                  nodes {
-                                    dimensions {
-                                      time {
-                                        day
-                                      }
-                                    }
-                                    metrics {
-                                      clicks
-                                      impressions
-                                      revenue
-                                    }
+                        reporting {
+                          creativePerformanceReporting {
+                            edges {
+                              node {
+                                metrics {
+                                  impressions
+                                  clicks
+                                  spend {
+                                    advertiserCurrency
+                                  }
+                                }
+                                dimensions {
+                                  time {
+                                    day
                                   }
                                 }
                               }
@@ -350,37 +349,40 @@ class TtdApi(object):
             'variables': variables
         }
         headers = {
-            'TTD-Auth': auth_token
+            'TTD-Auth': self.query_token
         }
-        r = requests.post(url=sandbox_url, json=data, headers=headers)
+        r = requests.post(url=self.query_url, json=data, headers=headers)
         if r.status_code == 200:
             result = r.json()
         else:
             logging.warning('Request failed with status code: {}'.format(r.status_code))
         return result
 
-    def temp_parse_json(self):
-        data = self.temp_get_report_using_graphql()
+    def parse_json(self):
+        data = self.get_report_using_graphql()
         rows = []
         adgroups = data['data']['campaign']['adGroups']['nodes']
         for adgroup in adgroups:
+            adgroup_name = adgroup['name']
             creatives = adgroup.get('creatives', {}).get('nodes', [])
             for creative in creatives:
-                name = creative['name']
-                adgroup_edges = creative.get('adGroups', {}).get('edges', [])
-                for edge in adgroup_edges:
-                    reporting_nodes = edge['node']['reporting']['generalReporting']['nodes']
-                    for report in reporting_nodes:
-                        date = report['dimensions']['time']['day']
-                        clicks = report['metrics']['clicks']
-                        imps = report['metrics']['impressions']
-                        revenue = report['metrics']['revenue']
-                        rows.append({
-                            'date': date,
-                            'name': name,
-                            'clicks': clicks,
-                            'imps': imps,
-                            'revenue': revenue
-                        })
+                creative_name = creative['name']
+                performance_edges = creative.get('reporting', {}).get('creativePerformanceReporting', {}).get('edges', [])
+                for edge in performance_edges:
+                    node = edge['node']
+                    metrics = node.get('metrics', {})
+                    dimensions = node.get('dimensions', {})
+                    date = dimensions['time']['day']
+                    impressions = metrics.get('impressions', 0)
+                    clicks = metrics.get('clicks', 0)
+                    cost = metrics.get('spend', {}).get('advertiserCurrency', 0.0)
+                    rows.append({
+                        'Date': date,
+                        'Adgroup': adgroup_name,
+                        'Creative': creative_name,
+                        'Clicks': clicks,
+                        'Impressions': impressions,
+                        'Advertiser Cost (Adv Currency)': cost
+                    })
         df = pd.DataFrame(rows)
         return df
