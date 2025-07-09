@@ -303,8 +303,8 @@ class TtdApi(object):
             url = ttd_url
         return url
 
-    def get_report_using_graphql(self):
-        result = []
+    @staticmethod
+    def create_graphql_query():
         query = """
             query MyQuery($campaignId: ID!) {
               campaign(id: $campaignId) {
@@ -341,6 +341,11 @@ class TtdApi(object):
               }
             }
         """
+        return query
+
+    def get_report_using_graphql(self):
+        result = []
+        query = self.create_graphql_query()
         variables = {
             "campaignId": self.ad_id
         }
