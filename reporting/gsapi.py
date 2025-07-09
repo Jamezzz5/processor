@@ -21,7 +21,6 @@ class GsApi(object):
     cont_str = 'content'
     para_str = 'paragraph'
     head_str = 'header'
-    img_str = 'image'
     doc_str = 'Doc'
     text_format = 'NORMAL_TEXT'
     screenshot_dir = os.path.join('screenshots', 'charts/')
@@ -213,44 +212,25 @@ class GsApi(object):
         if self.body_str not in r:
             logging.warning('Body not in response {}.'.format(r))
             return pd.DataFrame()
-        inline_objects = r.get('inlineObjects', {})
         r = r[self.body_str][self.cont_str]
         paragraph = []
         new_paragraph = {}
         text_run = 'textRun'
-        inline_elem = 'inlineObjectElement'
         for x in r:
-            if self.para_str not in x:
-                continue
-            tc = x[self.para_str]['elements'][0]
-            if text_run in tc:
-                tc = tc[text_run][self.cont_str]
-                if tc == '\n':
-                    paragraph.append(new_paragraph)
-                    new_paragraph = {}
-                    continue
-                else:
-                    if new_paragraph:
-                        new_paragraph[self.cont_str] += tc
+            if self.para_str in x:
+                tc = x[self.para_str]['elements'][0]
+                if text_run in tc:
+                    tc = tc[text_run][self.cont_str]
+                    if tc == '\n':
+                        paragraph.append(new_paragraph)
+                        new_paragraph = {}
+                        continue
                     else:
-                        new_paragraph[self.head_str] = tc.strip('\n')
-                        new_paragraph[self.cont_str] = ''
-                        new_paragraph[self.img_str] = ''
-            elif inline_elem in tc:
-                if not new_paragraph:
-                    new_paragraph[self.head_str] = ''
-                    new_paragraph[self.cont_str] = ''
-                inline_obj_id = tc[inline_elem]['inlineObjectId']
-                new_paragraph[self.img_str] = inline_obj_id
-        # Append image URLs to the data
-        for item in paragraph:
-            if self.img_str not in item or not item[self.img_str]:
-                continue
-            object_id = item[self.img_str]
-            obj = inline_objects[object_id]
-            embedded_obj = obj['inlineObjectProperties']['embeddedObject']
-            img_url = embedded_obj.get('imageProperties', {}).get('contentUri')
-            item[self.img_str] = img_url
+                        if new_paragraph:
+                            new_paragraph[self.cont_str] += tc
+                        else:
+                            new_paragraph[self.head_str] = tc.strip('\n')
+                            new_paragraph[self.cont_str] = ''
         self.df = pd.DataFrame(paragraph)
         return self.df
 
