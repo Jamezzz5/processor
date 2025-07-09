@@ -178,7 +178,11 @@ class ImportHandler(object):
         """
         for vk in key_list:
             params = self.matrix.vendor_set(vk)
-            api_class.input_config(params[vmc.apifile])
+            try:
+                api_class.input_config(params[vmc.apifile])
+            except FileNotFoundError as e:
+                logging.warning(e)
+                continue
             if isinstance(api_class, redapi.RedApi) and api_class.aborted:
                 logging.error("API error occurred, skipping Reddit import.")
             else:

@@ -696,8 +696,20 @@ class SeleniumWrapper(object):
                 msg = 'Exception attempt: {}, retrying: \n {}'.format(x + 1, e)
                 logging.warning(msg)
                 if x > (max_attempts - 2):
-                    logging.warning('More than ten attempts returning.')
-                    return False
+                    logging.warning(
+                        'Reached max attempts. Restarting browser...')
+                    try:
+                        self.quit()
+                    except Exception as e:
+                        logging.warning(f'Error during browser quit: {e}')
+                    try:
+                        self.browser, self.co = self.init_browser(
+                            self.headless)
+                        self.base_window = self.browser.window_handles[0]
+                        self.browser.get(url)
+                    except Exception as e:
+                        logging.error(f'Restart and reload failed: {e}')
+                        return False
         if elem_id:
             self.wait_for_elem_load(elem_id)
         else:
@@ -1081,9 +1093,13 @@ def copy_tree_no_overwrite(old_path, new_path, log=True, overwrite=False):
                                    overwrite=overwrite)
 
 
-def lower_words_from_str(word_str):
-    words = re.findall(r"[\w']+|[.,!?;/]", word_str)
-    words = [x.lower() for x in words]
+def lower_words_from_str(word_str, split_underscore=False):
+    if split_underscore:
+        words = re.split(r"[^a-z0-9']+", word_str.lower())
+        words = [w for w in words if w]
+    else:
+        pattern = r"[\w']+|[.,!?;/]"
+        words = re.findall(pattern, word_str.lower())
     return words
 
 

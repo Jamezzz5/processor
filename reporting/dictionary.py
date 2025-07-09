@@ -826,6 +826,19 @@ class DictTranslationConfig(object):
         data_dict[col] = data_dict[col].astype('U').replace(replace_dict)
         return data_dict
 
+    def add_and_write(self, df):
+        """
+        Takes a df and adds to the translation dict and writes.
+
+        :param df: The df to be added to the translation dict
+        :return: The new translation dict as df
+        """
+        self.read(dctc.filename_tran_config)
+        self.df = pd.concat([self.df, df], ignore_index=True)
+        subset = [x for x in self.df.columns if x != dctc.DICT_COL_NVALUE]
+        self.df = self.df.drop_duplicates(subset=subset, keep='last')
+        self.write(self.df, configfile=dctc.filename_tran_config)
+
 
 def dict_update():
     for filename in os.listdir(csv_path):

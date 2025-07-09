@@ -180,6 +180,7 @@ class Analyze(object):
                                           param=self.over_delivery_col,
                                           message=delivery_msg,
                                           data=data.to_dict())
+        return True
 
     @staticmethod
     def get_start_end_dates(df, plan_names):
@@ -269,6 +270,8 @@ class Analyze(object):
         for col in df.columns:
             df[col] = "'" + df[col] + "'"
         df = df.dropna()
+        df = df[~df.astype(str).apply(
+            lambda row: row.str.lower().eq('nan')).any(axis=1)]
         df_dict = '\n'.join(['{}{}'.format(k, v)
                              for k, v in df.to_dict(orient='index').items()])
         undefined_msg = 'Missing planned spends have the following keys:'
@@ -617,7 +620,12 @@ class Analyze(object):
                                   data=format_df.T.to_dict())
         mdf = []
         for col in df.columns:
+            if str(col) == 'nan':
+                continue
             missing_metrics = df[df[col] == 0][col].index.to_list()
+            if 'sem' in col.lower():
+                missing_metrics = [x for x in missing_metrics
+                                   if 'view' not in x.lower()]
             if missing_metrics:
                 miss_dict = {dctc.VEN: col,
                              self.missing_metrics: missing_metrics}
@@ -2959,6 +2967,8 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         """
         Find placements in full output not included in the media plan.
 
+        :param df: The df to check media plan names from
+        :return:
         """
         if df.empty:
             return pd.DataFrame(columns=self.cols)
@@ -2989,6 +2999,66 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         self.add_to_analysis_dict(df=rdf, msg=msg)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=rdf.to_dict())
+
+    @staticmethod
+    def find_closest_name_match(names, mp_names, underscore_min=10):
+        match_table = []
+        ali_chat = AliChat()
+        for name in names:
+            if name.count('_') > underscore_min:
+                continue
+            closest, words = ali_chat.find_db_model(
+                mp_names, message=name, model_is_list=True,
+                split_underscore=True)
+            if closest:
+                suggested_name = mp_names[next(iter(closest))]
+                match_table.append({
+                    dctc.DICT_COL_VALUE: name,
+                    dctc.DICT_COL_NVALUE: suggested_name
+                })
+        match_df = pd.DataFrame(match_table)
+        return match_df
+
+    def fix_analysis_for_data_source(self, df, vk, write=True):
+        """
+        Suggest matches for placements not in the media plan using fuzzy matching.
+
+        :param df: A df filtered for the current vk
+        :param vk: Vendor key for the current df
+        :param write: If True, writes the match table to analysis dict
+        """
+        if df.empty or dctc.PN not in df:
+            return pd.DataFrame()
+        mp_names = self.aly.df.loc[
+            self.aly.df[vmc.vendorkey] == vmc.api_mp_key, dctc.PN
+        ].dropna().unique().tolist()
+        match_df = self.find_closest_name_match(df[dctc.PN], mp_names)
+        msg = "Suggested matches for placements not in media plan:"
+        logging.info(f"{msg}\n{match_df.to_string(index=False)}")
+        data_source = self.aly.matrix.get_data_source(vk)
+        match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
+        old_transform = str(data_source.p[vmc.transform])
+        if vmc.transform_raw_translate not in old_transform:
+            if str(old_transform) == 'nan':
+                old_transform = ''
+            new_transform = vmc.transform_raw_translate
+            if old_transform:
+                new_transform = '{}:::{}'.format(old_transform, new_transform)
+            self.aly.matrix.vm_change_on_key(vk, vmc.transform, new_transform)
+            self.aly.matrix.write()
+        if write:
+            tc = dct.DictTranslationConfig()
+            tc.add_and_write(match_df)
+        return match_df
+
+    def fix_analysis(self, aly_dict, write=True):
+        vks = aly_dict[vmc.vendorkey].unique()
+        change_df = pd.DataFrame()
+        for vk in vks:
+            df = aly_dict[aly_dict[vmc.vendorkey] == vk]
+            df = self.fix_analysis_for_data_source(df, vk, write)
+            change_df = pd.concat([change_df, df], ignore_index=True)
+        return change_df
 
 
 class ValueCalc(object):
@@ -3095,6 +3165,12 @@ class ValueCalc(object):
         return df
 
 
+class FakeDbModel(object):
+    def __init__(self, name, object_id):
+        self.name = name
+        self.id = object_id
+
+
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
@@ -3150,13 +3226,19 @@ class AliChat(object):
         return response
 
     @staticmethod
-    def index_db_model_by_word(db_model):
+    def index_db_model_by_word(db_model, model_is_list=False,
+                               split_underscore=False):
         word_idx = {}
-        db_all = db_model.query.all()
-        for obj in db_all:
+        db_all = db_model
+        if not model_is_list:
+            db_all = db_all.query.all()
+        for idx, obj in enumerate(db_all):
+            if model_is_list:
+                obj = FakeDbModel(name=obj, object_id=idx)
             if obj.name:
                 used_words = []
-                words = utl.lower_words_from_str(obj.name)
+                words = utl.lower_words_from_str(
+                    obj.name, split_underscore=split_underscore)
                 for word in words:
                     if word in used_words:
                         continue
@@ -3203,11 +3285,14 @@ class AliChat(object):
         return table_response
 
     def find_db_model(self, db_model, message, other_db_model=None,
-                      remove_punctuation=True):
-        word_idx = self.index_db_model_by_word(db_model)
+                      remove_punctuation=True, model_is_list=False,
+                      split_underscore=False):
+        word_idx = self.index_db_model_by_word(
+            db_model, model_is_list, split_underscore)
         words = self.remove_stop_words_from_message(
             message, db_model, other_db_model,
-            remove_punctuation=remove_punctuation)
+            remove_punctuation=remove_punctuation,
+            split_underscore=split_underscore)
         used_words = []
         model_ids = {}
         for word in words:
@@ -3244,17 +3329,18 @@ class AliChat(object):
 
     def remove_stop_words_from_message(
             self, message, db_model=None, other_db_model=None,
-            remove_punctuation=False, lemmatize=False, ngrams=0):
+            remove_punctuation=False, lemmatize=False, ngrams=0,
+            split_underscore=False):
         if remove_punctuation:
             message = re.sub(r'[^\w\s]', '', message)
         stop_words = self.stop_words.copy()
-        if db_model:
+        if db_model and not isinstance(db_model, list):
             stop_words += db_model.get_model_name_list()
             if hasattr(db_model, 'get_model_omit_search_list'):
                 stop_words += db_model.get_model_omit_search_list()
         if other_db_model:
             stop_words += other_db_model.get_name_list()
-        words = utl.lower_words_from_str(message)
+        words = utl.lower_words_from_str(message, split_underscore)
         words = [x for x in words if x not in stop_words]
         if lemmatize:
             lemmatizer = nltk.stem.WordNetLemmatizer()

@@ -846,6 +846,13 @@ class DataSource(object):
 
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
+    """
+    Imports and cleans plan data
+    :param key: vendor key
+    :param df: data frame with plan net data
+    :param plan_omit_list: list with values to omit
+    :param kwargs: dictionary with keyword arguments
+    """
     if df is None or df.empty:
         df = pd.DataFrame(columns=kwargs[vmc.fullplacename] + [vmc.vendorkey])
     start_date = set_start_date(df)
@@ -1036,7 +1043,7 @@ def df_single_transform(df, transform):
                      var_name='{}-variable'.format(header_col_name),
                      value_name='{}-value'.format(header_col_name))
         df = df.reset_index(drop=True)
-    if transform_type == 'RawTranslate':
+    if transform_type == vmc.transform_raw_translate:
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         df = tc.apply_translation_to_dict(df)
