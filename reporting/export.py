@@ -102,7 +102,7 @@ class ExportHandler(object):
             except psycopg2.errors.UndefinedTable as e:
                 logging.warning('Could not find table error: {}'.format(e))
                 dbu.db.connection.rollback()
-                return None
+                return False
             dbu.db.connection.commit()
         logging.info('Creating view {}'.format(view_name))
         view_script = sb.get_view_script(
@@ -112,6 +112,7 @@ class ExportHandler(object):
         dbu.db.cursor.execute(view_script, [filter_val])
         dbu.db.connection.commit()
         logging.info('View created.')
+        return True
 
     @staticmethod
     def update_tableau(db, view_name):
