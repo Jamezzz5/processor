@@ -2955,8 +2955,10 @@ class GetDailyPacingAlerts(AnalyzeBase):
 
 class CheckPlacementsNotInMp(AnalyzeBase):
     name = Analyze.non_mp_placement_col
-    fix = False
-    pre_run = False
+    fix = True
+    new_files = True
+    all_files = True
+    pre_run = True
     tmp_col = 'temp'
     merge = 'left'
     merge_col = '_merge'
@@ -3001,14 +3003,20 @@ class CheckPlacementsNotInMp(AnalyzeBase):
                                       message=msg, data=rdf.to_dict())
 
     @staticmethod
-    def find_closest_name_match(names, mp_names, underscore_min=10):
+    def find_closest_name_match(names, mp_names, underscore_min=10,
+                                data_source_name=''):
+        if not any([x.split('_')[0] for x in mp_names]):
+            return pd.DataFrame()
         match_table = []
         ali_chat = AliChat()
         for name in names:
             if name.count('_') > underscore_min:
                 continue
+            message = name
+            if data_source_name:
+                message = '{}_{}'.format(data_source_name, message)
             closest, words = ali_chat.find_db_model(
-                mp_names, message=name, model_is_list=True,
+                mp_names, message=message, model_is_list=True,
                 split_underscore=True)
             if closest:
                 suggested_name = mp_names[next(iter(closest))]
@@ -3032,7 +3040,10 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         mp_names = self.aly.df.loc[
             self.aly.df[vmc.vendorkey] == vmc.api_mp_key, dctc.PN
         ].dropna().unique().tolist()
-        match_df = self.find_closest_name_match(df[dctc.PN], mp_names)
+        match_df = self.find_closest_name_match(
+            df[dctc.PN], mp_names, data_source_name=vk)
+        if match_df.empty:
+            return match_df
         msg = "Suggested matches for placements not in media plan:"
         logging.info(f"{msg}\n{match_df.to_string(index=False)}")
         data_source = self.aly.matrix.get_data_source(vk)

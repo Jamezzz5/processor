@@ -107,9 +107,8 @@ def main(arguments=None):
             aly.do_analysis_and_fix_processor(new_files=True)
             matrix = vm.VendorMatrix()
         df = matrix.vm_loop_with_costs(OUTPUT_FILE)
-        if args.analyze and not os.path.isfile(
-                os.path.join(utl.config_path, exc.upload_id_file)):
-            logging.info('First run - analyzing data.')
+        if args.analyze:
+            logging.info('Post run - analyzing data.')
             aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
             fixes_to_run = aly.do_analysis_and_fix_processor(first_run=True)
             if fixes_to_run:
