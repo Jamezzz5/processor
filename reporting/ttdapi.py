@@ -137,7 +137,7 @@ class TtdApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         if not self.report_name:
             logging.info('Getting data for campaign {}'.format(self.ad_id))
-            self.df = self.parse_json()
+            self.df = self.parse_graphql_result()
         else:
             logging.info('Getting TTD data for: {}'.format(self.report_name))
             dl_url = self.get_download_url()
@@ -360,10 +360,11 @@ class TtdApi(object):
         if r.status_code == 200:
             result = r.json()
         else:
-            logging.warning('Request failed with status code: {}'.format(r.status_code))
+            logging.warning(
+                'Request failed with status code: {}'.format(r.status_code))
         return result
 
-    def parse_json(self):
+    def parse_graphql_result(self):
         data = self.get_report_using_graphql()
         rows = []
         adgroups = data['data']['campaign']['adGroups']['nodes']
@@ -372,7 +373,8 @@ class TtdApi(object):
             creatives = adgroup.get('creatives', {}).get('nodes', [])
             for creative in creatives:
                 creative_name = creative['name']
-                performance_edges = creative.get('reporting', {}).get('creativePerformanceReporting', {}).get('edges', [])
+                performance_edges = creative.get('reporting', {}).get(
+                    'creativePerformanceReporting', {}).get('edges', [])
                 for edge in performance_edges:
                     node = edge['node']
                     metrics = node.get('metrics', {})
@@ -380,7 +382,8 @@ class TtdApi(object):
                     date = dimensions['time']['day']
                     impressions = metrics.get('impressions', 0)
                     clicks = metrics.get('clicks', 0)
-                    cost = metrics.get('spend', {}).get('advertiserCurrency', 0.0)
+                    cost = metrics.get('spend', {}).get('advertiserCurrency',
+                                                        0.0)
                     rows.append({
                         'Date': date,
                         'Adgroup': adgroup_name,
