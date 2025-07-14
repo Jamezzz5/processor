@@ -665,7 +665,7 @@ class SeleniumWrapper(object):
             Object.defineProperty(navigator, 'languages', 
             { get: () => ['en-US', 'en'] });
         """)
-        co.page_load_strategy = 'eager'
+        co.page_load_strategy = 'none'
         browser.maximize_window()
         browser.set_script_timeout(10)
         browser.set_page_load_timeout(10)
@@ -799,8 +799,9 @@ class SeleniumWrapper(object):
         ads = self.get_all_iframe_ads()
         return ads
 
-    def click_accept_buttons(self, btn_xpath):
-        wait = WebDriverWait(self.browser, 3)
+    def click_accept_buttons(self, btn_xpath, timeout=3, poll_frequency=0.2):
+        wait = WebDriverWait(self.browser, timeout,
+                             poll_frequency=poll_frequency)
         try:
             accept_buttons = wait.until(
                 EC.visibility_of_all_elements_located((By.XPATH, btn_xpath)))
@@ -983,7 +984,8 @@ class SeleniumWrapper(object):
                     try:
                         elem.send_keys(u'\ue007')
                         break
-                    except ex.ElementNotInteractableException as e:
+                    except (ex.ElementNotInteractableException,
+                            ex.StaleElementReferenceException) as e:
                         logging.warning(e)
                 if send_escape:
                     wd.ActionChains(self.browser).send_keys(
