@@ -46,7 +46,9 @@ class ErrorReport(object):
                                 'rebuilding.'.format(self.filename))
             cols_to_merge = [x for x in [self.merge_col, self.pn]
                              if x in self.df.columns]
-            self.df = utl.data_to_type(self.df, str_col=cols_to_merge)
+            self.df = utl.data_to_type(self.df, str_col=self.merge_col)
+            self.dictionary = utl.data_to_type(
+                self.dictionary, str_col=self.merge_col)
             self.merge_df = pd.merge(
                 self.df[cols_to_merge], self.dictionary,
                 on=self.merge_col, how='left', indicator=True)
