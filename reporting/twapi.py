@@ -355,7 +355,6 @@ class TwApi(object):
             self.df[coldate] = dt.date.today()
             return self.df
         self.config_list.append(self.account_id)
-        self.check_config()
         self.df = self.get_df_for_all_dates(sd, ed, fields,
                                             async_request=async_request)
         if async_request:
