@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
+import reporting.dictcolumns as dc_col
 
 
 ttd_url = 'https://api.thetradedesk.com/v3'
@@ -46,7 +47,8 @@ class TtdApi(object):
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
         self.report_name = self.config['Report Name']
-        self.query_token = self.config['Token']
+        if 'Token' in self.config:
+            self.query_token = self.config['Token']
         self.config_list = [self.login, self.password]
 
     def check_config(self):
@@ -135,17 +137,20 @@ class TtdApi(object):
         return self.df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        if not self.report_name:
-            logging.info('Getting data for campaign {}'.format(self.ad_id))
-            self.df = self.parse_graphql_result()
+        """
+        gets data from TTD using advertiserID and Report Name, if df returned is
+        empty it will then try using campaign IDs through GraphQL
+        """
+        logging.info('Getting TTD data for: {}'.format(self.report_name))
+        dl_url = self.get_download_url()
+        if dl_url is None:
+            logging.warning('Could not retrieve url, returning blank df.')
+            self.df = pd.DataFrame()
         else:
-            logging.info('Getting TTD data for: {}'.format(self.report_name))
-            dl_url = self.get_download_url()
-            if dl_url is None:
-                logging.warning('Could not retrieve url, returning blank df.')
-                return pd.DataFrame()
             r = requests.get(dl_url, headers=self.headers)
             self.df = self.get_df_from_response(r)
+        if self.df.empty:
+            self.df = self.get_report_for_multiple_campaigns()
         return self.df
 
     def check_partner_id(self):
@@ -304,10 +309,16 @@ class TtdApi(object):
         return url
 
     @staticmethod
-    def create_graphql_query():
+    def create_graphql_campaign_query():
+        """
+        Query used to get data using GraphQL.
+        Gets Campaign Name, Ad Group Name, Creative Names, impressions, clicks,
+        Advertiser Currency (Net Spend), and Date
+        """
         query = """
             query MyQuery($campaignId: ID!) {
               campaign(id: $campaignId) {
+                name
                 adGroups {
                   nodes {
                     name
@@ -343,11 +354,96 @@ class TtdApi(object):
         """
         return query
 
-    def get_report_using_graphql(self):
+    def get_all_campaign_ids(self):
+        """
+        Query used to get all campaign names and IDs for a speciic advertiser
+        :returns: df with column for campaign names and column for campaign ids
+        """
         result = []
-        query = self.create_graphql_query()
+        query = """
+        query MyQuery($advertiserID: ID!) {
+          advertiser(id: $advertiserID) {
+            campaigns {
+              nodes {
+                name
+                id
+              }
+            }
+          }
+        }"""
         variables = {
-            "campaignId": self.ad_id
+            "advertiserID": self.ad_id
+        }
+        data = {
+            'query': query,
+            'variables': variables
+        }
+        headers = {
+            'TTD-Auth': self.query_token
+        }
+        r = requests.post(url=self.query_url, json=data, headers=headers)
+        if r.status_code == 200:
+            result = r.json()
+        else:
+            logging.warning(
+                'Request failed with status code: {}'.format(r.status_code))
+        campaigns = result['data']['advertiser']['campaigns']['nodes']
+        df = pd.DataFrame(campaigns)
+        return df
+
+    @staticmethod
+    def get_constant_dict():
+        """
+        reads processors constant dictionary to get product name and client name
+        :returns: product name and client name of current processor
+        """
+        constant_dict = dc_col.filename_con_config
+        try:
+            df = pd.read_csv(configpath + constant_dict)
+        except IOError:
+            logging.debug('No Constant Dictionary config')
+            return pd.DataFrame
+        product_name = (
+        df.loc[df['Column Name'] == 'mpProduct Name', 'Value'].values[0])
+        client_name = df.loc[df['Column Name'] == 'mpClient', 'Value'].values[0]
+        return product_name, client_name
+
+    def compare_campaigns(self):
+        """
+        filter down products to those that match with constant dictionary
+        :returns: filtered df of campaign names and ids
+        """
+        df = self.get_all_campaign_ids()
+        product_name, client_name = self.get_constant_dict()
+        filtered_df = df[df['name'].str.contains(product_name, case=False)]
+        return filtered_df
+
+    def get_report_for_multiple_campaigns(self):
+        """
+        Loop through campaign ids and query metrics for each, appending to
+        results df as it goes
+        :returns: dataframe containing placement and metric data for multiple
+        campaigns
+        """
+        results = pd.DataFrame()
+        df = self.compare_campaigns()
+        for campaign_id in df['id']:
+            logging.info('Getting data for campaign {}'.format(campaign_id))
+            result = self.get_report_using_graphql(campaign_id)
+            df = self.parse_graphql_result(result)
+            results = pd.concat([results, df], ignore_index=True)
+        return results
+
+    def get_report_using_graphql(self, campaign_id):
+        """
+        Runs GraphQL query to get campaign ID metric and placement data
+        :param campaign_id: campaign id found in TTD platform
+        :returns: json result from query
+        """
+        result = []
+        query = self.create_graphql_campaign_query()
+        variables = {
+            "campaignId": campaign_id
         }
         data = {
             'query': query,
@@ -364,13 +460,24 @@ class TtdApi(object):
                 'Request failed with status code: {}'.format(r.status_code))
         return result
 
-    def parse_graphql_result(self):
-        data = self.get_report_using_graphql()
+    @staticmethod
+    def parse_graphql_result(result):
+        """
+        Parses json result from GraphQL query, creating a dataframe similar to
+        reports in TTD platform
+        :param result: GraphQL json result
+        :returns: dataframe
+        """
+        data = result
         rows = []
-        adgroups = data['data']['campaign']['adGroups']['nodes']
+        campaign = data['data']['campaign']
+        campaign_name = campaign['name']
+        adgroups = campaign['adGroups']['nodes']
         for adgroup in adgroups:
             adgroup_name = adgroup['name']
-            creatives = adgroup.get('creatives', {}).get('nodes', [])
+            creatives_data = adgroup.get('creatives')
+            creatives = creatives_data.get('nodes',
+                                           []) if creatives_data else []
             for creative in creatives:
                 creative_name = creative['name']
                 performance_edges = creative.get('reporting', {}).get(
@@ -386,6 +493,7 @@ class TtdApi(object):
                                                         0.0)
                     rows.append({
                         'Date': date,
+                        'Campaign': campaign_name,
                         'Adgroup': adgroup_name,
                         'Creative': creative_name,
                         'Clicks': clicks,
