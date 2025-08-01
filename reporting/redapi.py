@@ -420,7 +420,7 @@ class RedApi(object):
             url = '{}businesses/{}/ad_accounts'.format(
                 self.base_api_url, business_id)
             resp = None
-            for x in range(5):
+            for x in range(20):
                 r = requests.get(url, headers=self.headers)
                 try:
                     resp = r.json()
@@ -433,7 +433,7 @@ class RedApi(object):
                 else:
                     logging.warning('Data not in response: {}'.format(resp))
                     time.sleep(5)
-            if not resp:
+            if not resp or 'data' not in resp:
                 logging.warning('Could not get business {}'.format(business_id))
                 continue
             account_ids = [x['id'] for x in resp['data']
