@@ -533,9 +533,14 @@ class RedApi(object):
             url = '{}{}/{}'.format(self.base_api_url, url_str, ad_id)
             name = ''
             ad_data = {}
-            for x in range(5):
+            for x in range(20):
                 r = requests.get(url, headers=self.headers)
-                resp_json = r.json()
+                try:
+                    resp_json = r.json()
+                except json.decoder.JSONDecodeError as e:
+                    logging.warning(e)
+                    time.sleep(1)
+                    continue
                 ad_data = resp_json.get('data', {})
                 name = ad_data.get('name')
                 if name:
