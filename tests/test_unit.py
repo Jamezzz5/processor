@@ -825,26 +825,35 @@ class TestAnalyze:
         assert rdf
         assert rdf[0][place_analyze.suggested_col] == other_col
 
-    def test_placement_not_in_mp(self):
+    @staticmethod
+    def get_output_as_df(with_plan=False, new_place=''):
         date_val = dt.datetime.today().strftime('%m/%d/%Y')
         df = pd.DataFrame()
         for col in [dctc.VEN, dctc.PN]:
             df[col] = [col]
         df[vmc.vendorkey] = [vmc.api_raw_key]
         df[vmc.date] = [date_val]
+        if with_plan:
+            tdf = df.copy()
+            tdf[vmc.vendorkey] = [vmc.api_mp_key]
+            df = pd.concat([df, tdf], ignore_index=True)
+            if new_place:
+                tdf[dctc.PN] = new_place
+                tdf[vmc.vendorkey] = [vmc.api_raw_key]
+                df = pd.concat([df, tdf], ignore_index=True)
+        return df
+
+    def test_placement_not_in_mp(self):
+        df = self.get_output_as_df()
         base_analyze = az.Analyze(matrix=vm.VendorMatrix())
         place_analyze = az.CheckPlacementsNotInMp(base_analyze)
         rdf = place_analyze.find_placements_not_in_mp(df)
         assert rdf.empty
-        tdf = df.copy()
-        tdf[vmc.vendorkey] = [vmc.api_mp_key]
-        df = pd.concat([df, tdf], ignore_index=True)
+        df = self.get_output_as_df(with_plan=True)
         rdf = place_analyze.find_placements_not_in_mp(df)
         assert dctc.PN not in rdf[dctc.PN].values
         new_place = '{}NEW'.format(dctc.PN)
-        tdf[dctc.PN] = new_place
-        tdf[vmc.vendorkey] = [vmc.api_raw_key]
-        df = pd.concat([df, tdf], ignore_index=True)
+        df = self.get_output_as_df(with_plan=True, new_place=new_place)
         rdf = place_analyze.find_placements_not_in_mp(df)
         assert new_place in rdf[dctc.PN].values
         place_analyze.aly.df = df
@@ -870,6 +879,20 @@ class TestAnalyze:
         rdf_dict = rdf_dict[dctc.DICT_COL_NVALUE]
         for idx, name in enumerate(names):
             assert rdf_dict[name] == mp_names[idx]
+
+    def test_check_col_live(self):
+        df = self.get_output_as_df(with_plan=True)
+        ali_class = az.CheckLive(az.Analyze())
+        yesterday = dt.datetime.today() - dt.timedelta(days=1)
+        df[ali_class.sd_col] = yesterday.strftime('%m/%d/%Y')
+        for col in ali_class.metric_cols:
+            df[col] = 0
+        rdf, msg = ali_class.check_col_live(df)
+        assert not rdf.empty
+        tomorrow = dt.datetime.today() + dt.timedelta(days=1)
+        df[ali_class.sd_col] = tomorrow.strftime('%m/%d/%Y')
+        rdf, msg = ali_class.check_col_live(df)
+        assert rdf.empty
 
     def test_find_double_counting_empty(self):
         df = pd.DataFrame()
@@ -1209,6 +1232,16 @@ class TestAnalyze:
         assert scores
         bm25_scores = transformer.bm25_search(user_text, top_k=top_k)
         assert bm25_scores
+
+    def test_do_analysis_and_fix_processor(self):
+        output_dfs = [pd.DataFrame(),
+                      self.get_output_as_df(with_plan=True),
+                      self.get_output_as_df(with_plan=True, new_place='blah')]
+        for output_df in output_dfs:
+            aly = az.Analyze(df=output_df, matrix=vm.VendorMatrix())
+            fixes_to_run = aly.do_analysis_and_fix_processor(first_run=True)
+
+            assert not fixes_to_run
 
 
 class TestAliChat:

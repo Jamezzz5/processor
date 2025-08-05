@@ -65,6 +65,7 @@ class Analyze(object):
     check_last_row = 'check_last_row'
     change_auto_order = 'change_auto_order'
     brandtracker_imports = 'brandtracker_imports'
+    check_live = 'check_live'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -105,7 +106,7 @@ class Analyze(object):
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
             GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
-            CheckAdwordsSplit]
+            CheckAdwordsSplit, CheckLive]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -3069,6 +3070,60 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             df = self.fix_analysis_for_data_source(df, vk, write)
             change_df = pd.concat([change_df, df], ignore_index=True)
         return change_df
+
+
+class CheckLive(AnalyzeBase):
+    name = Analyze.check_live
+    cols = [dctc.VEN, dctc.COU, dctc.TB, dctc.PKD, dctc.LI]
+    metric_cols = [vmc.impressions, vmc.clicks, vmc.cost]
+    sum_col = 'Metric Sum'
+    missing_col = 'Column Name'
+    missing_val = 'Not Live Values'
+    sd_col = dctc.PD
+
+    def check_col_live(self, df):
+        """
+        Finds items that are not live
+
+        :param df: The df to check media plan names from
+        :return: The
+        """
+        if df.empty or self.sd_col not in df.columns:
+            msg = 'No col {} or no data could not analyze'.format(self.sd_col)
+            return pd.DataFrame(), msg
+        if vmc.api_mp_key not in df[vmc.vendorkey].unique():
+            msg = 'No plan could not analyze'
+            return pd.DataFrame(), msg
+        df = utl.data_to_type(df, date_col=[self.sd_col])
+        rdf = pd.DataFrame()
+        for col in self.cols:
+            if col not in df.columns:
+                continue
+            cols = [col, self.sd_col]
+            if col != dctc.VEN:
+                cols += [dctc.VEN]
+            tdf = df.groupby(cols)[self.metric_cols].sum().reset_index()
+            tdf = tdf[tdf[self.sd_col] <= dt.datetime.today()]
+            tdf[self.sum_col] = tdf[self.metric_cols].sum(axis=1)
+            tdf = tdf[tdf[self.sum_col] <= 0]
+            if tdf.empty:
+                continue
+            tdf[self.missing_col] = col
+            tdf[self.missing_val] = tdf[col]
+            r_cols = [dctc.VEN, self.missing_col, self.missing_val]
+            tdf = tdf[r_cols]
+            rdf = pd.concat([rdf, tdf], ignore_index=True)
+        if rdf.empty:
+            msg = 'All values are live across cols {}.'.format(self.cols)
+        else:
+            not_live = rdf[dctc.VEN].unique().tolist()
+            msg = 'Some values may not be live for {}'.format(not_live)
+        return rdf, msg
+
+    def do_analysis(self):
+        rdf, msg = self.check_col_live(self.aly.df)
+        self.aly.format_log_msg_with_df(msg, rdf)
+        self.add_to_analysis_dict(df=rdf, msg=msg)
 
 
 class ValueCalc(object):

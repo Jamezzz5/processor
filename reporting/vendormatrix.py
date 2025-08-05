@@ -95,7 +95,7 @@ class VendorMatrix(object):
         return vm
 
     def write(self):
-        logging.info('Writing vendormatrix to {}.'.format(csv_full_file))
+        logging.debug('Writing vendormatrix to {}.'.format(csv_full_file))
         rules = [x for x in self.vm_df.columns if 'RULE' in x]
         cols = [vmc.vendorkey] + vmc.vmkeys + rules
         miss_cols = [x for x in cols if x not in self.vm_df.columns]
