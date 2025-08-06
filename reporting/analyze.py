@@ -65,6 +65,7 @@ class Analyze(object):
     check_last_row = 'check_last_row'
     change_auto_order = 'change_auto_order'
     brandtracker_imports = 'brandtracker_imports'
+    check_live = 'check_live'
     analysis_dict_file_name = 'analysis_dict.json'
     analysis_dict_key_col = 'key'
     analysis_dict_data_col = 'data'
@@ -105,7 +106,7 @@ class Analyze(object):
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
             GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
-            CheckAdwordsSplit]
+            CheckAdwordsSplit, CheckLive]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -370,6 +371,11 @@ class Analyze(object):
         return df
 
     @staticmethod
+    def format_log_msg_with_df(msg, df):
+        logging.info('{}'.format(msg))
+        logging.debug('{}'.format(df.to_string(index=False)))
+
+    @staticmethod
     def give_df_default_format(df, columns=None):
         df = utl.give_df_default_format(df, columns)
         return df
@@ -399,11 +405,6 @@ class Analyze(object):
         df = df.replace([np.inf, -np.inf], np.nan)
         df = df.fillna(0)
         df = df.reset_index().rename(columns={'index': 'Topline Metrics'})
-        log_info_text = ('Topline metrics are as follows: \n{}'
-                         ''.format(df.to_string()))
-        if data_filter:
-            log_info_text = data_filter[2] + log_info_text
-        logging.info(log_info_text)
         return df
 
     def calculate_kpi_trend(self, kpi, group, metrics):
@@ -428,6 +429,7 @@ class Analyze(object):
         self.add_to_analysis_dict(
             key_col=self.kpi_col, message=msg, data=df.to_dict(),
             param=kpi, param2='Trend', split=vmc.date)
+        return True
 
     def explain_lowest_kpi_for_vendor(self, kpi, group, metrics, filter_col):
         min_val = self.find_in_analysis_dict(
@@ -475,8 +477,7 @@ class Analyze(object):
         if filter_col:
             msg = '{} when filtered by the {} {}'.format(
                 msg, filter_col, filter_val)
-        log_info_text = ('{}\n{}'.format(msg, format_df.to_string()))
-        logging.info(log_info_text)
+        self.format_log_msg_with_df(msg, format_df)
         self.add_to_analysis_dict(
             key_col=self.kpi_col, message=msg, data=df.to_dict(),
             param=kpi, param2=small_large, split=split,
@@ -604,7 +605,7 @@ class Analyze(object):
                 col_name = col_name.replace(' - a', ' - ')
             df[col_name] = df[col_name].astype('U')
         update_msg = 'Metrics by vendor key are as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.format_log_msg_with_df(update_msg, df)
         self.add_to_analysis_dict(key_col=self.vk_metrics,
                                   message=update_msg, data=df.to_dict())
         return True
@@ -614,7 +615,7 @@ class Analyze(object):
         format_df = self.give_df_default_format(df.copy())
         df = df.T
         update_msg = 'Metrics by vendor are as follows:'
-        logging.info('{}\n{}'.format(update_msg, format_df.to_string()))
+        self.format_log_msg_with_df(update_msg, format_df)
         self.add_to_analysis_dict(key_col=self.vendor_metrics,
                                   message=update_msg,
                                   data=format_df.T.to_dict())
@@ -638,7 +639,7 @@ class Analyze(object):
             logging.info('{}'.format(missing_msg))
         else:
             missing_msg = 'The following vendors have missing metrics:'
-            logging.info('{}\n{}'.format(missing_msg, mdf.to_string()))
+            self.format_log_msg_with_df(missing_msg, mdf)
         self.add_to_analysis_dict(key_col=self.missing_metrics,
                                   message=missing_msg, data=mdf.to_dict())
 
@@ -693,8 +694,7 @@ class Analyze(object):
                 flagged_msg = ('The following placement names have unusually '
                                'different ad serving {} compared to platform '
                                '{}'.format(rate_col_name, metric_name))
-                logging.info('{}\n{}'.format(
-                    flagged_msg, edf.to_string()))
+                self.format_log_msg_with_df(flagged_msg, edf)
                 self.add_to_analysis_dict(
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
@@ -705,12 +705,12 @@ class Analyze(object):
         df = df[[metric_1, metric_2]]
         df = df[check]
         if not df.empty:
-            flagged_msg = 'The following vendors have {} greater than {}'.format(metric_2, metric_1)
-            logging.info('{}\n{}'.format(
-                flagged_msg, df.to_string()))
+            msg = 'The following vendors have {} greater than {}'.format(
+                metric_2, metric_1)
+            self.format_log_msg_with_df(msg, df)
             self.add_to_analysis_dict(
                 key_col=self.flagged_metrics, param=metric_1,
-                message=flagged_msg, data=df.to_dict())
+                message=msg, data=df.to_dict())
         return
 
     def flag_errant_metrics(self):
@@ -758,8 +758,7 @@ class Analyze(object):
                 edf = edf.replace([np.inf, -np.inf], np.nan).fillna(0)
                 flagged_msg = ('The following vendors have unusually {} {}s'
                                '.'.format(error_type, metric_name))
-                logging.info('{}\n{}'.format(
-                    flagged_msg, edf.to_string()))
+                self.format_log_msg_with_df(flagged_msg, edf)
                 self.add_to_analysis_dict(
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
@@ -1026,7 +1025,7 @@ class Analyze(object):
             msg = ('The following placements are under an adserver w/o '
                    'a recognized serving model. Add via Edit Processor Files'
                    'Translate or in platform:')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
+            self.format_log_msg_with_df(msg, df)
         else:
             msg = ('All placements under an adserver have an associated '
                    'serving model.')
@@ -1056,7 +1055,7 @@ class Analyze(object):
             msg = ('The following Adserving Models are missing associated '
                    'rates. Add via Edit Processor Files -> Edit Relation '
                    'Dictionaries -> Relation - Serving:')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
+            self.format_log_msg_with_df(msg, df)
         else:
             msg = ('All placements w/ Adserving Models have associated '
                    'adserving rates.')
@@ -1187,6 +1186,7 @@ class AnalyzeBase(object):
             func_name, self.name))
 
     def do_and_fix_analysis(self, only_new_files=False, new_file_list=None):
+        logging.info('Doing analysis of type: {}'.format(self.name))
         self.do_analysis()
         aly_dict = self.aly.find_in_analysis_dict(self.name)
         if (len(aly_dict) > 0 and 'data' in aly_dict[0]
@@ -1196,7 +1196,6 @@ class AnalyzeBase(object):
                 df = pd.DataFrame(aly_dict)
                 df = df[df[vmc.vendorkey].isin(new_file_list)]
                 aly_dict = df.to_dict(orient='records')
-            self.aly.fixes_to_run = True
             self.fix_analysis(pd.DataFrame(aly_dict))
 
     def add_to_analysis_dict(self, df, msg):
@@ -1345,7 +1344,7 @@ class CheckAutoDictOrder(AnalyzeBase):
             msg = 'No new proposed order.'
         else:
             msg = 'Proposed new order by key as follows:'
-        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
@@ -1367,8 +1366,6 @@ class CheckAutoDictOrder(AnalyzeBase):
         aly_dict = aly_dict.to_dict(orient='records')
         for x in aly_dict:
             self.fix_analysis_for_data_source(x, write=write)
-        if write:
-            self.aly.matrix.write()
         return self.aly.matrix.vm_df
 
 
@@ -1435,7 +1432,7 @@ class CheckFirstRow(AnalyzeBase):
             msg = 'All first rows seem correct'
         else:
             msg = 'Suggested new row adjustments:'
-        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
@@ -1568,7 +1565,7 @@ class CheckLastRow(AnalyzeBase):
             msg = 'All last rows seem correct'
         else:
             msg = 'Suggested new row adjustments:'
-        logging.info('{}\n{}'.format(msg, df.to_string()))
+        self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
@@ -1856,8 +1853,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         else:
             msg = ('Adwords data contains both SEM and YT campaigns.'
                    ' Please add a campaign filter')
-            logging.warning('{}\n{}'.format(
-                msg, df[self.camp_col].to_string()))
+            self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
@@ -2012,7 +2008,7 @@ class FindPlacementNameCol(AnalyzeBase):
             msg = ('The following data sources have more breakouts in '
                    'another column. Consider changing placement name '
                    'source:')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
+            self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=df.to_dict())
 
@@ -2152,7 +2148,8 @@ class CheckColumnNames(AnalyzeBase):
         df = pd.DataFrame(data)
         df = df.fillna('')
         update_msg = 'Columns and missing columns by key as follows:'
-        logging.info('{}\n{}'.format(update_msg, df))
+        if not df.empty:
+            self.aly.format_log_msg_with_df(update_msg, df)
         self.add_to_analysis_dict(df=df, msg=update_msg)
 
     def fix_analysis(self, aly_dict, write=True):
@@ -2192,6 +2189,7 @@ class CheckColumnNames(AnalyzeBase):
                         tdf = tdf.to_dict(orient='records')[0]
                         cad.fix_analysis_for_data_source(tdf, True)
                         self.matrix = vm.VendorMatrix(display_log=False)
+                        self.aly.fixes_to_run = True
             date_missing = [x for x in aly_dict['missing'] if
                             vmc.date in x.keys()]
             if date_missing:
@@ -2311,7 +2309,7 @@ class CheckFlatSpends(AnalyzeBase):
         else:
             msg = ('The following flat packages are not calculating net cost '
                    'for the following reasons:')
-            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+            self.aly.format_log_msg_with_df(msg, rdf)
         self.add_to_analysis_dict(df=rdf, msg=msg)
 
     def fix_analysis(self, aly_dict, write=True):
@@ -2351,6 +2349,7 @@ class CheckFlatSpends(AnalyzeBase):
         translation_df = pd.concat([translation_df, tdf], ignore_index=True)
         if write:
             translation.write(translation_df, dctc.filename_tran_config)
+            self.aly.fixes_to_run = True
         return tdf
 
 
@@ -2424,9 +2423,9 @@ class CheckDoubleCounting(AnalyzeBase):
                    'metric.')
             logging.info('{}'.format(msg))
         else:
-            msg = ('The following datasources are double counting the following'
-                   ' metrics on all or some placements:')
-            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+            msg = ('The following datasources are double counting the '
+                   'following metrics on all or some placements:')
+            self.aly.format_log_msg_with_df(msg, rdf)
         self.add_to_analysis_dict(df=rdf, msg=msg)
 
     @staticmethod
@@ -2724,7 +2723,7 @@ class GetPacingAnalysis(AnalyzeBase):
         else:
             msg = ('Projected delivery completion and current pacing '
                    'is as follows:')
-            logging.info('{}\n{}'.format(msg, df.to_string()))
+            self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.aly.delivery_comp_col,
                                       message=msg, data=df.to_dict())
 
@@ -2888,7 +2887,7 @@ class CheckRawFileUpdateTime(AnalyzeBase):
             return False
         df[self.update_time_col] = df[self.update_time_col].astype('U')
         update_msg = 'Raw File update times and tiers are as follows:'
-        logging.info('{}\n{}'.format(update_msg, df.to_string()))
+        self.add_to_analysis_dict(df, update_msg)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=update_msg, data=df.to_dict())
         return True
@@ -2997,7 +2996,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             msg = ('The following datasources have placement names that were '
                    'not included in the provided Media Plan. '
                    'Consider Translating:')
-            logging.info('{}\n{}'.format(msg, rdf.to_string()))
+            self.aly.format_log_msg_with_df(msg, rdf)
         self.add_to_analysis_dict(df=rdf, msg=msg)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=rdf.to_dict())
@@ -3045,7 +3044,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         if match_df.empty:
             return match_df
         msg = "Suggested matches for placements not in media plan:"
-        logging.info(f"{msg}\n{match_df.to_string(index=False)}")
+        self.aly.format_log_msg_with_df(msg, match_df)
         data_source = self.aly.matrix.get_data_source(vk)
         match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
         old_transform = str(data_source.p[vmc.transform])
@@ -3060,6 +3059,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         if write:
             tc = dct.DictTranslationConfig()
             tc.add_and_write(match_df)
+            self.aly.fixes_to_run = True
         return match_df
 
     def fix_analysis(self, aly_dict, write=True):
@@ -3070,6 +3070,60 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             df = self.fix_analysis_for_data_source(df, vk, write)
             change_df = pd.concat([change_df, df], ignore_index=True)
         return change_df
+
+
+class CheckLive(AnalyzeBase):
+    name = Analyze.check_live
+    cols = [dctc.VEN, dctc.COU, dctc.TB, dctc.PKD, dctc.LI]
+    metric_cols = [vmc.impressions, vmc.clicks, vmc.cost]
+    sum_col = 'Metric Sum'
+    missing_col = 'Column Name'
+    missing_val = 'Not Live Values'
+    sd_col = dctc.PD
+
+    def check_col_live(self, df):
+        """
+        Finds items that are not live
+
+        :param df: The df to check media plan names from
+        :return: The
+        """
+        if df.empty or self.sd_col not in df.columns:
+            msg = 'No col {} or no data could not analyze'.format(self.sd_col)
+            return pd.DataFrame(), msg
+        if vmc.api_mp_key not in df[vmc.vendorkey].unique():
+            msg = 'No plan could not analyze'
+            return pd.DataFrame(), msg
+        df = utl.data_to_type(df, date_col=[self.sd_col])
+        rdf = pd.DataFrame()
+        for col in self.cols:
+            if col not in df.columns:
+                continue
+            cols = [col, self.sd_col]
+            if col != dctc.VEN:
+                cols += [dctc.VEN]
+            tdf = df.groupby(cols)[self.metric_cols].sum().reset_index()
+            tdf = tdf[tdf[self.sd_col] <= dt.datetime.today()]
+            tdf[self.sum_col] = tdf[self.metric_cols].sum(axis=1)
+            tdf = tdf[tdf[self.sum_col] <= 0]
+            if tdf.empty:
+                continue
+            tdf[self.missing_col] = col
+            tdf[self.missing_val] = tdf[col]
+            r_cols = [dctc.VEN, self.missing_col, self.missing_val]
+            tdf = tdf[r_cols]
+            rdf = pd.concat([rdf, tdf], ignore_index=True)
+        if rdf.empty:
+            msg = 'All values are live across cols {}.'.format(self.cols)
+        else:
+            not_live = rdf[dctc.VEN].unique().tolist()
+            msg = 'Some values may not be live for {}'.format(not_live)
+        return rdf, msg
+
+    def do_analysis(self):
+        rdf, msg = self.check_col_live(self.aly.df)
+        self.aly.format_log_msg_with_df(msg, rdf)
+        self.add_to_analysis_dict(df=rdf, msg=msg)
 
 
 class ValueCalc(object):
