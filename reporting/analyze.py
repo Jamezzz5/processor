@@ -3104,6 +3104,8 @@ class CheckLive(AnalyzeBase):
                 cols += [dctc.VEN]
             tdf = df.groupby(cols)[self.metric_cols].sum().reset_index()
             tdf = tdf[tdf[self.sd_col] <= dt.datetime.today()]
+            cols = [x for x in cols if x != self.sd_col]
+            tdf = tdf.groupby(cols)[self.metric_cols].sum().reset_index()
             tdf[self.sum_col] = tdf[self.metric_cols].sum(axis=1)
             tdf = tdf[tdf[self.sum_col] <= 0]
             if tdf.empty:
@@ -3116,6 +3118,11 @@ class CheckLive(AnalyzeBase):
         if rdf.empty:
             msg = 'All values are live across cols {}.'.format(self.cols)
         else:
+            rdf = rdf[
+                (rdf[self.missing_val].notna()) &
+                (rdf[self.missing_val] != '') &
+                (rdf[self.missing_val] != 'nan')]
+            rdf = rdf.drop_duplicates().reset_index(drop=True)
             not_live = rdf[dctc.VEN].unique().tolist()
             msg = 'Some values may not be live for {}'.format(not_live)
         return rdf, msg
