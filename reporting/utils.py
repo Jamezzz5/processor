@@ -984,6 +984,7 @@ class SeleniumWrapper(object):
                     try:
                         elem.send_keys(Keys.BACKSPACE)
                         elem.send_keys(item[0][-1])
+                        elem.send_keys(Keys.ARROW_UP)
                         elem.send_keys(u'\ue007')
                         break
                     except (ex.ElementNotInteractableException,
