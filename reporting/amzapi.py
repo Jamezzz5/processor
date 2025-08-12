@@ -31,7 +31,8 @@ class AmzApi(object):
         'date', 'impressions', 'clicks', 'cost', 'campaignName', 'campaignId']
     sp_columns = [
         'spend', 'purchases14d', 'purchasesSameSku14d', 'unitsSoldClicks14d',
-        'sales14d', 'attributedSalesSameSku14d', 'adGroupName', 'adGroupId']
+        'unitsSoldSameSku14d', 'sales14d', 'attributedSalesSameSku14d',
+        'adGroupName', 'adGroupId']
     sb_columns = [
         'detailPageViewsClicks', 'newToBrandDetailPageViews',
         'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
