@@ -1,4 +1,5 @@
 import io
+import re
 import sys
 import json
 import time
@@ -25,6 +26,8 @@ class TtdApi(object):
         self.ad_id = None
         self.report_name = None
         self.auth_token = None
+        self.query_token = None
+        self.query_url = 'https://api.gen.adsrvr.org/graphql'
         self.headers = None
 
     def input_config(self, config):
@@ -44,6 +47,8 @@ class TtdApi(object):
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
         self.report_name = self.config['Report Name']
+        if 'Token' in self.config:
+            self.query_token = self.config['Token']
         self.config_list = [self.login, self.password]
 
     def check_config(self):
@@ -132,13 +137,30 @@ class TtdApi(object):
         return self.df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        logging.info('Getting TTD data for: {}'.format(self.report_name))
-        dl_url = self.get_download_url()
-        if dl_url is None:
-            logging.warning('Could not retrieve url, returning blank df.')
-            return pd.DataFrame()
-        r = requests.get(dl_url, headers=self.headers)
-        self.df = self.get_df_from_response(r)
+        """
+        gets data from TTD.
+        check if report name is 5-10 characters long and contains no symbols
+        or spaces, if so use campaign IDs and graphQL
+        otherwise it will assume the default and pull using report name
+        :returns: dataframe
+        """
+        id_pattern = r'[A-Za-z0-9]{5,10}'
+        if (re.fullmatch(id_pattern, self.report_name) and
+                ' ' not in self.report_name):
+            self.df = self.get_report_for_multiple_campaigns()
+        elif re.fullmatch(fr'{id_pattern}(,{id_pattern})+',
+                          self.report_name):
+            self.df = self.get_report_for_multiple_campaigns()
+        else:
+            logging.info(
+                'Getting TTD data for report: {}'.format(self.report_name))
+            dl_url = self.get_download_url()
+            if dl_url is None:
+                logging.warning('Could not retrieve url, returning blank df.')
+                self.df = pd.DataFrame()
+            else:
+                r = requests.get(dl_url, headers=self.headers)
+                self.df = self.get_df_from_response(r)
         return self.df
 
     def check_partner_id(self):
@@ -296,39 +318,37 @@ class TtdApi(object):
             url = ttd_url
         return url
 
-    def temp_get_report_using_graphql(self):
-        self.input_config('ttdconfig.json')
-        production_url = 'https://api.gen.adsrvr.org/graphql'
-        sandbox_url = 'https://ext-api.sb.thetradedesk.com/graphql'
-        auth_token = self.report_name
-        self.headers = {'Content-Type': 'application/json',
-                        'TTD-Auth': auth_token}
-        result = []
+    @staticmethod
+    def create_graphql_campaign_query():
+        """
+        Query used to get data using GraphQL.
+        Gets Campaign Name, Ad Group Name, Creative Names, impressions, clicks,
+        Advertiser Currency (Net Spend), and Date
+        """
         query = """
             query MyQuery($campaignId: ID!) {
               campaign(id: $campaignId) {
+                name
                 adGroups {
                   nodes {
                     name
                     creatives {
                       nodes {
                         name
-                        adGroups {
-                          edges {
-                            node {
-                              reporting {
-                                generalReporting {
-                                  nodes {
-                                    dimensions {
-                                      time {
-                                        day
-                                      }
-                                    }
-                                    metrics {
-                                      clicks
-                                      impressions
-                                      revenue
-                                    }
+                        reporting {
+                          creativePerformanceReporting {
+                            edges {
+                              node {
+                                metrics {
+                                  impressions
+                                  clicks
+                                  spend {
+                                    advertiserCurrency
+                                  }
+                                }
+                                dimensions {
+                                  time {
+                                    day
                                   }
                                 }
                               }
@@ -342,45 +362,89 @@ class TtdApi(object):
               }
             }
         """
+        return query
+
+    def get_report_for_multiple_campaigns(self):
+        """
+        Loop through campaign ids and query metrics for each, appending to
+        results df as it goes
+        :returns: dataframe containing placement and metric data for multiple
+        campaigns
+        """
+        results = pd.DataFrame()
+        campaign_list = self.report_name.split(',')
+        for campaign_id in campaign_list:
+            logging.info('Getting data for campaign {}'.format(campaign_id))
+            result = self.get_report_using_graphql(campaign_id)
+            df = self.parse_graphql_result(result)
+            results = pd.concat([results, df], ignore_index=True)
+        return results
+
+    def get_report_using_graphql(self, campaign_id):
+        """
+        Runs GraphQL query to get campaign ID metric and placement data
+        :param campaign_id: campaign id found in TTD platform
+        :returns: json result from query
+        """
+        result = []
+        query = self.create_graphql_campaign_query()
         variables = {
-            "campaignId": self.ad_id
+            "campaignId": campaign_id
         }
         data = {
             'query': query,
             'variables': variables
         }
         headers = {
-            'TTD-Auth': auth_token
+            'TTD-Auth': self.query_token
         }
-        r = requests.post(url=sandbox_url, json=data, headers=headers)
+        r = requests.post(url=self.query_url, json=data, headers=headers)
         if r.status_code == 200:
             result = r.json()
         else:
-            logging.warning('Request failed with status code: {}'.format(r.status_code))
+            logging.warning(
+                'Request failed with status code: {}'.format(r.status_code))
         return result
 
-    def temp_parse_json(self):
-        data = self.temp_get_report_using_graphql()
+    @staticmethod
+    def parse_graphql_result(result):
+        """
+        Parses json result from GraphQL query, creating a dataframe similar to
+        reports in TTD platform
+        :param result: GraphQL json result
+        :returns: dataframe
+        """
+        data = result
         rows = []
-        adgroups = data['data']['campaign']['adGroups']['nodes']
+        campaign = data['data']['campaign']
+        campaign_name = campaign['name']
+        adgroups = campaign['adGroups']['nodes']
         for adgroup in adgroups:
-            creatives = adgroup.get('creatives', {}).get('nodes', [])
+            adgroup_name = adgroup['name']
+            creatives_data = adgroup.get('creatives')
+            creatives = creatives_data.get(
+                'nodes', []) if creatives_data else []
             for creative in creatives:
-                name = creative['name']
-                adgroup_edges = creative.get('adGroups', {}).get('edges', [])
-                for edge in adgroup_edges:
-                    reporting_nodes = edge['node']['reporting']['generalReporting']['nodes']
-                    for report in reporting_nodes:
-                        date = report['dimensions']['time']['day']
-                        clicks = report['metrics']['clicks']
-                        imps = report['metrics']['impressions']
-                        revenue = report['metrics']['revenue']
-                        rows.append({
-                            'date': date,
-                            'name': name,
-                            'clicks': clicks,
-                            'imps': imps,
-                            'revenue': revenue
-                        })
+                creative_name = creative['name']
+                performance_edges = creative.get('reporting', {}).get(
+                    'creativePerformanceReporting', {}).get('edges', [])
+                for edge in performance_edges:
+                    node = edge['node']
+                    metrics = node.get('metrics', {})
+                    dimensions = node.get('dimensions', {})
+                    date = dimensions['time']['day']
+                    impressions = metrics.get('impressions', 0)
+                    clicks = metrics.get('clicks', 0)
+                    cost = metrics.get('spend', {}).get('advertiserCurrency',
+                                                        0.0)
+                    rows.append({
+                        'Date': date,
+                        'Campaign': campaign_name,
+                        'Adgroup': adgroup_name,
+                        'Creative': creative_name,
+                        'Clicks': clicks,
+                        'Impressions': impressions,
+                        'Advertiser Cost (Adv Currency)': cost
+                    })
         df = pd.DataFrame(rows)
         return df
