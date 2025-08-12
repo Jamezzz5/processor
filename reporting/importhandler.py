@@ -180,38 +180,35 @@ class ImportHandler(object):
             params = self.matrix.vendor_set(vk)
             try:
                 api_class.input_config(params[vmc.apifile])
-            except FileNotFoundError as e:
+            except (FileNotFoundError, SystemExit) as e:
                 logging.warning(e)
                 continue
-            if isinstance(api_class, redapi.RedApi) and api_class.aborted:
-                logging.error("API error occurred, skipping Reddit import.")
-            else:
-                start_check = self.date_check(params[vmc.startdate])
-                end_check = self.date_check(params[vmc.enddate])
-                if params[vmc.apifields] == ['nan']:
-                    params[vmc.apifields] = None
-                if start_check:
-                    params[vmc.startdate] = None
-                if end_check:
-                    params[vmc.enddate] = None
-                params[vmc.startdate] = self.set_start(params[vmc.startdate],
-                                                       params[vmc.enddate],
-                                                       params[vmc.apimerge])
-                df = pd.DataFrame()
-                try:
-                    df = api_class.get_data(sd=params[vmc.startdate],
-                                            ed=params[vmc.enddate],
-                                            fields=params[vmc.apifields])
-                except Exception as e:
-                    logging.error("API error occurred", exc_info=True)
-                    if isinstance(api_class, redapi.RedApi) and api_class.sw:
-                        api_class.sw.quit()
-                    else:
-                        raise e
-                self.output(df, params[vmc.filename], params[vmc.apimerge],
-                            params[vmc.firstrow], params[vmc.lastrow],
-                            params[vmc.date], params[vmc.startdate],
-                            params[vmc.enddate])
+            start_check = self.date_check(params[vmc.startdate])
+            end_check = self.date_check(params[vmc.enddate])
+            if params[vmc.apifields] == ['nan']:
+                params[vmc.apifields] = None
+            if start_check:
+                params[vmc.startdate] = None
+            if end_check:
+                params[vmc.enddate] = None
+            params[vmc.startdate] = self.set_start(params[vmc.startdate],
+                                                   params[vmc.enddate],
+                                                   params[vmc.apimerge])
+            df = pd.DataFrame()
+            try:
+                df = api_class.get_data(sd=params[vmc.startdate],
+                                        ed=params[vmc.enddate],
+                                        fields=params[vmc.apifields])
+            except Exception as e:
+                logging.error("API error occurred", exc_info=True)
+                if isinstance(api_class, redapi.RedApi) and api_class.sw:
+                    api_class.sw.quit()
+                else:
+                    raise e
+            self.output(df, params[vmc.filename], params[vmc.apimerge],
+                        params[vmc.firstrow], params[vmc.lastrow],
+                        params[vmc.date], params[vmc.startdate],
+                        params[vmc.enddate])
 
     def api_loop(self):
         """Loops through all APIs and makes function call to retrieve data.

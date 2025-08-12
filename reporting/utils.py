@@ -4,6 +4,7 @@ import re
 import gzip
 import json
 import time
+import signal
 import shutil
 import random
 import base64
@@ -278,6 +279,9 @@ def first_last_adj(df, first_row, last_row):
     :returns:Adjusted dataframe
     """
     logging.debug('Removing First & Last Rows')
+    if df.empty:
+        logging.warning('Empty df did not adjust first and last rows')
+        return df
     first_row = int(first_row)
     last_row = int(last_row)
     if first_row > 0:
@@ -541,6 +545,14 @@ def write_df_to_buffer(df, file_name='raw', default_format=True,
     return buffer, zip_file
 
 
+class SignalTimeoutException(Exception):
+    pass
+
+
+def signal_handler(signum, frame):
+    raise SignalTimeoutException("Function timed out")
+
+
 class SeleniumWrapper(object):
     driver_path = 'drivers'
 
@@ -800,13 +812,20 @@ class SeleniumWrapper(object):
         return ads
 
     def click_accept_buttons(self, btn_xpath, timeout=3, poll_frequency=0.2):
+        use_alarm = hasattr(signal, "SIGALRM")
+        if use_alarm:
+            signal.signal(signal.SIGALRM, signal_handler)
+            signal.alarm(timeout + 1)
         wait = WebDriverWait(self.browser, timeout,
                              poll_frequency=poll_frequency)
         try:
             accept_buttons = wait.until(
                 EC.visibility_of_all_elements_located((By.XPATH, btn_xpath)))
-        except ex.TimeoutException as e:
+        except (ex.TimeoutException, SignalTimeoutException) as e:
             accept_buttons = None
+        finally:
+            if use_alarm:
+                signal.alarm(0)
         if accept_buttons:
             self.click_on_xpath(sleep=3, elem=accept_buttons[0])
 
@@ -982,6 +1001,9 @@ class SeleniumWrapper(object):
                         elem=elem)
                 for _ in range(3):
                     try:
+                        elem.send_keys(Keys.BACKSPACE)
+                        elem.send_keys(item[0][-1])
+                        elem.send_keys(Keys.ARROW_UP)
                         elem.send_keys(u'\ue007')
                         break
                     except (ex.ElementNotInteractableException,
