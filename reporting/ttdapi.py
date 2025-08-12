@@ -1,4 +1,5 @@
 import io
+import re
 import sys
 import json
 import time
@@ -7,7 +8,6 @@ import requests
 import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-import reporting.dictcolumns as dc_col
 
 
 ttd_url = 'https://api.thetradedesk.com/v3'
@@ -138,19 +138,29 @@ class TtdApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         """
-        gets data from TTD using advertiserID and Report Name, if df returned is
-        empty it will then try using campaign IDs through GraphQL
+        gets data from TTD.
+        check if report name is 5-10 characters long and contains no symbols
+        or spaces, if so use campaign IDs and graphQL
+        otherwise it will assume the default and pull using report name
+        :returns: dataframe
         """
-        logging.info('Getting TTD data for: {}'.format(self.report_name))
-        dl_url = self.get_download_url()
-        if dl_url is None:
-            logging.warning('Could not retrieve url, returning blank df.')
-            self.df = pd.DataFrame()
-        else:
-            r = requests.get(dl_url, headers=self.headers)
-            self.df = self.get_df_from_response(r)
-        if self.df.empty:
+        id_pattern = r'[A-Za-z0-9]{5,10}'
+        if (re.fullmatch(id_pattern, self.report_name) and
+                ' ' not in self.report_name):
             self.df = self.get_report_for_multiple_campaigns()
+        elif re.fullmatch(fr'{id_pattern}(,{id_pattern})+',
+                          self.report_name):
+            self.df = self.get_report_for_multiple_campaigns()
+        else:
+            logging.info(
+                'Getting TTD data for report: {}'.format(self.report_name))
+            dl_url = self.get_download_url()
+            if dl_url is None:
+                logging.warning('Could not retrieve url, returning blank df.')
+                self.df = pd.DataFrame()
+            else:
+                r = requests.get(dl_url, headers=self.headers)
+                self.df = self.get_df_from_response(r)
         return self.df
 
     def check_partner_id(self):
@@ -354,70 +364,6 @@ class TtdApi(object):
         """
         return query
 
-    def get_all_campaign_ids(self):
-        """
-        Query used to get all campaign names and IDs for a speciic advertiser
-        :returns: df with column for campaign names and column for campaign ids
-        """
-        result = []
-        query = """
-        query MyQuery($advertiserID: ID!) {
-          advertiser(id: $advertiserID) {
-            campaigns {
-              nodes {
-                name
-                id
-              }
-            }
-          }
-        }"""
-        variables = {
-            "advertiserID": self.ad_id
-        }
-        data = {
-            'query': query,
-            'variables': variables
-        }
-        headers = {
-            'TTD-Auth': self.query_token
-        }
-        r = requests.post(url=self.query_url, json=data, headers=headers)
-        if r.status_code == 200:
-            result = r.json()
-        else:
-            logging.warning(
-                'Request failed with status code: {}'.format(r.status_code))
-        campaigns = result['data']['advertiser']['campaigns']['nodes']
-        df = pd.DataFrame(campaigns)
-        return df
-
-    @staticmethod
-    def get_constant_dict():
-        """
-        reads processors constant dictionary to get product name and client name
-        :returns: product name and client name of current processor
-        """
-        constant_dict = dc_col.filename_con_config
-        try:
-            df = pd.read_csv(configpath + constant_dict)
-        except IOError:
-            logging.debug('No Constant Dictionary config')
-            return pd.DataFrame
-        product_name = (
-        df.loc[df['Column Name'] == 'mpProduct Name', 'Value'].values[0])
-        client_name = df.loc[df['Column Name'] == 'mpClient', 'Value'].values[0]
-        return product_name, client_name
-
-    def compare_campaigns(self):
-        """
-        filter down products to those that match with constant dictionary
-        :returns: filtered df of campaign names and ids
-        """
-        df = self.get_all_campaign_ids()
-        product_name, client_name = self.get_constant_dict()
-        filtered_df = df[df['name'].str.contains(product_name, case=False)]
-        return filtered_df
-
     def get_report_for_multiple_campaigns(self):
         """
         Loop through campaign ids and query metrics for each, appending to
@@ -426,8 +372,8 @@ class TtdApi(object):
         campaigns
         """
         results = pd.DataFrame()
-        df = self.compare_campaigns()
-        for campaign_id in df['id']:
+        campaign_list = self.report_name.split(',')
+        for campaign_id in campaign_list:
             logging.info('Getting data for campaign {}'.format(campaign_id))
             result = self.get_report_using_graphql(campaign_id)
             df = self.parse_graphql_result(result)
@@ -476,8 +422,8 @@ class TtdApi(object):
         for adgroup in adgroups:
             adgroup_name = adgroup['name']
             creatives_data = adgroup.get('creatives')
-            creatives = creatives_data.get('nodes',
-                                           []) if creatives_data else []
+            creatives = creatives_data.get(
+                'nodes', []) if creatives_data else []
             for creative in creatives:
                 creative_name = creative['name']
                 performance_edges = creative.get('reporting', {}).get(
