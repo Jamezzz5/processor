@@ -59,11 +59,12 @@ class DbApi(object):
         if str(config) == 'nan':
             logging.warning('Config file name not in vendor matrix.  '
                             'Aborting.')
-            sys.exit(0)
+            return False
         logging.info('Loading DB config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
+        return True
 
     def load_config(self):
         try:
