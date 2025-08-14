@@ -18,8 +18,9 @@ import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
 import reporting.expcolumns as exc
-import selenium.common.exceptions as ex
 from subprocess import check_output
+import http.client as http_client
+import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -838,7 +839,11 @@ class SeleniumWrapper(object):
             for x in btn]
         btn_xpath = ' | '.join(btn_xpath)
         self.click_accept_buttons(btn_xpath)
-        iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
+        try:
+            iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
+        except http_client.CannotSendRequest as e:
+            logging.warning(e)
+            iframes = []
         for iframe in iframes:
             try:
                 is_displayed = iframe.is_displayed()

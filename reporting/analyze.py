@@ -759,6 +759,7 @@ class Analyze(object):
                 flagged_msg = ('The following vendors have unusually {} {}s'
                                '.'.format(error_type, metric_name))
                 self.format_log_msg_with_df(flagged_msg, edf)
+                edf = edf.reset_index(drop=True)
                 self.add_to_analysis_dict(
                     key_col=self.flagged_metrics, param=metric_name,
                     message=flagged_msg, data=edf.to_dict())
@@ -3123,8 +3124,8 @@ class CheckLive(AnalyzeBase):
                 (rdf[self.missing_val] != '') &
                 (rdf[self.missing_val] != 'nan')]
             rdf = rdf.drop_duplicates().reset_index(drop=True)
-            not_live = rdf[dctc.VEN].unique().tolist()
-            msg = 'Some values may not be live for {}'.format(not_live)
+            not_live = ', '.join(rdf[dctc.VEN].unique().tolist())
+            msg = 'Some values may not be live for {}.'.format(not_live)
         return rdf, msg
 
     def do_analysis(self):

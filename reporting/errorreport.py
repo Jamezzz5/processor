@@ -49,6 +49,9 @@ class ErrorReport(object):
             self.df = utl.data_to_type(self.df, str_col=self.merge_col)
             self.dictionary = utl.data_to_type(
                 self.dictionary, str_col=self.merge_col)
+            self.dictionary[self.merge_col] = self.dictionary[
+                self.merge_col].fillna('')
+            self.df[self.merge_col] = self.df[self.merge_col].fillna('')
             self.merge_df = pd.merge(
                 self.df[cols_to_merge], self.dictionary,
                 on=self.merge_col, how='left', indicator=True)

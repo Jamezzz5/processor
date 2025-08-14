@@ -548,6 +548,10 @@ class TestErrorReport:
         df = pd.DataFrame({dctc.FPN: []})
         err = er.ErrorReport(df, dic, place_col, error_filename)
         assert err.data_err.empty
+        df = pd.DataFrame({dctc.FPN: [place_col]})
+        dic = pd.DataFrame({dctc.FPN: [np.nan]})
+        err = er.ErrorReport(df, dic, place_col, error_filename)
+        assert not err.data_err.empty
 
 
 class TestCalc:
