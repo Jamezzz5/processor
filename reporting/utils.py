@@ -993,7 +993,7 @@ class SeleniumWrapper(object):
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
                             clear_existing=True, send_escape=True,
-                            new_value=''):
+                            new_value='', choose_existing=False):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem = self.send_key_from_list(
@@ -1006,9 +1006,10 @@ class SeleniumWrapper(object):
                         elem=elem)
                 for _ in range(3):
                     try:
-                        elem.send_keys(Keys.BACKSPACE)
-                        elem.send_keys(item[0][-1])
-                        elem.send_keys(Keys.ARROW_UP)
+                        if not choose_existing:
+                            elem.send_keys(Keys.BACKSPACE)
+                            elem.send_keys(item[0][-1])
+                            elem.send_keys(Keys.ARROW_UP)
                         elem.send_keys(u'\ue007')
                         break
                     except (ex.ElementNotInteractableException,
