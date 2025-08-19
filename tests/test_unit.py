@@ -31,6 +31,7 @@ import processor.reporting.dcapi as dcapi
 import processor.reporting.twapi as twapi
 import processor.reporting.scapi as scapi
 import processor.reporting.awss3 as awss3
+import processor.reporting.iasapi as iasapi
 
 
 def func(x):
@@ -327,6 +328,11 @@ class TestApis:
 
     def test_scapi(self):
         api = scapi.ScApi()
+        self.send_api_call(api)
+
+    def test_iasapi(self):
+        api = iasapi.IasApi()
+        api.headless = False
         self.send_api_call(api)
 
 
