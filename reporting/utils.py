@@ -18,8 +18,9 @@ import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
 import reporting.expcolumns as exc
-import selenium.common.exceptions as ex
 from subprocess import check_output
+import http.client as http_client
+import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -838,7 +839,11 @@ class SeleniumWrapper(object):
             for x in btn]
         btn_xpath = ' | '.join(btn_xpath)
         self.click_accept_buttons(btn_xpath)
-        iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
+        try:
+            iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
+        except http_client.CannotSendRequest as e:
+            logging.warning(e)
+            iframes = []
         for iframe in iframes:
             try:
                 is_displayed = iframe.is_displayed()
@@ -988,7 +993,7 @@ class SeleniumWrapper(object):
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
                             clear_existing=True, send_escape=True,
-                            new_value=''):
+                            new_value='', choose_existing=False):
         select_xpath = 'selectized'
         for item in elem_input_list:
             elem = self.send_key_from_list(
@@ -1001,9 +1006,10 @@ class SeleniumWrapper(object):
                         elem=elem)
                 for _ in range(3):
                     try:
-                        elem.send_keys(Keys.BACKSPACE)
-                        elem.send_keys(item[0][-1])
-                        elem.send_keys(Keys.ARROW_UP)
+                        if not choose_existing:
+                            elem.send_keys(Keys.BACKSPACE)
+                            elem.send_keys(item[0][-1])
+                            elem.send_keys(Keys.ARROW_UP)
                         elem.send_keys(u'\ue007')
                         break
                     except (ex.ElementNotInteractableException,

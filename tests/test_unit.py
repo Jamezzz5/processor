@@ -31,6 +31,7 @@ import processor.reporting.dcapi as dcapi
 import processor.reporting.twapi as twapi
 import processor.reporting.scapi as scapi
 import processor.reporting.awss3 as awss3
+import processor.reporting.iasapi as iasapi
 
 
 def func(x):
@@ -329,6 +330,11 @@ class TestApis:
         api = scapi.ScApi()
         self.send_api_call(api)
 
+    def test_iasapi(self):
+        api = iasapi.IasApi()
+        api.headless = False
+        self.send_api_call(api)
+
 
 class TestDictionary:
     dic = dct.Dict()
@@ -548,6 +554,10 @@ class TestErrorReport:
         df = pd.DataFrame({dctc.FPN: []})
         err = er.ErrorReport(df, dic, place_col, error_filename)
         assert err.data_err.empty
+        df = pd.DataFrame({dctc.FPN: [place_col]})
+        dic = pd.DataFrame({dctc.FPN: [np.nan]})
+        err = er.ErrorReport(df, dic, place_col, error_filename)
+        assert not err.data_err.empty
 
 
 class TestCalc:
