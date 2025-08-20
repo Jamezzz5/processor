@@ -51,7 +51,6 @@ class Analyze(object):
     api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
     max_api_length = 'max_api_length'
-    api_to_strip = 'api_to_strip'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
     missing_flat = 'missing_flat'
@@ -107,7 +106,7 @@ class Analyze(object):
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
             GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
-            CheckAdwordsSplit, CheckLive, StripVendorKeys]
+            CheckAdwordsSplit, CheckLive]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -2139,10 +2138,6 @@ class CheckApiDateLength(AnalyzeBase):
             df.loc[idx, vmc.vendorkey] = df.loc[
                 idx, vmc.vendorkey][idx[0]].replace('API_', '')
             old_ed = new_sd - dt.timedelta(days=1)
-            if old_ed == dt.datetime.today():
-                new_sd = dt.datetime.today() - dt.timedelta(days=1)
-                new_str_sd = new_sd.strftime('%Y-%m-%d')
-                ndf.loc[0, vmc.startdate] = new_str_sd
             df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
             df = pd.concat([df, ndf]).reset_index(drop=True)
         self.aly.matrix.vm_df = df
