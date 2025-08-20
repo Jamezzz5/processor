@@ -1,14 +1,11 @@
-import os
 import sys
 import logging
 import argparse
 import pandas as pd
-import reporting.utils as utl
 import reporting.export as exp
 import reporting.analyze as az
 import reporting.tbapi as tbapi
 import reporting.vmcolumns as vmc
-import reporting.expcolumns as exc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.importhandler as ih
@@ -49,7 +46,7 @@ def get_args(arguments=None):
         'all', 'fb', 'aw', 'tw', 'ttd', 'ga', 'nb', 'af', 'sc', 'aj', 'dc',
         'rs', 'db', 'vk', 'rc', 'szk', 'red', 'dv', 'adk', 'inn', 'tik', 'amz',
         'cri', 'pm', 'sam', 'gs', 'qt', 'yv', 'amd', 'ss', 'nz', 'ytd', 'wal',
-        'dvo', 'goad', 'sim', 'pix'])
+        'dvo', 'goad', 'sim', 'pix', 'ias'])
     parser.add_argument('--ftp', choices=['all', 'sz'])
     parser.add_argument('--dbi', choices=['all', 'dna'])
     parser.add_argument('--s3', choices=['all', 'dna'])
