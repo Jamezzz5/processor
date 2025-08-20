@@ -51,6 +51,7 @@ class Analyze(object):
     api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
     max_api_length = 'max_api_length'
+    api_to_strip = 'api_to_strip'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
     missing_flat = 'missing_flat'
@@ -106,7 +107,7 @@ class Analyze(object):
             CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
             GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
             GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
-            CheckAdwordsSplit, CheckLive]
+            CheckAdwordsSplit, CheckLive, StripVendorKeys]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
@@ -2035,6 +2036,7 @@ class CheckApiDateLength(AnalyzeBase):
     name = Analyze.max_api_length
     fix = True
     pre_run = True
+    highest_date = 'highest_date'
 
     def do_analysis(self):
         """
@@ -2042,6 +2044,7 @@ class CheckApiDateLength(AnalyzeBase):
         are too long.  Those sources are added to a df and the analysis dict
         """
         vk_list = []
+        highest_date_list = []
         data_sources = self.matrix.get_all_data_sources()
         max_date_dict = {
             vmc.api_amz_key: 31, vmc.api_szk_key: 60, vmc.api_db_key: 60,
@@ -2052,11 +2055,18 @@ class CheckApiDateLength(AnalyzeBase):
             if 'API_' in ds.key and vmc.enddate in ds.p:
                 key = ds.key.split('_')[1]
                 if key in max_date_dict.keys():
+                    highest_date = None
                     max_date = max_date_dict[key]
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
+                    if vmc.filename in ds.p:
+                        file_name = ds.p[vmc.filename]
+                        if os.path.exists(file_name):
+                            highest_date = self.find_highest_date(file_name)
                     if date_range > (max_date - 3):
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
+                        highest_date_list.append(highest_date)
+        mdf = pd.DataFrame({vmc.vendorkey: vk_list,
+                            self.highest_date: highest_date_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -2067,6 +2077,31 @@ class CheckApiDateLength(AnalyzeBase):
             msg = 'No APIs within 3 days of max length.'
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(df=mdf, msg=msg)
+
+    @staticmethod
+    def find_highest_date(filename):
+        """
+        Scans raw csv for most likely candidate to be date column and returns
+        the highest date in that column
+
+        :param filename: a string of the name of the csv found in vendormatrix
+        :returns: datetime object of highest date in file
+        """
+        max_date = None
+        df = pd.read_csv(filename)
+        date_candidates = {}
+        for col in df.columns:
+            try:
+                converted = pd.to_datetime(df[col], errors="raise")
+                date_candidates[col] = converted
+            except Exception:
+                continue
+        if date_candidates:
+            best_date_col = min(date_candidates,
+                                key=lambda c: date_candidates[c].isna().sum())
+            df[best_date_col] = date_candidates[best_date_col]
+            max_date = df[best_date_col].max()
+        return max_date
 
     def fix_analysis(self, aly_dict, write=True):
         """
@@ -2086,6 +2121,8 @@ class CheckApiDateLength(AnalyzeBase):
             ndf = utl.data_to_type(ndf, date_col=[vmc.startdate])
             new_sd = ndf[vmc.startdate][0] + dt.timedelta(
                 days=max_date_length - 3)
+            if x[self.highest_date]:
+                new_sd = x[self.highest_date] + dt.timedelta(days=1)
             if new_sd.date() >= dt.datetime.today().date():
                 new_sd = dt.datetime.today() - dt.timedelta(days=3)
             new_str_sd = new_sd.strftime('%Y-%m-%d')
@@ -2101,6 +2138,10 @@ class CheckApiDateLength(AnalyzeBase):
             df.loc[idx, vmc.vendorkey] = df.loc[
                 idx, vmc.vendorkey][idx[0]].replace('API_', '')
             old_ed = new_sd - dt.timedelta(days=1)
+            if old_ed == dt.datetime.today():
+                new_sd = dt.datetime.today() - dt.timedelta(days=1)
+                new_str_sd = new_sd.strftime('%Y-%m-%d')
+                ndf.loc[0, vmc.startdate] = new_str_sd
             df.loc[idx, vmc.enddate] = old_ed.strftime('%Y-%m-%d')
             df = pd.concat([df, ndf]).reset_index(drop=True)
         self.aly.matrix.vm_df = df
