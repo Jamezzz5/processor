@@ -23,7 +23,6 @@ class S3(object):
         self.config = None
         self.config_list = None
         self.conn = None
-        self.bucket = None
         self.key_list = None
         self.df = pd.DataFrame()
 
