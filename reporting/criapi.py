@@ -217,7 +217,7 @@ class CriApi(object):
                 if error_count > 10:
                     logging.warning('Too many errors returning blank df.')
                     break
-            time.sleep(1)
+            time.sleep(2)
         return df
 
     def download_report(self, url):
@@ -246,7 +246,9 @@ class CriApi(object):
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         base_url = '{}{}'.format(self.base_url, self.version_url)
-        r = self.request_data(sd, ed, base_url)
+        campaign_ids = self.check_if_advertiser_id(base_url, fields=None)
+        r = self.request_data(sd, ed, base_url, fields=None,
+                              campaign_id=campaign_ids[0])
         if (r.status_code == 200 and
                 'data' in r.json()):
             row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
@@ -268,4 +270,3 @@ class CriApi(object):
         results, r = self.check_permissions(
             [], acc_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
-

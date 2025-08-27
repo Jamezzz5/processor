@@ -1869,10 +1869,12 @@ class CheckAdwordsSplit(AnalyzeBase):
         :returns: a dataframe of campaigns that api is pulling
          """
         if vmc.filename not in source.p:
-            return pd.DataFrame()
+            return df
         api_file = source.p[vmc.apifile]
         ic = vm.ImportConfig()
         api_config = ic.load_file(api_file, yaml)
+        if 'adwords' not in api_config:
+            return df
         adwords_filter = api_config['adwords']['campaign_filter']
         file_path = source.p[vmc.filename]
         start_date = source.p[vmc.startdate]

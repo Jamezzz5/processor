@@ -359,7 +359,11 @@ class ImportConfig(object):
         if file_library == yaml:
             kwargs['Loader'] = yaml.FullLoader
         with open(file_name, 'r') as f:
-            config_file = file_library.load(f, **kwargs)
+            try:
+                config_file = file_library.load(f, **kwargs)
+            except json.decoder.JSONDecodeError as e:
+                logging.warning('Error for {}: {}'.format(file_name, e))
+                config_file = None
         return config_file
 
     def make_new_json(self, params, new_file, account_id, import_filter=None,
