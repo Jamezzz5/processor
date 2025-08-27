@@ -2091,7 +2091,6 @@ class CheckApiDateLength(AnalyzeBase):
         :returns: datetime object of highest date in file
         """
         df = pd.read_csv(filename)
-        df = utl.data_to_type(df, date_col=date_col)
         max_date = df[date_col].max()
         max_date = max_date[0]
         return max_date
@@ -2115,7 +2114,9 @@ class CheckApiDateLength(AnalyzeBase):
             new_sd = ndf[vmc.startdate][0] + dt.timedelta(
                 days=max_date_length - 3)
             if x[self.highest_date]:
-                new_sd = x[self.highest_date] + dt.timedelta(days=1)
+                tdf = utl.data_to_type(pd.DataFrame([x]),
+                                       date_col=[self.highest_date])
+                new_sd = tdf[self.highest_date][0] - dt.timedelta(days=3)
             if new_sd.date() >= dt.datetime.today().date():
                 new_sd = dt.datetime.today() - dt.timedelta(days=3)
             new_str_sd = new_sd.strftime('%Y-%m-%d')
