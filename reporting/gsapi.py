@@ -223,13 +223,12 @@ class GsApi(object):
             # Fetch image content
             response = requests.get(img_url, stream=True, timeout=10)
             if response.status_code != 200:
-                print(f"Failed to download image: {img_url} (Status {response.status_code})")
+                logging.warning('Failed to download image: {} (Status {})'.format(img_url, response.status_code))
             else:
                 img_url = s3.s3_upload_file_get_presigned_url(response.raw, key)
-            return img_url
         except Exception as e:
-            print(f"Error uploading image {img_url}: {e}")
-            return img_url
+            logging.warning('Error uploading image {}: {}'.format(img_url, e))
+        return img_url
 
     def parse_google_doc(self, r):
         if self.body_str not in r:
