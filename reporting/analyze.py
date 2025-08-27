@@ -2055,14 +2055,16 @@ class CheckApiDateLength(AnalyzeBase):
             if 'API_' in ds.key and vmc.enddate in ds.p:
                 key = ds.key.split('_')[1]
                 if key in max_date_dict.keys():
-                    highest_date = None
                     max_date = max_date_dict[key]
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
-                    if vmc.filename in ds.p:
-                        file_name = ds.p[vmc.filename]
-                        if os.path.exists(file_name):
-                            highest_date = self.find_highest_date(file_name)
                     if date_range > (max_date - 3):
+                        highest_date = None
+                        if vmc.filename in ds.p:
+                            file_name = ds.p[vmc.filename]
+                            if os.path.exists(file_name):
+                                date_col = ds.p[vmc.date]
+                                highest_date = self.find_highest_date(file_name,
+                                                                      date_col)
                         vk_list.append(ds.key)
                         highest_date_list.append(highest_date)
         mdf = pd.DataFrame({vmc.vendorkey: vk_list,
@@ -2079,28 +2081,19 @@ class CheckApiDateLength(AnalyzeBase):
         self.add_to_analysis_dict(df=mdf, msg=msg)
 
     @staticmethod
-    def find_highest_date(filename):
+    def find_highest_date(filename, date_col):
         """
-        Scans raw csv for most likely candidate to be date column and returns
-        the highest date in that column
+        Scans raw csv returns the highest date in the column provided
 
         :param filename: a string of the name of the csv found in vendormatrix
+        :param date_col: a string of the column header for date found in
+        vendormatrix
         :returns: datetime object of highest date in file
         """
-        max_date = None
         df = pd.read_csv(filename)
-        date_candidates = {}
-        for col in df.columns:
-            try:
-                converted = pd.to_datetime(df[col], errors="raise")
-                date_candidates[col] = converted
-            except Exception:
-                continue
-        if date_candidates:
-            best_date_col = min(date_candidates,
-                                key=lambda c: date_candidates[c].isna().sum())
-            df[best_date_col] = date_candidates[best_date_col]
-            max_date = df[best_date_col].max()
+        df = utl.data_to_type(df, date_col=date_col)
+        max_date = df[date_col].max()
+        max_date = max_date[0]
         return max_date
 
     def fix_analysis(self, aly_dict, write=True):
