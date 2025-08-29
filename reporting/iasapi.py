@@ -22,7 +22,6 @@ class IasApi(object):
 
     dimensions = ['Teams', 'Campaigns', 'Media partners', 'Placements', 'Date']
 
-
     def __init__(self, headless=True):
         self.headless = headless
         self.sw = None
@@ -66,6 +65,9 @@ class IasApi(object):
         :return: The pandas dataframe with pulled data
         """
         df = pd.DataFrame()
+        if not self.username or not self.password:
+            logging.warning('No username or password.')
+            return df
         self.sw = utl.SeleniumWrapper(headless=self.headless)
         self.browser = self.sw.browser
         self.sw.go_to_url(self.login_url)
@@ -165,6 +167,8 @@ class IasApi(object):
         self.sw.click_on_xpath(xpath)
         year_drop_xpath = ('/html/body/div[2]/div[2]/div/'
                            'div/div/div[1]/div[1]/button')
+        self.sw.wait_for_elem_load(
+            year_drop_xpath, selector=self.sw.select_xpath)
         self.sw.click_on_xpath(year_drop_xpath)
         year_str = str(date_val.year)
         year_xpath = (f'//div[contains(@class,"MuiYearPicker-root")]//'
@@ -225,7 +229,7 @@ class IasApi(object):
         :return:
         """
         xpath = ("//label[@data-testid='radio-label' and "
-                          "normalize-space(.)='By day']")
+                 "normalize-space(.)='By day']")
         self.sw.click_on_xpath(xpath)
 
     def filter_report_by_campaign(self):
@@ -241,7 +245,7 @@ class IasApi(object):
             "        and .//span[normalize-space()='Campaigns']]]]")
         self.sw.click_on_xpath(xp)
         input_xpath = (".//input[@data-testid='search-input' and "
-                        "        @placeholder='Filter by name or ID']")
+                       "        @placeholder='Filter by name or ID']")
         elem = self.browser.find_element_by_xpath(input_xpath)
         elem.send_keys(self.campaign)
         self.sw.xpath_from_id_and_click('checkbox-input-check-all')

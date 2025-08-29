@@ -1873,7 +1873,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         api_file = source.p[vmc.apifile]
         ic = vm.ImportConfig()
         api_config = ic.load_file(api_file, yaml)
-        if 'adwords' not in api_config:
+        if not api_config or 'adwords' not in api_config:
             return df
         adwords_filter = api_config['adwords']['campaign_filter']
         file_path = source.p[vmc.filename]

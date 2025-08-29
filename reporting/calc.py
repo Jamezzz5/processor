@@ -183,6 +183,9 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
             df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
     nc_pnc = df[df[dctc.UNC] != True]
+    if p_col not in nc_pnc.columns:
+        logging.warning('{} not in df, continuing.'.format(p_col))
+        return df
     nc_pnc = nc_pnc.groupby(p_col)[[p_cost, n_cost]].sum()
     nc_pnc = nc_pnc[nc_pnc[p_cost] > 0]
     if p_cost not in nc_pnc.columns:
