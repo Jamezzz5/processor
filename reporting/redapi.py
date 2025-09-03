@@ -603,6 +603,17 @@ class RedApi(object):
         df = df.rename(columns=self.cols)
         return df
 
+    def get_account_id(self):
+        """
+        Gets all business ids and tries to find correct account_id
+
+        :return: account_id that matches self.username
+        """
+        self.get_access_token()
+        business_ids = self.get_all_business_ids()
+        account_id = self.get_ad_accounts_by_business(business_ids)
+        return account_id
+
     def get_data_api(self, sd, ed):
         """
         Pulls data for specified start and end date from api using requests.
@@ -612,9 +623,7 @@ class RedApi(object):
         :return: df The dataframe of data from the platform
         """
         df = pd.DataFrame()
-        self.get_access_token()
-        business_ids = self.get_all_business_ids()
-        account_id = self.get_ad_accounts_by_business(business_ids)
+        account_id = self.get_account_id()
         if account_id:
             r = self.get_report(account_id, sd, ed)
             df = self.report_to_df(r)
@@ -655,31 +664,25 @@ class RedApi(object):
         self.sw.quit()
         return df
 
-    def check_credentials(self, results, camp_col, success_msg, failure_msg):
-        self.sw = utl.SeleniumWrapper(headless=self.headless)
-        self.browser = self.sw.browser
-        self.sw.go_to_url(self.base_url)
-        sign_in_check = self.sign_in()
-        self.sw.quit()
-        if not sign_in_check:
-            msg = ' '.join([failure_msg, 'Incorrect User or password. '
-                                         'Check Active and Permissions.'])
-            row = [camp_col, msg, False]
-            results.append(row)
+    def test_for_account(self, results, acc_col, success_msg, failure_msg):
+        account_id = self.get_account_id()
+        if account_id:
+            success = True
+            msg = '{} Account ID found!'.format(success_msg)
         else:
-            msg = ' '.join(
-                [success_msg, 'User or password are corrects:'])
-            row = [camp_col, msg, True]
-            results.append(row)
+            success = False
+            msg = '{} Account ID not found.'.format(failure_msg)
+        row = [acc_col, msg, success]
+        results.append(row)
         return results
 
     def test_connection(self, acc_col, camp_col, acc_pre):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
-        results = self.check_credentials(
-            [], acc_col, success_msg, failure_msg)
-        if False in results[0]:
-            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results = []
+        results = self.test_for_account(
+            results, acc_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
 
     @staticmethod
     def custom_events_dict():
