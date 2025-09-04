@@ -6,6 +6,8 @@ import pandas as pd
 import datetime as dt
 import reporting.utils as utl
 import selenium.common.exceptions as ex
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 class IasApi(object):
@@ -69,6 +71,7 @@ class IasApi(object):
             logging.warning('No username or password.')
             return df
         self.sw = utl.SeleniumWrapper(headless=self.headless)
+        self.sw.use_js_click = True
         self.browser = self.sw.browser
         self.sw.go_to_url(self.login_url)
         self.sign_in()
@@ -96,9 +99,12 @@ class IasApi(object):
         user_pass = [(self.username, user_xpath, next_btn),
                      (self.password, pass_xpath, login_btn)]
         for input_val, input_elem, btn_elem in user_pass:
+            self.sw.wait_for_elem_load(
+                input_elem, selector=self.sw.select_xpath)
             elem = self.browser.find_element_by_xpath(input_elem)
             elem.send_keys(input_val)
             self.sw.random_delay(0.3, 1)
+            self.sw.wait_for_elem_load(btn_elem, selector=self.sw.select_xpath)
             self.sw.click_on_xpath(btn_elem)
         return True
 
@@ -110,7 +116,15 @@ class IasApi(object):
         """
         logging.info('Changing to advertiser {}.'.format(self.advertiser))
         sel_xpath = '//*[@id="root"]/div/div[2]/div/div[1]/div[2]/div/div/div'
-        self.sw.wait_for_elem_load(sel_xpath, selector=self.sw.select_xpath)
+        for _ in range(3):
+            try:
+                self.sw.wait_for_elem_load(
+                    sel_xpath, selector=self.sw.select_xpath)
+                break
+            except ex.TimeoutException as e:
+                logging.warning(e)
+                self.sw.take_screenshot(file_name='ias_error.jpg')
+                self.sw.browser.refresh()
         self.sw.click_on_xpath(sel_xpath)
         search_xpath = '//*[@id="TeamSwitcher"]'
         elem = self.browser.find_element_by_xpath(search_xpath)
@@ -125,14 +139,14 @@ class IasApi(object):
         :param sd: Start date to add to the report name
         :return: The report name as a string
         """
-        xpath = ('//*[@id="root"]/div/div[2]/div/div[2]/div/div[1]'
-                 '/div[1]/div[1]/div/input')
+        xpath = '//input[@data-testid="text-input"]'
         self.sw.wait_for_elem_load(xpath, selector=self.sw.select_xpath)
         report = self.browser.find_element_by_xpath(xpath)
         today = dt.datetime.today().strftime('%Y%m%d')
         sd = sd.strftime('%Y%m%d')
         report_name = '{}_{}_{}'.format(today, sd, self.campaign)
         report.send_keys(report_name)
+        logging.info('Named report: {}'.format(report_name))
         return report_name
 
     def click_on_custom_date_range(self):
@@ -161,14 +175,21 @@ class IasApi(object):
         :param is_start: Boolean to click on the correct selector
         :return:
         """
+        logging.info('Clicking date: {}'.format(date_val))
         xpath_num = 1 if is_start else 3
         xpath = '//*[@id="root"]/div/div[2]/div/div[2]/div/div[1]/div[1]'
         xpath = '{}/div[2]/div/div/div/div[{}]/input'.format(xpath, xpath_num)
-        self.sw.click_on_xpath(xpath)
-        year_drop_xpath = ('/html/body/div[2]/div[2]/div/'
-                           'div/div/div[1]/div[1]/button')
-        self.sw.wait_for_elem_load(
-            year_drop_xpath, selector=self.sw.select_xpath)
+        self.sw.wait_for_elem_load(xpath, selector=self.sw.select_xpath)
+        year_class = 'MuiPickersFadeTransitionGroup-root'
+        year_drop_xpath = '//div[contains(@class,"{}")]'.format(year_class)
+        for _ in range(3):
+            self.sw.click_on_xpath(xpath)
+            try:
+                self.sw.wait_for_elem_load(
+                    year_drop_xpath, selector=self.sw.select_xpath)
+                break
+            except Exception as e:
+                logging.warning(e)
         self.sw.click_on_xpath(year_drop_xpath)
         year_str = str(date_val.year)
         year_xpath = (f'//div[contains(@class,"MuiYearPicker-root")]//'
@@ -180,11 +201,16 @@ class IasApi(object):
         day_no_pad = str(date_val.day)
         day_xpath = (
             f'//button[@role="gridcell" and '
-            f'        not(contains(@class,"Outside")) and '
-            f'        normalize-space(text())="{day_no_pad}" and '
-            f'        contains(@name,"{month_short} {day_no_pad} {year_str}")]'
+            f'not(@disabled) and normalize-space()="{day_no_pad}"]'
+            f' | //button[normalize-space()="{day_no_pad}" and not(@disabled)]'
         )
-        self.sw.click_on_xpath(day_xpath)
+        self.sw.wait_for_elem_load(day_xpath, selector=self.sw.select_xpath)
+        elem = self.browser.find_element_by_xpath(day_xpath)
+        self.sw.browser.execute_script(
+            "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+            elem
+        )
+        self.sw.browser.execute_script("arguments[0].click();", elem)
 
     def change_date_range(self, sd, ed):
         """
@@ -220,7 +246,8 @@ class IasApi(object):
                     continue
                 elem_val = elem.get_attribute('innerHTML')
                 if elem_val in self.dimensions:
-                    elem.click()
+                    self.sw.browser.execute_script(
+                        "arguments[0].click();", elem)
 
     def change_date_to_by_day(self):
         """
@@ -238,16 +265,18 @@ class IasApi(object):
 
         :return:
         """
+        logging.info('Filtering report by campaign: {}'.format(self.campaign))
         xp = (
             "//label[@data-testid='radio-label' "
             "        and normalize-space()='Select specific'"
             "        and ancestor::div[.//div[@role='button' "
             "        and .//span[normalize-space()='Campaigns']]]]")
+        self.sw.wait_for_elem_load(xp, selector=self.sw.select_xpath)
         self.sw.click_on_xpath(xp)
-        input_xpath = (".//input[@data-testid='search-input' and "
-                       "        @placeholder='Filter by name or ID']")
+        input_xpath = ".//input[@data-testid='search-input']"
+        self.sw.wait_for_elem_load(input_xpath, selector=self.sw.select_xpath)
         elem = self.browser.find_element_by_xpath(input_xpath)
-        elem.send_keys(self.campaign)
+        self.sw.send_keys_wrapper(elem, self.campaign)
         self.sw.xpath_from_id_and_click('checkbox-input-check-all')
         filter_xpath = ("//button[.//span[starts-with(normalize-space(.), "
                         "         'Apply filter')]]")
@@ -264,8 +293,7 @@ class IasApi(object):
         for metric_group_num in range(metric_groups):
             check_box_xpath = '{}[{}]/div[1]/div/div/div/div'.format(
                 base_xpath, metric_group_num + 1)
-            elem = self.browser.find_element_by_xpath(check_box_xpath)
-            elem.click()
+            self.sw.click_on_xpath(check_box_xpath)
 
     def click_csv(self):
         """
@@ -275,8 +303,7 @@ class IasApi(object):
         """
         csv_xpath = ('/html/body/div/div/div[2]/div/div[2]/div/div[1]'
                      '/div[6]/div[4]/span/div/input')
-        elem = self.browser.find_element_by_xpath(csv_xpath)
-        elem.click()
+        self.sw.click_on_xpath(csv_xpath)
 
     def click_run_now(self):
         """
@@ -286,8 +313,20 @@ class IasApi(object):
         """
         elem_xpath = ('//*[@id="root"]/div/div[2]/div/div[2]'
                       '/div/div[2]/div/div/button/span[1]')
-        elem = self.browser.find_element_by_xpath(elem_xpath)
-        elem.click()
+        self.sw.click_on_xpath(elem_xpath)
+
+    def click_report_button(self):
+        report_btn = '//button[.//span[normalize-space(text())="New Report"]]'
+        name_xpath = '//input[@data-testid="text-input"]'
+        self.sw.wait_for_elem_load(report_btn, selector=self.sw.select_xpath)
+        for _ in range(3):
+            self.sw.click_on_xpath(report_btn)
+            try:
+                self.sw.wait_for_elem_load(
+                    name_xpath, selector=self.sw.select_xpath)
+                break
+            except Exception as e:
+                logging.warning(e)
 
     def create_report(self, sd, ed):
         """
@@ -298,9 +337,7 @@ class IasApi(object):
         :return: The name of the report
         """
         logging.info('Creating report.')
-        base_xpath = '//*[@id="root"]/div/div[2]/div/div[2]/div/div[1]'
-        report_btn = '{}/div/div[1]/div[1]/button'.format(base_xpath)
-        self.sw.click_on_xpath(report_btn)
+        self.click_report_button()
         report_name = self.give_report_name(sd)
         self.change_date_range(sd, ed)
         self.add_dimensions()
