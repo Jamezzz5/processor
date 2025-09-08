@@ -7,6 +7,8 @@ import logging
 import numpy as np
 import pandas as pd
 import datetime as dt
+
+from numpy.matrixlib.defmatrix import matrix
 from processor.main import main
 import processor.reporting.utils as utl
 import processor.reporting.vendormatrix as vm
@@ -971,6 +973,27 @@ class TestAnalyze:
         vm_df.drop(index_vk, inplace=True)
         cas.aly.matrix.vm_df = vm_df
         cas.aly.matrix.write()
+
+    def test_max_date_reached(self):
+        vm_dict = pd.DataFrame({vmc.vendorkey: ['API_Amz', 'API_Aw'],
+                                vmc.startdate: ['2024-07-22', '2024-07-22'],
+                                vmc.enddate: ['', ''],
+                                vmc.filename: ['amz_test.csv', 'aw_test.csv']})
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_dict)
+        adl = az.CheckApiDateLength(az.Analyze(matrix=matrix))
+        aly = pd.DataFrame({vmc.vendorkey: ['API_Amz'],
+                            adl.highest_date: ['2025-07-27'],
+                            adl.name: [31]})
+        df = adl.fix_analysis(aly_dict=aly, write=False)
+        assert 'Amz' in df[vmc.vendorkey].values
+        assert any(df[vmc.vendorkey].str.startswith('API_Amz'))
+        amz_end = pd.to_datetime(df.loc[
+            df[vmc.vendorkey].str.startswith('Amz'), vmc.enddate].iloc[0])
+        assert pd.notna(amz_end)
+        api_amz_start = df.loc[
+            df[vmc.vendorkey].str.startswith('API_Amz'), vmc.startdate].iloc[0]
+        assert api_amz_start == amz_end + pd.Timedelta(days=1)
         
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
