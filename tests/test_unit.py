@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 
-from numpy.matrixlib.defmatrix import matrix
 from processor.main import main
 import processor.reporting.utils as utl
 import processor.reporting.vendormatrix as vm
