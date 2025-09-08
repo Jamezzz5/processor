@@ -372,7 +372,7 @@ class AwApi(object):
         except json.decoder.JSONDecoder as e:
             logging.warning('No JSON in response retrying: {}'.format(e))
             return None
-        if json_resp != [] and 'results' not in json_resp[0]:
+        if json_resp and 'error' in json_resp[0]:
             if json_resp[0]['error']['status'] == 'PERMISSION_DENIED':
                 logging.warning('Permission denied, trying all customers.')
                 r = self.find_correct_login_customer_id(report)

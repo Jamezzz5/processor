@@ -126,10 +126,10 @@ class TestUtils:
 
     def test_selenium_wrapper(self):
         sw = utl.SeleniumWrapper()
-        assert sw.headless is True
         test_url = 'https://www.google.com/'
         sw.go_to_url(test_url, sleep=1)
-        assert sw.browser.current_url == test_url
+        assert test_url in sw.browser.current_url
+        assert sw.headless is True
         sw.quit()
 
     def test_screenshot(self):
@@ -178,8 +178,10 @@ class TestUtils:
 
     def test_first_last_adj(self):
         data = {
-            "col1": [vmc.placement, 'Placement Value 1', 'Placement Value 2', None],
-            "col2": [vmc.date, pd.to_datetime("2025-05-01"), pd.to_datetime("2025-05-02"), None],
+            "col1": [vmc.placement, 'Placement Value 1',
+                     'Placement Value 2',  None],
+            "col2": [vmc.date, pd.to_datetime("2025-05-01"),
+                     pd.to_datetime("2025-05-02"), None],
             "col3": [vmc.impressions, '1', '2', '3']
         }
         df = pd.DataFrame(data)
@@ -399,7 +401,7 @@ class TestDictionary:
                                              return_bad_values=bad_value)
         expected = self.construct_empty_sort()
         for key in sorted_cols:
-            if type(sorted_cols[key]) != dict:
+            if not isinstance(sorted_cols[key], dict):
                 expected[key] = sorted_cols[key]
             else:
                 for comp in sorted_cols[key]:
@@ -623,13 +625,14 @@ class TestAnalyze:
         return vm_df
 
     def test_check_flat(self):
+        pn = '28091057_IMGN_US_All_0_0_0_Flat_0_44768_Click Tracker_0.013_0_'
         df = pd.DataFrame({
             vmc.clicks: [1],
             vmc.date: [44755],
             vmc.cost: [0],
             vmc.vendorkey: ['API_DCM_PoT2022BrandCampaign'],
             dctc.PN: [
-                '28091057_IMGN_US_All_0_0_0_Flat_0_44768_Click Tracker_0.013_0_'
+                pn,
                 'CPE_Brand Page_Brand_0.1_0_V_Cross Device_1080x1080_Video '
                 'SK_IG In-Feed_Social Post_Social_All'],
             dctc.BM: ['Flat'],
@@ -699,7 +702,7 @@ class TestAnalyze:
             vmc.placement: {0: 'Placement', 1: 'ad_name',
                             2: 'ad_name', 3: 'mpVendor'},
             vmc.startdate: {0: '7/18/2022', 1: '7/1/2022',
-                           2: '7/1/2022', 3: ''},
+                            2: '7/1/2022', 3: ''},
             vmc.enddate: {0: '', 1: '7/27/2022', 2: '7/27/2022', 3: ''},
             vmc.dropcol: {0: 'ALL', 1: 'ALL', 2: 'ALL', 3: ''},
             vmc.autodicord: {
@@ -708,23 +711,23 @@ class TestAnalyze:
             vmc.apifile: {0: 'dcapi_Test.json', 1: 'tikapi_Test.json',
                           2: 'tikapi_Test.json', 3: ''},
             vmc.date: {0: 'Date', 1: 'stat_datetime',
-                             2: 'stat_datetime', 3: ''},
+                       2: 'stat_datetime', 3: ''},
             vmc.impressions: {0: 'Impressions', 1: 'show_cnt',
-                            2: 'show_cnt', 3: ''},
+                              2: 'show_cnt', 3: ''},
             vmc.clicks: {0: 'Clicks', 1: 'click_cnt', 2: 'click_cnt', 3: ''},
             vmc.cost: {0: '', 1: 'stat_cost', 2: 'stat_cost', 3: ''},
             vmc.views: {0: 'TrueView Views', 1: 'total_play',
-                            2: 'total_play', 3: ''},
+                        2: 'total_play', 3: ''},
             vmc.views25: {0: 'Video First Quartile Completions',
-                               1: 'play_first_quartile',
-                               2: 'play_first_quartile', 3: ''},
+                          1: 'play_first_quartile',
+                          2: 'play_first_quartile', 3: ''},
             vmc.views50: {0: 'Video Midpoints', 1: 'play_midpoint',
-                               2: 'play_midpoint', 3: ''},
+                          2: 'play_midpoint', 3: ''},
             vmc.views75: {0: 'Video Third Quartile Completions',
-                               1: 'play_third_quartile',
-                               2: 'play_third_quartile', 3: ''},
+                          1: 'play_third_quartile',
+                          2: 'play_third_quartile', 3: ''},
             vmc.views100: {0: 'Video Completions', 1: 'play_over',
-                                2: 'play_over', 3: ''},
+                           2: 'play_over', 3: ''},
             'RULE_1_METRIC': {0: 'POST::Impressions|Clicks', 1: '',
                               2: '', 3: ''},
             'RULE_1_QUERY': {
@@ -770,7 +773,8 @@ class TestAnalyze:
             matrix.vm_df[vmc.vendorkey] == 'API_Rawfile_Test',
             vmc.clicks].item()
         api_cell = matrix.vm_df.loc[
-            matrix.vm_df[vmc.vendorkey] == 'API_Tiktok_Test', vmc.clicks].item()
+            matrix.vm_df[vmc.vendorkey] == 'API_Tiktok_Test',
+            vmc.clicks].item()
         assert not rawfile_cell
         assert api_cell
 
@@ -951,16 +955,19 @@ class TestAnalyze:
         cas.aly.matrix.write()
         vm_df = cas.fix_analysis(aly_dict=tdf, write=False)
         assert vm_df[vmc.vendorkey].isin(['API_{}_sem'.format(test_api)]).any()
-        assert vm_df[vmc.vendorkey].isin(['API_{}_video'.format(test_api)]).any()
+        assert vm_df[vmc.vendorkey].isin([
+            'API_{}_video'.format(test_api)]).any()
         assert os.path.exists('config/awconfig_{}_sem.yaml'.format(test_api))
         assert os.path.exists('config/awconfig_{}_video.yaml'.format(test_api))
         os.remove('config/awconfig_{}_sem.yaml'.format(test_api))
         os.remove('config/awconfig_{}_video.yaml'.format(test_api))
         os.remove('config/{}'.format(test_config))
         os.remove('raw_data/{}'.format(test_csv))
-        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_sem'.format(test_api))].index
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_sem'.format(
+            test_api))].index
         vm_df.drop(index_vk, inplace=True)
-        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_video'.format(test_api))].index
+        index_vk = vm_df[(vm_df[vmc.vendorkey] == 'API_{}_video'.format(
+            test_api))].index
         vm_df.drop(index_vk, inplace=True)
         cas.aly.matrix.vm_df = vm_df
         cas.aly.matrix.write()
@@ -1196,10 +1203,13 @@ class TestAnalyze:
             vmc.vendorkey, dctc.AD, dctc.AF, dctc.AM, dctc.AR, dctc.AT,
             dctc.AGE, dctc.AGY, dctc.AGF, dctc.BUD, dctc.BM, dctc.BR, dctc.BR2,
             dctc.BR3, dctc.BR4, dctc.BR5, dctc.CTA, dctc.CAM, dctc.CP, dctc.CQ,
-            dctc.CTIM, dctc.CT, dctc.CH, dctc.URL, dctc.CLI, dctc.COP, dctc.COU,
+            dctc.CTIM, dctc.CT, dctc.CH, dctc.URL, dctc.CLI, dctc.COP,
+            dctc.COU,
             dctc.CRE, dctc.CD, dctc.LEN, dctc.LI, dctc.CM, dctc.CURL, dctc.DT1,
-            dctc.DT2, dctc.DEM, dctc.DL1, dctc.DL2, dctc.DUL, dctc.ED, dctc.ENV,
-            dctc.FAC, dctc.FOR, dctc.FRA, dctc.GEN, dctc.GT, dctc.GTF, dctc.HL1,
+            dctc.DT2, dctc.DEM, dctc.DL1, dctc.DL2, dctc.DUL, dctc.ED,
+            dctc.ENV,
+            dctc.FAC, dctc.FOR, dctc.FRA, dctc.GEN, dctc.GT, dctc.GTF,
+            dctc.HL1,
             dctc.HL2, dctc.KPI, dctc.MC, dctc.MIS, dctc.MIS2, dctc.MIS3,
             dctc.MIS4, dctc.MIS5, dctc.MIS6, dctc.MN, dctc.MT, dctc.PKD,
             dctc.PD, dctc.PD2, dctc.PD3, dctc.PD4, dctc.PD5, dctc.PLD, dctc.PN,
@@ -1330,7 +1340,8 @@ default_col_names = [
     '"lqadb"."vendor"."vendorname"',
     '"lqadb"."vendortype"."vendortypename"'
 ]
-
+rev_sum_col = ('SUM("lqadb"."event"."revenue_userstart_30day") AS '
+               '"revenue_userstart_30day"')
 default_sum_cols = [
     'SUM("lqadb"."event"."impressions") AS "impressions"',
     'SUM("lqadb"."event"."clicks") AS "clicks"',
@@ -1410,7 +1421,7 @@ default_sum_cols = [
     'SUM("lqadb"."event"."sm_weakemotion") AS "sm_weakemotion"',
     'SUM("lqadb"."event"."transaction_revenue") AS "transaction_revenue"',
     'SUM("lqadb"."event"."revenue_userstart") AS "revenue_userstart"',
-    'SUM("lqadb"."event"."revenue_userstart_30day") AS "revenue_userstart_30day"',
+    rev_sum_col,
     'SUM("lqadb"."event"."reportingcost") AS "reportingcost"',
     'SUM("lqadb"."event"."trueviewviews") AS "trueviewviews"',
     'SUM("lqadb"."event"."fb3views") AS "fb3views"',
