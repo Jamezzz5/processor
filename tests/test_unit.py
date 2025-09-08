@@ -7,7 +7,6 @@ import logging
 import numpy as np
 import pandas as pd
 import datetime as dt
-
 from processor.main import main
 import processor.reporting.utils as utl
 import processor.reporting.vendormatrix as vm
