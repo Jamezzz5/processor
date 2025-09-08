@@ -201,8 +201,8 @@ class CriApi(object):
             df = pd.concat([df, tdf], ignore_index=True)
         return df
 
-    def check_and_get_report(self, report_id, base_url, max_attempts=200,
-                             initial_delay=5, backoff_factor=1.5):
+    def check_and_get_report(self, report_id, base_url, max_attempts=60,
+                             initial_delay=5, backoff_factor=1.1):
         """
         Checks status of requested report and moves on to download when status
         is 'success'
