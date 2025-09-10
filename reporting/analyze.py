@@ -1424,6 +1424,7 @@ class CheckFirstRow(AnalyzeBase):
                                      ignore_index=True)
                 break
         if not found_cols and old_first_row != 0:
+        if not found_cols and old_first_row != 0:
             data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
                                       self.new_first_line: ['0']})
             l_df = pd.concat([data_dict, l_df], ignore_index=True)
