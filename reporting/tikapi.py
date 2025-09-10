@@ -65,6 +65,13 @@ class TikApi(object):
                        'data_level': 'AUCTION_AD',
                        'metrics': json.dumps(list(self.metrics.keys())),
                        'dimensions': json.dumps(self.dimensions),
+                       'filters': json.dumps([{
+                           'field_name': 'buying_type',
+                           'filter_type': 'IN',
+                           'filter_value': json.dumps(
+                               ['AUCTION', 'RESERVATION_TOP_VIEW']
+                           )
+                       }]),
                        'page_size': 1000}
         self.df = pd.DataFrame()
         self.r = None
