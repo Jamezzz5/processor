@@ -1402,6 +1402,15 @@ class CheckFirstRow(AnalyzeBase):
         found_cols = False
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
+            if 'API_GoogleSheets' in source.key and idx == 0:
+                if all(str(x).isdigit() for x in
+                       tdf.columns) and old_first_row == 0:
+                    new_first_row = 1
+                    data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
+                                              self.new_first_line: [
+                                                  new_first_row]})
+                    l_df = pd.concat([data_dict, l_df], ignore_index=True)
+                    break
             check = [x for x in place_cols if x in tdf.columns]
             if check:
                 found_cols = True
@@ -1412,7 +1421,7 @@ class CheckFirstRow(AnalyzeBase):
                                           self.new_first_line: [new_first_row]})
                 l_df = pd.concat([data_dict, l_df], ignore_index=True)
                 break
-        if not found_cols and old_first_row is not 0:
+        if not found_cols and old_first_row != 0:
             data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
                                       self.new_first_line: ['0']})
             l_df = pd.concat([data_dict, l_df], ignore_index=True)
