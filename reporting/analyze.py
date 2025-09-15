@@ -2090,6 +2090,7 @@ class CheckApiDateLength(AnalyzeBase):
             msg = 'No APIs within 3 days of max length.'
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(df=mdf, msg=msg)
+        return mdf
 
     @staticmethod
     def find_highest_date(filename, date_col):

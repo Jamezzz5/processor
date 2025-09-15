@@ -973,26 +973,43 @@ class TestAnalyze:
         cas.aly.matrix.write()
 
     def test_max_date_reached(self):
-        vm_dict = pd.DataFrame({vmc.vendorkey: ['API_Amz', 'API_Aw'],
-                                vmc.startdate: ['2024-07-22', '2024-07-22'],
-                                vmc.enddate: ['', ''],
-                                vmc.filename: ['amz_test.csv', 'aw_test.csv']})
+        start_date, date1, date2, date3, date4 = [
+            (dt.datetime.today() - dt.timedelta(days=i)).strftime('%Y-%m-%d')
+            for i in range(60, 55, -1)]
+        end_date = dt.datetime.today()
+        end_date = end_date.strftime('%Y-%m-%d')
+        test_csv_path = 'raw_data/amazon_test.csv'
+        test_csv_df = pd.DataFrame({vmc.date: [start_date,
+                                               date1,
+                                               date3,
+                                               date4,
+                                               date2],
+                                    vmc.placement: ['amz_test_1',
+                                                    'amz_test_2',
+                                                    'amz_test_3',
+                                                    'amz_test_4',
+                                                    'amz_test_5'],
+                                    vmc.cost: [1, 2, 3, 4, 5]})
+        test_csv_df.to_csv(test_csv_path, index=False)
+        vm_dict = pd.DataFrame({vmc.vendorkey: ['API_Amazon_Test'],
+                                vmc.startdate: [start_date],
+                                vmc.enddate: [end_date],
+                                vmc.filename: [test_csv_path],
+                                vmc.date: [vmc.date]})
         matrix = vm.VendorMatrix()
         matrix.vm_parse(vm_dict)
         adl = az.CheckApiDateLength(az.Analyze(matrix=matrix))
-        aly = pd.DataFrame({vmc.vendorkey: ['API_Amz'],
-                            adl.highest_date: ['2025-07-27'],
-                            adl.name: [31]})
-        df = adl.fix_analysis(aly_dict=aly, write=False)
-        assert 'Amz' in df[vmc.vendorkey].values
-        assert any(df[vmc.vendorkey].str.startswith('API_Amz'))
-        amz_end = pd.to_datetime(df.loc[
-            df[vmc.vendorkey].str.startswith('Amz'), vmc.enddate].iloc[0])
-        assert pd.notna(amz_end)
-        api_amz_start = df.loc[
-            df[vmc.vendorkey].str.startswith('API_Amz'), vmc.startdate].iloc[0]
-        assert api_amz_start == amz_end + pd.Timedelta(days=1)
-        
+        df = adl.do_analysis()
+        assert vmc.api_amz_key in df[vmc.vendorkey][0]
+        assert date4 in df[adl.highest_date][0]
+        f_df = adl.fix_analysis(aly_dict=df, write=False)
+        assert 'API_' not in f_df.loc[0, vmc.vendorkey]
+        assert 'API_' in f_df.loc[1, vmc.vendorkey]
+        f_df[vmc.startdate] = pd.to_datetime(f_df[vmc.startdate])
+        f_df[vmc.enddate] = pd.to_datetime(f_df[vmc.enddate])
+        assert f_df.loc[0, vmc.enddate] == f_df.loc[
+            1, vmc.startdate] - pd.Timedelta(days=1)
+
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
               'mpPackageDesc': ['Under', 'Full', 'Over'],
