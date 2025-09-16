@@ -24,7 +24,7 @@ class IasApi(object):
 
     dimensions = ['Teams', 'Campaigns', 'Media partners', 'Placements', 'Date']
 
-    def __init__(self, headless=True):
+    def __init__(self, headless=False):
         self.headless = headless
         self.sw = None
         self.browser = None
@@ -273,7 +273,8 @@ class IasApi(object):
             "        and .//span[normalize-space()='Campaigns']]]]")
         self.sw.wait_for_elem_load(xp, selector=self.sw.select_xpath)
         self.sw.click_on_xpath(xp)
-        input_xpath = '//div[contains(@class,"IASModal_modal")]//input[@data-testid="search-input"]'
+        input_xpath = ('//div[contains(@class,"IASModal_modal")]'
+                       '//input[@data-testid="search-input"]')
         self.sw.wait_for_elem_load(input_xpath, selector=self.sw.select_xpath)
         elem = self.browser.find_element_by_xpath(input_xpath)
         self.sw.send_keys_wrapper(elem, self.campaign)
