@@ -24,7 +24,7 @@ class IasApi(object):
 
     dimensions = ['Teams', 'Campaigns', 'Media partners', 'Placements', 'Date']
 
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.headless = headless
         self.sw = None
         self.browser = None
@@ -144,7 +144,7 @@ class IasApi(object):
         report = self.browser.find_element_by_xpath(xpath)
         today = dt.datetime.today().strftime('%Y%m%d')
         sd = sd.strftime('%Y%m%d')
-        report_name = '{}_{}_{}'.format(today, sd, self.campaign)
+        report_name = '{}_{}_{}'.format(sd, today, self.campaign)
         report.send_keys(report_name)
         logging.info('Named report: {}'.format(report_name))
         return report_name
