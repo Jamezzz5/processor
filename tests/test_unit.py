@@ -996,7 +996,7 @@ class TestAnalyze:
         adl = az.CheckApiDateLength(az.Analyze(matrix=matrix))
         df = adl.do_analysis()
         assert vmc.api_amz_key in df[vmc.vendorkey][0]
-        assert date4 in df[adl.highest_date][0]
+        assert date4 in str(df[adl.highest_date][0])
         f_df = adl.fix_analysis(aly_dict=df, write=False)
         assert 'API_' not in f_df.loc[0, vmc.vendorkey]
         assert 'API_' in f_df.loc[1, vmc.vendorkey]

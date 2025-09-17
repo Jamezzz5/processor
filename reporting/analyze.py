@@ -2103,6 +2103,7 @@ class CheckApiDateLength(AnalyzeBase):
         :returns: datetime object of highest date in file
         """
         df = utl.import_read_csv(filename)
+        df = utl.data_to_type(df, date_col=date_col)
         max_date = df[date_col].max()
         max_date = max_date[0]
         return max_date
