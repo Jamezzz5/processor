@@ -1399,33 +1399,23 @@ class CheckFirstRow(AnalyzeBase):
         df = utl.import_read_csv(raw_file, nrows=10)
         if df.empty:
             return l_df
-        found_cols = False
+        new_first_row = None
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
-            check = [x for x in place_cols if x in tdf.columns]
-            if check:
-                found_cols = True
-                if idx == old_first_row:
-                    break
+            if any(col in tdf.columns for col in place_cols):
                 new_first_row = str(idx)
-                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
-                                          self.new_first_line: [new_first_row]})
-                l_df = pd.concat([data_dict, l_df], ignore_index=True)
                 break
             elif any(self.find_date(col) for col in tdf.columns):
-                found_cols = True
-                new_first_row = str(max(idx - 1, 0))
-                if int(new_first_row) != old_first_row:
-                    data_dict = pd.DataFrame({
-                        vmc.vendorkey: [source.key],
-                        self.new_first_line: [new_first_row]
-                    })
-                    l_df = pd.concat([data_dict, l_df],
-                                     ignore_index=True)
+                new_first_row = max(idx - 1, 0)
+                new_first_row = str(new_first_row)
                 break
-        if not found_cols and old_first_row != 0:
-            data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
-                                      self.new_first_line: ['0']})
+        if not new_first_row and old_first_row != 0:
+            new_first_row = '0'
+        if int(new_first_row) != old_first_row:
+            data_dict = pd.DataFrame({
+                vmc.vendorkey: [source.key],
+                self.new_first_line: [new_first_row]
+            })
             l_df = pd.concat([data_dict, l_df], ignore_index=True)
         return l_df
 
