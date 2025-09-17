@@ -979,16 +979,11 @@ class TestAnalyze:
         end_date = dt.datetime.today()
         end_date = end_date.strftime('%Y-%m-%d')
         test_csv_path = 'raw_data/amazon_test.csv'
-        test_csv_df = pd.DataFrame({vmc.date: [start_date,
-                                               date1,
-                                               date3,
-                                               date4,
-                                               date2],
-                                    vmc.placement: ['amz_test_1',
-                                                    'amz_test_2',
-                                                    'amz_test_3',
-                                                    'amz_test_4',
-                                                    'amz_test_5'],
+        date_list = [start_date, date1, date4, date3, date2]
+        place_list = ['amz_test_1', 'amz_test_2', 'amz_test_3', 'amz_test_4',
+                      'amz_test_5']
+        test_csv_df = pd.DataFrame({vmc.date: date_list,
+                                    vmc.placement: place_list,
                                     vmc.cost: [1, 2, 3, 4, 5]})
         test_csv_df.to_csv(test_csv_path, index=False)
         vm_dict = pd.DataFrame({vmc.vendorkey: ['API_Amazon_Test'],

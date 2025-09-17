@@ -2102,7 +2102,7 @@ class CheckApiDateLength(AnalyzeBase):
         vendormatrix
         :returns: datetime object of highest date in file
         """
-        df = pd.read_csv(filename)
+        df = utl.import_read_csv(filename)
         max_date = df[date_col].max()
         max_date = max_date[0]
         return max_date
