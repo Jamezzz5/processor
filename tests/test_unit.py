@@ -971,7 +971,40 @@ class TestAnalyze:
         vm_df.drop(index_vk, inplace=True)
         cas.aly.matrix.vm_df = vm_df
         cas.aly.matrix.write()
-        
+
+    def test_max_date_reached(self):
+        start_date, date1, date2, date3, date4 = [
+            (dt.datetime.today() - dt.timedelta(days=i)).strftime('%Y-%m-%d')
+            for i in range(60, 55, -1)]
+        end_date = dt.datetime.today()
+        end_date = end_date.strftime('%Y-%m-%d')
+        test_csv_path = 'raw_data/amazon_test.csv'
+        date_list = [start_date, date1, date4, date3, date2]
+        place_list = ['amz_test_1', 'amz_test_2', 'amz_test_3', 'amz_test_4',
+                      'amz_test_5']
+        test_csv_df = pd.DataFrame({vmc.date: date_list,
+                                    vmc.placement: place_list,
+                                    vmc.cost: [1, 2, 3, 4, 5]})
+        test_csv_df.to_csv(test_csv_path, index=False)
+        vm_dict = pd.DataFrame({vmc.vendorkey: ['API_Amazon_Test'],
+                                vmc.startdate: [start_date],
+                                vmc.enddate: [end_date],
+                                vmc.filename: [test_csv_path],
+                                vmc.date: [vmc.date]})
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_dict)
+        adl = az.CheckApiDateLength(az.Analyze(matrix=matrix))
+        df = adl.do_analysis()
+        assert vmc.api_amz_key in df[vmc.vendorkey][0]
+        assert date4 in str(df[adl.highest_date][0])
+        f_df = adl.fix_analysis(aly_dict=df, write=False)
+        assert 'API_' not in f_df.loc[0, vmc.vendorkey]
+        assert 'API_' in f_df.loc[1, vmc.vendorkey]
+        f_df[vmc.startdate] = pd.to_datetime(f_df[vmc.startdate])
+        f_df[vmc.enddate] = pd.to_datetime(f_df[vmc.enddate])
+        assert f_df.loc[0, vmc.enddate] == f_df.loc[
+            1, vmc.startdate] - pd.Timedelta(days=1)
+
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
               'mpPackageDesc': ['Under', 'Full', 'Over'],

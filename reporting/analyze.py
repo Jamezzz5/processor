@@ -2047,6 +2047,7 @@ class CheckApiDateLength(AnalyzeBase):
     name = Analyze.max_api_length
     fix = True
     pre_run = True
+    highest_date = 'highest_date'
 
     def do_analysis(self):
         """
@@ -2054,6 +2055,7 @@ class CheckApiDateLength(AnalyzeBase):
         are too long.  Those sources are added to a df and the analysis dict
         """
         vk_list = []
+        highest_date_list = []
         data_sources = self.matrix.get_all_data_sources()
         max_date_dict = {
             vmc.api_amz_key: 31, vmc.api_szk_key: 60, vmc.api_db_key: 60,
@@ -2067,8 +2069,17 @@ class CheckApiDateLength(AnalyzeBase):
                     max_date = max_date_dict[key]
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
+                        highest_date = None
+                        if vmc.filename in ds.p:
+                            file_name = ds.p[vmc.filename]
+                            if os.path.exists(file_name):
+                                date_col = ds.p[vmc.date]
+                                highest_date = self.find_highest_date(file_name,
+                                                                      date_col)
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
+                        highest_date_list.append(highest_date)
+        mdf = pd.DataFrame({vmc.vendorkey: vk_list,
+                            self.highest_date: highest_date_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -2079,6 +2090,23 @@ class CheckApiDateLength(AnalyzeBase):
             msg = 'No APIs within 3 days of max length.'
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(df=mdf, msg=msg)
+        return mdf
+
+    @staticmethod
+    def find_highest_date(filename, date_col):
+        """
+        Scans raw csv returns the highest date in the column provided
+
+        :param filename: a string of the name of the csv found in vendormatrix
+        :param date_col: a string of the column header for date found in
+        vendormatrix
+        :returns: datetime object of highest date in file
+        """
+        df = utl.import_read_csv(filename)
+        df = utl.data_to_type(df, date_col=date_col)
+        max_date = df[date_col].max()
+        max_date = max_date[0]
+        return max_date
 
     def fix_analysis(self, aly_dict, write=True):
         """
@@ -2098,6 +2126,10 @@ class CheckApiDateLength(AnalyzeBase):
             ndf = utl.data_to_type(ndf, date_col=[vmc.startdate])
             new_sd = ndf[vmc.startdate][0] + dt.timedelta(
                 days=max_date_length - 3)
+            if x[self.highest_date]:
+                tdf = utl.data_to_type(pd.DataFrame([x]),
+                                       date_col=[self.highest_date])
+                new_sd = tdf[self.highest_date][0] - dt.timedelta(days=3)
             if new_sd.date() >= dt.datetime.today().date():
                 new_sd = dt.datetime.today() - dt.timedelta(days=3)
             new_str_sd = new_sd.strftime('%Y-%m-%d')
