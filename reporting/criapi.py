@@ -65,12 +65,16 @@ class CriApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
-    def set_headers(self):
+    def refresh_token(self):
         data = {'client_id': self.client_id,
                 'client_secret': self.client_secret,
                 'grant_type': 'client_credentials'}
         r = self.make_request(self.auth_url, method='POST', data=data)
         token = r.json()['access_token']
+        return token
+
+    def set_headers(self):
+        token = self.refresh_token()
         self.headers = {'Authorization': 'Bearer {}'.format(token),
                         'Content-Type': 'application/json'}
 
@@ -100,7 +104,9 @@ class CriApi(object):
                 logging.warning('Connection error, pausing for 60s '
                                 'and retrying: {}'.format(e))
                 time.sleep(60)
-                r = self.make_request(url, method, headers, json_body, attempt)
+                r = self.make_request(url=url, method=method,
+                                      headers=headers, json_body=json_body,
+                                      attempt=attempt)
         return r
 
     @staticmethod
@@ -195,16 +201,33 @@ class CriApi(object):
             df = pd.concat([df, tdf], ignore_index=True)
         return df
 
-    def check_and_get_report(self, report_id, base_url):
+    def check_and_get_report(self, report_id, base_url, max_attempts=60,
+                             initial_delay=5, backoff_factor=1.1):
+        """
+        Checks status of requested report and moves on to download when status
+        is 'success'
+        uses exponential backoff to limit request amount.
+
+        :param report_id: string of requested report ID
+        :param base_url: string of base url used in for url endpoint
+        :param max_attempts: integer for maximum attempts allowed to poll status
+        :param initial_delay: integer for wait time between requests,
+        used for exponential backoff
+        :param backoff_factor: float used for exponential backoff, to minimize
+        requests
+        :returns: dataframe of downloaded report, or empty dataframe on failure
+        """
         url = '{}/reports/{}/status'.format(base_url, report_id)
         error_count = 0
         df = pd.DataFrame()
-        for x in range(100):
-            logging.info('Checking report attempt {}'.format(x + 1))
+        delay = initial_delay
+        for x in range(1, max_attempts + 1):
+            logging.info('Checking report attempt {}'.format(x))
             r = self.make_request(url, method='GET', headers=self.headers)
-            if ('data' in r.json() and 'attributes' in r.json()['data'] and
-                    'status' in r.json()['data']['attributes']):
-                status = r.json()['data']['attributes']['status']
+            result = r.json()
+            if ('data' in result and 'attributes' in result['data'] and
+                    'status' in result['data']['attributes']):
+                status = result['data']['attributes']['status']
                 if status == 'success':
                     df = self.download_report(url)
                     break
@@ -212,12 +235,18 @@ class CriApi(object):
                     logging.warning('Report failed returning blank df')
                     break
             else:
-                logging.warning('Unexpected response: {}'.format(r.json()))
+                logging.warning('Unexpected response: {}'.format(result))
+                if 'errors' in result:
+                    error = result['errors'][0]
+                    if error.get('code') == 'authorization-token-expired':
+                        logging.info('Token expired, refreshing...')
+                        self.set_headers()
                 error_count += 1
                 if error_count > 10:
                     logging.warning('Too many errors returning blank df.')
                     break
-            time.sleep(1)
+            time.sleep(delay)
+            delay = min(delay * backoff_factor, 60)
         return df
 
     def download_report(self, url):
@@ -246,7 +275,9 @@ class CriApi(object):
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         base_url = '{}{}'.format(self.base_url, self.version_url)
-        r = self.request_data(sd, ed, base_url)
+        campaign_ids = self.check_if_advertiser_id(base_url, fields=None)
+        r = self.request_data(sd, ed, base_url, fields=None,
+                              campaign_id=campaign_ids[0])
         if (r.status_code == 200 and
                 'data' in r.json()):
             row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
@@ -268,4 +299,3 @@ class CriApi(object):
         results, r = self.check_permissions(
             [], acc_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
-

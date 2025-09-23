@@ -35,6 +35,7 @@ import reporting.nzapi as nzapi
 import reporting.ytdapi as ytdapi
 import reporting.simapi as simapi
 import reporting.pixapi as pixapi
+import reporting.iasapi as iasapi
 import reporting.ftp as ftp
 import reporting.awss3 as awss3
 import reporting.azapi as azu
@@ -84,7 +85,8 @@ class ImportHandler(object):
             vmc.api_ytd_key: ytdapi.YtdApi,
             vmc.api_wal_key: ttdapi.TtdApi,
             vmc.api_sim_key: simapi.SimApi,
-            vmc.api_pix_key: pixapi.PixApi
+            vmc.api_pix_key: pixapi.PixApi,
+            vmc.api_ias_key: iasapi.IasApi,
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
@@ -201,7 +203,7 @@ class ImportHandler(object):
                                         fields=params[vmc.apifields])
             except Exception as e:
                 logging.error("API error occurred", exc_info=True)
-                if isinstance(api_class, redapi.RedApi) and api_class.sw:
+                if hasattr(api_class, 'sw') and api_class.sw:
                     api_class.sw.quit()
                 else:
                     raise e

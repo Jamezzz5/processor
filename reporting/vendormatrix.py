@@ -30,45 +30,7 @@ class VendorMatrix(object):
         self.vm = None
         self.vm_df = pd.DataFrame()
         self.vl = []
-        self.vks = {
-            vmc.api_fb_key: [],
-            vmc.api_aw_key: [],
-            vmc.api_goad_key: [],
-            vmc.api_tw_key: [],
-            vmc.api_ttd_key: [],
-            vmc.api_ga_key: [],
-            vmc.api_nb_key: [],
-            vmc.api_af_key: [],
-            vmc.api_sc_key: [],
-            vmc.api_aj_key: [],
-            vmc.api_dc_key: [],
-            vmc.api_rs_key: [],
-            vmc.api_db_key: [],
-            vmc.api_dvo_key: [],
-            vmc.api_vk_key: [],
-            vmc.api_rc_key: [],
-            vmc.api_szk_key: [],
-            vmc.api_red_key: [],
-            vmc.api_dv_key: [],
-            vmc.api_adk_key: [],
-            vmc.api_inn_key: [],
-            vmc.api_tik_key: [],
-            vmc.api_amz_key: [],
-            vmc.api_cri_key: [],
-            vmc.api_pm_key: [],
-            vmc.api_sam_key: [],
-            vmc.api_gs_key: [],
-            vmc.api_qt_key: [],
-            vmc.api_yv_key: [],
-            vmc.api_amd_key: [],
-            vmc.api_ss_key: [],
-            vmc.api_nz_key: [],
-            vmc.api_ytd_key: [],
-            vmc.api_wal_key: [],
-            vmc.api_sim_key: [],
-            vmc.api_azu_key: [],
-            vmc.api_pix_key: []
-        }
+        self.vks = {api_key: [] for api_key in vmc.api_keys}
         self.ftp_sz_key = []
         self.db_dna_key = []
         self.s3_dna_key = []
@@ -397,7 +359,11 @@ class ImportConfig(object):
         if file_library == yaml:
             kwargs['Loader'] = yaml.FullLoader
         with open(file_name, 'r') as f:
-            config_file = file_library.load(f, **kwargs)
+            try:
+                config_file = file_library.load(f, **kwargs)
+            except json.decoder.JSONDecodeError as e:
+                logging.warning('Error for {}: {}'.format(file_name, e))
+                config_file = None
         return config_file
 
     def make_new_json(self, params, new_file, account_id, import_filter=None,
