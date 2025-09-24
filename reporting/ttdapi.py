@@ -332,7 +332,7 @@ class TtdApi(object):
                 adGroups {
                   nodes {
                     name
-                    creatives {
+                    creatives(first: 100) {
                       nodes {
                         name
                         reporting {
