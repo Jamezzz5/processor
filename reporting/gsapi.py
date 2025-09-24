@@ -4,9 +4,11 @@ import json
 import logging
 import time
 import pandas as pd
+import reporting.awss3 as awss3
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
+import requests
 
 config_path = utl.config_path
 
@@ -209,6 +211,25 @@ class GsApi(object):
         response = self.client.post(url=url, json=body, headers=headers)
         return response
 
+    @staticmethod
+    def get_s3_image_url_from_obj(s3, img_obj, img_name, folder='images'):
+        if not s3:
+            s3 = awss3.S3()
+            s3.input_config()
+        embedded_obj = img_obj['inlineObjectProperties']['embeddedObject']
+        img_url = embedded_obj.get('imageProperties', {}).get('contentUri')
+        key = os.path.join(folder, img_name)
+        try:
+            # Fetch image content
+            response = requests.get(img_url, stream=True, timeout=10)
+            if response.status_code != 200:
+                logging.warning('Failed to download image: {} (Status {})'.format(img_url, response.status_code))
+            else:
+                img_url = s3.s3_upload_file_get_presigned_url(response.raw, key)
+        except Exception as e:
+            logging.warning('Error uploading image {}: {}'.format(img_url, e))
+        return img_url
+
     def parse_google_doc(self, r):
         if self.body_str not in r:
             logging.warning('Body not in response {}.'.format(r))
@@ -242,14 +263,17 @@ class GsApi(object):
                     new_paragraph[self.cont_str] = ''
                 inline_obj_id = tc[inline_elem]['inlineObjectId']
                 new_paragraph[self.img_str] = inline_obj_id
-        # Append image URLs to the data
+        # Upload images to S3 and append image URLs to the data
+        s3 = awss3.S3()
+        s3.input_config()
         for item in paragraph:
             if self.img_str not in item or not item[self.img_str]:
                 continue
             object_id = item[self.img_str]
             obj = inline_objects[object_id]
-            embedded_obj = obj['inlineObjectProperties']['embeddedObject']
-            img_url = embedded_obj.get('imageProperties', {}).get('contentUri')
+            img_name = item['header'].replace(' -', '')
+            img_name = "{}.jpg".format(img_name.replace(' ', '_'))
+            img_url = self.get_s3_image_url_from_obj(s3, obj, img_name)
             item[self.img_str] = img_url
         self.df = pd.DataFrame(paragraph)
         return self.df

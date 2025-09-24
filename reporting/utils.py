@@ -566,6 +566,7 @@ class SeleniumWrapper(object):
         self.select_class = By.CLASS_NAME
         self.select_xpath = By.XPATH
         self.select_css = By.CSS_SELECTOR
+        self.use_js_click = False
 
     @staticmethod
     def get_chrome_version():
@@ -739,6 +740,14 @@ class SeleniumWrapper(object):
         self.browser.execute_script(scroll_script, elem)
 
     def click_error(self, elem, e, attempts=0):
+        if self.use_js_click:
+            try:
+                self.browser.execute_script("arguments[0].click();", elem)
+                return True
+            except (ex.ElementNotInteractableException,
+                    ex.ElementClickInterceptedException,
+                    ex.StaleElementReferenceException) as e:
+                logging.warning('Could not click JS: {}'.format(e))
         elem_id = ''
         try:
             elem_id = elem.get_attribute('id')
@@ -1060,6 +1069,8 @@ class SeleniumWrapper(object):
             tt = attempts * sleep_time
             msg = 'Element {} not found in {}s.'.format(elem_id, tt)
             if raise_exception:
+                file_name = 'NOT_FOUND_ERROR.png'
+                self.take_screenshot(file_name=file_name)
                 raise Exception(msg)
         return elem_found
 
