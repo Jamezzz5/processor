@@ -47,9 +47,37 @@ class TtdApi(object):
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
         self.report_name = self.config['Report Name']
-        if 'Token' in self.config:
+        if 'Token' in self.config and self.config['Token']:
             self.query_token = self.config['Token']
+            logging.info("Loaded token from config file.")
+        else:
+            self.query_token = self.get_new_token(self.login, self.password)
+            logging.info("New token retrieved and saved to config file.")
+            self.config['Token'] = self.query_token
+            with open(self.configfile, 'r') as f:
+                self.config = json.load(f)
         self.config_list = [self.login, self.password]
+
+    def get_new_token(self, login, password):
+        """
+        Requests a new TTD token using login & password
+        """
+        url = self.walmart_check()
+        auth_url = "{0}/authentication".format(url)
+        payload = {"Login": login, "Password": password}
+        headers = {"Content-Type": "application/json"}
+        r = requests.post(auth_url, headers=headers, json=payload)
+        if r.status_code == 200:
+            token = r.json().get("Token")
+            if not token:
+                logging.error("Token not present in authentication"
+                              " response.")
+                sys.exit(1)
+            return token
+        else:
+            logging.error("Failed to retrieve token: {} - {}".format(
+                r.status_code, r.text))
+            sys.exit(1)
 
     def check_config(self):
         for item in self.config_list:
