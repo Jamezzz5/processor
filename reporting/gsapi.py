@@ -218,14 +218,14 @@ class GsApi(object):
             s3.input_config()
         embedded_obj = img_obj['inlineObjectProperties']['embeddedObject']
         img_url = embedded_obj.get('imageProperties', {}).get('contentUri')
-        key = os.path.join(folder, img_name)
+        key = '{}/{}'.format(folder, img_name) if folder else img_name
         try:
             # Fetch image content
             response = requests.get(img_url, stream=True, timeout=10)
             if response.status_code != 200:
                 logging.warning('Failed to download image: {} (Status {})'.format(img_url, response.status_code))
             else:
-                img_url = s3.s3_upload_file_get_presigned_url(response.raw, key)
+                img_url = s3.s3_upload_file_obj(response.raw, key)
         except Exception as e:
             logging.warning('Error uploading image {}: {}'.format(img_url, e))
         return img_url
@@ -271,8 +271,10 @@ class GsApi(object):
                 continue
             object_id = item[self.img_str]
             obj = inline_objects[object_id]
-            img_name = item['header'].replace(' -', '')
-            img_name = "{}.jpg".format(img_name.replace(' ', '_'))
+            img_name = item['header']
+            img_name = "".join(c for c in img_name if c.isalnum() or c == " ")
+            img_name = img_name.replace('  ', ' ').replace(' ', '_')
+            img_name = "{}.png".format(img_name)
             img_url = self.get_s3_image_url_from_obj(s3, obj, img_name)
             item[self.img_str] = img_url
         self.df = pd.DataFrame(paragraph)
