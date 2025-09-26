@@ -9,7 +9,6 @@ import reporting.utils as utl
 import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 import requests
-from io import BytesIO
 
 config_path = utl.config_path
 
