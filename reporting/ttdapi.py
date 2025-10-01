@@ -416,6 +416,9 @@ class TtdApi(object):
         """
         data = result
         rows = []
+        if not data:
+            logging.warning('Result empty returning blank dataframe.')
+            return pd.DataFrame()
         campaign = data['data']['campaign']
         campaign_name = campaign['name']
         adgroups = campaign['adGroups']['nodes']

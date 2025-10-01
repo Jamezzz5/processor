@@ -1968,9 +1968,21 @@ class FindPlacementNameCol(AnalyzeBase):
             df, result_df, placement_col=vmc.placement,
             vk_name='test', max_underscore=30):
         df = df.drop([vmc.fullplacename], axis=1, errors='ignore')
+        df = df.reset_index(drop=True)
         total_rows = len(df)
         if df.empty:
             return result_df
+        cols = []
+        vendor_list = [x.lower() for x in CheckAutoDictOrder.get_vendor_list()]
+        for col in df.columns:
+            first_val = str(df[col][0]).split('_')
+            if len(first_val) > 1:
+                vendor_val = first_val[1]
+                if vendor_val.lower() in vendor_list:
+                    cols.append(col)
+        if not cols:
+            cols = [x for x in df.columns]
+        df = df[cols]
         df = df.applymap(
             lambda x: str(x).count('_')).apply(lambda x: sum(x) / total_rows)
         max_col = df[df < max_underscore].idxmax()

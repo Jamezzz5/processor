@@ -499,7 +499,11 @@ class RedApi(object):
             logging.info(msg)
             r = requests.post(next_url, headers=self.headers, json=data,
                               params=params)
-            response = r.json()
+            try:
+                response = r.json()
+            except requests.exceptions.JSONDecodeError as e:
+                logging.warning(e)
+                continue
             if 'data' not in response:
                 logging.warning('Data not in response: {}'.format(response))
                 break
