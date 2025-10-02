@@ -1980,12 +1980,12 @@ class FindPlacementNameCol(AnalyzeBase):
                 vendor_val = first_val[1]
                 if vendor_val.lower() in vendor_list:
                     cols.append(col)
-        if not cols:
-            cols = [x for x in df.columns]
-        df = df[cols]
         df = df.applymap(
             lambda x: str(x).count('_')).apply(lambda x: sum(x) / total_rows)
-        max_col = df[df < max_underscore].idxmax()
+        mask = df[df < max_underscore]
+        max_col = mask.idxmax()
+        if cols and max_col not in cols:
+            max_col = mask[cols].idxmax()
         max_exists = max_col in df
         p_exists = placement_col in df
         no_p_check = (not p_exists and max_exists)
