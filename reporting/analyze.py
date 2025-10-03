@@ -1985,7 +1985,9 @@ class FindPlacementNameCol(AnalyzeBase):
         mask = df[df < max_underscore]
         max_col = mask.idxmax()
         if cols and max_col not in cols:
-            max_col = mask[cols].idxmax()
+            cols = [x for x in cols if x in df]
+            if cols:
+                max_col = df[cols].idxmax()
         max_exists = max_col in df
         p_exists = placement_col in df
         no_p_check = (not p_exists and max_exists)

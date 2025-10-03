@@ -49,6 +49,7 @@ class TikApi(object):
                'view_content': 'view_content',
                'engagements': 'Clicks (all)',
                'offline_shopping_events': 'offline_shopping_events'}
+    default_config_file_name = 'tikapi.json'
 
     def __init__(self):
         self.config = None
