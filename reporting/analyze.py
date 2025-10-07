@@ -3061,13 +3061,13 @@ class CheckPlacementsNotInMp(AnalyzeBase):
 
     @staticmethod
     def find_closest_name_match(names, mp_names, underscore_min=10,
-                                data_source_name=''):
+                                data_source_name='', ignore_min=False):
         if not any([x.split('_')[0] for x in mp_names]):
             return pd.DataFrame()
         match_table = []
         ali_chat = AliChat()
         for name in names:
-            if name.count('_') > underscore_min:
+            if not ignore_min and name.count('_') > underscore_min:
                 continue
             message = name
             if data_source_name:
@@ -3097,15 +3097,19 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         mp_names = self.aly.df.loc[
             self.aly.df[vmc.vendorkey] == vmc.api_mp_key, dctc.PN
         ].dropna().unique().tolist()
+        data_source = self.aly.matrix.get_data_source(vk)
+        old_transform = str(data_source.p[vmc.transform])
+        old_transform_split = old_transform.split(':::')
+        ignore_min = False
+        if 'IgnoreMin' in old_transform_split:
+            ignore_min = True
         match_df = self.find_closest_name_match(
-            df[dctc.PN], mp_names, data_source_name=vk)
+            df[dctc.PN], mp_names, data_source_name=vk, ignore_min=ignore_min)
         if match_df.empty:
             return match_df
         msg = "Suggested matches for placements not in media plan:"
         self.aly.format_log_msg_with_df(msg, match_df)
-        data_source = self.aly.matrix.get_data_source(vk)
         match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
-        old_transform = str(data_source.p[vmc.transform])
         if vmc.transform_raw_translate not in old_transform:
             if str(old_transform) == 'nan':
                 old_transform = ''
