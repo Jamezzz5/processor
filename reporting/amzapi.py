@@ -43,6 +43,9 @@ class AmzApi(object):
         'unitsSold', 'unitsSoldClicks', 'video5SecondViews',
         'videoCompleteViews', 'videoFirstQuartileViews', 'detailPageViews',
         'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes']
+    sp_keyword_columns = [
+        'searchTerm', 'keywordId', 'matchType', 'targeting',
+        'keywordBid', 'keywordType']
     default_config_file_name = 'amzapi.json'
 
     def __init__(self):
@@ -65,6 +68,7 @@ class AmzApi(object):
         self.timezone = None
         self.df = pd.DataFrame()
         self.r = None
+        self.include_keywords = False
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -233,6 +237,12 @@ class AmzApi(object):
             for field in fields:
                 if field == 'hsa':
                     self.report_types.append('hsa')
+                if field.lower() == 'keyword':
+                    self.include_keywords = True
+                    logging.info('Keyword-level data enabled via API Fields')
+        if fields and 'keyword' not in [f.lower() for f in fields]:
+            self.include_keywords = False
+            logging.info('Keyword-level data disabled - not in API Fields')
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -358,6 +368,16 @@ class AmzApi(object):
             request_body = self.get_sponsored_body(
                 body_copy, ad_product, cols, report_type, group_by)
             request_bodies.append(request_body)
+        if self.include_keywords and not self.amazon_dsp:
+            sp_kw_body_copy = copy.deepcopy(body)
+            sp_kw_body_copy['configuration']['adProduct'] = 'SPONSORED_PRODUCTS'
+            sp_kw_body_copy['configuration']['columns'] = (
+                    self.sponsored_columns + self.sp_columns +
+                    self.sp_keyword_columns
+            )
+            sp_kw_body_copy['configuration']['reportTypeId'] = 'spSearchTerm'
+            sp_kw_body_copy['configuration']['groupBy'] = ['searchTerm']
+            request_bodies.append(sp_kw_body_copy)
         return request_bodies
 
     def request_report(self, sd, ed):
