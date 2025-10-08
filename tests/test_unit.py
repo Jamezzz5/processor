@@ -32,6 +32,8 @@ import processor.reporting.twapi as twapi
 import processor.reporting.scapi as scapi
 import processor.reporting.awss3 as awss3
 import processor.reporting.iasapi as iasapi
+import processor.reporting.ttdapi as ttdapi
+import processor.reporting.tikapi as tikapi
 
 
 def func(x):
@@ -337,6 +339,14 @@ class TestApis:
         api.headless = False
         self.send_api_call(api)
 
+    def test_ttdapi(self, tmp_path_factory):
+        api = ttdapi.TtdApi()
+        self.send_api_call(api)
+
+    def test_tikapi(self, tmp_path_factory):
+        api = tikapi.TikApi()
+        self.send_api_call(api)
+
 
 class TestDictionary:
     dic = dct.Dict()
@@ -626,15 +636,14 @@ class TestAnalyze:
 
     def test_check_flat(self):
         pn = '28091057_IMGN_US_All_0_0_0_Flat_0_44768_Click Tracker_0.013_0_'
+        pn += 'CPE_Brand Page_Brand_0.1_0_V_Cross Device_1080x1080_Video '
+        pn += 'SK_IG In-Feed_Social Post_Social_All'
         df = pd.DataFrame({
             vmc.clicks: [1],
             vmc.date: [44755],
             vmc.cost: [0],
             vmc.vendorkey: ['API_DCM_PoT2022BrandCampaign'],
-            dctc.PN: [
-                pn,
-                'CPE_Brand Page_Brand_0.1_0_V_Cross Device_1080x1080_Video '
-                'SK_IG In-Feed_Social Post_Social_All'],
+            dctc.PN: [pn],
             dctc.BM: ['Flat'],
             dctc.BR: [0],
             dctc.CAM: ['Brand'],
@@ -838,6 +847,14 @@ class TestAnalyze:
             df, result_df=[])
         assert rdf
         assert rdf[0][place_analyze.suggested_col] == other_col
+        raw_file_name = 'rawfile_test.csv'
+        if not os.path.exists(raw_file_name):
+            return True
+        df = pd.read_csv(raw_file_name)
+        rdf = place_analyze.find_placement_col_in_df(
+            df, result_df=[])
+        assert rdf
+        return True
 
     @staticmethod
     def get_output_as_df(with_plan=False, new_place=''):

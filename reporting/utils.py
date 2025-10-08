@@ -866,7 +866,11 @@ class SeleniumWrapper(object):
                     logging.warning(e)
                     continue
                 self.click_accept_buttons(btn_xpath)
-                self.browser.switch_to.default_content()
+                try:
+                    self.browser.switch_to.default_content()
+                except http_client.CannotSendRequest as e:
+                    logging.warning(e)
+                    continue
 
     def take_screenshot(self, url=None, file_name=None):
         logging.info('Getting screenshot from {} and '

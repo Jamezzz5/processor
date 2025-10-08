@@ -9,6 +9,7 @@ import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 
+
 ttd_url = 'https://api.thetradedesk.com/v3'
 walmart_url = 'https://api.dsp.walmart.com/v3'
 configpath = utl.config_path
@@ -28,6 +29,7 @@ class TtdApi(object):
         self.query_token = None
         self.query_url = 'https://api.gen.adsrvr.org/graphql'
         self.headers = None
+        self.default_config_file_name = 'ttdconfig.json'
 
     def input_config(self, config):
         logging.info('Loading TTD config file: {}'.format(config))
@@ -46,9 +48,42 @@ class TtdApi(object):
         self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
         self.report_name = self.config['Report Name']
-        if 'Token' in self.config:
+        if 'Token' in self.config and self.config['Token']:
             self.query_token = self.config['Token']
+            logging.info('Loaded token from config file.')
+        else:
+            self.query_token = self.get_new_token(self.login, self.password)
+            if self.query_token:
+                logging.info('New token retrieved and saved to config file.')
+                self.config['Token'] = self.query_token
+                try:
+                    with open(self.configfile, 'w') as f:
+                        json.dump(self.config, f, indent=4)
+                except IOError:
+                    logging.warning('Failed to write token to config file:'
+                                    ' {}'.format(self.configfile))
         self.config_list = [self.login, self.password]
+
+    def get_new_token(self, login, password):
+        token = ""
+        url = self.walmart_check()
+        auth_url = '{0}/authentication'.format(url)
+        payload = {'Login': login, 'Password': password}
+        headers = {'Content-Type': 'application/json'}
+        try:
+            r = requests.post(auth_url, headers=headers, json=payload)
+            if r.status_code == 200:
+                token = r.json().get('Token')
+                if not token:
+                    logging.warning('Token not present in authentication'
+                                    ' response.')
+            else:
+                logging.warning('Failed to retrieve token: {} - {}'.format(
+                    r.status_code, r.text))
+        except Exception as e:
+            logging.warning('Exception occurred while retrieving token:'
+                            ' {}'.format(str(e)))
+        return token
 
     def check_config(self):
         for item in self.config_list:

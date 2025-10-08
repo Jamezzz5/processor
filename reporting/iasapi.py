@@ -290,11 +290,12 @@ class IasApi(object):
         :param metric_groups: The number of metric groups to loop over
         :return:
         """
-        base_xpath = '//*[@id="tabpanel-0"]/div/div[5]/div[3]/div/div'
-        for metric_group_num in range(metric_groups):
-            check_box_xpath = '{}[{}]/div[1]/div/div/div/div'.format(
-                base_xpath, metric_group_num + 1)
-            self.sw.click_on_xpath(check_box_xpath)
+        checkbox_xpath = (
+            '//div[@data-testid="dropdown-title"]'
+            '//input[@data-testid="checkbox-input" and not(@disabled)]')
+        checkboxes = self.browser.find_elements_by_xpath(checkbox_xpath)
+        for cb in checkboxes[:metric_groups]:
+            self.browser.execute_script("arguments[0].click();", cb)
 
     def click_csv(self):
         """

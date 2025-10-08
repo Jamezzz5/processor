@@ -347,8 +347,9 @@ def calculate_cost(df):
     if df.empty:
         logging.warning('Dataframe empty, costs not calculated.')
         return df
-    if vmc.cost not in df.columns:
-        df[vmc.cost] = 0
+    for col in [vmc.cost, vmc.views]:
+        if col not in df.columns:
+            df[col] = 0
     df = net_cost_calculation(df)
     df = MetricCap().apply_all_caps(df)
     df = net_cost_final_calculation(df)
