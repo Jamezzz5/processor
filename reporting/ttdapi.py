@@ -461,6 +461,9 @@ class TtdApi(object):
                 logging.warning('Request Failed: {}'.format(r.status_code))
                 break
             data = r.json()
+            if not data['data']:
+                logging.warning('Result empty returning blank dataframe.')
+                return pd.DataFrame()
             campaign = data['data']['campaign']
             if cursor_key == 'adGroupCursor':
                 page = campaign['adGroups']
