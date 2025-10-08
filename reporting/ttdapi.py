@@ -9,7 +9,6 @@ import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
 
-
 ttd_url = 'https://api.thetradedesk.com/v3'
 walmart_url = 'https://api.dsp.walmart.com/v3'
 configpath = utl.config_path
@@ -101,7 +100,7 @@ class TtdApi(object):
                 data.extend(match_data)
                 i += 1
             elif ('Message' in raw_data and
-                    raw_data['Message'] == 'Too Many Requests'):
+                  raw_data['Message'] == 'Too Many Requests'):
                 logging.warning('Rate limit exceeded, '
                                 'pausing for 300s: {}'.format(raw_data))
                 time.sleep(300)
@@ -111,7 +110,8 @@ class TtdApi(object):
                                 '{}'.format(raw_data))
                 error_response_count = self.response_error(error_response_count)
         try:
-            last_completed = max(data, key=lambda x: x['ReportEndDateExclusive'])
+            last_completed = max(data,
+                                 key=lambda x: x['ReportEndDateExclusive'])
         except ValueError as e:
             logging.warning('Report does not contain any data: {}'.format(e))
             return None
@@ -326,13 +326,18 @@ class TtdApi(object):
         Advertiser Currency (Net Spend), and Date
         """
         query = """
-            query MyQuery($campaignId: ID!) {
+            query MyQuery($campaignId: ID!, 
+                          $adGroupCursor: String, 
+                          $creativeCursor: String) {
               campaign(id: $campaignId) {
                 name
-                adGroups {
+                adGroups(first: 100, 
+                         after: $adGroupCursor) {
                   nodes {
+                    id
                     name
-                    creatives(first: 100) {
+                    creatives(first: 100, 
+                              after: $creativeCursor) {
                       nodes {
                         name
                         reporting {
@@ -356,7 +361,15 @@ class TtdApi(object):
                           }
                         }
                       }
+                      pageInfo {
+                        hasNextPage
+                        endCursor
+                      }
                     }
+                  }
+                  pageInfo {
+                    hasNextPage
+                    endCursor
                   }
                 }
               }
@@ -369,42 +382,63 @@ class TtdApi(object):
         Loop through campaign ids and query metrics for each, appending to
         results df as it goes
         :returns: dataframe containing placement and metric data for multiple
-        campaigns
+            campaigns
         """
         results = pd.DataFrame()
         campaign_list = self.report_name.split(',')
         for campaign_id in campaign_list:
             logging.info('Getting data for campaign {}'.format(campaign_id))
-            result = self.get_report_using_graphql(campaign_id)
-            df = self.parse_graphql_result(result)
+            ad_groups = self.get_paginated_report(campaign_id,
+                                               cursor_key='adGroupCursor')
+            df = self.parse_graphql_result(ad_groups)
             results = pd.concat([results, df], ignore_index=True)
         return results
 
-    def get_report_using_graphql(self, campaign_id):
+    def get_paginated_report(self, campaign_id,
+                             cursor_key='adGroupCursor',
+                             cursor_value=None):
         """
-        Runs GraphQL query to get campaign ID metric and placement data
-        :param campaign_id: campaign id found in TTD platform
-        :returns: json result from query
+        Get data using GraphQL Query, checks for extra pages
+        :param campaign_id: (str) campaign ID from ttd platform of data to be
+            pulled
+        :param cursor_key: (str) Determines which pagination cursor to use,
+            currently only ad group is allowed
+        :param cursor_value: (str, optional): The initial cursor value to start
+            pagination from. Defaults to None (fetches from the first page).
+        :returns: list of adgroups and their associated creatives with data
         """
-        result = []
+        results = []
         query = self.create_graphql_campaign_query()
-        variables = {
-            "campaignId": campaign_id
-        }
-        data = {
-            'query': query,
-            'variables': variables
-        }
         headers = {
             'TTD-Auth': self.query_token
         }
-        r = requests.post(url=self.query_url, json=data, headers=headers)
-        if r.status_code == 200:
-            result = r.json()
-        else:
-            logging.warning(
-                'Request failed with status code: {}'.format(r.status_code))
-        return result
+        cursor = cursor_value
+        for x in range(9999):
+            variables = {
+                'campaignId': campaign_id,
+                'adGroupCursor': cursor if cursor_key == 'adGroupCursor'
+                                        else None,
+            }
+            r = requests.post(self.query_url,
+                              json={'query': query, 'variables': variables},
+                              headers=headers)
+            if r.status_code != 200:
+                logging.warning('Request Failed: {}'.format(r.status_code))
+                break
+            data = r.json()
+            campaign = data['data']['campaign']
+            if cursor_key == 'adGroupCursor':
+                page = campaign['adGroups']
+                nodes = page['nodes']
+            else:
+                nodes = campaign['adGroups']['nodes'][0]['creatives']['nodes']
+                page = campaign['adGroups']['nodes'][0]['creatives']
+            results.extend(nodes)
+            if page['pageInfo']['hasNextPage']:
+                cursor = page['pageInfo']['endCursor']
+            else:
+                break
+        return results
 
     @staticmethod
     def parse_graphql_result(result):
@@ -414,11 +448,8 @@ class TtdApi(object):
         :param result: GraphQL json result
         :returns: dataframe
         """
-        data = result
         rows = []
-        campaign = data['data']['campaign']
-        campaign_name = campaign['name']
-        adgroups = campaign['adGroups']['nodes']
+        adgroups = result
         for adgroup in adgroups:
             adgroup_name = adgroup['name']
             creatives_data = adgroup.get('creatives')
@@ -439,7 +470,6 @@ class TtdApi(object):
                                                         0.0)
                     rows.append({
                         'Date': date,
-                        'Campaign': campaign_name,
                         'Adgroup': adgroup_name,
                         'Creative': creative_name,
                         'Clicks': clicks,
