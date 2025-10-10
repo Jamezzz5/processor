@@ -373,7 +373,7 @@ class TtdApi(object):
                     results.append(row)
         else:
             results, r = self.check_reports_id(
-                results, camp_col, success_msg, failure_msg)
+                results, acc_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
 
     def test_graphql_connection(self, campaign_id):
