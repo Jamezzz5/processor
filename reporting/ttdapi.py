@@ -154,10 +154,11 @@ class TtdApi(object):
         return dl_url
 
     @staticmethod
-    def response_error(error_response_count):
+    def response_error(error_response_count, max_errors=100):
         error_response_count += 1
-        if error_response_count >= 100:
-            logging.error('Error count exceeded 100.  Aborting.')
+        if error_response_count >= max_errors:
+            logging.error(
+                'Error count exceeded {}. Aborting.'.format(max_errors))
             sys.exit(0)
         return error_response_count
 
@@ -179,12 +180,7 @@ class TtdApi(object):
         otherwise it will assume the default and pull using report name
         :returns: dataframe
         """
-        id_pattern = r'[A-Za-z0-9]{5,10}'
-        if (re.fullmatch(id_pattern, self.report_name) and
-                ' ' not in self.report_name):
-            self.df = self.get_report_for_multiple_campaigns()
-        elif re.fullmatch(fr'{id_pattern}(,{id_pattern})+',
-                          self.report_name):
+        if self.check_report_type():
             self.df = self.get_report_for_multiple_campaigns()
         else:
             logging.info(
@@ -197,6 +193,26 @@ class TtdApi(object):
                 r = requests.get(dl_url, headers=self.headers)
                 self.df = self.get_df_from_response(r)
         return self.df
+
+    def check_report_type(self):
+        """
+        Check if `self.report_name` matches one of the expected ID patterns:
+        - Single alphanumeric ID (5–10 chars)
+        - Multiple comma-separated IDs
+
+        Returns:
+            bool: True if the report_name is a valid ID or list of IDs,
+            else False.
+        """
+        check = False
+        id_pattern = r'[A-Za-z0-9]{5,10}'
+        single_match = (re.fullmatch(id_pattern, self.report_name) and
+                        ' ' not in self.report_name)
+        multi_match = re.fullmatch(fr'{id_pattern}(,{id_pattern})+',
+                                   self.report_name)
+        if bool(single_match or multi_match):
+            check = True
+        return check
 
     def check_partner_id(self):
         self.set_headers()
@@ -339,12 +355,46 @@ class TtdApi(object):
         failure_msg = 'FAILURE:'
         self.set_headers()
         results, r = self.check_advertiser_id(
-            [], acc_col, success_msg, failure_msg)
+            [], camp_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-        results, r = self.check_reports_id(
-            results, camp_col, success_msg, failure_msg)
+        if self.check_report_type():
+            campaign_list = self.report_name.split(',')
+            for campaign_id in campaign_list:
+                if self.test_graphql_connection(campaign_id):
+                    row = [acc_col,
+                           ' '.join([success_msg, str(campaign_id)]),
+                           True]
+                    results.append(row)
+                else:
+                    row = [acc_col,
+                           ' '.join([failure_msg, str(campaign_id)]),
+                           False]
+                    results.append(row)
+        else:
+            results, r = self.check_reports_id(
+                results, camp_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
+
+    def test_graphql_connection(self, campaign_id):
+        check = True
+        query = """
+                query ValidateCampaign($campaignId: ID!) {
+                  campaign(id: $campaignId) {
+                    id
+                    name
+                    status
+                  }
+                }
+            """
+        variables = {'campaignId': campaign_id}
+        headers = {'TTD-Auth': self.query_token}
+        r = requests.post(self.query_url,
+                          json={'query': query, 'variables': variables},
+                          headers=headers)
+        if r.status_code != 200 or not r.json()['data']:
+            check = False
+        return check
 
     def walmart_check(self):
         if 'ttd_api' not in self.login and 'wmt_api' in self.login:
@@ -424,7 +474,7 @@ class TtdApi(object):
         for campaign_id in campaign_list:
             logging.info('Getting data for campaign {}'.format(campaign_id))
             ad_groups = self.get_paginated_report(campaign_id,
-                                               cursor_key='adGroupCursor')
+                                                  cursor_key='adGroupCursor')
             df = self.parse_graphql_result(ad_groups)
             results = pd.concat([results, df], ignore_index=True)
         return results
@@ -443,6 +493,7 @@ class TtdApi(object):
         :returns: list of adgroups and their associated creatives with data
         """
         results = []
+        error_response_count = 0
         query = self.create_graphql_campaign_query()
         headers = {
             'TTD-Auth': self.query_token
@@ -459,11 +510,17 @@ class TtdApi(object):
                               headers=headers)
             if r.status_code != 200:
                 logging.warning('Request Failed: {}'.format(r.status_code))
-                break
+                error_response_count = self.response_error(error_response_count,
+                                                           max_errors=10)
+                continue
             data = r.json()
             if not data['data']:
-                logging.warning('Result empty returning blank dataframe.')
-                break
+                logging.warning(
+                    'Result empty for campaign {} retrying'
+                    .format(campaign_id))
+                error_response_count = self.response_error(error_response_count,
+                                                           max_errors=10)
+                continue
             campaign = data['data']['campaign']
             if cursor_key == 'adGroupCursor':
                 page = campaign['adGroups']
