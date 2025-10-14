@@ -102,10 +102,10 @@ class Analyze(object):
         self.vc = ValueCalc()
         self.class_list = [
             CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
-            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
+            CheckColumnNames, FindPlacementNameCol, CheckPlacementsNotInMp,
+            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
             CheckAdwordsSplit, CheckLive]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
@@ -3098,6 +3098,8 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             self.aly.df[vmc.vendorkey] == vmc.api_mp_key, dctc.PN
         ].dropna().unique().tolist()
         data_source = self.aly.matrix.get_data_source(vk)
+        if vmc.transform not in data_source.p or not mp_names:
+            return pd.DataFrame()
         old_transform = str(data_source.p[vmc.transform])
         old_transform_split = old_transform.split(':::')
         ignore_min = False
