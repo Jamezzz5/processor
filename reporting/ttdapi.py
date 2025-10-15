@@ -8,7 +8,7 @@ import requests
 import pandas as pd
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-
+from reporting.expcolumns import campaign_name
 
 ttd_url = 'https://api.thetradedesk.com/v3'
 walmart_url = 'https://api.dsp.walmart.com/v3'
@@ -528,7 +528,14 @@ class TtdApi(object):
             else:
                 nodes = campaign['adGroups']['nodes'][0]['creatives']['nodes']
                 page = campaign['adGroups']['nodes'][0]['creatives']
-            results.extend(nodes)
+            for node in nodes:
+                results.append({
+                    'campaign':{
+                        'id': campaign.get('id'),
+                        'name': campaign.get('name'),
+                    },
+                    'node': node
+                })
             if page['pageInfo']['hasNextPage']:
                 cursor = page['pageInfo']['endCursor']
             else:
@@ -544,8 +551,9 @@ class TtdApi(object):
         :returns: dataframe
         """
         rows = []
-        adgroups = result
-        for adgroup in adgroups:
+        for data in result:
+            campaign = data['campaign'].get('name')
+            adgroup = data['node']
             adgroup_name = adgroup['name']
             creatives_data = adgroup.get('creatives')
             creatives = creatives_data.get(
@@ -565,6 +573,7 @@ class TtdApi(object):
                                                         0.0)
                     rows.append({
                         'Date': date,
+                        'Campaign Name': campaign,
                         'Adgroup': adgroup_name,
                         'Creative': creative_name,
                         'Clicks': clicks,
