@@ -3035,7 +3035,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         :param df: The df to check media plan names from
         :return:
         """
-        if df.empty:
+        if df.empty or vmc.vendorkey not in df.columns:
             return pd.DataFrame(columns=self.cols)
         df = df.groupby(self.cols).size()
         df = df.reset_index().rename(columns={0: self.tmp_col})
