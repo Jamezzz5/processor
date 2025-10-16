@@ -9,6 +9,7 @@ import shutil
 import logging
 import operator
 import tarfile
+import requests
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -91,13 +92,16 @@ class Analyze(object):
                              'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
-                 load_chat=False, chat_path=utl.config_path):
+                 load_chat=False, chat_path=utl.config_path, llm_url='',
+                 llm_model=''):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
         self.load_chat = load_chat
         self.chat_path = chat_path
+        self.llm_url = llm_url
+        self.llm_model = llm_model
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
@@ -110,7 +114,9 @@ class Analyze(object):
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
-            self.chat = AliChat(config_path=self.chat_path)
+            self.chat = AliChat(
+                config_path=self.chat_path, llm_url=self.llm_url,
+                llm_model=self.llm_model)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -3323,14 +3329,29 @@ class AliChat(object):
         "Let me know if you have any more questions {user}.",
         "I hope this clarifies things {user}.",
     ]
+    instruction_answer = (
+        "Answer the user's question using only the context. "
+        "If unknown, say you don't know.")
+    instruction_summarize = (
+        "Summarize the context for an executive in 3–5 bullets. "
+        "Keep facts, remove fluff.")
+    instruction_rewrite = (
+        "Rewrite the context to be clearer and "
+        "more concise while preserving meaning.")
+    instruction_extract = (
+        "Extract key entities, dates, amounts, and decisions as JSON "
+        "with keys: entities, dates, amounts, decisions.")
 
-    def __init__(self, config_name='openai.json', config_path='reporting'):
+    def __init__(self, config_name='openai.json', config_path='reporting',
+                 llm_url='', llm_model=''):
         self.config_name = config_name
         self.config_path = config_path
         self.db = None
         self.current_user = None
         self.models_to_search = None
         self.message = ''
+        self.llm_url = llm_url
+        self.llm_model = llm_model
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
 
@@ -3486,6 +3507,46 @@ class AliChat(object):
                      range(len(words) - ngrams + 1)]
         return words
 
+    def get_llm_response(self, context, user_query, mode='answer'):
+        """
+        Passes the context to the llm url to better answer the question
+
+        :param context: The current response gathered as text
+        :param user_query: The original question asked
+        :param mode: Different initial instructions that can be passed in prompt
+        :return: response from the llm as string
+        """
+
+        instructions = {
+            'answer':    AliChat.instruction_answer,
+            'summarize': AliChat.instruction_summarize,
+            "rewrite":   AliChat.instruction_rewrite,
+            "extract":   AliChat.instruction_extract,
+        }[mode]
+
+        prompt = f"""You are a careful assistant.
+                     Instructions: {instructions}
+                    
+                     User question:
+                     {user_query}
+                    
+                     Context (verbatim, may be long):
+                     <context>
+                     {context}
+                     </context>"""
+        body = {
+            "model": self.llm_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_ctx": 8192
+            }
+        }
+        r = requests.post(self.llm_url, json=body, timeout=120)
+        response = r.json()["response"]
+        return response
+
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
         html_response = ''
@@ -3494,6 +3555,10 @@ class AliChat(object):
             words = self.remove_stop_words_from_message(message, db_model)
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
+            if response and self.llm_url and hasattr(db_model, 'llm_summary'):
+                full_response = response + html_response
+                response = self.get_llm_response(full_response, message,
+                                                 mode='answer')
         return response, html_response
 
     @staticmethod
@@ -3612,6 +3677,7 @@ class AliChat(object):
 
     def create_db_model_from_other(self, db_model, message, other_db_model,
                                    remove_punctuation=True):
+        new_model = None
         model_ids, words = self.find_db_model(
             db_model, message, remove_punctuation=remove_punctuation)
         if model_ids:
@@ -3636,7 +3702,7 @@ class AliChat(object):
             if self.current_user:
                 args.append(self.current_user.id)
             new_model.create_object(*args)
-            return new_model
+        return new_model
 
     def pick_db_model_create_from(self, db_model, other_db_model, words,
                                   message):
