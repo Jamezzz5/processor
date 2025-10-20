@@ -9,6 +9,7 @@ import shutil
 import logging
 import operator
 import tarfile
+import requests
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -91,26 +92,31 @@ class Analyze(object):
                              'CPLPV', 'CPBC', 'CPP', cal.NCF, cal.TOTAL_COST]
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
-                 load_chat=False, chat_path=utl.config_path):
+                 load_chat=False, chat_path=utl.config_path, llm_url='',
+                 llm_model=''):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
         self.matrix = matrix
         self.load_chat = load_chat
         self.chat_path = chat_path
+        self.llm_url = llm_url
+        self.llm_model = llm_model
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
             CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
-            CheckColumnNames, FindPlacementNameCol, CheckAutoDictOrder,
-            CheckApiDateLength, CheckFlatSpends, CheckDoubleCounting,
-            GetPacingAnalysis, GetDailyDelivery, GetServingAlerts,
-            GetDailyPacingAlerts, CheckPackageCapping, CheckPlacementsNotInMp,
+            CheckColumnNames, FindPlacementNameCol, CheckPlacementsNotInMp,
+            CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
+            CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
+            GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
             CheckAdwordsSplit, CheckLive]
         if self.df.empty and self.file_name:
             self.load_df_from_file()
         if self.load_chat:
-            self.chat = AliChat(config_path=self.chat_path)
+            self.chat = AliChat(
+                config_path=self.chat_path, llm_url=self.llm_url,
+                llm_model=self.llm_model)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -1399,33 +1405,33 @@ class CheckFirstRow(AnalyzeBase):
         df = utl.import_read_csv(raw_file, nrows=10)
         if df.empty:
             return l_df
-        found_cols = False
+        new_first_row = None
         for idx in range(len(df)):
             tdf = utl.first_last_adj(df, idx, 0)
-            if 'API_GoogleSheets' in source.key and idx == 0:
-                if all(str(x).isdigit() for x in
-                       tdf.columns) and old_first_row == 0:
-                    new_first_row = 1
-                    data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
-                                              self.new_first_line: [
-                                                  new_first_row]})
-                    l_df = pd.concat([data_dict, l_df], ignore_index=True)
-                    break
-            check = [x for x in place_cols if x in tdf.columns]
-            if check:
-                found_cols = True
-                if idx == old_first_row:
-                    break
+            if any(col in tdf.columns for col in place_cols):
                 new_first_row = str(idx)
-                data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
-                                          self.new_first_line: [new_first_row]})
-                l_df = pd.concat([data_dict, l_df], ignore_index=True)
                 break
-        if not found_cols and old_first_row != 0:
-            data_dict = pd.DataFrame({vmc.vendorkey: [source.key],
-                                      self.new_first_line: ['0']})
+            elif any(self.find_date(col) for col in tdf.columns):
+                new_first_row = max(idx - 1, 0)
+                new_first_row = str(new_first_row)
+                break
+        if not new_first_row and old_first_row != 0:
+            new_first_row = '0'
+        if int(new_first_row) != old_first_row:
+            data_dict = pd.DataFrame({
+                vmc.vendorkey: [source.key],
+                self.new_first_line: [new_first_row]
+            })
             l_df = pd.concat([data_dict, l_df], ignore_index=True)
         return l_df
+
+    @staticmethod
+    def find_date(value):
+        try:
+            pd.to_datetime(value, errors="raise")
+            return True
+        except Exception:
+            return False
 
     def do_analysis(self):
         """
@@ -1968,12 +1974,26 @@ class FindPlacementNameCol(AnalyzeBase):
             df, result_df, placement_col=vmc.placement,
             vk_name='test', max_underscore=30):
         df = df.drop([vmc.fullplacename], axis=1, errors='ignore')
+        df = df.reset_index(drop=True)
         total_rows = len(df)
         if df.empty:
             return result_df
+        cols = []
+        vendor_list = [x.lower() for x in CheckAutoDictOrder.get_vendor_list()]
+        for col in df.columns:
+            first_val = str(df[col][0]).split('_')
+            if len(first_val) > 1:
+                vendor_val = first_val[1]
+                if vendor_val.lower() in vendor_list:
+                    cols.append(col)
         df = df.applymap(
             lambda x: str(x).count('_')).apply(lambda x: sum(x) / total_rows)
-        max_col = df[df < max_underscore].idxmax()
+        mask = df[df < max_underscore]
+        max_col = mask.idxmax()
+        if cols and max_col not in cols:
+            cols = [x for x in cols if x in df]
+            if cols:
+                max_col = df[cols].idxmax()
         max_exists = max_col in df
         p_exists = placement_col in df
         no_p_check = (not p_exists and max_exists)
@@ -2047,6 +2067,7 @@ class CheckApiDateLength(AnalyzeBase):
     name = Analyze.max_api_length
     fix = True
     pre_run = True
+    highest_date = 'highest_date'
 
     def do_analysis(self):
         """
@@ -2054,6 +2075,7 @@ class CheckApiDateLength(AnalyzeBase):
         are too long.  Those sources are added to a df and the analysis dict
         """
         vk_list = []
+        highest_date_list = []
         data_sources = self.matrix.get_all_data_sources()
         max_date_dict = {
             vmc.api_amz_key: 31, vmc.api_szk_key: 60, vmc.api_db_key: 60,
@@ -2067,8 +2089,17 @@ class CheckApiDateLength(AnalyzeBase):
                     max_date = max_date_dict[key]
                     date_range = (ds.p[vmc.enddate] - ds.p[vmc.startdate]).days
                     if date_range > (max_date - 3):
+                        highest_date = None
+                        if vmc.filename in ds.p:
+                            file_name = ds.p[vmc.filename]
+                            if os.path.exists(file_name):
+                                date_col = ds.p[vmc.date]
+                                highest_date = self.find_highest_date(file_name,
+                                                                      date_col)
                         vk_list.append(ds.key)
-        mdf = pd.DataFrame({vmc.vendorkey: vk_list})
+                        highest_date_list.append(highest_date)
+        mdf = pd.DataFrame({vmc.vendorkey: vk_list,
+                            self.highest_date: highest_date_list})
         mdf[self.name] = ''
         if vk_list:
             msg = 'The following APIs are within 3 days of their max length:'
@@ -2079,6 +2110,23 @@ class CheckApiDateLength(AnalyzeBase):
             msg = 'No APIs within 3 days of max length.'
             logging.info('{}'.format(msg))
         self.add_to_analysis_dict(df=mdf, msg=msg)
+        return mdf
+
+    @staticmethod
+    def find_highest_date(filename, date_col):
+        """
+        Scans raw csv returns the highest date in the column provided
+
+        :param filename: a string of the name of the csv found in vendormatrix
+        :param date_col: a string of the column header for date found in
+        vendormatrix
+        :returns: datetime object of highest date in file
+        """
+        df = utl.import_read_csv(filename)
+        df = utl.data_to_type(df, date_col=date_col)
+        max_date = df[date_col].max()
+        max_date = max_date[0]
+        return max_date
 
     def fix_analysis(self, aly_dict, write=True):
         """
@@ -2098,6 +2146,10 @@ class CheckApiDateLength(AnalyzeBase):
             ndf = utl.data_to_type(ndf, date_col=[vmc.startdate])
             new_sd = ndf[vmc.startdate][0] + dt.timedelta(
                 days=max_date_length - 3)
+            if x[self.highest_date]:
+                tdf = utl.data_to_type(pd.DataFrame([x]),
+                                       date_col=[self.highest_date])
+                new_sd = tdf[self.highest_date][0] - dt.timedelta(days=3)
             if new_sd.date() >= dt.datetime.today().date():
                 new_sd = dt.datetime.today() - dt.timedelta(days=3)
             new_str_sd = new_sd.strftime('%Y-%m-%d')
@@ -2983,7 +3035,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         :param df: The df to check media plan names from
         :return:
         """
-        if df.empty:
+        if df.empty or vmc.vendorkey not in df.columns:
             return pd.DataFrame(columns=self.cols)
         df = df.groupby(self.cols).size()
         df = df.reset_index().rename(columns={0: self.tmp_col})
@@ -3015,13 +3067,13 @@ class CheckPlacementsNotInMp(AnalyzeBase):
 
     @staticmethod
     def find_closest_name_match(names, mp_names, underscore_min=10,
-                                data_source_name=''):
+                                data_source_name='', ignore_min=False):
         if not any([x.split('_')[0] for x in mp_names]):
             return pd.DataFrame()
         match_table = []
         ali_chat = AliChat()
         for name in names:
-            if name.count('_') > underscore_min:
+            if not ignore_min and name.count('_') > underscore_min:
                 continue
             message = name
             if data_source_name:
@@ -3051,15 +3103,21 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         mp_names = self.aly.df.loc[
             self.aly.df[vmc.vendorkey] == vmc.api_mp_key, dctc.PN
         ].dropna().unique().tolist()
+        data_source = self.aly.matrix.get_data_source(vk)
+        if vmc.transform not in data_source.p or not mp_names:
+            return pd.DataFrame()
+        old_transform = str(data_source.p[vmc.transform])
+        old_transform_split = old_transform.split(':::')
+        ignore_min = False
+        if 'IgnoreMin' in old_transform_split:
+            ignore_min = True
         match_df = self.find_closest_name_match(
-            df[dctc.PN], mp_names, data_source_name=vk)
+            df[dctc.PN], mp_names, data_source_name=vk, ignore_min=ignore_min)
         if match_df.empty:
             return match_df
         msg = "Suggested matches for placements not in media plan:"
         self.aly.format_log_msg_with_df(msg, match_df)
-        data_source = self.aly.matrix.get_data_source(vk)
         match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
-        old_transform = str(data_source.p[vmc.transform])
         if vmc.transform_raw_translate not in old_transform:
             if str(old_transform) == 'nan':
                 old_transform = ''
@@ -3271,14 +3329,29 @@ class AliChat(object):
         "Let me know if you have any more questions {user}.",
         "I hope this clarifies things {user}.",
     ]
+    instruction_answer = (
+        "Answer the user's question using only the context. "
+        "If unknown, say you don't know.")
+    instruction_summarize = (
+        "Summarize the context for an executive in 3–5 bullets. "
+        "Keep facts, remove fluff.")
+    instruction_rewrite = (
+        "Rewrite the context to be clearer and "
+        "more concise while preserving meaning.")
+    instruction_extract = (
+        "Extract key entities, dates, amounts, and decisions as JSON "
+        "with keys: entities, dates, amounts, decisions.")
 
-    def __init__(self, config_name='openai.json', config_path='reporting'):
+    def __init__(self, config_name='openai.json', config_path='reporting',
+                 llm_url='', llm_model=''):
         self.config_name = config_name
         self.config_path = config_path
         self.db = None
         self.current_user = None
         self.models_to_search = None
         self.message = ''
+        self.llm_url = llm_url
+        self.llm_model = llm_model
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
 
@@ -3434,6 +3507,46 @@ class AliChat(object):
                      range(len(words) - ngrams + 1)]
         return words
 
+    def get_llm_response(self, context, user_query, mode='answer'):
+        """
+        Passes the context to the llm url to better answer the question
+
+        :param context: The current response gathered as text
+        :param user_query: The original question asked
+        :param mode: Different initial instructions that can be passed in prompt
+        :return: response from the llm as string
+        """
+
+        instructions = {
+            'answer':    AliChat.instruction_answer,
+            'summarize': AliChat.instruction_summarize,
+            "rewrite":   AliChat.instruction_rewrite,
+            "extract":   AliChat.instruction_extract,
+        }[mode]
+
+        prompt = f"""You are a careful assistant.
+                     Instructions: {instructions}
+                    
+                     User question:
+                     {user_query}
+                    
+                     Context (verbatim, may be long):
+                     <context>
+                     {context}
+                     </context>"""
+        body = {
+            "model": self.llm_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_ctx": 8192
+            }
+        }
+        r = requests.post(self.llm_url, json=body, timeout=120)
+        response = r.json()["response"]
+        return response
+
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
         html_response = ''
@@ -3442,6 +3555,10 @@ class AliChat(object):
             words = self.remove_stop_words_from_message(message, db_model)
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
+            if response and self.llm_url and hasattr(db_model, 'llm_summary'):
+                full_response = response + html_response
+                response = self.get_llm_response(full_response, message,
+                                                 mode='answer')
         return response, html_response
 
     @staticmethod
@@ -3560,6 +3677,7 @@ class AliChat(object):
 
     def create_db_model_from_other(self, db_model, message, other_db_model,
                                    remove_punctuation=True):
+        new_model = None
         model_ids, words = self.find_db_model(
             db_model, message, remove_punctuation=remove_punctuation)
         if model_ids:
@@ -3584,7 +3702,7 @@ class AliChat(object):
             if self.current_user:
                 args.append(self.current_user.id)
             new_model.create_object(*args)
-            return new_model
+        return new_model
 
     def pick_db_model_create_from(self, db_model, other_db_model, words,
                                   message):

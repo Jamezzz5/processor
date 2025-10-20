@@ -15,7 +15,7 @@ class SamApi(object):
     default_config_file_name = 'samapi.json'
     base_url = 'https://reporting.trader.adgear.com/v1/reports'
     default_dimensions = [
-        "campaign_id", "advertiser_id", "advertiser_name",  "campaign_name",
+        "campaign_id", "advertiser_id", "advertiser_name", "campaign_name",
         "creative_id", "creative_group_name", "creative_name", "day"]
     default_metrics = [
         "impressions", "clicks", "buyer_spend", "media_spend", "video_start",
@@ -80,7 +80,7 @@ class SamApi(object):
                                 'campaign ID {}: {}', camp_id, error)
             else:
                 self.df = pd.concat([self.df, self.get_raw_data(report_id)],
-                                ignore_index=True)
+                                    ignore_index=True)
         self.check_empty_df()
         return self.df
 

@@ -49,6 +49,7 @@ class TikApi(object):
                'view_content': 'view_content',
                'engagements': 'Clicks (all)',
                'offline_shopping_events': 'offline_shopping_events'}
+    default_config_file_name = 'tikapi.json'
 
     def __init__(self):
         self.config = None
@@ -164,17 +165,20 @@ class TikApi(object):
                   'page_size': 1000}
         filters = {'primary_status': 'STATUS_ALL',
                    'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
-        params['filtering'] = json.dumps(filters)
-        ids, r = self.request_id(url, params, [], ad_ids=ad)
-        if r and ids:
-            total_pages = r.json()['data']['page_info']['total_page']
-            for x in range(total_pages - 1):
-                page_num = x + 2
-                params['page'] = page_num
-                if page_num % 10 == 0:
-                    logging.info('Pulling ad_ids page #{} of {}'.format(
-                        page_num, total_pages))
-                ids, r = self.request_id(url, params, ids, ad_ids=ad)
+        for buying_types in [['AUCTION', 'RESERVATION_RF'],
+                             ['RESERVATION_TOP_VIEW']]:
+            filters['buying_types'] = buying_types
+            params['filtering'] = json.dumps(filters)
+            ids, r = self.request_id(url, params, [], ad_ids=ad)
+            if r and ids:
+                total_pages = r.json()['data']['page_info']['total_page']
+                for x in range(total_pages - 1):
+                    page_num = x + 2
+                    params['page'] = page_num
+                    if page_num % 10 == 0:
+                        logging.info('Pulling ad_ids page #{} of {}'.format(
+                            page_num, total_pages))
+                    ids, r = self.request_id(url, params, ids, ad_ids=ad)
         ids = [ids[x:x + 100] for x in range(0, len(ids), 100)]
         logging.info('Returning all ad ids.')
         return ids
