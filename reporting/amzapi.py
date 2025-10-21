@@ -396,9 +396,19 @@ class AmzApi(object):
         if not isinstance(report_ids, list):
             report_ids = [report_ids]
         df_list = []
+        failed_ids = []
         for report_id in report_ids:
             df = self.check_report_status(report_id, attempts, wait)
-            df_list.append(df)
+            if df is not None and not df.empty:
+                df_list.append(df)
+            else:
+                failed_ids.append(report_id)
+        if failed_ids:
+            logging.info('Retrying {} failed report(s)'.format(len(failed_ids)))
+            for report_id in failed_ids:
+                df = self.check_report_status(report_id, attempts=5, wait=wait)
+                if df is not None and not df.empty:
+                    df_list.append(df)
         self.df = self.merge_dataframes(df_list)
         return self.df
 
