@@ -392,7 +392,7 @@ class AmzApi(object):
             report_ids.append(report_id)
         return report_ids
 
-    def check_and_get_reports(self, report_ids, attempts=100, wait=30):
+    def check_and_get_reports(self, report_ids, attempts=150, wait=30):
         if not isinstance(report_ids, list):
             report_ids = [report_ids]
         df_list = []
