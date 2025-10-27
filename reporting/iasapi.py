@@ -24,7 +24,7 @@ class IasApi(object):
 
     dimensions = ['Teams', 'Campaigns', 'Media partners', 'Placements', 'Date']
 
-    def __init__(self, headless=True):
+    def __init__(self, headless=False):
         self.headless = headless
         self.sw = None
         self.browser = None
@@ -116,6 +116,16 @@ class IasApi(object):
         """
         logging.info('Changing to advertiser {}.'.format(self.advertiser))
         sel_xpath = '//*[@id="root"]/div/div[2]/div/div[1]/div[2]/div/div/div'
+        popup_xpath = '//*[contains(@id, "close-guide")]'
+        for _ in range(3):
+            try:
+                self.sw.wait_for_elem_load(popup_xpath,
+                                           selector=self.sw.select_xpath,
+                                           raise_exception=False)
+                self.sw.click_on_xpath(popup_xpath)
+                break
+            except ex.NoSuchElementException as e:
+                logging.warning(e)
         for _ in range(3):
             try:
                 self.sw.wait_for_elem_load(
@@ -220,9 +230,12 @@ class IasApi(object):
         :param ed: The end date as a date to change to
         :return:
         """
+        yesterday = dt.date.today() - dt.timedelta(days=1)
+        if sd.date() >= dt.date.today():
+            sd = yesterday - dt.timedelta(days=1)
+            logging.warning('Start date not given, setting to {}'.format(sd))
         self.click_on_custom_date_range()
         self.set_date(sd, is_start=True)
-        yesterday = dt.date.today() - dt.timedelta(days=1)
         if ed.date() > yesterday:
             ed = dt.datetime.combine(yesterday, dt.time.min)
         self.set_date(ed, is_start=False)
