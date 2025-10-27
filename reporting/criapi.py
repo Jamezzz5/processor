@@ -181,6 +181,8 @@ class CriApi(object):
         r = self.make_request(url, method='GET', headers=self.headers)
         if 'data' in r.json():
             campaign_ids = [x['id'] for x in r.json()['data']]
+        else:
+            campaign_ids = [x.strip() for x in campaign_ids[0].split(',')]
         logging.info('Found {} {}'.format(
             len(campaign_ids), object_type))
         return campaign_ids
