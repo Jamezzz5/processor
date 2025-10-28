@@ -199,7 +199,7 @@ class TtdApi(object):
                 self.df = self.get_df_from_response(r)
         return self.df
 
-    def check_report_type(self):
+    def check_report_type(self, val_to_check=''):
         """
         Check if `self.report_name` matches one of the expected ID patterns:
         - Single alphanumeric ID (5–10 chars)
@@ -209,12 +209,15 @@ class TtdApi(object):
             bool: True if the report_name is a valid ID or list of IDs,
             else False.
         """
+        if not val_to_check:
+            val_to_check = self.report_name
         check = False
-        id_pattern = r'[A-Za-z0-9]{5,10}'
-        single_match = (re.fullmatch(id_pattern, self.report_name) and
-                        ' ' not in self.report_name)
-        multi_match = re.fullmatch(fr'{id_pattern}(,{id_pattern})+',
-                                   self.report_name)
+        if ' ' in val_to_check:
+            return check
+        id_pattern = r'[A-Za-z0-9]{7}'
+        single_match = re.fullmatch(id_pattern, val_to_check)
+        multi_match = re.fullmatch(
+            fr'{id_pattern}(,{id_pattern})+', val_to_check)
         if bool(single_match or multi_match):
             check = True
         return check
@@ -683,7 +686,7 @@ class TtdApi(object):
 
     def get_loose_creatives(self, advertiser_id, sd, ed):
         """
-
+        Gets all creative not associated with campaign and returns data
 
         :param advertiser_id:
         :param sd:
@@ -693,7 +696,7 @@ class TtdApi(object):
         headers = {'TTD-Auth': self.query_token}
         df = pd.DataFrame()
         cursor = None
-        query = self.get_graphql_query_for_creative_reporting()
+        query = self.get_graphql_query_for_all_advertiser_creatives()
         variables = {
             'advertiserId': advertiser_id,
             'cursor': cursor}
@@ -737,7 +740,7 @@ class TtdApi(object):
                         creative_name)
                     tdf = pd.DataFrame(tdf)
                     df = pd.concat([tdf, df], ignore_index=True)
-        if self.report_name_is_advertiser:
+        if self.report_name_is_advertiser and not self.ad_id:
             tdf = self.get_loose_creatives(self.report_name, sd, ed)
             df = pd.concat([tdf, df], ignore_index=True)
         return df
@@ -753,8 +756,13 @@ class TtdApi(object):
         if not comma_in_name and self.check_is_advertiser(self.report_name):
             self.campaign_dict = self.get_child_object_ids(self.report_name)
             campaign_list = list(self.campaign_dict.keys())
+            if self.ad_id:
+                campaign_list = [x for x in self.campaign_dict
+                                 if self.ad_id in self.campaign_dict[x]]
             self.report_name_is_advertiser = True
         else:
+            if self.ad_id:
+                self.campaign_dict = self.get_child_object_ids(self.ad_id)
             campaign_list = self.report_name.split(',')
         df = self.loop_campaigns_get_report(campaign_list, sd, ed)
         return df
