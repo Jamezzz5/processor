@@ -1,21 +1,24 @@
 import io
+import os
 import re
 import sys
+import pytz
 import json
 import time
 import logging
 import requests
 import pandas as pd
+import datetime as dt
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
-from reporting.expcolumns import campaign_name
 
-ttd_url = 'https://api.thetradedesk.com/v3'
-walmart_url = 'https://api.dsp.walmart.com/v3'
-configpath = utl.config_path
+config_path = utl.config_path
 
 
 class TtdApi(object):
+    ttd_url = 'https://api.thetradedesk.com/v3'
+    walmart_url = 'https://api.dsp.walmart.com/v3'
+
     def __init__(self):
         self.df = pd.DataFrame()
         self.configfile = None
@@ -30,10 +33,12 @@ class TtdApi(object):
         self.query_url = 'https://api.gen.adsrvr.org/graphql'
         self.headers = None
         self.default_config_file_name = 'ttdconfig.json'
+        self.campaign_dict = {}
+        self.report_name_is_advertiser = False
 
     def input_config(self, config):
         logging.info('Loading TTD config file: {}'.format(config))
-        self.configfile = configpath + config
+        self.configfile = os.path.join(config_path + config)
         self.load_config()
         self.check_config()
 
@@ -181,7 +186,7 @@ class TtdApi(object):
         :returns: dataframe
         """
         if self.check_report_type():
-            self.df = self.get_report_for_multiple_campaigns()
+            self.df = self.get_report_for_multiple_campaigns(sd, ed)
         else:
             logging.info(
                 'Getting TTD data for report: {}'.format(self.report_name))
@@ -398,10 +403,91 @@ class TtdApi(object):
 
     def walmart_check(self):
         if 'ttd_api' not in self.login and 'wmt_api' in self.login:
-            url = walmart_url
+            url = self.walmart_url
         else:
-            url = ttd_url
+            url = self.ttd_url
         return url
+
+    @staticmethod
+    def get_graphql_query_for_creative_reporting():
+        query = """
+            query MyQuery($creativeId: ID!, 
+                          $fromDate: DateTime, 
+                          $toDate: DateTime, 
+                          $reportingCursor: String) {
+              creative(id: $creativeId) {
+                reporting {
+                  creativePerformanceReporting(
+                    where: {date: {gte: $fromDate, lte: $toDate}}
+                    first: 1000
+                    after: $reportingCursor
+                  ) {
+                    edges {
+                      node {
+                        metrics {
+                          impressions
+                          clicks
+                          spend {
+                            advertiserCurrency
+                          }
+                        }
+                        dimensions {
+                          time {
+                            day
+                          }
+                        }
+                      }
+                    }
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
+                  }
+                }
+              }
+            }
+            """
+        return query
+
+    @staticmethod
+    def get_graphql_query_for_all_advertiser_creatives():
+        """
+        Query to get all creatives for a given advertiser
+
+        :return: The query as a string
+        """
+        query = """
+        query GetArchivedCreatives($advertiserId: ID!,
+                                   $cursor: String
+            ) {
+              advertiser(id: $advertiserId) {
+                creatives(
+                  first: 1000
+                  after: $cursor
+                ) {
+                  edges {
+                    node {
+                      id
+                      name
+                      isArchived
+                      adGroups(first: 500) {
+                        edges {
+                          node {
+                            id
+                            name
+                            campaign { id name }
+                          }
+                        }
+                        pageInfo { hasNextPage endCursor }
+                      }
+                    }
+                  }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+            """
+        return query
 
     @staticmethod
     def create_graphql_campaign_query():
@@ -412,21 +498,26 @@ class TtdApi(object):
         """
         query = """
             query MyQuery($campaignId: ID!, 
+                          $fromDate: DateTime, 
+                          $toDate: DateTime, 
                           $adGroupCursor: String, 
-                          $creativeCursor: String) {
+                          $creativeCursor: String, 
+                          $reportingCursor: String) {
               campaign(id: $campaignId) {
                 name
-                adGroups(first: 100, 
-                         after: $adGroupCursor) {
+                adGroups(first: 1000, after: $adGroupCursor) {
                   nodes {
                     id
                     name
-                    creatives(first: 100, 
-                              after: $creativeCursor) {
+                    creatives(first: 1000, after: $creativeCursor) {
                       nodes {
                         name
                         reporting {
-                          creativePerformanceReporting {
+                          creativePerformanceReporting(
+                            where: {date: {gte: $fromDate, lte: $toDate}}
+                            first: 1000
+                            after: $reportingCursor
+                          ) {
                             edges {
                               node {
                                 metrics {
@@ -442,6 +533,10 @@ class TtdApi(object):
                                   }
                                 }
                               }
+                            }
+                            pageInfo {
+                              hasNextPage
+                              endCursor
                             }
                           }
                         }
@@ -462,33 +557,215 @@ class TtdApi(object):
         """
         return query
 
-    def get_report_for_multiple_campaigns(self):
+    def check_is_advertiser(self, candidate_id):
+        """
+        Checks the provided candidate_id string is an advertiser
+
+        :param candidate_id: String to check
+        :return: Boolean if the candidate_id string is an advertiser or not
+        """
+        is_advertiser_id = False
+        query = """
+            query ValidateAdvertiser($advId: ID!) {
+              advertiser(id: $advId) { id name }
+            }
+        """
+        headers = {'TTD-Auth': self.query_token}
+        body = {'query': query, 'variables': {'advId': candidate_id}}
+        r = requests.post(self.query_url, json=body, headers=headers)
+        if r.json()['data'] and 'advertiser' in r.json()['data']:
+            is_advertiser_id = True
+        return is_advertiser_id
+
+    def get_child_object_ids(self, parent_id, parent_name='advertiser',
+                             child_name='campaigns'):
+        """
+        Gets id and names of all objects associated with the parent id
+
+        :param parent_id: The id of the parent object
+        :param parent_name: The name for the query of the parent object
+        :param child_name: The name for the query of the object to get
+        :return: Dictionary with key as id and name as value
+        """
+        headers = {'TTD-Auth': self.query_token}
+        object_ids = {}
+        cursor = None
+        query = f"""
+        query FetchChildren($parentId: ID!, $cursor: String) {{
+          {parent_name}(id: $parentId) {{
+            {child_name}(first: 1000, after: $cursor) {{
+              nodes {{ id name }}
+              pageInfo {{ hasNextPage endCursor }}
+            }}
+          }}
+        }}
+        """
+        for _ in range(10000):
+            variables = {
+                'parentId': parent_id,
+                'cursor': cursor}
+            body = {'query': query, 'variables': variables}
+            r = requests.post(self.query_url, json=body,  headers=headers)
+            if r.status_code != 200:
+                msg = 'Getting {} for {} {} failed, retrying.'.format(
+                    child_name, parent_name, parent_id)
+                logging.warning(msg)
+                self.response_error(0, max_errors=5)
+            data = r.json()['data']
+            page = data[parent_name][child_name]
+            page_info = page['pageInfo']
+            nodes = page['nodes']
+            for node in nodes:
+                object_id = node['id']
+                object_name = node['name']
+                object_ids[object_id] = object_name
+            if page_info['hasNextPage']:
+                cursor = page_info['endCursor']
+            else:
+                break
+        return object_ids
+
+    def get_report_for_creative_id(self, creative_id, sd, ed, campaign_name,
+                                   adgroup_name, creative_name):
+        """
+        Queries a given creative_id for reporting data for the sd and ed
+
+        :param creative_id: The creative id to query
+        :param sd: The start date to query form
+        :param ed: The end date to query to
+        :param campaign_name: The name of the campaign to append to the dict
+        :param adgroup_name: The name of the ad group to append to the dict
+        :param creative_name:
+        :return: A list of dicts containing report data
+        """
+        headers = {'TTD-Auth': self.query_token}
+        results = []
+        cursor = None
+        query = self.get_graphql_query_for_creative_reporting()
+        tz = pytz.timezone("America/Los_Angeles")
+        from_dt = tz.localize(
+            dt.datetime(sd.year, sd.month, sd.day, 0, 0, 0))
+        to_dt = tz.localize(
+            dt.datetime(ed.year, ed.month, ed.day, 23, 59, 59, 999999))
+        variables = {
+            'creativeId': creative_id,
+            'fromDate': from_dt.isoformat(),
+            'toDate': to_dt.isoformat(),
+        }
+        for _ in range(10000):
+            variables['reportingCursor'] = cursor
+            body = {'query': query, 'variables': variables}
+            r = requests.post(self.query_url, json=body,  headers=headers)
+            data = r.json()['data']
+            page = data['creative']['reporting']['creativePerformanceReporting']
+            page_info = page['pageInfo']
+            edges = page['edges']
+            for edge in edges:
+                node = edge['node']
+                result = {
+                    'Campaign Name': campaign_name,
+                    'Adgroup': adgroup_name,
+                    'Creative': creative_name,
+                }
+                metrics = node['metrics']
+                dimensions = node['dimensions']
+                result['Impressions'] = metrics['impressions']
+                result['Clicks'] = metrics['clicks']
+                result['Advertiser Cost (Adv Currency)'] = metrics[
+                    'spend']['advertiserCurrency']
+                result['Date'] = dimensions['time']['day']
+                results.append(result)
+            if page_info['hasNextPage']:
+                cursor = page_info['endCursor']
+            else:
+                break
+        return results
+
+    def get_loose_creatives(self, advertiser_id, sd, ed):
+        """
+
+
+        :param advertiser_id:
+        :param sd:
+        :param ed:
+        :return:
+        """
+        headers = {'TTD-Auth': self.query_token}
+        df = pd.DataFrame()
+        cursor = None
+        query = self.get_graphql_query_for_creative_reporting()
+        variables = {
+            'advertiserId': advertiser_id,
+            'cursor': cursor}
+        body = {'query': query, 'variables': variables}
+        r = requests.post(self.query_url, json=body, headers=headers)
+        edges = r.json()['data']['advertiser']['creatives']['edges']
+        for creative_edge in edges:
+            creative_node = creative_edge['node']
+            if not creative_node['adGroups']['edges']:
+                creative_id = creative_node['id']
+                creative_name = creative_node['name']
+                tdf = self.get_report_for_creative_id(
+                    creative_id, sd, ed, '', '',
+                    creative_name)
+                tdf = pd.DataFrame(tdf)
+                df = pd.concat([tdf, df], ignore_index=True)
+        return df
+
+    def loop_campaigns_get_report(self, campaign_list, sd, ed):
+        """
+        For a list of campaign ids loops campaigns/adgroups/creatives
+        to get the report as a df filtered by the start date and end date
+
+        :param campaign_list: List of campaign ids to loop
+        :param sd:  Start date for the report
+        :param ed: End Date for the report
+        :return: The full report as a df
+        """
+        df = pd.DataFrame()
+        for campaign_id in campaign_list:
+            campaign_name = self.campaign_dict[campaign_id]
+            logging.info('Getting data for campaign {}'.format(campaign_id))
+            adgroup_ids = self.get_child_object_ids(
+                campaign_id, parent_name='campaign', child_name='adGroups')
+            for adgroup_id, adgroup_name in adgroup_ids.items():
+                creative_ids = self.get_child_object_ids(
+                    adgroup_id, parent_name='adGroup', child_name='creatives')
+                for creative_id, creative_name in creative_ids.items():
+                    tdf = self.get_report_for_creative_id(
+                        creative_id, sd, ed, campaign_name, adgroup_name,
+                        creative_name)
+                    tdf = pd.DataFrame(tdf)
+                    df = pd.concat([tdf, df], ignore_index=True)
+        if self.report_name_is_advertiser:
+            tdf = self.get_loose_creatives(self.report_name, sd, ed)
+            df = pd.concat([tdf, df], ignore_index=True)
+        return df
+
+    def get_report_for_multiple_campaigns(self, sd, ed):
         """
         Loop through campaign ids and query metrics for each, appending to
         results df as it goes
         :returns: dataframe containing placement and metric data for multiple
             campaigns
         """
-        results = pd.DataFrame()
-        campaign_list = self.report_name.split(',')
-        for campaign_id in campaign_list:
-            logging.info('Getting data for campaign {}'.format(campaign_id))
-            ad_groups = self.get_paginated_report(campaign_id,
-                                                  cursor_key='adGroupCursor')
-            df = self.parse_graphql_result(ad_groups)
-            results = pd.concat([results, df], ignore_index=True)
-        return results
+        comma_in_name = ',' in self.report_name
+        if not comma_in_name and self.check_is_advertiser(self.report_name):
+            self.campaign_dict = self.get_child_object_ids(self.report_name)
+            campaign_list = list(self.campaign_dict.keys())
+            self.report_name_is_advertiser = True
+        else:
+            campaign_list = self.report_name.split(',')
+        df = self.loop_campaigns_get_report(campaign_list, sd, ed)
+        return df
 
-    def get_paginated_report(self, campaign_id,
-                             cursor_key='adGroupCursor',
-                             cursor_value=None):
+    def get_paginated_report(self, campaign_id, sd=None, ed=None):
         """
         Get data using GraphQL Query, checks for extra pages
         :param campaign_id: (str) campaign ID from ttd platform of data to be
             pulled
-        :param cursor_key: (str) Determines which pagination cursor to use,
-            currently only ad group is allowed
-        :param cursor_value: (str, optional): The initial cursor value to start
+        :param sd: (DateTime) The start date to pull form
+        :param ed: (DateTime): The end date to pull from
             pagination from. Defaults to None (fetches from the first page).
         :returns: list of adgroups and their associated creatives with data
         """
@@ -498,48 +775,80 @@ class TtdApi(object):
         headers = {
             'TTD-Auth': self.query_token
         }
-        cursor = cursor_value
+        ad_group_cursor = creative_cursor = reporting_cursor = ''
         for x in range(9999):
+            tz = pytz.timezone("America/Los_Angeles")
+            from_dt = tz.localize(
+                dt.datetime(sd.year, sd.month, sd.day, 0, 0, 0))
+            to_dt = tz.localize(
+                dt.datetime(ed.year, ed.month, ed.day, 23, 59, 59, 999999))
             variables = {
                 'campaignId': campaign_id,
-                'adGroupCursor': cursor if cursor_key == 'adGroupCursor'
-                                        else None,
+                'fromDate': from_dt.isoformat(),
+                'toDate': to_dt.isoformat(),
+                'adGroupCursor': ad_group_cursor,
+                'creativeCursor': creative_cursor,
+                'reportingCursor': reporting_cursor,
             }
-            r = requests.post(self.query_url,
-                              json={'query': query, 'variables': variables},
-                              headers=headers)
+            body = {'query': query, 'variables': variables}
+            r = requests.post(self.query_url, json=body, headers=headers)
             if r.status_code != 200:
                 logging.warning('Request Failed: {}'.format(r.status_code))
-                error_response_count = self.response_error(error_response_count,
-                                                           max_errors=10)
+                error_response_count = self.response_error(
+                    error_response_count, max_errors=10)
                 continue
             data = r.json()
             if not data['data']:
-                logging.warning(
-                    'Result empty for campaign {} retrying'
-                    .format(campaign_id))
-                error_response_count = self.response_error(error_response_count,
-                                                           max_errors=10)
+                msg = 'Empty for campaign {} retrying'.format(campaign_id)
+                logging.warning(msg)
+                error_response_count = self.response_error(
+                    error_response_count,  max_errors=10)
                 continue
             campaign = data['data']['campaign']
-            if cursor_key == 'adGroupCursor':
-                page = campaign['adGroups']
-                nodes = page['nodes']
-            else:
-                nodes = campaign['adGroups']['nodes'][0]['creatives']['nodes']
-                page = campaign['adGroups']['nodes'][0]['creatives']
+            campaign_name = campaign['name']
+            page = campaign['adGroups']
+            nodes = page['nodes']
             for node in nodes:
-                results.append({
-                    'campaign':{
-                        'id': campaign.get('id'),
-                        'name': campaign.get('name'),
-                    },
-                    'node': node
-                })
-            if page['pageInfo']['hasNextPage']:
-                cursor = page['pageInfo']['endCursor']
+                adgroup_name = node['name']
+                creatives = node['creatives']
+                for creative in creatives['nodes']:
+                    creative_name = creative['name']
+                    reporting = creative['reporting']
+                    reporting = reporting['creativePerformanceReporting']
+                    creative_edges = reporting['edges']
+                    for creative_edge in creative_edges:
+                        result = {
+                            'Campaign Name': campaign_name,
+                            'Adgroup': adgroup_name,
+                            'Creative': creative_name,
+                        }
+                        creative_node = creative_edge['node']
+                        metrics = creative_node['metrics']
+                        dimensions = creative_node['dimensions']
+                        result['Impressions'] = metrics['impressions']
+                        result['Clicks'] = metrics['clicks']
+                        result['Advertiser Cost (Adv Currency)'] = metrics[
+                            'spend']['advertiserCurrency']
+                        result['Date'] = dimensions['time']['day']
+                        results.append(result)
+                    reporting_page = reporting['pageInfo']
+                    if reporting_page['hasNextPage']:
+                        reporting_cursor = reporting_page['endCursor']
+                        continue
+                    else:
+                        reporting_cursor = None
+                creative_page = creatives['pageInfo']
+                if creative_page['hasNextPage']:
+                    creative_cursor = creative_page['endCursor']
+                    continue
+                else:
+                    creative_cursor = None
+            page_info = page['pageInfo']
+            if page_info['hasNextPage']:
+                ad_group_cursor = page_info['endCursor']
             else:
                 break
+        results = pd.DataFrame(results)
         return results
 
     @staticmethod
