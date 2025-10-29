@@ -23,16 +23,15 @@ class AmzApi(object):
     fe_url = 'https://advertising-api-fe.amazon.com'
     refresh_url = 'https://api.amazon.com/auth/o2/token'
     def_metrics = [
-        'campaignName', 'adGroupName', 'impressions', 'clicks', 'cost',
+        'impressions', 'clicks', 'cost',
         'attributedConversions14d',
         'attributedConversions14dSameSKU', 'attributedUnitsOrdered14d',
         'attributedSales14d', 'attributedSales14dSameSKU']
-    sponsored_columns = [
-        'date', 'impressions', 'clicks', 'cost', 'campaignName', 'campaignId']
+    sponsored_columns = ['date', 'impressions', 'clicks', 'cost']
     sp_columns = [
-        'spend', 'purchases14d', 'purchasesSameSku14d', 'unitsSoldClicks14d',
+        'purchases14d', 'purchasesSameSku14d', 'unitsSoldClicks14d',
         'unitsSoldSameSku14d', 'sales14d', 'attributedSalesSameSku14d',
-        'adGroupName', 'adGroupId']
+        'adGroupId']
     sb_columns = [
         'detailPageViewsClicks', 'newToBrandDetailPageViews',
         'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
@@ -57,6 +56,8 @@ class AmzApi(object):
         self.profile_id = None
         self.report_ids = []
         self.report_types = []
+        self.export_id = ''
+        self.campaign_export_id = ''
         self.config_list = None
         self.client = None
         self.headers = None
@@ -132,10 +133,13 @@ class AmzApi(object):
             self.get_client(errors=errors + 1)
         self.client = OAuth2Session(self.client_id, token=token)
 
-    def set_headers(self):
+    def set_headers(self, content_type=''):
         self.headers = {'Amazon-Advertising-API-ClientId': self.client_id}
         if self.profile_id:
             self.headers['Amazon-Advertising-API-Scope'] = str(self.profile_id)
+        if content_type:
+            self.headers['Content-Type'] = content_type
+            self.headers['Accept'] = content_type
 
     def get_dsp_profiles(self, dsp_profiles, endpoint=None):
         """
@@ -342,7 +346,7 @@ class AmzApi(object):
         body['configuration']['reportTypeId'] = report_type
         group_by = ['campaign']
         if group_by_ad_group:
-            group_by += ['adGroup']
+            group_by = ['adGroup']
         body['configuration']['groupBy'] = group_by
         return body
 
@@ -359,6 +363,54 @@ class AmzApi(object):
                 body_copy, ad_product, cols, report_type, group_by)
             request_bodies.append(request_body)
         return request_bodies
+
+    def check_and_get_export(self, export_id, entity='adGroups'):
+        """
+        Retrieves a previously requested export and returns as df
+
+        :param export_id: The id of the export to retrieve
+        :param entity: The entity type to
+        :return:
+        """
+        df = pd.DataFrame()
+        lower_entity = entity.lower()
+        content_type = 'application/vnd.{}export.v1+json'.format(lower_entity)
+        self.set_headers(content_type)
+        url = '{}/exports/{}'.format(self.base_url, export_id)
+        r = self.make_request(url, method='GET', headers=self.headers,
+                              json_response_key='url')
+        if 'url' in r.json():
+            report_url = r.json()['url']
+            r = requests.get(report_url)
+            df = pd.read_json(io.BytesIO(r.content), compression='gzip')
+            cols = ['campaignId', 'name']
+            if entity == 'adGroups':
+                cols.append('adGroupId')
+                col_rename = 'adGroupName'
+            else:
+                col_rename = 'campaignName'
+            col_rename = {'name': col_rename}
+            df = df[cols]
+            df = df.rename(columns=col_rename)
+        return df
+
+    def request_export(self, entity='adGroups'):
+        """
+        Requests an export for a file that has names and ids
+
+        :param entity: The object level to request for
+        :return: The id of the export to pull
+        """
+        lower_entity = entity.lower()
+        content_type = 'application/vnd.{}export.v1+json'.format(lower_entity)
+        self.set_headers(content_type)
+        url = '{}/{}/export'.format(self.base_url, entity)
+        body = {'adProductFilter': ["SPONSORED_PRODUCTS", "SPONSORED_BRANDS"],
+                'stateFilter': ['ENABLED', 'PAUSED', 'ARCHIVED']}
+        r = self.make_request(url, method='POST', headers=self.headers,
+                              body=body, json_response_key='exportId')
+        export_id = r.json()['exportId']
+        return export_id
 
     def request_report(self, sd, ed):
         delta = ed - sd
@@ -385,6 +437,9 @@ class AmzApi(object):
             header = 'application/vnd.createasyncreportrequest.v3+json'
             url = '{}/reporting/reports'.format(self.base_url)
             request_bodies = self.get_sponsored_bodies(base_body)
+            if not self.export_id:
+                self.export_id = self.request_export()
+                self.campaign_export_id = self.request_export('campaigns')
         self.headers['Accept'] = header
         report_ids = []
         for request_body in request_bodies:
@@ -400,6 +455,12 @@ class AmzApi(object):
             df = self.check_report_status(report_id, attempts, wait)
             df_list.append(df)
         self.df = self.merge_dataframes(df_list)
+        if self.export_id and not self.df.empty:
+            exports = [(self.export_id, 'adGroups', 'adGroupId'),
+                       (self.campaign_export_id, 'campaigns', 'campaignId')]
+            for export_id, entity, id_col in exports:
+                id_df = self.check_and_get_export(export_id, entity=entity)
+                self.df = self.df.merge(id_df, on=id_col, how='left')
         return self.df
 
     def check_report_status(self, report_id, attempts, wait):
@@ -416,6 +477,7 @@ class AmzApi(object):
                 self.base_url, report_id)
             complete_status = 'COMPLETED'
             url_key = 'url'
+        df = pd.DataFrame()
         for attempt in range(attempts):
             logging.info(
                 'Checking for report {} attempt {}'.format(
@@ -439,7 +501,7 @@ class AmzApi(object):
                             df['date'] = df['date'].apply(
                                 lambda x: dt.datetime.fromtimestamp(
                                     x / 1000, tz=pytz.UTC).date())
-                    return df
+                    break
                 else:
                     time.sleep(wait)
             elif ('message' in r.json() and r.json()['message'] ==
@@ -451,7 +513,7 @@ class AmzApi(object):
             else:
                 logging.warning(
                     'No status in response as follows: {}'.format(r.json()))
-                return pd.DataFrame()
+        return df
 
     @staticmethod
     def merge_dataframes(dfs):
