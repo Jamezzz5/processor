@@ -200,6 +200,9 @@ class CriApi(object):
         df = pd.DataFrame()
         base_url = '{}{}'.format(self.base_url, self.version_url)
         campaign_ids = self.check_if_advertiser_id(base_url, fields)
+        if len(campaign_ids) == 1:
+            campaign_ids = [x.strip().replace(' ','')
+                            for x in campaign_ids[0].split(',')]
         for campaign_id in campaign_ids:
             r = self.request_data(sd, ed, base_url, fields, campaign_id)
             if 'data' not in r.json():
