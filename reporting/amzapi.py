@@ -43,6 +43,7 @@ class AmzApi(object):
         'videoCompleteViews', 'videoFirstQuartileViews', 'detailPageViews',
         'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes']
     default_config_file_name = 'amzapi.json'
+    campaign_col = 'campaignName'
 
     def __init__(self):
         self.config = None
@@ -165,7 +166,8 @@ class AmzApi(object):
                 profile = profile[0]
                 self.profile_id = profile['advertiserId']
                 self.set_headers()
-                self.base_url = self.check_correct_endpoint([dsp_profile], endpoint)
+                self.base_url = self.check_correct_endpoint(
+                    [dsp_profile], endpoint)
                 self.amazon_dsp = True
                 self.timezone = pytz.timezone(profile['timezone'])
                 break
@@ -188,7 +190,8 @@ class AmzApi(object):
 
     def check_correct_endpoint(self, profile, url):
         region_map = {'NA': ['US', 'CA', 'MX'],
-                      'EU': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'SE', 'PL', 'BE'],
+                      'EU': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'SE', 'PL',
+                             'BE'],
                       'FE': ['JP', 'SG', 'AU']}
         endpoints = {'NA': self.base_url,
                      'EU': self.eu_url,
@@ -295,8 +298,9 @@ class AmzApi(object):
         return self.df
 
     def filter_df_on_campaign(self, df):
-        if self.campaign_id and 'campaignName' in df.columns:
-            df = df[df['campaignName'].str.contains(self.campaign_id)]
+        if self.campaign_id and self.campaign_col in df.columns:
+            df = df[df[self.campaign_col].astype('U').str.contains(
+                self.campaign_id)]
         return df
 
     def get_report_id(self, url, body):
@@ -378,7 +382,7 @@ class AmzApi(object):
         self.set_headers(content_type)
         url = '{}/exports/{}'.format(self.base_url, export_id)
         r = self.make_request(url, method='GET', headers=self.headers,
-                              json_response_key='url')
+                              json_response_key='url', sleep_time=5)
         if 'url' in r.json():
             report_url = r.json()['url']
             r = requests.get(report_url)
@@ -388,7 +392,7 @@ class AmzApi(object):
                 cols.append('adGroupId')
                 col_rename = 'adGroupName'
             else:
-                col_rename = 'campaignName'
+                col_rename = self.campaign_col
             col_rename = {'name': col_rename}
             df = df[cols]
             df = df.rename(columns=col_rename)
@@ -411,6 +415,17 @@ class AmzApi(object):
                               body=body, json_response_key='exportId')
         export_id = r.json()['exportId']
         return export_id
+
+    def filter_request_body_on_campaign(self, request_bodies):
+        if self.cid_df.empty:
+            self.cid_df = self.check_and_get_export(
+                self.campaign_export_id, entity='campaigns')
+        df = self.filter_df_on_campaign(self.cid_df)
+        campaign_ids = df['campaignId'].to_list()
+        for body in request_bodies:
+            filter_list = [{"field": "campaignId", "values": campaign_ids}]
+            body['configuration']['filters'] = filter_list
+        return request_bodies
 
     def request_report(self, sd, ed):
         delta = ed - sd
@@ -614,7 +629,7 @@ class AmzApi(object):
 
     def make_request(self, url, method, body=None, params=None, headers=None,
                      attempt=1, json_response=True, json_response_key='',
-                     skip_error_type=''):
+                     skip_error_type='', sleep_time=30):
         self.get_client()
         attempts = 10
         for x in range(attempts):
@@ -644,7 +659,7 @@ class AmzApi(object):
             if request_success:
                 break
             else:
-                time.sleep(30)
+                time.sleep(sleep_time)
                 attempt += 1
                 if attempt > attempts:
                     self.request_error()
@@ -707,7 +722,7 @@ class AmzApi(object):
         else:
             body['configuration'] = {
                     'adProduct': 'SPONSORED_PRODUCTS',
-                    'columns':  ["cost", "campaignId", "campaignName"],
+                    'columns':  ["cost", "campaignId", self.campaign_col],
                     'reportTypeId': 'spCampaigns',
                     'format': 'GZIP_JSON',
                     'groupBy': ['campaign'],
@@ -746,7 +761,7 @@ class AmzApi(object):
                 [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
             row = [camp_col, msg, True]
             results.append(row)
-            for campaign in df['campaignName'].tolist():
+            for campaign in df[self.campaign_col].tolist():
                 row = [camp_col, campaign, True]
                 results.append(row)
         return results
