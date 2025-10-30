@@ -576,6 +576,10 @@ class TtdApi(object):
         headers = {'TTD-Auth': self.query_token}
         body = {'query': query, 'variables': {'advId': candidate_id}}
         r = requests.post(self.query_url, json=body, headers=headers)
+        if 'data' not in r.json():
+            self.query_token = self.get_new_token(self.login, self.password)
+            headers = {'TTD-Auth': self.query_token}
+            r = requests.post(self.query_url, json=body, headers=headers)
         if r.json()['data'] and 'advertiser' in r.json()['data']:
             is_advertiser_id = True
         return is_advertiser_id
