@@ -44,6 +44,8 @@ class AmzApi(object):
         'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes']
     default_config_file_name = 'amzapi.json'
     campaign_col = 'campaignName'
+    search_columns = [
+        'date', 'campaignId', 'adGroupId', 'searchTerm']
 
     def __init__(self):
         self.config = None
@@ -68,6 +70,7 @@ class AmzApi(object):
         self.timezone = None
         self.df = pd.DataFrame()
         self.r = None
+        self.include_keywords = False
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -248,6 +251,9 @@ class AmzApi(object):
             for field in fields:
                 if field == 'hsa':
                     self.report_types.append('hsa')
+                if field.lower() == 'keyword':
+                    self.include_keywords = True
+                    logging.info('Keyword-level data enabled via API Fields')
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -350,6 +356,18 @@ class AmzApi(object):
             "timeUnit": "DAILY"
         })
         return body
+
+    def get_search_term_body(self, body):
+        body_copy = copy.deepcopy(body)
+        body_copy['configuration'] = {
+            'adProduct': 'SPONSORED_PRODUCTS',
+            'columns': self.search_columns,
+            'reportTypeId': 'spSearchTerm',
+            'timeUnit': "DAILY",
+            'format': 'GZIP_JSON',
+            'groupBy': ['searchTerm']
+        }
+        return body_copy
 
     def get_sponsored_body(self, body, ad_product, cols, report_type,
                            group_by_ad_group=False):
@@ -463,6 +481,9 @@ class AmzApi(object):
             if not self.export_id:
                 self.export_id = self.request_export()
                 self.campaign_export_id = self.request_export('campaigns')
+            if self.include_keywords and not self.amazon_dsp:
+                search_term_body = self.get_search_term_body(base_body)
+                request_bodies.append(search_term_body)
         self.headers['Accept'] = header
         report_ids = []
         for request_body in request_bodies:
@@ -476,8 +497,29 @@ class AmzApi(object):
         df_list = []
         for report_id in report_ids:
             df = self.check_report_status(report_id, attempts, wait)
-            df_list.append(df)
-        self.df = self.merge_dataframes(df_list)
+            if df is not None and not df.empty:
+                if 'date' in df.columns:
+                    df['date'] = pd.to_datetime(df['date']).dt.date
+                df_list.append(df)
+        search_term_dfs = []
+        main_df_list = []
+        merge_keys = ['date', 'adGroupId']
+        for df in df_list:
+            if 'searchTerm' in df.columns:
+                search_term_dfs.append(df)
+            else:
+                main_df_list.append(df)
+        self.df = self.merge_dataframes(main_df_list)
+        if search_term_dfs:
+            search_term_df = pd.concat(search_term_dfs, ignore_index=True)
+            for col in self.search_columns:
+                if col not in search_term_df.columns:
+                    logging.warning("Column {} not in SearchTerm csv.".format(col))
+                    return self.df
+            search_term_df['date'] = pd.to_datetime(search_term_df['date']).dt.date
+            search_term_df = (search_term_df.groupby(merge_keys, as_index=False)
+                .agg({'searchTerm': lambda x: ' | '.join(sorted(set(x)))}))
+            self.df = self.df.merge(search_term_df, on=merge_keys, how='left')
         if self.export_id and not self.df.empty:
             exports = [(self.export_id, 'adGroups', 'adGroupId'),
                        (self.campaign_export_id, 'campaigns', 'campaignId')]
