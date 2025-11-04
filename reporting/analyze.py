@@ -93,7 +93,7 @@ class Analyze(object):
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
                  load_chat=False, chat_path=utl.config_path, llm_url='',
-                 llm_model=''):
+                 llm_model='', llm_instructions=''):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
@@ -102,6 +102,7 @@ class Analyze(object):
         self.chat_path = chat_path
         self.llm_url = llm_url
         self.llm_model = llm_model
+        self.llm_instructions = llm_instructions
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
@@ -116,7 +117,8 @@ class Analyze(object):
         if self.load_chat:
             self.chat = AliChat(
                 config_path=self.chat_path, llm_url=self.llm_url,
-                llm_model=self.llm_model)
+                llm_model=self.llm_model,
+                llm_instructions=self.llm_instructions)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -209,6 +211,8 @@ class Analyze(object):
         matrix[[dctc.SD, dctc.ED]] = matrix[[dctc.SD, dctc.ED]].fillna(pd.NaT)
         matrix[[dctc.SD, dctc.ED]] = matrix[
             [dctc.SD, dctc.ED]].replace([""], pd.NaT)
+        if vmc.vendorkey not in df.columns:
+            return None, None
         vm_dates = df[plan_names + [vmc.vendorkey, vmc.cost]]
         vm_dates = vm_dates.merge(matrix, how='left', on=vmc.vendorkey)
         vm_dates = vm_dates.groupby(
@@ -3343,7 +3347,7 @@ class AliChat(object):
         "with keys: entities, dates, amounts, decisions.")
 
     def __init__(self, config_name='openai.json', config_path='reporting',
-                 llm_url='', llm_model=''):
+                 llm_url='', llm_model='', llm_instructions=''):
         self.config_name = config_name
         self.config_path = config_path
         self.db = None
@@ -3352,6 +3356,7 @@ class AliChat(object):
         self.message = ''
         self.llm_url = llm_url
         self.llm_model = llm_model
+        self.llm_instructions = llm_instructions
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
 
@@ -3507,25 +3512,27 @@ class AliChat(object):
                      range(len(words) - ngrams + 1)]
         return words
 
-    def get_llm_response(self, context, user_query, mode='answer'):
+    def get_llm_response(self, context, user_query, mode='answer',
+                         instructions=''):
         """
         Passes the context to the llm url to better answer the question
 
         :param context: The current response gathered as text
         :param user_query: The original question asked
         :param mode: Different initial instructions that can be passed in prompt
+        :param instructions: General instructions to include with prompt
         :return: response from the llm as string
         """
 
-        instructions = {
-            'answer':    AliChat.instruction_answer,
-            'summarize': AliChat.instruction_summarize,
-            "rewrite":   AliChat.instruction_rewrite,
-            "extract":   AliChat.instruction_extract,
-        }[mode]
+        if not instructions:
+            instructions = {
+                'answer':    AliChat.instruction_answer,
+                'summarize': AliChat.instruction_summarize,
+                "rewrite":   AliChat.instruction_rewrite,
+                "extract":   AliChat.instruction_extract,
+            }[mode]
 
-        prompt = f"""You are a careful assistant.
-                     Instructions: {instructions}
+        prompt = f"""Instructions: {instructions}
                     
                      User question:
                      {user_query}
@@ -3557,8 +3564,9 @@ class AliChat(object):
                 db_model, words, model_ids)
             if response and self.llm_url and hasattr(db_model, 'llm_summary'):
                 full_response = response + html_response
-                response = self.get_llm_response(full_response, message,
-                                                 mode='answer')
+                response = self.get_llm_response(
+                    full_response, message, mode='answer',
+                    instructions=self.llm_instructions)
         return response, html_response
 
     @staticmethod
@@ -4042,7 +4050,7 @@ class AliChat(object):
             if idx == 0:
                 response = '{}{}'.format(new_resp, response)
             else:
-                response = '{}{}<br>'.format(response, new_resp)
+                response = '{}  {}<br>'.format(response, new_resp)
         return response
 
     def polish_response(self, response):

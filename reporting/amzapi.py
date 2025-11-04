@@ -59,6 +59,7 @@ class AmzApi(object):
         self.report_types = []
         self.export_id = ''
         self.campaign_export_id = ''
+        self.cid_df = pd.DataFrame()
         self.config_list = None
         self.client = None
         self.headers = None
@@ -206,9 +207,16 @@ class AmzApi(object):
         self.set_headers()
         for endpoint in [self.base_url, self.eu_url, self.fe_url]:
             url = '{}/v{}/profiles'.format(endpoint, self.version)
-            r = self.make_request(url, method='GET', headers=self.headers)
-            profile = [x for x in r.json() if
-                       self.advertiser_id[1:] in x['accountInfo']['id']]
+            json_response = []
+            for _ in range(5):
+                r = self.make_request(url, method='GET', headers=self.headers)
+                json_response = r.json()
+                if isinstance(json_response, list):
+                    break
+                else:
+                    time.sleep(10)
+            profile = [x for x in json_response
+                       if self.advertiser_id[1:] in x['accountInfo']['id']]
             if not profile:
                 profile = self.get_accounts_by_user(endpoint)
             if profile:
@@ -216,7 +224,7 @@ class AmzApi(object):
                 self.set_headers()
                 self.base_url = self.check_correct_endpoint(profile, endpoint)
                 return True
-            dsp_profiles = [x for x in r.json() if 'agency'
+            dsp_profiles = [x for x in json_response if 'agency'
                             in x['accountInfo']['type']]
             if dsp_profiles:
                 profile = self.get_dsp_profiles(dsp_profiles, endpoint)
