@@ -12,6 +12,7 @@ import tarfile
 import requests
 import numpy as np
 import pandas as pd
+from enum import Enum
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
@@ -93,7 +94,7 @@ class Analyze(object):
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
                  load_chat=False, chat_path=utl.config_path, llm_url='',
-                 llm_model='', llm_instructions=''):
+                 llm_model='', llm_instructions='', previous_messages=None):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
@@ -103,6 +104,7 @@ class Analyze(object):
         self.llm_url = llm_url
         self.llm_model = llm_model
         self.llm_instructions = llm_instructions
+        self.previous_messages = previous_messages if previous_messages else []
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
@@ -118,7 +120,8 @@ class Analyze(object):
             self.chat = AliChat(
                 config_path=self.chat_path, llm_url=self.llm_url,
                 llm_model=self.llm_model,
-                llm_instructions=self.llm_instructions)
+                llm_instructions=self.llm_instructions,
+                previous_messages=self.previous_messages)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -3317,6 +3320,92 @@ class FakeDbModel(object):
         self.id = object_id
 
 
+class Intent(object):
+    ASK = "ask"
+    CREATE = "create"
+    EDIT = "edit"
+    RUN = "run"
+    SEARCH = "search"
+    OTHER = "other"
+
+    q_mark_key = 'q_mark'
+    q_word_key = 'q_wh'
+    re_q_wh = 'who|what|when|where|why|how|which|whom|whose'
+    q_aux_key = 'q_aux'
+    re_q_aux = ('can|should|does|do|did|is|are|was|were|has|have|will|would|'
+                'could|may|might')
+    imper_create_key = 'imper_create'
+    imper_create = ('create|make|new|spin\s*up|add\s+.+'
+                    '\b(?:processor|plan|partner|placement)')
+    imper_edit_key = 'imper_edit'
+    imper_edit = 'change|edit|adjust|alter|update|set'
+    imper_run_key = 'imper_run'
+    imper_run = 'run|execute|launch'
+    imper_search_key = 'imper_search'
+    imper_search = 'find|list|show|search|lookup|fetch|get'
+    resp_intent_key = 'intent'
+
+    def __init__(self):
+        self.compiled_regex = self.compile_regex()
+
+    def get_intent_keys(self):
+        intent_keys = [self.ASK, self.CREATE, self.EDIT, self.RUN, self.SEARCH,
+                       self.OTHER]
+        return intent_keys
+
+    def compile_regex(self):
+        items_compile = [
+            (self.q_word_key, self.re_q_wh),
+            (self.q_aux_key, self.re_q_aux),
+            (self.imper_create_key, self.imper_create),
+            (self.imper_edit_key, self.imper_edit),
+            (self.imper_run_key, self.imper_run),
+            (self.imper_search_key, self.imper_search),
+        ]
+        regex = {self.q_mark_key: re.compile(r"\?\s*$")}
+        for key, words in items_compile:
+            regex[key] = re.compile(r"(^|\b)({})\b".format(words), re.I)
+        return regex
+
+    def classify_intent(self, message):
+        """
+        Scores the message based on certain keywords to check intent
+        between asking questions, creating, editing or running models
+
+        :param message: The user prompt
+        :return: Dictionary containing intent, features and confidence
+        """
+        msg = message.strip()
+        f = self.compiled_regex
+        feats = []
+        score = {}
+        question_weights = [(self.q_mark_key, 1.5), (self.q_word_key, 1.2),
+                            (self.q_aux_key, 0.6)]
+        weight_dict = {self.ASK: question_weights,
+                       self.CREATE: [(self.imper_create_key, 1.4)],
+                       self.EDIT: [(self.imper_edit_key, 1.2)],
+                       self.RUN: [(self.imper_run_key, 1.0)],
+                       self.SEARCH: [(self.imper_search_key, 0.8)]}
+        for intent_key, weights in weight_dict.items():
+            score[intent_key] = 0
+            for question_key, question_weight in weights:
+                if f[question_key].search(msg):
+                    score[intent_key] += question_weight
+                    feats.append(question_key)
+        is_strong_q = self.q_mark_key in feats and self.q_word_key in feats
+        if is_strong_q:
+            score[Intent.ASK] += 0.6
+        winner = max(score.items(), key=lambda kv: kv[1])
+        intent = winner[0] if winner[1] > 0 else Intent.OTHER
+        raw = winner[1]
+        conf = 0.35 + max(0.0, min(raw, 2.0)) / 2.0 * (0.95 - 0.35)
+        return {
+            self.resp_intent_key: intent,
+            "confidence": round(conf, 3),
+            "features": feats,
+        }
+
+
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = 'I had trouble understanding but the openai gpt response is:'
@@ -3347,7 +3436,8 @@ class AliChat(object):
         "with keys: entities, dates, amounts, decisions.")
 
     def __init__(self, config_name='openai.json', config_path='reporting',
-                 llm_url='', llm_model='', llm_instructions=''):
+                 llm_url='', llm_model='', llm_instructions='',
+                 previous_messages=None):
         self.config_name = config_name
         self.config_path = config_path
         self.db = None
@@ -3357,8 +3447,10 @@ class AliChat(object):
         self.llm_url = llm_url
         self.llm_model = llm_model
         self.llm_instructions = llm_instructions
+        self.previous_messages = previous_messages if previous_messages else []
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
+        self.intent = Intent()
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3513,7 +3605,7 @@ class AliChat(object):
         return words
 
     def get_llm_response(self, context, user_query, mode='answer',
-                         instructions=''):
+                         instructions='', previous_messages=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3521,9 +3613,9 @@ class AliChat(object):
         :param user_query: The original question asked
         :param mode: Different initial instructions that can be passed in prompt
         :param instructions: General instructions to include with prompt
+        :param previous_messages: List of previous messages
         :return: response from the llm as string
         """
-
         if not instructions:
             instructions = {
                 'answer':    AliChat.instruction_answer,
@@ -3531,16 +3623,26 @@ class AliChat(object):
                 "rewrite":   AliChat.instruction_rewrite,
                 "extract":   AliChat.instruction_extract,
             }[mode]
+        previous_messages = [
+            (f"<user>\n{t.text}\n</user>\n"
+             f"<assistant>\n{t.response}\n</assistant>")
+            for t in previous_messages[-5:]]
+        previous_messages = '\n'.join(previous_messages)
+        prompt = f"""
+            Instructions: {instructions}
+            
+            "Messages use <user> and <assistant> tags. 
+            Respond only as <assistant>.
+            Conversation history:
+            {previous_messages}
 
-        prompt = f"""Instructions: {instructions}
-                    
-                     User question:
-                     {user_query}
-                    
-                     Context (verbatim, may be long):
-                     <context>
-                     {context}
-                     </context>"""
+            User question:
+            {user_query}
+
+            Context (verbatim, may be long):
+            <context>
+            {context}
+            </context>"""
         body = {
             "model": self.llm_model,
             "prompt": prompt,
@@ -3566,7 +3668,8 @@ class AliChat(object):
                 full_response = response + html_response
                 response = self.get_llm_response(
                     full_response, message, mode='answer',
-                    instructions=self.llm_instructions)
+                    instructions=self.llm_instructions,
+                    previous_messages=self.previous_messages)
         return response, html_response
 
     @staticmethod
@@ -3919,7 +4022,12 @@ class AliChat(object):
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
-        if not response and models_to_search:
+        intent_dict = self.intent.classify_intent(message)
+        is_question = intent_dict[Intent.resp_intent_key] == Intent.ASK
+        if is_question:
+            models_to_search = [
+                x for x in models_to_search if hasattr(x, 'llm_summary')]
+        if not response and models_to_search and not is_question:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
                 if in_message:
