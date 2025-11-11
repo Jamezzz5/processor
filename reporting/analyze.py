@@ -12,7 +12,6 @@ import tarfile
 import requests
 import numpy as np
 import pandas as pd
-from enum import Enum
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
@@ -3451,6 +3450,7 @@ class AliChat(object):
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
         self.intent = Intent()
+        self.call_llm = False
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3605,7 +3605,8 @@ class AliChat(object):
         return words
 
     def get_llm_response(self, context, user_query, mode='answer',
-                         instructions='', previous_messages=None):
+                         instructions='', previous_messages=None,
+                         stream=False):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3614,6 +3615,7 @@ class AliChat(object):
         :param mode: Different initial instructions that can be passed in prompt
         :param instructions: General instructions to include with prompt
         :param previous_messages: List of previous messages
+        :param stream: Boolean to stream response or return all at once
         :return: response from the llm as string
         """
         if not instructions:
@@ -3646,15 +3648,29 @@ class AliChat(object):
         body = {
             "model": self.llm_model,
             "prompt": prompt,
-            "stream": False,
+            "stream": stream,
             "options": {
                 "temperature": 0.2,
                 "num_ctx": 8192
             }
         }
-        r = requests.post(self.llm_url, json=body, timeout=120)
-        response = r.json()["response"]
-        return response
+        if stream:
+            with requests.post(self.llm_url, json=body, stream=True) as r:
+                r.raise_for_status()
+                for raw_line in r.iter_lines(decode_unicode=True):
+                    if not raw_line:
+                        continue
+                    try:
+                        data = json.loads(raw_line)
+                        delta = data.get("response") or data.get("delta") or ""
+                    except json.JSONDecodeError:
+                        delta = raw_line
+                    if delta:
+                        yield delta
+        else:
+            r = requests.post(self.llm_url, json=body, timeout=120)
+            response = r.json()["response"]
+            return response
 
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
@@ -3665,11 +3681,7 @@ class AliChat(object):
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
             if response and self.llm_url and hasattr(db_model, 'llm_summary'):
-                full_response = response + html_response
-                response = self.get_llm_response(
-                    full_response, message, mode='answer',
-                    instructions=self.llm_instructions,
-                    previous_messages=self.previous_messages)
+                self.call_llm = True
         return response, html_response
 
     @staticmethod
@@ -4144,7 +4156,9 @@ class AliChat(object):
         cur_name = ''
         for idx, x in enumerate([self.opening_phrases, self.closing_phrases]):
             add_name = 0 if cur_name else random.randint(0, 1)
-            cur_name = self.current_user.username if add_name else ''
+            cur_name = ''
+            if self.current_user and add_name and self.current_user.username:
+                cur_name = self.current_user.username
             new_resp = random.choice(x).format(user=cur_name)
             for punc in ['.', '!']:
                 wrong_punctuations = [' {} '.format(punc), ' {}'.format(punc)]
