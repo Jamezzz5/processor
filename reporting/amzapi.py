@@ -44,6 +44,9 @@ class AmzApi(object):
         'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes']
     default_config_file_name = 'amzapi.json'
     campaign_col = 'campaignName'
+    sp_keyword_columns = [
+        'searchTerm', 'keywordId', 'matchType', 'targeting',
+        'keywordBid', 'keywordType']
 
     def __init__(self):
         self.config = None
@@ -68,6 +71,7 @@ class AmzApi(object):
         self.timezone = None
         self.df = pd.DataFrame()
         self.r = None
+        self.include_keywords = False
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -248,6 +252,9 @@ class AmzApi(object):
             for field in fields:
                 if field == 'hsa':
                     self.report_types.append('hsa')
+                if field.lower() == 'keyword':
+                    self.include_keywords = True
+                    logging.info('Keyword-level data enabled via API Fields')
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -356,9 +363,12 @@ class AmzApi(object):
         body['configuration']['adProduct'] = ad_product
         body['configuration']['columns'] = self.sponsored_columns + cols
         body['configuration']['reportTypeId'] = report_type
-        group_by = ['campaign']
-        if group_by_ad_group:
-            group_by = ['adGroup']
+        if isinstance(group_by_ad_group, list):
+            group_by = group_by_ad_group
+        else:
+            group_by = ['campaign']
+            if group_by_ad_group:
+                group_by += ['adGroup']
         body['configuration']['groupBy'] = group_by
         return body
 
@@ -366,10 +376,16 @@ class AmzApi(object):
         body['configuration'] = {
             'timeUnit': 'DAILY',
             'format': 'GZIP_JSON'}
-        sp_items = ['SPONSORED_PRODUCTS', self.sp_columns, 'spCampaigns', True]
-        sb_items = ['SPONSORED_BRANDS', self.sb_columns, 'sbCampaigns', False]
+        if self.include_keywords and not self.amazon_dsp:
+            rep_items = [
+                ('SPONSORED_PRODUCTS', self.sp_keyword_columns + self.sp_columns,
+                 'spSearchTerm', ['searchTerm'])]
+        else:
+            rep_items = [
+                ('SPONSORED_PRODUCTS', self.sp_columns, 'spCampaigns', True),
+                ('SPONSORED_BRANDS', self.sb_columns, 'sbCampaigns', False)]
         request_bodies = []
-        for ad_product, cols, report_type, group_by in [sp_items, sb_items]:
+        for ad_product, cols, report_type, group_by in rep_items:
             body_copy = copy.deepcopy(body)
             request_body = self.get_sponsored_body(
                 body_copy, ad_product, cols, report_type, group_by)
