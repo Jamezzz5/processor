@@ -3509,7 +3509,7 @@ class AliChat(object):
                 obj = FakeDbModel(name=obj, object_id=idx)
             if obj.name:
                 used_words = []
-                words = self.get_unigrams_and_bigrams(
+                words = utl.lower_words_from_str(
                     obj.name, split_underscore=split_underscore)
                 for word in words:
                     if word in used_words:
@@ -3579,8 +3579,8 @@ class AliChat(object):
                       split_underscore=False):
         word_idx = self.index_db_model_by_word(
             db_model, model_is_list, split_underscore)
-        words = self.get_unigrams_and_bigrams(
-            message, db_model=db_model, other_db_model=other_db_model,
+        words = self.remove_stop_words_from_message(
+            message, db_model, other_db_model,
             remove_punctuation=remove_punctuation,
             split_underscore=split_underscore)
         used_words = []
@@ -3599,13 +3599,7 @@ class AliChat(object):
                         model_ids[new_model_id] = word_val
         if model_ids:
             max_value = max(model_ids.values())
-            llm_summary = hasattr(db_model, 'llm_summary')
-            llm_limit = hasattr(db_model, 'llm_limit')
-            if llm_summary and not llm_limit:
-                model_ids = self.keep_n_largest(model_ids)
-            else:
-                model_ids = {k: v for k, v in model_ids.items()
-                             if v == max_value}
+            model_ids = {k: v for k, v in model_ids.items() if v == max_value}
         return model_ids, words
 
     def search_db_model_from_ids(self, db_model, words, model_ids):
