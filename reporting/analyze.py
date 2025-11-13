@@ -3492,13 +3492,10 @@ class AliChat(object):
         :param remove_punctuation:
         :return: list of tokens to use
         """
-        tokens = []
-        for n in [0, 2]:
-            new_tokens = self.remove_stop_words_from_message(
-                text, remove_punctuation=remove_punctuation, lemmatize=True,
-                ngrams=n, split_underscore=split_underscore, db_model=db_model,
-                other_db_model=other_db_model)
-            tokens += new_tokens
+        tokens = self.remove_stop_words_from_message(
+            text, remove_punctuation=remove_punctuation, lemmatize=True,
+            split_underscore=split_underscore, db_model=db_model,
+            other_db_model=other_db_model, unigrams_and_bigrams=True)
         return tokens
 
     def index_db_model_by_word(self, db_model, model_is_list=False,
@@ -3512,7 +3509,7 @@ class AliChat(object):
                 obj = FakeDbModel(name=obj, object_id=idx)
             if obj.name:
                 used_words = []
-                words = self.remove_stop_words_from_message(
+                words = self.get_unigrams_and_bigrams(
                     obj.name, split_underscore=split_underscore)
                 for word in words:
                     if word in used_words:
@@ -3559,6 +3556,24 @@ class AliChat(object):
                 break
         return table_response
 
+    @staticmethod
+    def keep_n_largest(model_ids, n=5):
+        top_scores = []
+        for score in model_ids.values():
+            inserted = False
+            for i, existing in enumerate(top_scores):
+                if score > existing:
+                    top_scores.insert(i, score)
+                    inserted = True
+                    break
+            if not inserted:
+                top_scores.append(score)
+            if len(top_scores) > n:
+                top_scores.pop()
+        cutoff_score = top_scores[-1]
+        filtered = {k: v for k, v in model_ids.items() if v >= cutoff_score}
+        return filtered
+
     def find_db_model(self, db_model, message, other_db_model=None,
                       remove_punctuation=True, model_is_list=False,
                       split_underscore=False):
@@ -3584,7 +3599,13 @@ class AliChat(object):
                         model_ids[new_model_id] = word_val
         if model_ids:
             max_value = max(model_ids.values())
-            model_ids = {k: v for k, v in model_ids.items() if v == max_value}
+            llm_summary = hasattr(db_model, 'llm_summary')
+            llm_limit = hasattr(db_model, 'llm_limit')
+            if llm_summary and not llm_limit:
+                model_ids = self.keep_n_largest(model_ids)
+            else:
+                model_ids = {k: v for k, v in model_ids.items()
+                             if v == max_value}
         return model_ids, words
 
     def search_db_model_from_ids(self, db_model, words, model_ids):
@@ -3605,25 +3626,40 @@ class AliChat(object):
     def remove_stop_words_from_message(
             self, message, db_model=None, other_db_model=None,
             remove_punctuation=False, lemmatize=False, ngrams=0,
-            split_underscore=False):
+            split_underscore=False, unigrams_and_bigrams=False):
         if remove_punctuation:
             message = re.sub(r'[^\w\s]', '', message)
-        stop_words = self.stop_words.copy()
-        if db_model and not isinstance(db_model, list):
-            stop_words += db_model.get_model_name_list()
-            if hasattr(db_model, 'get_model_omit_search_list'):
-                stop_words += db_model.get_model_omit_search_list()
-        if other_db_model:
-            stop_words += other_db_model.get_name_list()
-        words = utl.lower_words_from_str(message, split_underscore)
-        words = [x for x in words if x not in stop_words]
-        if lemmatize:
+        lemmatizer = None
+        if not lemmatizer:
             lemmatizer = nltk.stem.WordNetLemmatizer()
-            words = [lemmatizer.lemmatize(x) for x in words]
-        if ngrams:
-            words = ["_".join(words[i:i + ngrams]) for i in
-                     range(len(words) - ngrams + 1)]
-        return words
+        stop_words = set(self.stop_words.copy())
+        if db_model and not isinstance(db_model, list):
+            stop_words.update(db_model.get_model_name_list())
+            if hasattr(db_model, 'get_model_omit_search_list'):
+                stop_words.update(db_model.get_model_omit_search_list())
+        if other_db_model:
+            stop_words.update(other_db_model.get_name_list())
+        words = utl.lower_words_from_str(message, split_underscore)
+        tokens = []
+        ngram_tokens = []
+        window = []
+        for word in words:
+            if word in stop_words:
+                continue
+            if lemmatize:
+                word = lemmatizer.lemmatize(word)
+            if ngrams:
+                window.append(word)
+                if len(window) > ngrams:
+                    window.pop(0)
+                if len(window) == ngrams:
+                    ngram_tokens.append("_".join(window))
+            tokens.append(word)
+        if unigrams_and_bigrams:
+            tokens += ngram_tokens
+        elif ngrams:
+            tokens = ngram_tokens
+        return tokens
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
