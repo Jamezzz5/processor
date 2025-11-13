@@ -3479,8 +3479,29 @@ class AliChat(object):
             response = response.choices[0].text.strip()
         return response
 
-    @staticmethod
-    def index_db_model_by_word(db_model, model_is_list=False,
+    def get_unigrams_and_bigrams(self, text, split_underscore=False,
+                                 db_model=None, other_db_model=None,
+                                 remove_punctuation=True):
+        """
+        Gets both unigrams and bigrams for given text returns as a list.
+
+        :param text: Text to be split
+        :param split_underscore: Whether to split the underscore or not
+        :param db_model:
+        :param other_db_model:
+        :param remove_punctuation:
+        :return: list of tokens to use
+        """
+        tokens = []
+        for n in [0, 2]:
+            new_tokens = self.remove_stop_words_from_message(
+                text, remove_punctuation=remove_punctuation, lemmatize=True,
+                ngrams=n, split_underscore=split_underscore, db_model=db_model,
+                other_db_model=other_db_model)
+            tokens += new_tokens
+        return tokens
+
+    def index_db_model_by_word(self, db_model, model_is_list=False,
                                split_underscore=False):
         word_idx = {}
         db_all = db_model
@@ -3491,7 +3512,7 @@ class AliChat(object):
                 obj = FakeDbModel(name=obj, object_id=idx)
             if obj.name:
                 used_words = []
-                words = utl.lower_words_from_str(
+                words = self.remove_stop_words_from_message(
                     obj.name, split_underscore=split_underscore)
                 for word in words:
                     if word in used_words:
@@ -3543,8 +3564,8 @@ class AliChat(object):
                       split_underscore=False):
         word_idx = self.index_db_model_by_word(
             db_model, model_is_list, split_underscore)
-        words = self.remove_stop_words_from_message(
-            message, db_model, other_db_model,
+        words = self.get_unigrams_and_bigrams(
+            message, db_model=db_model, other_db_model=other_db_model,
             remove_punctuation=remove_punctuation,
             split_underscore=split_underscore)
         used_words = []
@@ -3633,18 +3654,24 @@ class AliChat(object):
         prompt = f"""
             Instructions: {instructions}
             
-            "Messages use <user> and <assistant> tags. 
+            Messages use <user> and <assistant> tags. 
             Respond only as <assistant>.
             Conversation history:
             {previous_messages}
 
             User question:
+            <question>
             {user_query}
+            </question>
 
             Context (verbatim, may be long):
             <context>
             {context}
-            </context>"""
+            </context>
+            
+            Remember: Answer this most recent user query: 
+            {user_query}
+            """
         body = {
             "model": self.llm_model,
             "prompt": prompt,
@@ -3677,6 +3704,9 @@ class AliChat(object):
         html_response = ''
         model_ids, words = self.find_db_model(db_model, message)
         if model_ids:
+            if hasattr(db_model, 'llm_limit'):
+                n_limit = db_model.llm_limit
+                model_ids = {k: model_ids[k] for k in list(model_ids)[:n_limit]}
             words = self.remove_stop_words_from_message(message, db_model)
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
@@ -4207,20 +4237,6 @@ class TfIdfTransformer(object):
         if self.texts:
             self.tfidf_matrix = self.train(texts)
 
-    def get_unigrams_and_bigrams(self, text):
-        """
-        Gets both unigrams and bigrams for given text returns as a list.
-
-        :param text: Text to be split
-        :return: list of tokens to use
-        """
-        unigrams = self.ali_chat.remove_stop_words_from_message(
-            text, remove_punctuation=True, lemmatize=True)
-        bigrams = self.ali_chat.remove_stop_words_from_message(
-            text, remove_punctuation=True, lemmatize=True, ngrams=2)
-        tokens = unigrams + bigrams
-        return tokens
-
     def train(self, texts):
         """
         Create a tf-idf matrix based on texts
@@ -4230,7 +4246,7 @@ class TfIdfTransformer(object):
         """
         doc_tokens = []
         for text in texts:
-            tokens = self.get_unigrams_and_bigrams(text)
+            tokens = self.ali_chat.get_unigrams_and_bigrams(text)
             doc_tokens.append(tokens)
         self.doc_tokens = doc_tokens
         self.unique_words = set()
@@ -4278,7 +4294,7 @@ class TfIdfTransformer(object):
         :param text: Text to compute
         :return: vector
         """
-        words = self.get_unigrams_and_bigrams(text)
+        words = self.ali_chat.get_unigrams_and_bigrams(text)
         freq_dict = {}
         for w in words:
             if w in freq_dict:
@@ -4337,7 +4353,7 @@ class TfIdfTransformer(object):
         """
         if not self.doc_tokens:
             return []
-        q_tokens = self.get_unigrams_and_bigrams(text)
+        q_tokens = self.ali_chat.get_unigrams_and_bigrams(text)
         if not q_tokens:
             return []
         query_freqs = {}
