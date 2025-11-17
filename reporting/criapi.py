@@ -178,9 +178,20 @@ class CriApi(object):
             object_type = 'line-items'
         url = '{}/accounts/{}/{}'.format(
             base_url, self.advertiser_id, object_type)
-        r = self.make_request(url, method='GET', headers=self.headers)
-        if 'data' in r.json():
-            campaign_ids = [x['id'] for x in r.json()['data']]
+        for _ in range(10000):
+            r = self.make_request(url, method='GET', headers=self.headers)
+            if 'data' in r.json():
+                if campaign_ids == [self.advertiser_id]:
+                    campaign_ids = []
+                for item in r.json()['data']:
+                    campaign_ids.append(item['id'])
+            url = ''
+            if 'metadata' in r.json() and 'nextPage' in r.json()['metadata']:
+                url = r.json()['metadata']['nextPage']
+            if not url:
+                break
+        if url:
+            logging.error('Still url, pagination likely ended early.')
         logging.info('Found {} {}'.format(
             len(campaign_ids), object_type))
         return campaign_ids
@@ -189,6 +200,9 @@ class CriApi(object):
         df = pd.DataFrame()
         base_url = '{}{}'.format(self.base_url, self.version_url)
         campaign_ids = self.check_if_advertiser_id(base_url, fields)
+        if len(campaign_ids) == 1:
+            campaign_ids = [x.strip().replace(' ','')
+                            for x in campaign_ids[0].split(',')]
         for campaign_id in campaign_ids:
             r = self.request_data(sd, ed, base_url, fields, campaign_id)
             if 'data' not in r.json():

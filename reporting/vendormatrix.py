@@ -472,7 +472,7 @@ class ImportConfig(object):
                     drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
                                               key_name].copy()
                     drop_idx = drop_idx.index.values
-                    if drop_idx:
+                    if drop_idx.tolist():
                         drop_idx = drop_idx[0]
                         self.matrix_df = self.matrix_df.drop(drop_idx)
                         self.matrix_df.reset_index()
