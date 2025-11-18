@@ -24,7 +24,7 @@ class IasApi(object):
 
     dimensions = ['Teams', 'Campaigns', 'Media partners', 'Placements', 'Date']
 
-    def __init__(self, headless=False):
+    def __init__(self, headless=True):
         self.headless = headless
         self.sw = None
         self.browser = None
@@ -334,9 +334,8 @@ class IasApi(object):
         report_builder_btn = "//span[contains(text(), 'Report Builder')]"
         new_report_btn = "//a[.//span[contains(text(), 'Build New Report')]]"
         self.sw.wait_for_elem_load(report_builder_btn, selector=self.sw.select_xpath)
-        self.sw.click_on_xpath(report_builder_btn)
-
         for _ in range(3):
+            self.sw.click_on_xpath(report_builder_btn)
             try:
                 self.sw.wait_for_elem_load(new_report_btn, selector=self.sw.select_xpath)
                 self.sw.click_on_xpath(new_report_btn)
