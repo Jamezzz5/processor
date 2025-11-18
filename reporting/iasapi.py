@@ -24,7 +24,7 @@ class IasApi(object):
 
     dimensions = ['Teams', 'Campaigns', 'Media partners', 'Placements', 'Date']
 
-    def __init__(self, headless=True):
+    def __init__(self, headless=False):
         self.headless = headless
         self.sw = None
         self.browser = None
@@ -331,14 +331,20 @@ class IasApi(object):
         self.sw.click_on_xpath(elem_xpath)
 
     def click_report_button(self):
-        report_btn = '//button[.//span[normalize-space(text())="New Report"]]'
+        # report_btn = '//button[.//span[normalize-space(text())="New Report"]]'
+        # report_btn = '//a[.//span[contains(text(),"Build New Report")]]'
+        report_builder_btn = "//span[contains(text(), 'Report Builder')]"
+        new_report_btn = "//a[.//span[contains(text(), 'Build New Report')]]"
         name_xpath = '//input[@data-testid="text-input"]'
-        self.sw.wait_for_elem_load(report_btn, selector=self.sw.select_xpath)
+
+        # self.sw.wait_for_elem_load(report_btn, selector=self.sw.select_xpath)
+        self.sw.wait_for_elem_load(report_builder_btn, selector=self.sw.select_xpath)
+        self.sw.click_on_xpath(report_builder_btn)
+
         for _ in range(3):
-            self.sw.click_on_xpath(report_btn)
             try:
-                self.sw.wait_for_elem_load(
-                    name_xpath, selector=self.sw.select_xpath)
+                self.sw.wait_for_elem_load(new_report_btn, selector=self.sw.select_xpath)
+                self.sw.click_on_xpath(new_report_btn)
                 break
             except Exception as e:
                 logging.warning(e)
