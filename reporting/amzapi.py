@@ -74,6 +74,7 @@ class AmzApi(object):
                 json.dump({}, f)
         with open(self.cache_file, 'r') as f:
             self.report_cache = json.load(f)
+        self.fresh_pull = False
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -254,6 +255,8 @@ class AmzApi(object):
             for field in fields:
                 if field == 'hsa':
                     self.report_types.append('hsa')
+                if field == 'refresh':
+                    self.fresh_pull = True
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -299,7 +302,7 @@ class AmzApi(object):
         sd, ed = self.get_data_default_check(sd, ed, fields)
         date_list = self.list_dates(sd, ed)
         report_ids = []
-        self.purge_expired_cache()
+        self.purge_expired_cache(fresh_pull=self.fresh_pull)
         for cur_date in date_list:
             end_date = dt.datetime.combine(cur_date, dt.time.max)
             report_id = self.request_report(cur_date, end_date)
@@ -499,14 +502,19 @@ class AmzApi(object):
         age = dt.datetime.utcnow() - timestamp
         return age.total_seconds() > hours * 3600
 
-    def purge_expired_cache(self, hours=24):
+    def purge_expired_cache(self, hours=24, fresh_pull=False):
         keys_to_delete = []
-        for key, entry in self.report_cache.items():
-            if self.is_cache_expired(cache_entry=entry, hours=hours):
-                keys_to_delete.append(key)
-        for key in keys_to_delete:
-            del self.report_cache[key]
-            logging.info('Expired report cache entry removed: {}'.format(key))
+        if fresh_pull:
+            for key in self.report_cache.items():
+                del self.report_cache[key]
+                logging.info('Doing fresh pull, removing cache')
+        else:
+            for key, entry in self.report_cache.items():
+                if self.is_cache_expired(cache_entry=entry, hours=hours):
+                    keys_to_delete.append(key)
+            for key in keys_to_delete:
+                del self.report_cache[key]
+                logging.info('Expired report cache entry removed: {}'.format(key))
 
     def check_and_get_reports(self, report_ids, attempts=150, wait=30):
         if not isinstance(report_ids, list):
