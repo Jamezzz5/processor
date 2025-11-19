@@ -505,9 +505,11 @@ class AmzApi(object):
     def purge_expired_cache(self, hours=24, fresh_pull=False):
         keys_to_delete = []
         if fresh_pull:
-            for key in self.report_cache.items():
+            for key, entry in self.report_cache.items():
+                keys_to_delete.append(key)
+            for key in keys_to_delete:
                 del self.report_cache[key]
-                logging.info('Doing fresh pull, removing cache')
+            logging.info('Doing fresh pull, removing cache')
         else:
             for key, entry in self.report_cache.items():
                 if self.is_cache_expired(cache_entry=entry, hours=hours):
