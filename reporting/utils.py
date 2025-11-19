@@ -957,7 +957,7 @@ class SeleniumWrapper(object):
         return elem_type
 
     def send_key_from_list(self, item, get_xpath_from_id=True,
-                            clear_existing=True, send_escape=True):
+                           clear_existing=True, send_escape=True):
         select_xpath = 'selectized'
         elem_xpath = item[1]
         if get_xpath_from_id:

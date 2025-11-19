@@ -1319,7 +1319,7 @@ class TestAliChat:
         word_str = 'item'
         item_num = 5
         db_model = ['{} {}'.format(word_str, x) for x in range(item_num)]
-        word_idx = az.AliChat.index_db_model_by_word(
+        word_idx = az.AliChat().index_db_model_by_word(
             db_model, model_is_list=True)
         assert word_idx
         assert len(word_idx[word_str]) == len(db_model)

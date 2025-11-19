@@ -12,7 +12,6 @@ import tarfile
 import requests
 import numpy as np
 import pandas as pd
-from enum import Enum
 import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
@@ -3451,6 +3450,7 @@ class AliChat(object):
         self.stop_words = self.get_stop_words()
         self.config = self.load_config(self.config_name, self.config_path)
         self.intent = Intent()
+        self.call_llm = False
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3479,8 +3479,26 @@ class AliChat(object):
             response = response.choices[0].text.strip()
         return response
 
-    @staticmethod
-    def index_db_model_by_word(db_model, model_is_list=False,
+    def get_unigrams_and_bigrams(self, text, split_underscore=False,
+                                 db_model=None, other_db_model=None,
+                                 remove_punctuation=True):
+        """
+        Gets both unigrams and bigrams for given text returns as a list.
+
+        :param text: Text to be split
+        :param split_underscore: Whether to split the underscore or not
+        :param db_model:
+        :param other_db_model:
+        :param remove_punctuation:
+        :return: list of tokens to use
+        """
+        tokens = self.remove_stop_words_from_message(
+            text, remove_punctuation=remove_punctuation, lemmatize=True,
+            split_underscore=split_underscore, db_model=db_model,
+            other_db_model=other_db_model, unigrams_and_bigrams=True)
+        return tokens
+
+    def index_db_model_by_word(self, db_model, model_is_list=False,
                                split_underscore=False):
         word_idx = {}
         db_all = db_model
@@ -3538,6 +3556,24 @@ class AliChat(object):
                 break
         return table_response
 
+    @staticmethod
+    def keep_n_largest(model_ids, n=5):
+        top_scores = []
+        for score in model_ids.values():
+            inserted = False
+            for i, existing in enumerate(top_scores):
+                if score > existing:
+                    top_scores.insert(i, score)
+                    inserted = True
+                    break
+            if not inserted:
+                top_scores.append(score)
+            if len(top_scores) > n:
+                top_scores.pop()
+        cutoff_score = top_scores[-1]
+        filtered = {k: v for k, v in model_ids.items() if v >= cutoff_score}
+        return filtered
+
     def find_db_model(self, db_model, message, other_db_model=None,
                       remove_punctuation=True, model_is_list=False,
                       split_underscore=False):
@@ -3584,28 +3620,44 @@ class AliChat(object):
     def remove_stop_words_from_message(
             self, message, db_model=None, other_db_model=None,
             remove_punctuation=False, lemmatize=False, ngrams=0,
-            split_underscore=False):
+            split_underscore=False, unigrams_and_bigrams=False):
         if remove_punctuation:
             message = re.sub(r'[^\w\s]', '', message)
-        stop_words = self.stop_words.copy()
-        if db_model and not isinstance(db_model, list):
-            stop_words += db_model.get_model_name_list()
-            if hasattr(db_model, 'get_model_omit_search_list'):
-                stop_words += db_model.get_model_omit_search_list()
-        if other_db_model:
-            stop_words += other_db_model.get_name_list()
-        words = utl.lower_words_from_str(message, split_underscore)
-        words = [x for x in words if x not in stop_words]
-        if lemmatize:
+        lemmatizer = None
+        if not lemmatizer:
             lemmatizer = nltk.stem.WordNetLemmatizer()
-            words = [lemmatizer.lemmatize(x) for x in words]
-        if ngrams:
-            words = ["_".join(words[i:i + ngrams]) for i in
-                     range(len(words) - ngrams + 1)]
-        return words
+        stop_words = set(self.stop_words.copy())
+        if db_model and not isinstance(db_model, list):
+            stop_words.update(db_model.get_model_name_list())
+            if hasattr(db_model, 'get_model_omit_search_list'):
+                stop_words.update(db_model.get_model_omit_search_list())
+        if other_db_model:
+            stop_words.update(other_db_model.get_name_list())
+        words = utl.lower_words_from_str(message, split_underscore)
+        tokens = []
+        ngram_tokens = []
+        window = []
+        for word in words:
+            if word in stop_words:
+                continue
+            if lemmatize:
+                word = lemmatizer.lemmatize(word)
+            if ngrams:
+                window.append(word)
+                if len(window) > ngrams:
+                    window.pop(0)
+                if len(window) == ngrams:
+                    ngram_tokens.append("_".join(window))
+            tokens.append(word)
+        if unigrams_and_bigrams:
+            tokens += ngram_tokens
+        elif ngrams:
+            tokens = ngram_tokens
+        return tokens
 
     def get_llm_response(self, context, user_query, mode='answer',
-                         instructions='', previous_messages=None):
+                         instructions='', previous_messages=None,
+                         stream=False):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3614,6 +3666,7 @@ class AliChat(object):
         :param mode: Different initial instructions that can be passed in prompt
         :param instructions: General instructions to include with prompt
         :param previous_messages: List of previous messages
+        :param stream: Boolean to stream response or return all at once
         :return: response from the llm as string
         """
         if not instructions:
@@ -3631,45 +3684,64 @@ class AliChat(object):
         prompt = f"""
             Instructions: {instructions}
             
-            "Messages use <user> and <assistant> tags. 
+            Messages use <user> and <assistant> tags. 
             Respond only as <assistant>.
             Conversation history:
             {previous_messages}
 
             User question:
+            <question>
             {user_query}
+            </question>
 
             Context (verbatim, may be long):
             <context>
             {context}
-            </context>"""
+            </context>
+            
+            Remember: Answer this most recent user query: 
+            {user_query}
+            """
         body = {
             "model": self.llm_model,
             "prompt": prompt,
-            "stream": False,
+            "stream": stream,
             "options": {
                 "temperature": 0.2,
                 "num_ctx": 8192
             }
         }
-        r = requests.post(self.llm_url, json=body, timeout=120)
-        response = r.json()["response"]
-        return response
+        if stream:
+            with requests.post(self.llm_url, json=body, stream=True) as r:
+                r.raise_for_status()
+                for raw_line in r.iter_lines(decode_unicode=True):
+                    if not raw_line:
+                        continue
+                    try:
+                        data = json.loads(raw_line)
+                        delta = data.get("response") or data.get("delta") or ""
+                    except json.JSONDecodeError:
+                        delta = raw_line
+                    if delta:
+                        yield delta
+        else:
+            r = requests.post(self.llm_url, json=body, timeout=120)
+            response = r.json()["response"]
+            return response
 
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
         html_response = ''
         model_ids, words = self.find_db_model(db_model, message)
         if model_ids:
+            if hasattr(db_model, 'llm_limit'):
+                n_limit = db_model.llm_limit
+                model_ids = {k: model_ids[k] for k in list(model_ids)[:n_limit]}
             words = self.remove_stop_words_from_message(message, db_model)
             response, html_response = self.search_db_model_from_ids(
                 db_model, words, model_ids)
             if response and self.llm_url and hasattr(db_model, 'llm_summary'):
-                full_response = response + html_response
-                response = self.get_llm_response(
-                    full_response, message, mode='answer',
-                    instructions=self.llm_instructions,
-                    previous_messages=self.previous_messages)
+                self.call_llm = True
         return response, html_response
 
     @staticmethod
@@ -4144,7 +4216,9 @@ class AliChat(object):
         cur_name = ''
         for idx, x in enumerate([self.opening_phrases, self.closing_phrases]):
             add_name = 0 if cur_name else random.randint(0, 1)
-            cur_name = self.current_user.username if add_name else ''
+            cur_name = ''
+            if self.current_user and add_name and self.current_user.username:
+                cur_name = self.current_user.username
             new_resp = random.choice(x).format(user=cur_name)
             for punc in ['.', '!']:
                 wrong_punctuations = [' {} '.format(punc), ' {}'.format(punc)]
@@ -4193,20 +4267,6 @@ class TfIdfTransformer(object):
         if self.texts:
             self.tfidf_matrix = self.train(texts)
 
-    def get_unigrams_and_bigrams(self, text):
-        """
-        Gets both unigrams and bigrams for given text returns as a list.
-
-        :param text: Text to be split
-        :return: list of tokens to use
-        """
-        unigrams = self.ali_chat.remove_stop_words_from_message(
-            text, remove_punctuation=True, lemmatize=True)
-        bigrams = self.ali_chat.remove_stop_words_from_message(
-            text, remove_punctuation=True, lemmatize=True, ngrams=2)
-        tokens = unigrams + bigrams
-        return tokens
-
     def train(self, texts):
         """
         Create a tf-idf matrix based on texts
@@ -4216,7 +4276,7 @@ class TfIdfTransformer(object):
         """
         doc_tokens = []
         for text in texts:
-            tokens = self.get_unigrams_and_bigrams(text)
+            tokens = self.ali_chat.get_unigrams_and_bigrams(text)
             doc_tokens.append(tokens)
         self.doc_tokens = doc_tokens
         self.unique_words = set()
@@ -4264,7 +4324,7 @@ class TfIdfTransformer(object):
         :param text: Text to compute
         :return: vector
         """
-        words = self.get_unigrams_and_bigrams(text)
+        words = self.ali_chat.get_unigrams_and_bigrams(text)
         freq_dict = {}
         for w in words:
             if w in freq_dict:
@@ -4323,7 +4383,7 @@ class TfIdfTransformer(object):
         """
         if not self.doc_tokens:
             return []
-        q_tokens = self.get_unigrams_and_bigrams(text)
+        q_tokens = self.ali_chat.get_unigrams_and_bigrams(text)
         if not q_tokens:
             return []
         query_freqs = {}
