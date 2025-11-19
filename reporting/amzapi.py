@@ -44,6 +44,11 @@ class AmzApi(object):
         'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes']
     default_config_file_name = 'amzapi.json'
     campaign_col = 'campaignName'
+    sp_keyword_columns = [
+        'searchTerm', 'keywordId', 'matchType', 'targeting',
+        'keywordBid', 'keywordType']
+    sb_keyword_columns = [
+        'searchTerm', 'keywordId', 'matchType', 'keywordBid']
 
     def __init__(self):
         self.config = None
@@ -75,6 +80,7 @@ class AmzApi(object):
         with open(self.cache_file, 'r') as f:
             self.report_cache = json.load(f)
         self.fresh_pull = False
+        self.include_keywords = False
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -255,7 +261,10 @@ class AmzApi(object):
             for field in fields:
                 if field == 'hsa':
                     self.report_types.append('hsa')
-                if field == 'refresh':
+                if field.lower() == 'keyword':
+                    self.include_keywords = True
+                    logging.info('Keyword-level data enabled via API Fields')
+                if field.lower() == 'refresh':
                     self.fresh_pull = True
 
     def get_data_default_check(self, sd, ed, fields):
