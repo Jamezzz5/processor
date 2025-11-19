@@ -68,6 +68,12 @@ class AmzApi(object):
         self.timezone = None
         self.df = pd.DataFrame()
         self.r = None
+        self.cache_file = os.path.join(config_path, 'report_cache.json')
+        if not os.path.exists(self.cache_file):
+            with open(self.cache_file, 'w') as f:
+                json.dump({}, f)
+        with open(self.cache_file, 'r') as f:
+            self.report_cache = json.load(f)
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -293,6 +299,7 @@ class AmzApi(object):
         sd, ed = self.get_data_default_check(sd, ed, fields)
         date_list = self.list_dates(sd, ed)
         report_ids = []
+        self.purge_expired_cache()
         for cur_date in date_list:
             end_date = dt.datetime.combine(cur_date, dt.time.max)
             report_id = self.request_report(cur_date, end_date)
@@ -446,6 +453,12 @@ class AmzApi(object):
             ed = ed - dt.timedelta(days=new_date)
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
+        cache_key = ('DSP_{}_{}'.format(sd, ed) if self.amazon_dsp else
+                     'SP_{}_{}'.format(sd, ed))
+        if cache_key in self.report_cache:
+            logging.info('reusing cached report IDs for {}'.format(cache_key))
+            report_ids = self.report_cache[cache_key]['report_ids']
+            return report_ids
         is_dsp = ' DSP ' if self.amazon_dsp else ' Sponsored Product/Brand '
         msg = 'Requesting{}report for dates: {} to {}'.format(is_dsp, sd, ed)
         logging.info(msg)
@@ -468,7 +481,32 @@ class AmzApi(object):
         for request_body in request_bodies:
             report_id = self.get_report_id(url, request_body)
             report_ids.append(report_id)
+        timestamp = dt.datetime.now(tz=pytz.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+        self.report_cache[cache_key] = {'timestamp': timestamp,
+                                        'report_ids': report_ids}
+        with open(self.cache_file, 'w') as f:
+            json.dump(self.report_cache, f)
         return report_ids
+
+    @staticmethod
+    def is_cache_expired(cache_entry, hours=24):
+        if not cache_entry:
+            return True
+        timestamp = cache_entry.get('timestamp')
+        timestamp = dt.datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%SZ')
+        if not timestamp:
+            return True
+        age = dt.datetime.utcnow() - timestamp
+        return age.total_seconds() > hours * 3600
+
+    def purge_expired_cache(self, hours=24):
+        keys_to_delete = []
+        for key, entry in self.report_cache.items():
+            if self.is_cache_expired(cache_entry=entry, hours=hours):
+                keys_to_delete.append(key)
+        for key in keys_to_delete:
+            del self.report_cache[key]
+            logging.info('Expired report cache entry removed: {}'.format(key))
 
     def check_and_get_reports(self, report_ids, attempts=150, wait=30):
         if not isinstance(report_ids, list):
