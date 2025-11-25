@@ -3663,11 +3663,12 @@ class AliChat(object):
                     continue
                 try:
                     data = json.loads(raw_line)
-                    delta = data.get("response") or data.get("delta") or ""
                 except json.JSONDecodeError:
-                    delta = raw_line
-                if delta:
-                    yield delta
+                    yield {"type": "answer", "delta": raw_line}
+                    continue
+                for resp_type in ['thinking', 'response']:
+                    if resp_type in data:
+                        yield {"type": resp_type, "delta": data[resp_type]}
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
@@ -4123,8 +4124,10 @@ class AliChat(object):
                         html_response = ''
                     html_response += hr
         if not response:
-            response, html_response = self.format_openai_response(
-                message, self.openai_msg)
+            response = ('Could not find any relevant docs, '
+                        'but will attempt to answer.')
+            html_response = ''
+            self.call_llm = True
         response = self.polish_response(response)
         return response, html_response
 
