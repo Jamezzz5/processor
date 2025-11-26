@@ -3655,6 +3655,21 @@ class AliChat(object):
             tokens = ngram_tokens
         return tokens
 
+    def llm_request_generator(self, body):
+        with requests.post(self.llm_url, json=body, stream=True) as r:
+            r.raise_for_status()
+            for raw_line in r.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                try:
+                    data = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    yield {"type": "answer", "delta": raw_line}
+                    continue
+                for resp_type in ['thinking', 'response']:
+                    if resp_type in data:
+                        yield {"type": resp_type, "delta": data[resp_type]}
+
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
                          stream=False):
@@ -3676,6 +3691,8 @@ class AliChat(object):
                 "rewrite":   AliChat.instruction_rewrite,
                 "extract":   AliChat.instruction_extract,
             }[mode]
+        if not previous_messages:
+            previous_messages = []
         previous_messages = [
             (f"<user>\n{t.text}\n</user>\n"
              f"<assistant>\n{t.response}\n</assistant>")
@@ -3712,18 +3729,7 @@ class AliChat(object):
             }
         }
         if stream:
-            with requests.post(self.llm_url, json=body, stream=True) as r:
-                r.raise_for_status()
-                for raw_line in r.iter_lines(decode_unicode=True):
-                    if not raw_line:
-                        continue
-                    try:
-                        data = json.loads(raw_line)
-                        delta = data.get("response") or data.get("delta") or ""
-                    except json.JSONDecodeError:
-                        delta = raw_line
-                    if delta:
-                        yield delta
+            return self.llm_request_generator(body)
         else:
             r = requests.post(self.llm_url, json=body, timeout=120)
             response = r.json()["response"]
@@ -4118,8 +4124,10 @@ class AliChat(object):
                         html_response = ''
                     html_response += hr
         if not response:
-            response, html_response = self.format_openai_response(
-                message, self.openai_msg)
+            response = ('Could not find any relevant docs, '
+                        'but will attempt to answer.')
+            html_response = ''
+            self.call_llm = True
         response = self.polish_response(response)
         return response, html_response
 
