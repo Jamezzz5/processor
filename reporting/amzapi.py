@@ -470,7 +470,7 @@ class AmzApi(object):
         if cache_key in self.report_cache:
             logging.info('reusing cached report IDs for {}'.format(cache_key))
             report_ids = self.report_cache[cache_key]['report_ids']
-            if not self.export_id:
+            if not self.export_id and not self.amazon_dsp:
                 self.export_id = self.request_export()
                 self.campaign_export_id = self.request_export('campaigns')
             return report_ids
