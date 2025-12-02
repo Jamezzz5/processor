@@ -371,13 +371,16 @@ class AmzApi(object):
         return body
 
     def get_sponsored_body(self, body, ad_product, cols, report_type,
-                           group_by_ad_group=False):
+                           group_by_ad_group=False, group_by_column=None):
         body['configuration']['adProduct'] = ad_product
         body['configuration']['columns'] = self.sponsored_columns + cols
         body['configuration']['reportTypeId'] = report_type
-        group_by = ['campaign']
-        if group_by_ad_group:
-            group_by = ['adGroup']
+        if self.include_keywords and not self.amazon_dsp:
+            group_by = [group_by_column]
+        else:
+            group_by = ['campaign']
+            if group_by_ad_group:
+                group_by += ['adGroup']
         body['configuration']['groupBy'] = group_by
         return body
 
@@ -385,13 +388,25 @@ class AmzApi(object):
         body['configuration'] = {
             'timeUnit': 'DAILY',
             'format': 'GZIP_JSON'}
-        sp_items = ['SPONSORED_PRODUCTS', self.sp_columns, 'spCampaigns', True]
-        sb_items = ['SPONSORED_BRANDS', self.sb_columns, 'sbCampaigns', False]
+        if self.include_keywords and not self.amazon_dsp:
+            rep_items = [
+                ('SPONSORED_PRODUCTS', self.sp_keyword_columns +
+                 self.sp_columns, 'spSearchTerm', False, 'searchTerm'),
+                ('SPONSORED_BRANDS', self.sb_keyword_columns,
+                 'sbSearchTerm', False, 'searchTerm')]
+        else:
+            rep_items = [
+                ('SPONSORED_PRODUCTS', self.sp_columns, 'spCampaigns',
+                 True, None),
+                ('SPONSORED_BRANDS', self.sb_columns, 'sbCampaigns',
+                 False, None)]
         request_bodies = []
-        for ad_product, cols, report_type, group_by in [sp_items, sb_items]:
+        for (ad_product, cols, report_type, group_by_ad_group,
+             group_by_column) in rep_items:
             body_copy = copy.deepcopy(body)
             request_body = self.get_sponsored_body(
-                body_copy, ad_product, cols, report_type, group_by)
+                body_copy, ad_product, cols, report_type, group_by_ad_group,
+                group_by_column)
             request_bodies.append(request_body)
         return request_bodies
 
@@ -470,7 +485,7 @@ class AmzApi(object):
         if cache_key in self.report_cache:
             logging.info('reusing cached report IDs for {}'.format(cache_key))
             report_ids = self.report_cache[cache_key]['report_ids']
-            if not self.export_id:
+            if not self.export_id and not self.amazon_dsp:
                 self.export_id = self.request_export()
                 self.campaign_export_id = self.request_export('campaigns')
             return report_ids
