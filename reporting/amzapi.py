@@ -33,7 +33,7 @@ class AmzApi(object):
         'unitsSoldSameSku14d', 'sales14d', 'attributedSalesSameSku14d',
         'adGroupId']
     sb_columns = [
-        'detailPageViewsClicks', 'newToBrandDetailPageViews',
+        'campaignId', 'detailPageViewsClicks', 'newToBrandDetailPageViews',
         'newToBrandDetailPageViewsClicks', 'newToBrandPurchases',
         'newToBrandPurchasesClicks', 'newToBrandSales',
         'newToBrandSalesClicks', 'newToBrandUnitsSold',
@@ -546,6 +546,10 @@ class AmzApi(object):
                 logging.info('Expired report cache entry removed: {}'.format(key))
 
     def check_and_get_reports(self, report_ids, attempts=150, wait=30):
+        """
+        For SP rows (which have adGroupId), we'll get campaignId from here
+        For SB rows (no adGroupId), they already have campaignId from the report
+        """
         if not isinstance(report_ids, list):
             report_ids = [report_ids]
         df_list = []
@@ -553,12 +557,28 @@ class AmzApi(object):
             df = self.check_report_status(report_id, attempts, wait)
             df_list.append(df)
         self.df = self.merge_dataframes(df_list)
-        if self.export_id and not self.df.empty:
-            exports = [(self.export_id, 'adGroups', 'adGroupId'),
-                       (self.campaign_export_id, 'campaigns', 'campaignId')]
-            for export_id, entity, id_col in exports:
-                id_df = self.check_and_get_export(export_id, entity=entity)
-                self.df = self.df.merge(id_df, on=id_col, how='left')
+        if 'adGroupId' in self.df.columns and self.df['adGroupId'].notna().any():
+            adgroup_df = self.check_and_get_export(self.export_id, entity='adGroups')
+            if not adgroup_df.empty:
+                adgroup_merge_df = adgroup_df[['adGroupId', 'adGroupName',
+                                               'campaignId']].copy()
+                adgroup_merge_df = adgroup_merge_df.rename(
+                    columns={'campaignId': 'campaignId_from_adgroup'}
+                )
+                self.df = self.df.merge(adgroup_merge_df, on='adGroupId', how='left')
+                if 'campaignId_from_adgroup' in self.df.columns:
+                    if 'campaignId' not in self.df.columns:
+                        self.df['campaignId'] = self.df['campaignId_from_adgroup']
+                    else:
+                        self.df['campaignId'] = self.df['campaignId'].fillna(
+                            self.df['campaignId_from_adgroup'])
+                    self.df = self.df.drop(columns=['campaignId_from_adgroup'])
+        if 'campaignId' in self.df.columns:
+            campaign_df = self.check_and_get_export(self.campaign_export_id,
+                                                    entity='campaigns')
+            if not campaign_df.empty:
+                self.df = self.df.merge(campaign_df[['campaignId', self.campaign_col]],
+                                        on='campaignId', how='left')
         return self.df
 
     def check_report_status(self, report_id, attempts, wait):
