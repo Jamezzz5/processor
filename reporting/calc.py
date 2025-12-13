@@ -236,7 +236,19 @@ def net_cost_final(df, p_col=dctc.PFPN, n_cost=vmc.cost):
 
 def net_cost_final_calculation(df, p_col=dctc.PFPN, n_cost=vmc.cost,
                                p_cost=dctc.PNC):
+    """
+    Caps a metric at another metric based on a grouped dimension column
+
+    :param df: The dataframe with all metrics/dimensions
+    :param p_col: The column with the dimension to group by
+    :param n_cost: The column with the metric to be capped
+    :param p_cost: The column with the metric to cap at
+    :return: The dataframe with the metric capped under Net Cost Final
+    """
     logging.info('Calculating Net Cost Final')
+    if p_col not in df.columns:
+        logging.warning('{} not in df, could not calculate.'.format(p_col))
+        return df
     df = net_plan_comp(df, p_col=p_col, n_cost=n_cost, p_cost=p_cost)
     df = net_cum_sum(df, p_col=p_col, n_cost=n_cost)
     df = net_sum_date(df, p_col=p_col, n_cost=n_cost)

@@ -10,6 +10,7 @@ import pandas as pd
 from io import StringIO
 import reporting.utils as utl
 import reporting.vmcolumns as vmc
+import oauthlib.oauth2.rfc6749.errors
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -129,17 +130,27 @@ class DcApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
-    def refresh_client_token(self, extra, attempt=1):
-        try:
-            token = self.client.refresh_token(self.refresh_url, **extra)
-        except requests.exceptions.ConnectionError as e:
-            attempt += 1
-            if attempt > 100:
-                logging.warning('Max retries exceeded: {}'.format(e))
-                token = None
-            else:
-                logging.warning('Connection error retrying 60s: {}'.format(e))
-                token = self.refresh_client_token(extra, attempt)
+    def refresh_client_token(self, extra, max_attempts=10):
+        """
+        Attempts to refresh the the client token catching some errors
+
+        :param extra: Dict of client_id, client_secret
+        :param max_attempts: Attempts to try to refresh
+        :return: The token if refreshed or None if not
+        """
+        token = None
+        for attempt in range(max_attempts):
+            try:
+                token = self.client.refresh_token(self.refresh_url, **extra)
+                break
+            except (requests.exceptions.ConnectionError,
+                    oauthlib.oauth2.rfc6749.errors.CustomOAuth2Error) as e:
+                attempt += 1
+                time.sleep(1)
+                msg = 'Connection error retrying 60s: {}'.format(e)
+                logging.warning(msg)
+        if not token:
+            logging.warning('Max retries exceeded')
         return token
 
     def get_client(self):

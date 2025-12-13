@@ -1421,7 +1421,7 @@ class CheckFirstRow(AnalyzeBase):
                 new_first_row = max(idx - 1, 0)
                 new_first_row = str(new_first_row)
                 break
-        if not new_first_row and old_first_row != 0:
+        if not new_first_row:
             new_first_row = '0'
         if int(new_first_row) != old_first_row:
             data_dict = pd.DataFrame({
