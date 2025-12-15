@@ -49,8 +49,10 @@ class TtdApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        self.login = self.config['LOGIN']
-        self.password = self.config['PASS']
+        if 'LOGIN' in self.config:
+            self.login = self.config['LOGIN']
+        if 'PASS' in self.config:
+            self.password = self.config['PASS']
         self.ad_id = self.config['ADID']
         self.report_name = self.config['Report Name']
         if 'Token' in self.config and self.config['Token']:

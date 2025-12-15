@@ -319,7 +319,7 @@ class TestApis:
         sd = dt.datetime.today() - dt.timedelta(days=28)
         ed = dt.datetime.today()
         # df = api.get_data(sd, ed, fields=fields)
-        assert 1 == 1
+        assert api.get_data
 
     def test_redapi_new(self):
         api = redapi.RedApi()

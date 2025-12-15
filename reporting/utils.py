@@ -1035,9 +1035,15 @@ class SeleniumWrapper(object):
     def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
         if load_elem_id:
             sleep = .01
-        self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
+        elem_xpath = self.get_xpath_from_id(elem_id)
+        self.click_on_xpath(elem_xpath, sleep)
         if load_elem_id:
-            self.wait_for_elem_load(load_elem_id)
+            try:
+                self.wait_for_elem_load(load_elem_id, attempts=200)
+            except Exception as e:
+                logging.warning('Attempt to re-click: {}'.format(e))
+                self.click_on_xpath(elem_xpath, sleep)
+                self.wait_for_elem_load(load_elem_id, attempts=800)
 
     @staticmethod
     def get_xpath_from_id(elem_id):
