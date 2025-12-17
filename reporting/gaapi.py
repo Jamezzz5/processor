@@ -2,8 +2,13 @@ import os
 import sys
 import json
 import logging
+import time
+
 import pandas as pd
 import datetime as dt
+
+import requests.exceptions
+
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
@@ -136,14 +141,26 @@ class GaApi(object):
             }
         return body
 
-    def get_data(self, sd=None, ed=None, fields=None):
+    def get_data(self, sd=None, ed=None, fields=None, retries=3, delay=2):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         logging.info('Getting df from {} to {}'.format(sd, ed))
         self.get_client()
         url = self.create_url()
         body = self.create_body(sd, ed, fields)
-        r = self.client.post(url, json=body)
-        df = self.data_to_df(r)
+        df = pd.DataFrame()
+        for attempt in range(1, retries +1):
+            r = self.client.post(url, json=body)
+            try:
+                df = self.data_to_df(r)
+                break
+            except requests.exceptions.JSONDecodeError as e:
+                logging.warning('JSON decode failed on attempt: {}'.format(
+                    attempt))
+                if attempt < retries:
+                    time.sleep(delay)
+                    continue
+                logging.warning('Failed aget {} attempts: {}'.format(
+                    retries, r.text))
         return df
 
     @staticmethod
