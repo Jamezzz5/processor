@@ -138,14 +138,14 @@ class GaApi(object):
             }
         return body
 
-    def get_data(self, sd=None, ed=None, fields=None, retries=3, delay=2):
+    def get_data(self, sd=None, ed=None, fields=None, retries=4, delay=2):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         logging.info('Getting df from {} to {}'.format(sd, ed))
         self.get_client()
         url = self.create_url()
         body = self.create_body(sd, ed, fields)
         df = pd.DataFrame()
-        for attempt in range(1, retries +1):
+        for attempt in range(1, retries):
             r = self.client.post(url, json=body)
             try:
                 df = self.data_to_df(r)
