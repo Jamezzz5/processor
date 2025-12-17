@@ -3,12 +3,9 @@ import sys
 import json
 import logging
 import time
-
 import pandas as pd
 import datetime as dt
-
 import requests.exceptions
-
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 
