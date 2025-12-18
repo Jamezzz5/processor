@@ -41,7 +41,8 @@ class AmzApi(object):
         'purchasesPromoted', 'sales', 'salesClicks', 'salesPromoted',
         'unitsSold', 'unitsSoldClicks', 'video5SecondViews',
         'videoCompleteViews', 'videoFirstQuartileViews', 'detailPageViews',
-        'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes']
+        'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes',
+        'campaignId']
     default_config_file_name = 'amzapi.json'
     campaign_col = 'campaignName'
     sp_keyword_columns = [
@@ -557,6 +558,15 @@ class AmzApi(object):
             exports = [(self.export_id, 'adGroups', 'adGroupId'),
                        (self.campaign_export_id, 'campaigns', 'campaignId')]
             for export_id, entity, id_col in exports:
+                previous_merge_col = '{}_x'.format(id_col)
+                if previous_merge_col in self.df.columns:
+                    y_previous_merge_col = '{}_y'.format(id_col)
+                    self.df[id_col] = (
+                        self.df[previous_merge_col]
+                        .fillna(self.df[y_previous_merge_col])
+                    )
+                    drop_cols = [previous_merge_col, y_previous_merge_col]
+                    self.df.drop(columns=drop_cols, inplace=True)
                 id_df = self.check_and_get_export(export_id, entity=entity)
                 self.df = self.df.merge(id_df, on=id_col, how='left')
         return self.df
