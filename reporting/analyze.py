@@ -1100,9 +1100,15 @@ class Analyze(object):
                     x[self.analysis_dict_filter_val] == filter_val]
         return item
 
+    @staticmethod
+    def json_serializer(obj):
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+        raise TypeError('Type {} not serializable'.format(type(obj)))
+
     def write_analysis_dict(self):
         with open(self.analysis_dict_file_name, 'w') as fp:
-            json.dump(self.analysis_dict, fp)
+            json.dump(self.analysis_dict, fp, default=self.json_serializer)
 
     def do_all_analysis(self):
         self.backup_files()
