@@ -343,7 +343,8 @@ class MetricCap(object):
         df = net_cost_final_calculation(df, p_col=c[self.proc_dim],
                                         p_cost=self.temp_metric)
         df = df[~df[dctc.FPN].isnull()]
-        df[vmc.cost] = df[NCF]
+        if NCF in df.columns:
+            df[vmc.cost] = df[NCF]
         df = utl.col_removal(df, 'Raw Data', [self.temp_metric])
         return df
 

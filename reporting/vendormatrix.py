@@ -73,8 +73,9 @@ class VendorMatrix(object):
         return True
 
     def add_file_name_col(self):
-        self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
-            utl.sheet_name_splitter).str[0]
+        if isinstance(self.vm_df, pd.DataFrame):
+            self.vm_df[vmc.filename_true] = self.vm_df[vmc.filename].str.split(
+                utl.sheet_name_splitter).str[0]
         return self.vm_df
 
     def vm_parse(self, df=pd.DataFrame()):
@@ -394,8 +395,23 @@ class ImportConfig(object):
         return f_lib
 
     def make_new_config(self, params, new_file, account_id, import_filter=None):
+        """
+        Makes a new json/yaml config file based on params and account_id
+
+        :param params: The vm parameters for the data source
+        :param new_file: New file name
+        :param account_id: The account ID for the data source
+        :param import_filter: The filter for the data source
+        :return: Boolean whether the file was created
+        """
+        if self.config_file not in params:
+            msg = '{} not in param could not make new config'.format(
+                self.config_file)
+            logging.warning(msg)
+            return False
         f_lib = self.set_config_file_lib(params[self.config_file])
         self.make_new_json(params, new_file, account_id, import_filter, f_lib)
+        return True
 
     def set_new_value(self, df, col_name, key_name):
         new_name = self.append_str_before_filetype(df[col_name][0], key_name)

@@ -3672,7 +3672,7 @@ class AliChat(object):
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
-                         stream=False):
+                         stream=False, timeout=120):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3682,6 +3682,7 @@ class AliChat(object):
         :param instructions: General instructions to include with prompt
         :param previous_messages: List of previous messages
         :param stream: Boolean to stream response or return all at once
+        :param timeout: Timeout to wait for response when not streaming
         :return: response from the llm as string
         """
         if not instructions:
@@ -3731,7 +3732,7 @@ class AliChat(object):
         if stream:
             return self.llm_request_generator(body)
         else:
-            r = requests.post(self.llm_url, json=body, timeout=120)
+            r = requests.post(self.llm_url, json=body, timeout=timeout)
             response = r.json()["response"]
             return response
 
@@ -3759,9 +3760,11 @@ class AliChat(object):
 
     @staticmethod
     def get_parent_for_db_model(db_model, words):
+        parent = None
         g_parent = None
         gg_parent = None
-        parent = db_model.get_parent()
+        if hasattr(db_model, 'get_parent'):
+            parent = db_model.get_parent()
         if hasattr(parent, 'get_parent'):
             g_parent = parent.get_parent()
         if g_parent and hasattr(g_parent, 'get_parent'):
