@@ -316,8 +316,10 @@ class TestApis:
     @staticmethod
     def send_api_call(api, fields=None):
         api.input_config(api.default_config_file_name)
-        sd = dt.datetime.today() - dt.timedelta(days=28)
-        ed = dt.datetime.today()
+        sd = (dt.datetime.today() - dt.timedelta(days=28)).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        ed = (dt.datetime.today()).replace(
+            hour=0, minute=0, second=0, microsecond=0)
         # df = api.get_data(sd, ed, fields=fields)
         assert api.get_data
 
@@ -345,6 +347,10 @@ class TestApis:
 
     def test_tikapi(self, tmp_path_factory):
         api = tikapi.TikApi()
+        self.send_api_call(api)
+
+    def test_twapi(self, tmp_path_factory):
+        api = twapi.TwApi()
         self.send_api_call(api)
 
 
@@ -1518,7 +1524,7 @@ conv_event_sum_cols = [
 ]
 
 
-class TestExport():
+class TestExport:
 
     @pytest.mark.parametrize(
         'filter_table, event_tables, expected_string', [

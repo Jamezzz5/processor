@@ -107,7 +107,8 @@ class TwApi(object):
         self.tweet_dict = None
         self.usernames = None
         self.async_requests = []
-        self.v = 11
+        self.v = 12
+        self.default_config_file_name = 'twconfig.json'
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
@@ -156,41 +157,52 @@ class TwApi(object):
 
     def make_request(self, url, params=None, method='GET'):
         self.get_client()
-        try:
-            if params:
+        r = None
+        for _ in range(5):
+            if not params:
+                params = {}
+            try:
                 r = self.client.request(method=method, url=url, params=params)
-            else:
-                r = self.client.request(method=method, url=url)
-        except ConnectionError as e:
-            logging.warning('Connection error retrying. \n: {}'.format(e))
-            time.sleep(60)
-            r = self.make_request(url=url, params=params)
+                if r:
+                    break
+            except ConnectionError as e:
+                logging.warning('Connection error retrying. \n: {}'.format(e))
+                time.sleep(5)
+        if not r:
+            logging.error('Could not get response.')
         return r
 
-    def request(self, url, resp_key=None, params=None, method='GET'):
-        r = self.make_request(url=url, params=params, method=method)
-        try:
-            data = r.json()
-        except IOError:
-            data = None
-        except ValueError:
-            logging.warning('Rate limit exceeded.  Restarting after 300s.')
-            time.sleep(300)
-            data = self.request(url, resp_key, params)
-        if resp_key and resp_key not in data:
-            logging.warning('{} not in response, retrying. '
-                            ' {}'.format(resp_key, data))
-            time.sleep(60)
-            data = self.request(url, resp_key, params)
+    def raw_request(self, url, resp_key=None, params=None, method='GET'):
+        data = None
+        for _ in range(5):
+            retry = True
+            r = self.make_request(url=url, params=params, method=method)
+            try:
+                data = r.json()
+                retry = False
+            except IOError:
+                logging.warning('IOError.  Retrying in 5s.')
+            except ValueError:
+                logging.warning('ValueError.  Retrying in 5s.')
+            if resp_key and resp_key not in data:
+                logging.warning('{} not in response, retrying. '
+                                ' {}'.format(resp_key, data))
+                retry = True
+            if retry:
+                time.sleep(5)
+            else:
+                break
+        if not data:
+            logging.error('Request returned blank.')
         return data
 
     def get_id_dict(self, url, params, eid, name, parent, sd=None,
                     ad_name=None):
-        data = self.request(url, params=params)
+        data = self.raw_request(url, params=params)
         if sd:
             et = 'end_time'
             week_fmt = '%Y-%m-%dT%H:%M:%SZ'
-            last_week_sd = sd = sd - dt.timedelta(days=7)
+            last_week_sd = sd - dt.timedelta(days=28)
             data['data'] = [
                 x for x in data['data'] if
                 (x[et] and dt.datetime.strptime(x[et], week_fmt) > last_week_sd)
@@ -216,7 +228,7 @@ class TwApi(object):
 
     def get_user_stats(self, usernames):
         url = standard_base_url + user_url
-        data = self.request(url, params={'screen_name': usernames})
+        data = self.raw_request(url, params={'screen_name': usernames})
         logging.info('Getting user data for {}'.format(usernames))
         if 'errors' in data:
             logging.warning('Error in response: {}'.format(data))
@@ -262,7 +274,7 @@ class TwApi(object):
                          sd, params):
         if 'next_cursor' in data and data['next_cursor']:
             params['cursor'] = data['next_cursor']
-            data = self.request(first_url, params=params)
+            data = self.raw_request(first_url, params=params)
             for x in data['data']:
                 if sd:
                     if (x['end_time'] and dt.datetime.strptime(
@@ -393,10 +405,9 @@ class TwApi(object):
             ed = self.date_format(date + dt.timedelta(days=1), timezone)
             logging.info('Getting Twitter data from '
                          '{} until {} for {}'.format(sd, ed, entity))
+            possible_placements = ['ALL_ON_TWITTER']
             if entity == 'PROMOTED_TWEET':
-                possible_placements = ['ALL_ON_TWITTER', 'PUBLISHER_NETWORK']
-            else:
-                possible_placements = ['ALL_ON_TWITTER']
+                possible_placements += ['PUBLISHER_NETWORK']
             for place in possible_placements:
                 df = self.get_df_for_date(ids_lists, fields, sd, ed,
                                           date, place, entity=entity,
@@ -411,7 +422,7 @@ class TwApi(object):
                                     place, entity, df):
         url, params = self.create_stats_url(fields, ids, sd, ed,
                                             entity=entity, placement=place)
-        data = self.request(url, resp_key=jsondata, params=params)
+        data = self.raw_request(url, resp_key=jsondata, params=params)
         df = self.convert_response_to_df(data=data, date=date, df=df)
         return df
 
@@ -438,16 +449,16 @@ class TwApi(object):
         url, params = self.create_stats_url(
             fields, ids, sd, ed, entity=entity, placement=place,
             async_request=True)
-        data = self.request(url, params=params, method='POST')
-        if (data and 'data' in data and isinstance(data['data'], dict)
-                and 'id' in data['data']):
-            twitter_request.data = data
-            self.async_requests.append(twitter_request)
-        else:
-            logging.warning('Response was incorrect: {}'.format(data))
-            time.sleep(30)
-            self.make_request_for_date_asynchronous(
-                ids, fields, sd, ed, date, place, entity, times_requested)
+        for _ in range(5):
+            data = self.raw_request(url, params=params, method='POST')
+            if (data and 'data' in data and isinstance(data['data'], dict)
+                    and 'id' in data['data']):
+                twitter_request.data = data
+                self.async_requests.append(twitter_request)
+                break
+            else:
+                logging.warning('Response was incorrect: {}'.format(data))
+                time.sleep(5)
 
     def get_df_for_date(self, ids_lists, fields, sd, ed, date, place,
                         entity='PROMOTED_TWEET', async_request=False):
@@ -462,18 +473,19 @@ class TwApi(object):
         return df
 
     def get_df_for_all_async_requests(self):
-        async_requests = [x for x in self.async_requests if not x.completed]
-        if async_requests:
-            logging.info('{} jobs have not yet been completed.'.format(
-                len(async_requests)))
-            async_requests = async_requests.copy()
-            self.df = self.check_all_async_request_ids(
-                async_requests=async_requests)
-            time.sleep(30)
-            self.get_df_for_all_async_requests()
-        else:
-            logging.info('All jobs completed returning df.')
-            return True
+        for _ in range(1000):
+            async_requests = [x for x in self.async_requests if not x.completed]
+            if async_requests:
+                time.sleep(10)
+                logging.info('{} jobs have not yet been completed.'.format(
+                    len(async_requests)))
+                async_requests = async_requests.copy()
+                self.df = self.check_all_async_request_ids(
+                    async_requests=async_requests)
+            else:
+                logging.info('All jobs completed returning df.')
+                return True
+        return False
 
     def check_all_async_request_ids(self, async_requests=None):
         url, params = self.create_stats_url(async_request=True)
@@ -485,7 +497,9 @@ class TwApi(object):
             logging.info('Checking job batch {} of {}'.format(
                 idx + 1, len(async_requests)))
             params['job_ids'] = ','.join('{}'.format(x) for x in job_id)
-            data = self.request(url=url, params=params, method='GET')
+            data = self.raw_request(url=url, params=params, method='GET')
+            if data['next_cursor']:
+                logging.error('Cursor without pagination')
             for d in data['data']:
                 current_request = [x for x in self.async_requests
                                    if x.data['data']['id'] == d['id']][0]
@@ -519,17 +533,35 @@ class TwApi(object):
         except requests.exceptions.SSLError as e:
             logging.warning('SSL error with job: {} Retrying.'
                             'Error: {}'.format(d['id'], e))
-            return None
+            return False
         if r.status_code == 504:
             logging.warning('504 code with job: {} Retrying.'.format(d['id']))
-            return None
+            return False
         zip_obj = gzip.GzipFile(fileobj=io.BytesIO(r.content), mode='rb')
         response_data = json.loads(zip_obj.read())
         df = self.convert_response_to_df(
             data=response_data, date=cur_job.date, df=df)
         df = self.clean_df(df)
+        spend = pd.to_numeric(
+            df.get('billed_charge_local_micro'), errors='coerce').fillna(0)
+        imp = pd.to_numeric(df.get('impressions'), errors='coerce').fillna(0)
+        has_imp_no_spend = ((imp > 0) & (spend <= 0)).any()
+        if has_imp_no_spend:
+            msg = 'Imps no spend, re-requesting job id {}'.format(d['id'])
+            logging.warning(msg)
+            self.make_request_for_date_asynchronous(
+                cur_job.ids, cur_job.fields,
+                cur_job.sd, cur_job.ed,
+                cur_job.date, cur_job.place,
+                cur_job.entity,
+                times_requested=cur_job.times_requested + 1
+            )
+            self.async_requests = [x for x in self.async_requests
+                                   if x.data['data']['id'] != d['id']]
+            return False
         self.df = pd.concat([self.df, df], sort=True).reset_index(drop=True)
         cur_job.completed = True
+        return True
 
     @staticmethod
     def get_date_info(sd, ed):
@@ -578,7 +610,7 @@ class TwApi(object):
         df = gsapi.GsApi().get_passwords_df()
         df.columns = df.iloc[0]
         df = df[1:].reset_index(drop=True)
-        df = df.iloc[:, [0,1,4,5]]
+        df = df.iloc[:, [0, 1, 4, 5]]
         df.columns = df.iloc[0]
         df.columns.values[0] = 'Client'
         df.columns.values[1] = 'Campaign'
@@ -587,11 +619,12 @@ class TwApi(object):
 
     @staticmethod
     def get_client_name():
-        const_config = os.path.join(utl.config_path, dctc.filename_con_config)
+        const_config = str(dctc.filename_con_config)
+        const_config = os.path.join(utl.config_path, const_config)
         df = pd.read_csv(const_config)
         client_name = (
-            df.loc[df[dctc.DICT_COL_NAME] == dctc.CLI,
-            dctc.DICT_COL_VALUE].values[0])
+            df.loc[df[dctc.DICT_COL_NAME] == dctc.CLI, dctc.DICT_COL_VALUE].
+            values[0])
         client_name = client_name.lower()
         client_name = client_name.replace(' ', '')
         return client_name
@@ -600,9 +633,9 @@ class TwApi(object):
         df = self.get_passwords_df()
         client_name = self.get_client_name()
         df['Client'] = df['Client'].astype(str).str.lower()
-        df['Client'] = df['Client'].astype(str).str.replace(' ','')
+        df['Client'] = df['Client'].astype(str).str.replace(' ', '')
         client_match = df.loc[df['Client'] == client_name]
-        password_df = client_match[['Username','Password']]
+        password_df = client_match[['Username', 'Password']]
         return password_df
 
     def authenticate_accounts(self):
@@ -672,7 +705,7 @@ class TwApi(object):
 
     def get_account_timezone(self):
         url, params = self.create_base_url()
-        data = self.request(url, params=params)
+        data = self.raw_request(url, params=params)
         if jsondata not in data:
             logging.warning('Data not in response : {}'.format(data))
             return False
@@ -743,7 +776,7 @@ class TwApi(object):
             urls = [url + '/all', url]
             for u in urls:
                 params['card_uris'] = ','.join(uri)
-                d = self.request(u, params=params)
+                d = self.raw_request(u, params=params)
                 if 'data' not in d:
                     logging.warning('Card not found got response: {}'.format(d))
                     uri_dict[uri] = 'No Card Name'
@@ -777,9 +810,9 @@ class TwApi(object):
             tdf = tdf.rename(columns={0: col, 'level_0': coldate})
             tdf = utl.data_to_type(tdf, str_col=[colcid], int_col=[coldate])
             ndf = pd.merge(ndf, tdf, on=[coldate, colcid], how='outer')
-        df = ndf
+        df = ndf.copy()
         df[colspend] /= 1000000
-        df[coldate].replace(self.dates, inplace=True)
+        df[coldate] = df[coldate].map(self.dates).fillna(df[coldate])
         return df
 
     @staticmethod
