@@ -47,7 +47,7 @@ class AmzApi(object):
     campaign_col = 'campaignName'
     sp_keyword_columns = [
         'searchTerm', 'keywordId', 'matchType', 'targeting',
-        'keywordBid', 'keywordType']
+        'keywordBid', 'keywordType', 'portfolioId']
     sb_keyword_columns = [
         'searchTerm', 'keywordId', 'matchType', 'keywordBid']
 
