@@ -147,35 +147,31 @@ class GaApi(object):
         df = pd.DataFrame()
         for attempt in range(1, retries):
             r = self.client.post(url, json=body)
-            try:
-                df = self.data_to_df(r)
+            df = self.data_to_df(r)
+            if not df.empty:
                 break
-            except requests.exceptions.JSONDecodeError as e:
-                logging.warning('JSON decode failed on attempt: {}'.format(
-                    attempt))
-                if attempt < retries:
-                    time.sleep(delay)
-                    continue
-                logging.warning('Failed aget {} attempts: {}'.format(
-                    retries, r.text))
         return df
 
     @staticmethod
     def data_to_df(r):
-        dimension_header = 'dimensionHeaders'
-        if dimension_header not in r.json():
-            logging.warning('Column headers not in response: \n{}'
-                            ''.format(r.json()))
+        try:
+            data = r.json()
+        except requests.exceptions.JSONDecodeError as e:
+            logging.warning(f'Error decoding JSON: {e}')
             return pd.DataFrame()
-        cols = [x['name'] for x in r.json()[dimension_header]]
-        cols += [header['name'] for header in r.json()['metricHeaders']]
-        if 'rows' not in r.json():
+        dimension_header = 'dimensionHeaders'
+        if dimension_header not in data:
+            logging.warning('Column headers not in response: \n{}'
+                            ''.format(data))
+            return pd.DataFrame()
+        cols = [x['name'] for x in data[dimension_header]]
+        cols += [header['name'] for header in data['metricHeaders']]
+        if 'rows' not in data:
             logging.warning('Rows not in response: \n{}'
-                            ''.format(r.json()))
+                            ''.format(data))
             return pd.DataFrame(columns=cols)
-        raw_data = r.json()['rows']
         parsed_data = []
-        for row in raw_data:
+        for row in data['rows']:
             dimensions = row['dimensionValues']
             metrics = row['metricValues']
             new_data = [d['value'] for d in dimensions]
