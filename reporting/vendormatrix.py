@@ -618,14 +618,16 @@ def full_placement_creation(df, key, full_col, full_place_cols):
     for idx, col in enumerate(full_place_cols):
         prefix = col[:2]
         if prefix in ('::', '--'):
-            if prefix == '::':
-                df[col] = df[col].str.replace('_', '', regex=True)
-            elif prefix == '--':
-                campaign_name_check = ~df[col].str.match(
-                    r'(?i)^pre\s*-\s*launch$')
-                df.loc[campaign_name_check, col] = (
-                    df.loc[campaign_name_check, col]
-                    .str.replace(r'\s*-\s*', '_', regex=True))
+            col = col[2:]
+            if col in df.columns:
+                if prefix == '::':
+                    df[col] = df[col].str.replace('_', '', regex=True)
+                elif prefix == '--':
+                    campaign_name_check = ~df[col].str.match(
+                        r'(?i)^pre\s*-\s*launch$')
+                    df.loc[campaign_name_check, col] = (
+                        df.loc[campaign_name_check, col]
+                        .str.replace(r'\s*-\s*', '_', regex=True))
         if col not in df:
             msg = '{} was not in {}.  It was not included in {}'.format(
                 col, key, dctc.FPN)
