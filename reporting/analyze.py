@@ -3725,7 +3725,7 @@ class AliChat(object):
             "prompt": prompt,
             "stream": stream,
             "options": {
-                "temperature": 0.2,
+                "temperature": 0.6,
                 "num_ctx": 8192
             }
         }

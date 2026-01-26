@@ -306,6 +306,8 @@ class AmzApi(object):
         self.report_ids = []
         self.df = pd.DataFrame()
         self.profile_id = None
+        self.export_id = ''
+        self.campaign_export_id = ''
         profile_found = self.get_profiles()
         if not profile_found:
             return self.df
