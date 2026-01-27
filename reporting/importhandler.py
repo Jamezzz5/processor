@@ -241,7 +241,10 @@ class ImportHandler(object):
             camp_col = ic_df.iloc[0][import_config.filter]
             acc_pre = ic_df.iloc[0][import_config.account_id_pre]
             api_class.input_config(config_name)
-            df = api_class.test_connection(acc_col, camp_col, acc_pre)
+            tdf = api_class.test_connection(acc_col, camp_col, acc_pre)
+            tdf['vendor'] = vk
+            df = pd.concat([df, tdf])
+        df.reset_index()
         return df
 
     def ftp_load(self, ftp_key, ftp_class):
