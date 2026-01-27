@@ -483,8 +483,9 @@ class AmzApi(object):
             ed = ed - dt.timedelta(days=new_date)
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
-        cache_key = ('DSP_{}_{}'.format(sd, ed) if self.amazon_dsp else
-                     'SP_{}_{}'.format(sd, ed))
+        cache_key = ('DSP_{}_{}_{}'.format(self.advertiser_id, sd, ed)
+                     if self.amazon_dsp else
+                     'SP_{}_{}_{}'.format(self.advertiser_id, sd, ed))
         if cache_key in self.report_cache:
             logging.info('reusing cached report IDs for {}'.format(cache_key))
             report_ids = self.report_cache[cache_key]['report_ids']
