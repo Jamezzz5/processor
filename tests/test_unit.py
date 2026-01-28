@@ -354,6 +354,29 @@ class TestApis:
         self.send_api_call(api)
 
 
+class TestVendormatrix:
+    def test_ad_cost_calculation(self):
+        clicks = 10
+        imps = 100
+        ad_rate = 1
+        ad_models = [cal.BM_CPM, cal.BM_CPC]
+        df_dict = {
+            dctc.AM: ad_models,
+            dctc.AR: [ad_rate] * len(ad_models),
+            vmc.impressions: [imps] * len(ad_models),
+            vmc.clicks: [clicks] * len(ad_models),
+        }
+        df = pd.DataFrame(df_dict)
+        df = vm.ad_cost_calculation(df)
+        assert vmc.AD_COST in df.columns
+        cpm_cost = (imps / 1000) * ad_rate
+        cpm_calc = df[df[dctc.AM] == cal.BM_CPM][vmc.AD_COST].to_list()[0]
+        assert cpm_cost == cpm_calc
+        cpc_cost = clicks * ad_rate
+        cpc_calc = df[df[dctc.AM] == cal.BM_CPC][vmc.AD_COST].to_list()[0]
+        assert cpc_cost == cpc_calc
+
+
 class TestDictionary:
     dic = dct.Dict()
     mock_rc_auto = ({dctc.TAR: [dctc.TB, dctc.DT1, dctc.GT]},
@@ -1159,7 +1182,9 @@ class TestAnalyze:
                 0: 'mpBudget|mpVendor|mpCountry/Region|mpCampaign',
                 1: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
                 2: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
-                3: ''}
+                3: ''},
+            vmc.filenamedict: {0: 'ven1_test.csv', 1: 'ven2_test.csv',
+                               2: 'ven3_test.csv', 3: 'plannet_test.csv'},
         }
         test_vm = self.generate_test_vm(vm_dict, 4)
         data1 = {
@@ -1199,14 +1224,17 @@ class TestAnalyze:
             test_vm[vmc.filename][0]: pd.DataFrame(data1),
             test_vm[vmc.filename][1]: pd.DataFrame(data2),
             test_vm[vmc.filename][2]: pd.DataFrame(data3),
-            test_vm[vmc.filename][3]: pd.DataFrame(plannet_data)
+            test_vm[vmc.filenamedict][3]: pd.DataFrame(plannet_data)
         }
-        for filename in files_to_write:
-            files_to_write[filename].to_csv('raw_data/{}'.format(filename),
-                                            index=False)
+        for filename, df in files_to_write.items():
+            file_folder = utl.raw_path
+            if 'plannet' in filename:
+                file_folder = utl.dict_path
+            full_file_name = '{}{}'.format(file_folder, filename)
+            df.to_csv(full_file_name, index=False)
         return test_vm
 
-    def test_autodict_analysis(self, setup_autodict_files):
+    def test_change_autodict_order(self, setup_autodict_files):
         """
         Tests CheckAutoDictOrder using auto dict order/data source
         combinations that should result in a positive shift via Vendor
@@ -1245,8 +1273,11 @@ class TestAnalyze:
             expected = expected_orders[suggested_orders[vmc.vendorkey][index]]
             suggested = suggested_orders['change_auto_order'][index]
             assert expected == suggested
-        for file in vm_dict[vmc.filename]:
-            os.remove('raw_data/{}'.format(file))
+        for file_name in vm_dict[vmc.filename]:
+            file_path = utl.raw_path
+            if not os.path.isfile(os.path.join(file_path, file_name)):
+                file_path = utl.dict_path
+            os.remove(os.path.join(file_path, file_name))
 
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
@@ -1811,8 +1842,8 @@ class TestExport:
         assert set(append_tables) == set(expected_tables)
 
 
-class TestBlankRun:
-    def test_run(self):
+class TestRun:
+    def test_blank_run(self):
         main('--analyze')
 
 

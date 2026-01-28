@@ -232,8 +232,11 @@ class VendorMatrix(object):
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
-            self.df = pd.concat([self.df, self.tdf], ignore_index=True,
-                                sort=True)
+            self.df = pd.concat(
+                [self.df.dropna(axis=1, how="all"),
+                 self.tdf.dropna(axis=1, how="all"),],
+                ignore_index=True,
+            )
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csv_path):
@@ -661,21 +664,29 @@ def combining_data(df, key, columns, **kwargs):
 
 
 def ad_cost_calculation(df):
+    """
+    Calculates ad cost, reporting cost and verification cost from a df
+
+    :param df: The df to apply the calculations
+    :return: The df with the columns added and calculations made
+    """
     if df.empty:
         return df
     df = df.copy()
-    for cost_cols in [(vmc.AD_COST, dctc.AM, dctc.AR),
-                      (vmc.REP_COST, dctc.RFM, dctc.RFR),
-                      (vmc.VER_COST, dctc.VFM, dctc.VFR)]:
-        for col in [cost_cols[0], vmc.impressions, vmc.clicks]:
+    cost_cols = [(vmc.AD_COST, dctc.AM, dctc.AR),
+                 (vmc.REP_COST, dctc.RFM, dctc.RFR),
+                 (vmc.VER_COST, dctc.VFM, dctc.VFR)]
+    for cost_col, model_col, rate_col in cost_cols:
+        for col in [cost_col, vmc.impressions, vmc.clicks, model_col, rate_col]:
             if col not in df:
                 df[col] = 0
-        calc_ser = (df[df[cost_cols[1]].isin(cal.BUY_MODELS) &
-                       df[cost_cols[2]] != 0].
-                    apply(cal.net_cost, cost_col=cost_cols[0],
-                          bm_col=cost_cols[1], br_col=cost_cols[2], axis=1))
+        calc_ser = (df[df[model_col].isin(cal.BUY_MODELS) &
+                       df[rate_col] != 0].
+                    apply(cal.net_cost, cost_col=cost_col,
+                          bm_col=model_col, br_col=rate_col, axis=1))
         if not calc_ser.empty:
-            df[cost_cols[0]].update(calc_ser)
+            df = utl.data_to_type(df, float_col=[cost_col])
+            df.loc[calc_ser.index, cost_col] = calc_ser
     return df
 
 

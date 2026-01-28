@@ -172,7 +172,7 @@ def net_cost_calculation(df):
             df[col[1]] = 0
     calc_ser = df[df[dctc.BM].isin(BUY_MODELS)].apply(net_cost, axis=1)
     if not calc_ser.empty:
-        df[vmc.cost].update(calc_ser)
+        df.loc[calc_ser.index, vmc.cost] = calc_ser
     return df
 
 
@@ -182,7 +182,9 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
         if col not in df.columns:
             df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
-    nc_pnc = df[df[dctc.UNC] != True]
+    nc_pnc = df.copy()
+    if dctc.UNC in df.columns:
+        nc_pnc = df[df[dctc.UNC] != True]
     if p_col not in nc_pnc.columns:
         logging.warning('{} not in df, continuing.'.format(p_col))
         return df
