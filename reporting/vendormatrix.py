@@ -87,17 +87,14 @@ class VendorMatrix(object):
         self.vm_df = self.add_file_name_col()
         self.vm = self.vm_df.copy()
         self.plan_net_check()
-        drop = [item for item in self.vm.columns.values.tolist()
-                if (item[0] == '|')]
+        drop = self.vm.columns[self.vm.columns.str.startswith('|')]
         self.vm = utl.col_removal(self.vm, 'vm', drop)
         self.vm = utl.data_to_type(self.vm, [], vmc.datecol, vmc.barsplitcol)
         self.vl = self.vm[vmc.vendorkey].tolist()
-        self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
         for col in vmc.barsplitcol:
-            if col not in self.vm:
-                self.vm[col] = {}
-            self.vm[col] = ({key: list(value.split('|')) for key, value in
-                            self.vm[col].items()})
+            if col in self.vm.columns:
+                self.vm[col] = self.vm[col].str.split('|')
+        self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
 
     def vm_import_keys(self):
         for vk in self.vl:
@@ -639,7 +636,17 @@ def full_placement_creation(df, key, full_col, full_place_cols):
 
 def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
-    combine_cols = [x for x in columns if x in kwargs and kwargs[x] != ['nan']]
+    combine_cols = []
+    float_cols = []
+    for col in columns:
+        if col in kwargs and kwargs[col] != ['nan']:
+            combine_cols.append(col)
+            if col in vmc.datafloatcol:
+                float_cols.append(col)
+                for item in kwargs[col]:
+                    float_cols.append(item)
+    if float_cols:
+        df = utl.data_to_type(df, float_col=float_cols)
     for col in combine_cols:
         if col in df.columns and col not in kwargs[col]:
             df[col] = 0
@@ -653,8 +660,7 @@ def combining_data(df, key, columns, **kwargs):
             if col not in df.columns:
                 df[col] = 0
             if col in vmc.datafloatcol:
-                df = utl.data_to_type(df, float_col=[col, item])
-                df[col] += df[item]
+                df[col] = df[[col, item]].sum(axis=1)
             else:
                 df[col] = df[item]
     for col in [x for x in columns if x not in combine_cols]:

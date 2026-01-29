@@ -285,10 +285,8 @@ class Analyze(object):
         df = df.dropna()
         df = df[~df.astype(str).apply(
             lambda row: row.str.lower().eq('nan')).any(axis=1)]
-        df_dict = '\n'.join(['{}{}'.format(k, v)
-                             for k, v in df.to_dict(orient='index').items()])
         undefined_msg = 'Missing planned spends have the following keys:'
-        logging.info('{}\n{}'.format(undefined_msg, df_dict))
+        self.format_log_msg_with_df(undefined_msg, df)
         self.add_to_analysis_dict(key_col=self.unknown_col,
                                   message=undefined_msg,
                                   data=df.to_dict())
@@ -300,10 +298,8 @@ class Analyze(object):
         dir_to_backup = [utl.config_path, utl.dict_path, utl.raw_path]
         for path in [utl.backup_path, bu] + dir_to_backup:
             utl.dir_check(path)
-        file_dicts = {'raw.gzip': self.df}
-        for file_name, df in file_dicts.items():
-            file_name = os.path.join(bu, file_name)
-            df.to_csv(file_name, compression='gzip')
+        raw_out = os.path.join(bu, "raw.gzip")
+        self.df.to_csv(raw_out, index=False, compression="gzip")
         for file_path in dir_to_backup:
             file_name = '{}.tar.gz'.format(file_path.replace('/', ''))
             file_name = os.path.join(bu, file_name)
@@ -695,7 +691,7 @@ class Analyze(object):
             rate_col_name = f'{metric_name} Differ Rate'
             edf[rate_col_name] = edf.apply(
                 lambda row: 2 * abs(row[ad_serv_col_name] - row[plat_col_name])
-                / (row[ad_serv_col_name] + row[plat_col_name]),
+                            / (row[ad_serv_col_name] + row[plat_col_name]),
                 axis=1)
             edf[threshold_col] = edf.index.map(threshold_dict).fillna(
                 threshold_dict[all_threshold])
@@ -738,7 +734,7 @@ class Analyze(object):
         metrics = []
         for calc_metric in metric_dependencies.keys():
             if [metric for metric in metric_dependencies[calc_metric] if
-                    metric not in self.df.columns]:
+                metric not in self.df.columns]:
                 logging.warning('Missing metric, could not determine {} '
                                 'flag.'.format(calc_metric))
                 thresholds.pop(calc_metric)
@@ -827,17 +823,17 @@ class Analyze(object):
             elif max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
-                         max_date, sd))
+                    max_date, sd))
                 msg = (False, msg)
             elif min_date > ed:
                 msg = ('First day in raw file {} is less than end date {}.\n'
                        'Result will be blank.  Change end date.'.format(
-                         min_date, ed))
+                    min_date, ed))
                 msg = (False, msg)
             else:
                 msg = ('Some or all data in raw file with date range {} - {} '
                        'falls between start and end dates {} - {}'.format(
-                         sd, ed, min_date, max_date))
+                    sd, ed, min_date, max_date))
                 msg = (True, msg)
         cd[vmc.startdate][cds_name] = msg
         return cd
@@ -1058,7 +1054,7 @@ class Analyze(object):
                 'Dataframe empty, could not determine missing ad rate.')
             return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
-                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
                 (df[dctc.AR] == 'nan')]
@@ -1320,7 +1316,7 @@ class CheckAutoDictOrder(AnalyzeBase):
         if not auto_order[ven_auto_idx + 1] == dctc.COU:
             return df
         camp_shift = camp_auto_idx - ven_auto_idx
-        tdf = source.get_raw_df()
+        tdf = source.get_raw_df(nrows=100)
         auto_place = source.p[vmc.autodicplace]
         if auto_place == dctc.PN:
             auto_place = source.p[vmc.placement]
@@ -1402,7 +1398,7 @@ class CheckFirstRow(AnalyzeBase):
         :returns:Dataframe containing vendor key and the new first row if the
         first row is incorrect; otherwise an empty dataframe
         """
-        if vmc.filename not in source.p:
+        if vmc.filename not in source.p or vm.plan_key in source.key:
             return l_df
         raw_file = source.p[vmc.filename]
         place_cols = source.p[dctc.FPN]
@@ -2006,9 +2002,9 @@ class FindPlacementNameCol(AnalyzeBase):
         p_exists = placement_col in df
         no_p_check = (not p_exists and max_exists)
         p_check = (
-            max_exists and p_exists and
-            df[max_col] >= (df[placement_col] + 9)
-            and 18 <= df[max_col] <= max_underscore)
+                max_exists and p_exists and
+                df[max_col] >= (df[placement_col] + 9)
+                and 18 <= df[max_col] <= max_underscore)
         if no_p_check or p_check:
             data_dict = {vmc.vendorkey: vk_name,
                          'Current Placement Col': placement_col,
@@ -2193,11 +2189,11 @@ class CheckColumnNames(AnalyzeBase):
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
-        self.matrix = vm.VendorMatrix(display_log=False)
+        self.matrix = self.aly.matrix
         data_sources = self.matrix.get_all_data_sources()
         data = []
         for source in data_sources:
-            if vmc.firstrow not in source.p:
+            if vmc.firstrow not in source.p or vm.plan_key in source.key:
                 continue
             first_row = source.p[vmc.firstrow]
             transforms = str(source.p[vmc.transform]).split(':::')
@@ -2821,7 +2817,10 @@ class GetDailyDelivery(AnalyzeBase):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.aly.get_start_end_dates(df, plan_names)
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
-        pdf = self.matrix.vendor_get(vm.plan_key)
+        plannet_filename = self.matrix.vendor_set(vm.plan_key)
+        plannet_filename = plannet_filename[vmc.filenamedict]
+        plannet_filename = os.path.join(utl.dict_path, plannet_filename)
+        pdf = utl.import_read_csv(plannet_filename)
         pdf = pdf[pdf_cols]
         groups = plan_names + [vmc.date]
         metrics = [cal.NCF]
@@ -2911,10 +2910,9 @@ class GetServingAlerts(AnalyzeBase):
         df = self.get_serving_alerts()
         if df.empty:
             msg = 'No significant adserving overages.'
-            logging.info('{}\n{}'.format(msg, df))
         else:
             msg = 'Adserving cost significantly OVER for the following: '
-            logging.info('{}\n{}'.format(msg, df))
+        self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.aly.adserving_alert,
                                       message=msg, data=df.to_dict())
 
@@ -2942,7 +2940,7 @@ class CheckRawFileUpdateTime(AnalyzeBase):
                 if last_update.date() == dt.datetime.today().date():
                     update_tier = self.update_tier_today
                 elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                        dt.datetime.today() - dt.timedelta(days=7)).date():
                     update_tier = self.update_tier_week
                 else:
                     update_tier = self.update_tier_greater_week
@@ -3003,21 +3001,21 @@ class GetDailyPacingAlerts(AnalyzeBase):
         over_df, under_df = self.get_daily_pacing_alerts()
         if over_df.empty:
             msg = 'No significant daily pacing overages.'
-            logging.info('{}\n{}'.format(msg, over_df))
+            self.aly.format_log_msg_with_df(msg, over_df)
         else:
             msg = ('Yesterday\'s spend for the following exceeded '
                    'daily pacing goal by:')
-            logging.info('{}\n{}'.format(msg, over_df))
+            self.aly.format_log_msg_with_df(msg, over_df)
         self.aly.add_to_analysis_dict(
             key_col=self.aly.daily_pacing_alert, message=msg,
             param=self.aly.over_daily_pace, data=over_df.to_dict())
         if under_df.empty:
             msg = 'No significant daily under pacing.'
-            logging.info('{}\n{}'.format(msg, under_df))
+            self.aly.format_log_msg_with_df(msg, under_df)
         else:
             msg = ('Yesterday\'s spend for the following under paced the '
                    'daily goal by:')
-            logging.info('{}\n{}'.format(msg, under_df))
+            self.aly.format_log_msg_with_df(msg, under_df)
         self.aly.add_to_analysis_dict(
             key_col=self.aly.daily_pacing_alert, message=msg,
             param=self.aly.under_daily_pace, data=under_df.to_dict())
@@ -3690,10 +3688,10 @@ class AliChat(object):
         """
         if not instructions:
             instructions = {
-                'answer':    AliChat.instruction_answer,
+                'answer': AliChat.instruction_answer,
                 'summarize': AliChat.instruction_summarize,
-                "rewrite":   AliChat.instruction_rewrite,
-                "extract":   AliChat.instruction_extract,
+                "rewrite": AliChat.instruction_rewrite,
+                "extract": AliChat.instruction_extract,
             }[mode]
         if not previous_messages:
             previous_messages = []

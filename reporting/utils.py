@@ -261,8 +261,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
         if col not in df:
             continue
         df[col] = df[col].astype('U')
-        df[col] = df[col].str.strip()
-        df[col] = df[col].apply(lambda x: ' '.join(x.split()))
+        df[col] = df[col].str.replace(r"\s+", " ", regex=True).str.strip()
     for col in int_col:
         if col not in df:
             continue
