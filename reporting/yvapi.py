@@ -24,6 +24,8 @@ class YvApi(object):
     campaigns_url = '/traffic/campaigns'
     start_time_str = "T00:00:00-08:00"
     end_time_str = "T23:59:59-08:00"
+    default_config_file_name = 'yzapi.json'
+    default_vendorkey = 'YahooVerizon'
 
     def __init__(self):
         self.config = None

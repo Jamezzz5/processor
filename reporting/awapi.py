@@ -142,6 +142,7 @@ class AwApi(object):
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
     access_url = '{}:listAccessibleCustomers'.format(base_url[:-1])
     default_config_file_name = 'awconfig.yaml'
+    default_vendorkey = 'Adwords'
 
     def __init__(self):
         self.df = pd.DataFrame()

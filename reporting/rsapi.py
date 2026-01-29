@@ -43,6 +43,7 @@ class RsApi(object):
     display_nested_cols = ['network_reported_performance', 'goals']
     display_fields.extend(display_nested_cols)
     default_config_file_name = 'rsapi.json'
+    default_vendorkey = 'Redshell'
 
     def __init__(self):
         self.config = None

@@ -19,6 +19,7 @@ from selenium.webdriver.common.keys import Keys
 class RedApi(object):
     config_path = utl.config_path
     default_config_file_name = 'redapi.json'
+    default_vendorkey = 'Reddit'
     base_url = 'https://ads.reddit.com'
     temp_path = 'tmp'
     base_metric = '//*[@id="metrics.'

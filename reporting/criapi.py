@@ -17,6 +17,7 @@ class CriApi(object):
     auth_url = '{}/oauth2/token'.format(base_url)
     version_url = '/2025-04/retail-media'
     default_config_file_name = 'criapi.json'
+    default_vendorkey = 'Criteo'
     line_item_str = 'Line'
 
     def __init__(self):

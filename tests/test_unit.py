@@ -34,6 +34,9 @@ import processor.reporting.awss3 as awss3
 import processor.reporting.iasapi as iasapi
 import processor.reporting.ttdapi as ttdapi
 import processor.reporting.tikapi as tikapi
+import processor.reporting.yvapi as yvapi
+import processor.reporting.gsapi as gsapi
+import processor.reporting.simapi as simapi
 import processor.reporting.importhandler as ih
 
 
@@ -289,6 +292,7 @@ class TestApis:
     def test_amzapi(self, tmp_path_factory):
         api = amzapi.AmzApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_gaapi(self, tmp_path_factory):
         api = gaapi.GaApi()
@@ -297,22 +301,42 @@ class TestApis:
     def test_awapi(self, tmp_path_factory):
         api = awapi.AwApi()
         self.send_api_call(api, fields=['UAC'])
+        self.send_test_api_call(api)
 
     def test_fbapi(self, tmp_path_factory):
         api = fbapi.FbApi()
         self.send_api_call(api, fields=['Actions'])
+        self.send_test_api_call(api)
 
     def test_samapi(self, tmp_path_factory):
         api = samapi.SamApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_criapi(self, tmp_path_factory):
         api = criapi.CriApi()
         self.send_api_call(api, fields=[api.line_item_str])
+        self.send_test_api_call(api)
 
     def test_rsapi(self, tmp_path_factory):
         api = rsapi.RsApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
+
+    def test_yvapi(self, tmp_path_factory):
+        api = yvapi.YvApi()
+        self.send_api_call(api)
+        self.send_test_api_call(api)
+
+    def test_gsapi(self, tmp_path_factory):
+        api = gsapi.GsApi()
+        self.send_api_call(api)
+        self.send_test_api_call(api)
+
+    def test_simapi(self, tmp_path_factory):
+        api = simapi.SimApi()
+        self.send_api_call(api)
+        self.send_test_api_call(api)
 
     @staticmethod
     def send_api_call(api, fields=None):
@@ -328,14 +352,17 @@ class TestApis:
         api = redapi.RedApi()
         api.api = True
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_dcapi(self):
         api = dcapi.DcApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_scapi(self):
         api = scapi.ScApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_iasapi(self):
         api = iasapi.IasApi()
@@ -345,76 +372,29 @@ class TestApis:
     def test_ttdapi(self, tmp_path_factory):
         api = ttdapi.TtdApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_tikapi(self, tmp_path_factory):
         api = tikapi.TikApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_twapi(self, tmp_path_factory):
         api = twapi.TwApi()
         self.send_api_call(api)
 
-    @pytest.fixture
-    def create_test_vm(self):
-        vm_dict = {
-            vmc.vendorkey: {0: 'API_DCM_test',
-                            1: 'API_Facebook_test',
-                            2: 'API_Adwords_test',
-                            3: 'API_Samsung_test',
-                            4: 'API_Tiktok_test',
-                            5: 'API_YahooVerizon_test',
-                            6: 'API_GoogleSheets_test',
-                            7: 'API_Snapchat_test',
-                            8: 'API_Criteo_test',
-                            9: 'API_AmazonDsp_test',
-                            10: 'API_Amazon_test',
-                            11: 'API_SimilarWeb_test',
-                            12: 'API_Redshell_test',
-                            13: 'API_Reddit_test',
-                            14: 'API_TTD_test'},
-            vmc.apifile: {0: 'dcapi.json',
-                          1: 'fbconfig.json',
-                          2: 'awconfig.yaml',
-                          3: 'samapi.json',
-                          4: 'tikapi.json',
-                          5: 'yzapi.json',
-                          6: 'gsapi.json',
-                          7: 'scconfig.json',
-                          8: 'criapi.json',
-                          9: 'amzdspapi.json',
-                          10: 'amzapi.json',
-                          11: 'simconfig.json',
-                          12: 'rsapi.json',
-                          13: 'redapi.json',
-                          14: 'ttdconfig.json'}
-        }
-        self.vm_df = TestAnalyze().generate_test_vm(vm_dict, 1)
-        return self.vm_df
-
-    def test_test_connection(self, create_test_vm, tmp_path_factory):
-        key_list = [
-            'API_DCM_test',
-            'API_Facebook_test',
-            'API_Adwords_test',
-            'API_Samsung_test',
-            'API_Tiktok_test',
-            'API_YahooVerizon_test',
-            'API_GoogleSheets_test',
-            'API_Snapchat_test',
-            'API_Criteo_test',
-            'API_AmazonDsp_test',
-            'API_Amazon_test',
-            'API_SimilarWeb_test',
-            'API_Redshell_test',
-            'API_Reddit_test',
-            'API_TTD_test']
-        vm_df = self.vm_df
-        matrix = vm.VendorMatrix()
-        matrix.vm_parse(vm_df)
-        """
-        df = ih.ImportHandler(args=None, matrix=matrix).test_api_calls(key_list)
+    @staticmethod
+    def send_test_api_call(api):
+        import_config = vm.ImportConfig()
+        import_config.import_vm()
+        ic_df = import_config.df.loc[
+            import_config.df[import_config.key] == api.default_vendorkey]
+        acc_col = ic_df.iloc[0][import_config.account_id]
+        camp_col = ic_df.iloc[0][import_config.filter]
+        acc_pre = ic_df.iloc[0][import_config.account_id_pre]
+        api.input_config(api.default_config_file_name)
+        df = api.test_connection(acc_col, camp_col, acc_pre)
         assert df['Success'].all()
-        """
 
 
 class TestDictionary:
