@@ -178,7 +178,7 @@ class VendorMatrix(object):
                        for x in current_imports]
         data_sources = [self.get_data_source(vk) for vk in vendor_keys]
         for ds in data_sources:
-            ds.add_import_config_params(import_type, self, ic)
+            ds.add_import_config_params(import_type, self, ic, current_imports)
         return data_sources
 
     def get_data_sources(self):
@@ -273,18 +273,18 @@ class ImportConfig(object):
     file_path = utl.config_path
 
     def __init__(self, matrix=None, default_param_ic=None, base_path=None):
-        self.matrix = None
+        self.matrix = matrix
         self.df = None
         self.matrix_df = None
         self.base_path = base_path
         self.default_param_ic = default_param_ic
-        if matrix:
-            self.import_vm()
+        self.import_vm()
         if not self.default_param_ic:
             self.default_param_ic = self
 
     def import_vm(self):
-        self.matrix = VendorMatrix(display_log=False)
+        if not self.matrix:
+            self.matrix = VendorMatrix(display_log=False)
         self.matrix_df = self.matrix.read()
         self.df = self.read()
 
@@ -497,7 +497,7 @@ class ImportConfig(object):
     def add_imports_to_vm(self, import_dicts):
         vks = []
         for import_dict in import_dicts:
-            current_imports = self.get_current_imports()
+            current_imports = self.get_current_imports(matrix=self.matrix)
             if import_dict in current_imports:
                 continue
             import_key = import_dict[self.key]
@@ -587,7 +587,7 @@ class ImportConfig(object):
         return account_id, filter_val
 
     def get_current_imports(self, import_type='API_', matrix=None):
-        if matrix:
+        if not matrix:
             self.import_vm()
         import_dicts = []
         api_keys = [x for x in self.matrix_df[vmc.vendorkey]
@@ -826,12 +826,13 @@ class DataSource(object):
         return self.df
 
     def add_import_config_params(self, import_type='API_', matrix=None,
-                                 ic=None):
+                                 ic=None, current_imports=None):
         if not matrix:
             matrix = VendorMatrix()
         if not ic:
             ic = ImportConfig(matrix=matrix)
-        current_imports = ic.get_current_imports(matrix=True)
+        if not current_imports:
+            current_imports = ic.get_current_imports(matrix=matrix)
         for x in current_imports:
             name_part = [import_type, x[ImportConfig.key], x[ImportConfig.name]]
             vk_formats = ['{}{}_{}', '{}{}{}']
@@ -839,6 +840,7 @@ class DataSource(object):
             if self.key in possible_keys:
                 self.ic_params = x
                 return self.ic_params
+        return None
 
     def write(self, df=None):
         utl.write_file(df, self.p[vmc.filename_true])

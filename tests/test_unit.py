@@ -376,6 +376,13 @@ class TestVendormatrix:
         cpc_calc = df[df[dctc.AM] == cal.BM_CPC][vmc.AD_COST].to_list()[0]
         assert cpc_cost == cpc_calc
 
+    def test_vm_load(self):
+        matrix = vm.VendorMatrix()
+        assert matrix.vm
+        bar_col = vmc.barsplitcol[0]
+        plan_val = matrix.vm[bar_col][vm.plan_key]
+        assert isinstance(plan_val, list)
+
 
 class TestDictionary:
     dic = dct.Dict()

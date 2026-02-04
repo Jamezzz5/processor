@@ -236,11 +236,11 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
     for col in float_col:
         if col not in df:
             continue
+        df[col] = df[col].fillna(0)
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: x.replace('$', ''))
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
         df[col] = pd.to_numeric(df[col], errors='coerce')
-        df[col] = df[col].replace(['nan', 'NA'], 0)
         df[col] = df[col].astype(float)
     for col in date_col:
         if col not in df:

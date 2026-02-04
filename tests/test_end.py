@@ -8,6 +8,7 @@ import processor.reporting.analyze as az
 import processor.reporting.vmcolumns as vmc
 import processor.reporting.vendormatrix as vm
 import processor.reporting.dictcolumns as dctc
+import processor.reporting.calc as cal
 
 
 @pytest.fixture(scope='module')
@@ -79,7 +80,7 @@ class TestEndToEnd:
         load_config = utl.data_to_type(load_config, str_col=cols)
         load_config = load_config.to_dict(orient='records')
         ic = vm.ImportConfig()
-        ic.add_and_remove_from_vm(load_config, matrix=True)
+        ic.add_and_remove_from_vm(load_config)
         matrix = vm.VendorMatrix()
         for x in load_config:
             vk_parts = (x[vm.ImportConfig.key], x[vm.ImportConfig.name])
@@ -102,10 +103,11 @@ class TestEndToEnd:
     def test_check_results(self):
         group_cols = [vmc.vendorkey, vmc.date, dctc.CAM, dctc.VEN, dctc.COU,
                       dctc.ENV]
-        metric_cols = [vmc.impressions, vmc.clicks, vmc.cost]
+        metric_cols = [vmc.impressions, vmc.clicks, vmc.cost, cal.TOTAL_COST]
         df = utl.import_read_csv(vmc.output_file)
-        df = df.groupby(group_cols)[metric_cols].sum().reset_index()
         file_name = os.path.join('tests', 'results.csv')
+        # df.to_csv(file_name, index=False)
+        df = df.groupby(group_cols)[metric_cols].sum().reset_index()
         rdf = utl.import_read_csv(file_name)
         rdf = rdf.groupby(group_cols)[metric_cols].sum().reset_index()
         vk_df_mismatch = []

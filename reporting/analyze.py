@@ -1976,40 +1976,51 @@ class FindPlacementNameCol(AnalyzeBase):
     def find_placement_col_in_df(
             df, result_df, placement_col=vmc.placement,
             vk_name='test', max_underscore=30):
-        df = df.drop([vmc.fullplacename], axis=1, errors='ignore')
-        df = df.reset_index(drop=True)
-        total_rows = len(df)
         if df.empty:
             return result_df
+        df = df.drop([vmc.fullplacename], axis=1, errors='ignore').reset_index(
+            drop=True)
+        total_rows = len(df)
+        non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+        if not non_numeric_cols:
+            return result_df
+        vendor_list_lower = {x.lower() for x in
+                             CheckAutoDictOrder.get_vendor_list()}
         cols = []
-        vendor_list = [x.lower() for x in CheckAutoDictOrder.get_vendor_list()]
-        for col in df.columns:
-            first_val = str(df[col][0]).split('_')
-            if len(first_val) > 1:
-                vendor_val = first_val[1]
-                if vendor_val.lower() in vendor_list:
-                    cols.append(col)
-        df = df.map(
-            lambda x: str(x).count('_')
-        ).apply(lambda x: sum(x) / total_rows)
-        mask = df[df < max_underscore]
-        max_col = mask.idxmax()
+        first_row = df.iloc[0]
+        for col in non_numeric_cols:
+            parts = str(first_row[col]).split('_', 2)
+            if len(parts) > 1 and parts[1].lower() in vendor_list_lower:
+                cols.append(col)
+        underscore_counts = {}
+        for col in non_numeric_cols:
+            count = df[col].astype(str).str.count('_').sum() / total_rows
+            underscore_counts[col] = count
+        underscore_series = pd.Series(underscore_counts)
+        mask = underscore_series < max_underscore
+        if not mask.any():
+            return result_df
+        max_col = underscore_series[mask].idxmax()
         if cols and max_col not in cols:
-            cols = [x for x in cols if x in df]
-            if cols:
-                max_col = df[cols].idxmax()
-        max_exists = max_col in df
-        p_exists = placement_col in df
-        no_p_check = (not p_exists and max_exists)
+            valid_cols = [x for x in cols if x in underscore_series.index]
+            if valid_cols:
+                max_col = underscore_series[valid_cols].idxmax()
+        max_exists = max_col in underscore_series.index
+        p_exists = placement_col in underscore_series.index
+        no_p_check = not p_exists and max_exists
         p_check = (
                 max_exists and p_exists and
-                df[max_col] >= (df[placement_col] + 9)
-                and 18 <= df[max_col] <= max_underscore)
+                underscore_series[max_col] >= (
+                            underscore_series[placement_col] + 9) and
+                18 <= underscore_series[max_col] <= max_underscore
+        )
         if no_p_check or p_check:
-            data_dict = {vmc.vendorkey: vk_name,
-                         'Current Placement Col': placement_col,
-                         FindPlacementNameCol.suggested_col: max_col}
-            result_df.append(data_dict)
+            result_df.append({
+                vmc.vendorkey: vk_name,
+                'Current Placement Col': placement_col,
+                FindPlacementNameCol.suggested_col: max_col
+            })
+
         return result_df
 
     def do_analysis_on_data_source(self, source, df):
@@ -3673,7 +3684,7 @@ class AliChat(object):
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
-                         stream=False, timeout=120):
+                         stream=False, timeout=120, temperature=0.4):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3684,6 +3695,7 @@ class AliChat(object):
         :param previous_messages: List of previous messages
         :param stream: Boolean to stream response or return all at once
         :param timeout: Timeout to wait for response when not streaming
+        :param temperature: Temperature passed to the model
         :return: response from the llm as string
         """
         if not instructions:
@@ -3726,7 +3738,7 @@ class AliChat(object):
             "prompt": prompt,
             "stream": stream,
             "options": {
-                "temperature": 0.6,
+                "temperature": temperature,
                 "num_ctx": 8192
             }
         }

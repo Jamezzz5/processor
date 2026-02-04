@@ -293,7 +293,7 @@ def total_cost_calculation(df):
         return df
     df = utl.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST,
                                          vmc.dcm_service_fee, vmc.REP_COST,
-                                         vmc.VER_COST])
+                                         vmc.VER_COST, PROG_FEES])
     df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES]
     cost_cols = [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST, vmc.VER_COST,
                  PROG_FEES]
