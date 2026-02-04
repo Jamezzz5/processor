@@ -35,6 +35,7 @@ class TtdApi(object):
         self.default_config_file_name = 'ttdconfig.json'
         self.campaign_dict = {}
         self.report_name_is_advertiser = False
+        self.is_authorized = True
 
     def input_config(self, config):
         logging.info('Loading TTD config file: {}'.format(config))
@@ -578,12 +579,21 @@ class TtdApi(object):
         headers = {'TTD-Auth': self.query_token}
         body = {'query': query, 'variables': {'advId': candidate_id}}
         r = requests.post(self.query_url, json=body, headers=headers)
-        if 'data' not in r.json():
+        request = r.json()
+        if request.get('data') is None:
             self.query_token = self.get_new_token(self.login, self.password)
             headers = {'TTD-Auth': self.query_token}
             r = requests.post(self.query_url, json=body, headers=headers)
-        if r.json()['data'] and 'advertiser' in r.json()['data']:
-            is_advertiser_id = True
+            request = r.json()
+        if r.status_code != 200 and 'Unauthorized' in r.text:
+            logging.warning('Checking if {} is advertiser failed with '
+                            'status code {}'.format(
+                                candidate_id, r.text))
+            self.is_authorized = False
+        else:
+            advertiser = request.get('data', {}).get('advertiser')
+            if advertiser and self.is_authorized:
+                is_advertiser_id = True
         return is_advertiser_id
 
     def get_child_object_ids(self, parent_id, parent_name='advertiser',
@@ -610,6 +620,8 @@ class TtdApi(object):
         }}
         """
         for _ in range(10000):
+            if not self.is_authorized:
+                break
             variables = {
                 'parentId': parent_id,
                 'cursor': cursor}
@@ -733,6 +745,8 @@ class TtdApi(object):
         """
         df = pd.DataFrame()
         for campaign_id in campaign_list:
+            if not self.is_authorized:
+                break
             campaign_name = self.campaign_dict[campaign_id]
             logging.info('Getting data for campaign {}'.format(campaign_id))
             adgroup_ids = self.get_child_object_ids(
