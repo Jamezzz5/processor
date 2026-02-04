@@ -649,6 +649,27 @@ class DFTranslation(object):
         self.real_columns = [k for k, v in self.translation_type.items()
                              if v == 'REAL' or v == 'DECIMAL']
 
+    def check_and_add_columns(self, df, cols):
+        """
+        Make sure all columns exist, and are the right type.
+
+        :param df: The df with the columns
+        :param cols: The columns to check exist
+        :return: The df with the columns added
+        """
+        for col in cols:
+            if col in df.columns:
+                continue
+            if col in self.text_columns:
+                df[col] = "None"
+            elif col in self.date_columns:
+                df[col] = pd.NaT
+            elif col in self.int_columns:
+                df[col] = 0
+            else:
+                df[col] = ""
+        return df
+
     def load_df(self, datafile):
         self.df = utl.import_read_csv(datafile)
         if self.df.empty:
@@ -662,8 +683,9 @@ class DFTranslation(object):
         if self.db:
             self.get_upload_id()
         self.add_event_name()
-        self.df = self.df.groupby(self.text_columns + self.date_columns +
-                                  self.int_columns).sum().reset_index()
+        cols = self.text_columns + self.date_columns + self.int_columns
+        self.df = self.check_and_add_columns(self.df, cols)
+        self.df = self.df.groupby(cols).sum().reset_index()
         real_columns = [x for x in self.real_columns if x in self.df.columns]
         if real_columns:
             self.df = self.df[self.df[real_columns].sum(axis=1) != 0]

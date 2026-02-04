@@ -1889,7 +1889,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         if vmc.filename not in source.p:
             return df
         api_file = source.p[vmc.apifile]
-        ic = vm.ImportConfig()
+        ic = vm.ImportConfig(matrix=self.matrix)
         api_config = ic.load_file(api_file, yaml)
         if not api_config or 'adwords' not in api_config:
             return df
@@ -2011,7 +2011,7 @@ class FindPlacementNameCol(AnalyzeBase):
         p_check = (
                 max_exists and p_exists and
                 underscore_series[max_col] >= (
-                            underscore_series[placement_col] + 9) and
+                        underscore_series[placement_col] + 9) and
                 18 <= underscore_series[max_col] <= max_underscore
         )
         if no_p_check or p_check:
@@ -2041,7 +2041,6 @@ class FindPlacementNameCol(AnalyzeBase):
         return df
 
     def do_analysis(self):
-        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         df = []
         for source in data_sources:
