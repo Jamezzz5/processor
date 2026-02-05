@@ -109,17 +109,24 @@ class TtdApi(object):
         if r.status_code != 200:
             logging.error('Failed to authenticate with error code: {} '
                           'Error: {}'.format(r.status_code, r.content))
-            sys.exit(0)
-        auth_token = json.loads(r.text)['Token']
+            auth_token = None
+        else:
+            auth_token = json.loads(r.text)['Token']
         return auth_token
 
     def set_headers(self):
         auth_token = self.authenticate()
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
+        auth_success = True
+        if not auth_token:
+            auth_success = False
+        return auth_success
 
     def get_download_url(self):
-        self.set_headers()
+        auth_success = self.set_headers()
+        if not auth_success:
+            return None
         url = self.walmart_check()
         rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
         data = []
@@ -194,7 +201,7 @@ class TtdApi(object):
             logging.info(
                 'Getting TTD data for report: {}'.format(self.report_name))
             dl_url = self.get_download_url()
-            if dl_url is None:
+            if not dl_url:
                 logging.warning('Could not retrieve url, returning blank df.')
                 self.df = pd.DataFrame()
             else:

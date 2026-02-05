@@ -200,6 +200,15 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
 
 
 def net_cum_sum(df, p_col=dctc.PFPN, n_cost=vmc.cost):
+    """
+    Calculates the cumulative sum by date and p_col, summing n_cost
+
+    :param df: The dataframe with the columns to perform the calculation
+    :param p_col: The column to group by withe date as a string
+    :param n_cost: The column to sum
+    :return: The df with the calculation made in the cumulative sum column
+    """
+    df = utl.data_to_type(df, float_col=[n_cost])
     nc_cum_sum = (df.groupby([p_col, vmc.date])[n_cost].sum()
                   .groupby(level=[0]).cumsum()).reset_index()
     nc_cum_sum.columns = [p_col] + NC_CUM_SUM_COL
