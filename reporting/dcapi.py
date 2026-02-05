@@ -64,7 +64,6 @@ class DcApi(object):
     ad_path = 'advertisers/'
     camp_path = 'campaigns/'
     default_config_file_name = 'dcapi.json'
-    default_vendorkey = 'DCM'
 
     def __init__(self):
         self.config = None

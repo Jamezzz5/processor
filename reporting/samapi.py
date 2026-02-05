@@ -13,7 +13,6 @@ import reporting.vmcolumns as vmc
 class SamApi(object):
     config_path = utl.config_path
     default_config_file_name = 'samapi.json'
-    default_vendorkey = 'Samsung'
     base_url = 'https://reporting.trader.adgear.com/v1/reports'
     default_dimensions = [
         "campaign_id", "advertiser_id", "advertiser_name", "campaign_name",

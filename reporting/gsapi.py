@@ -28,7 +28,6 @@ class GsApi(object):
     text_format = 'NORMAL_TEXT'
     screenshot_dir = os.path.join('screenshots', 'charts/')
     default_config_file_name = 'gsapi.json'
-    default_vendorkey = 'GoogleSheets'
 
     def __init__(self):
         self.default_config = "gsapi_screenshots.json"

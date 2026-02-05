@@ -21,7 +21,6 @@ class SimApi(object):
     status_url = '/request-status/'
     retry_url = '/retry/'
     default_config_file_name = 'simconfig.json'
-    default_vendorkey = 'SimilarWeb'
 
     def __init__(self):
         self.config = None

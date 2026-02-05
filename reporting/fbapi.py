@@ -78,7 +78,6 @@ config_path = utl.config_path
 
 class FbApi(object):
     default_config_file_name = 'fbconfig.json'
-    default_vendorkey = 'Facebook'
 
     def __init__(self):
         self.df = pd.DataFrame()

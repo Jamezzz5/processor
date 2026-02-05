@@ -27,7 +27,6 @@ class ScApi(object):
     campaign_filter_col = 'campaign_filter'
     campaign_col = 'Campaign'
     default_config_file_name = 'scconfig.json'
-    default_vendorkey = 'Snapchat'
 
     def __init__(self):
         self.config = None

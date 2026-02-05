@@ -19,7 +19,6 @@ class TtdApi(object):
     ttd_url = 'https://api.thetradedesk.com/v3'
     walmart_url = 'https://api.dsp.walmart.com/v3'
     default_config_file_name = 'ttdconfig.json'
-    default_vendorkey = 'TTD'
 
     def __init__(self):
         self.df = pd.DataFrame()

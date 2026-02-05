@@ -44,7 +44,6 @@ class AmzApi(object):
         'videoMidpointViews', 'videoThirdQuartileViews', 'videoUnmutes',
         'campaignId']
     default_config_file_name = 'amzapi.json'
-    default_vendorkey = 'Amazon'
     campaign_col = 'campaignName'
     sp_keyword_columns = [
         'searchTerm', 'keywordId', 'matchType', 'targeting',

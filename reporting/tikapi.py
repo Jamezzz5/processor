@@ -50,7 +50,6 @@ class TikApi(object):
                'engagements': 'Clicks (all)',
                'offline_shopping_events': 'offline_shopping_events'}
     default_config_file_name = 'tikapi.json'
-    default_vendorkey = 'Tiktok'
 
     def __init__(self):
         self.config = None

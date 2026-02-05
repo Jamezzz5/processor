@@ -372,7 +372,6 @@ class TestApis:
     def test_ttdapi(self, tmp_path_factory):
         api = ttdapi.TtdApi()
         self.send_api_call(api)
-        self.send_test_api_call(api)
 
     def test_tikapi(self, tmp_path_factory):
         api = tikapi.TikApi()
@@ -385,16 +384,22 @@ class TestApis:
 
     @staticmethod
     def send_test_api_call(api):
+        vk = ''
         import_config = vm.ImportConfig()
         import_config.import_vm()
+        class_list = ih.ImportHandler(None, None).class_list
+        for x, y in class_list.items():
+            if isinstance(api, y):
+                vk = x
+                break
         ic_df = import_config.df.loc[
-            import_config.df[import_config.key] == api.default_vendorkey]
+            import_config.df[import_config.key] == vk]
         acc_col = ic_df.iloc[0][import_config.account_id]
         camp_col = ic_df.iloc[0][import_config.filter]
         acc_pre = ic_df.iloc[0][import_config.account_id_pre]
         api.input_config(api.default_config_file_name)
         df = api.test_connection(acc_col, camp_col, acc_pre)
-        # assert df['Success'].all()
+        assert df['Success'].all()
 
 
 class TestDictionary:
