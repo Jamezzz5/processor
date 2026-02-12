@@ -4107,7 +4107,7 @@ class AliChat(object):
         return stop_words
 
     def get_response(self, message, models_to_search=None, db=None,
-                     current_user=None):
+                     current_user=None, is_question=False):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
@@ -4116,7 +4116,8 @@ class AliChat(object):
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
         intent_dict = self.intent.classify_intent(message)
-        is_question = intent_dict[Intent.resp_intent_key] == Intent.ASK
+        if not is_question:
+            is_question = intent_dict[Intent.resp_intent_key] == Intent.ASK
         if is_question:
             models_to_search = [
                 x for x in models_to_search if hasattr(x, 'llm_summary')]
