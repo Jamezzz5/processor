@@ -155,7 +155,7 @@ class ImportHandler(object):
         if isinstance(self.args, str):
             args = [self.args]
         else:
-            args = self.args or []
+            args = self.args
         if arg_check in args or self.args == 'all':
             return True
         else:
