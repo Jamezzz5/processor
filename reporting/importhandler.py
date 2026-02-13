@@ -152,7 +152,11 @@ class ImportHandler(object):
         return df
 
     def arg_check(self, arg_check):
-        if self.args == arg_check or self.args == 'all':
+        if isinstance(self.args, str):
+            args = [self.args]
+        else:
+            args = self.args or []
+        if arg_check in args or self.args == 'all':
             return True
         else:
             return False
