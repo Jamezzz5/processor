@@ -396,6 +396,8 @@ class AwApi(object):
             for idx, page in enumerate(r.json()):
                 logging.info('Parsing results page: {} of {}'.format(
                     idx + 1, total_pages))
+                if 'results' not in page:
+                    continue
                 results = page['results']
                 tdf = pd.json_normalize(results)
                 replace_dict = {x.return_name: x.display_name for x in fields}

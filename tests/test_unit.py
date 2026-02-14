@@ -642,6 +642,21 @@ class TestCalc:
         assert cal.PROG_FEES in df.columns
         assert df[cal.PROG_FEES].sum() == prog_fee * net_cost
 
+    def test_clicks_by_place_date(self):
+        click_one = 10
+        click_two = 30
+        df = pd.DataFrame({
+            vmc.date: ["2026-01-01", "2026-01-01", "2026-01-02"],
+            dctc.PN: ["A", "A", "B"],
+            dctc.BM: [cal.BM_FLAT, cal.BM_FLAT, "NOT_INCLUDED"],
+            vmc.impressions: [100, 300, 50],
+            vmc.clicks: [click_one, click_two, 5],
+        })
+        ndf = cal.clicks_by_place_date(df.copy())
+        assert cal.CLI_PD in ndf.columns
+        assert sum(ndf[cal.CLI_PD]) == 1
+        assert ndf[cal.CLI_PD][0] == (click_one / (click_one + click_two))
+
 
 class TestAnalyze:
     vm_df = None
