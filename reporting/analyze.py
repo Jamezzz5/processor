@@ -1098,7 +1098,7 @@ class Analyze(object):
 
     def write_analysis_dict(self):
         with open(self.analysis_dict_file_name, 'w') as fp:
-            json.dump(self.analysis_dict, fp)
+            json.dump(self.analysis_dict, fp, default=str)
 
     def do_all_analysis(self):
         self.backup_files()
@@ -2835,7 +2835,8 @@ class GetDailyDelivery(AnalyzeBase):
         groups = plan_names + [vmc.date]
         metrics = [cal.NCF]
         df = df.groupby(groups)[metrics].sum().reset_index()
-        df = utl.data_to_type(df, date_col=[vmc.date])
+        df = utl.data_to_type(df, date_col=[vmc.date], str_col=plan_names)
+        pdf = utl.data_to_type(pdf, str_col=plan_names)
         df = (
             df.merge(start_dates, how="left", on=plan_names)
             .merge(end_dates, how="left", on=plan_names)

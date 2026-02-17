@@ -62,6 +62,16 @@ DROP_COL = ([CLI_PD, NC_CUM_SUM, NC_SUM_DATE, PLACE_DATE,
 
 
 def clicks_by_place_date(df):
+    """
+    Creates columns 'Impressions by Placement Date' and
+    'Clicks by Placement Date' that is percent clicks by placement
+    and date for flat buy models
+
+    :param df: The df with placement name, date, buy  model, click columns
+    :return: The df with the new columns
+    """
+    if dctc.PN not in df.columns:
+        return df
     df[dctc.PN] = df[dctc.PN].replace(np.nan, 'None')
     df[PLACE_DATE] = (df[vmc.date].astype('U') + df[dctc.PN].astype('U'))
     df_cpd = df.loc[df[dctc.BM].isin([
