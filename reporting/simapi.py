@@ -20,6 +20,7 @@ class SimApi(object):
     request_url = '/request-report'
     status_url = '/request-status/'
     retry_url = '/retry/'
+    default_config_file_name = 'simconfig.json'
 
     def __init__(self):
         self.config = None
