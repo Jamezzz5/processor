@@ -402,6 +402,36 @@ class TestApis:
         assert df['Success'].all()
 
 
+class TestVendormatrix:
+    def test_ad_cost_calculation(self):
+        clicks = 10
+        imps = 100
+        ad_rate = 1
+        ad_models = [cal.BM_CPM, cal.BM_CPC]
+        df_dict = {
+            dctc.AM: ad_models,
+            dctc.AR: [ad_rate] * len(ad_models),
+            vmc.impressions: [imps] * len(ad_models),
+            vmc.clicks: [clicks] * len(ad_models),
+        }
+        df = pd.DataFrame(df_dict)
+        df = vm.ad_cost_calculation(df)
+        assert vmc.AD_COST in df.columns
+        cpm_cost = (imps / 1000) * ad_rate
+        cpm_calc = df[df[dctc.AM] == cal.BM_CPM][vmc.AD_COST].to_list()[0]
+        assert cpm_cost == cpm_calc
+        cpc_cost = clicks * ad_rate
+        cpc_calc = df[df[dctc.AM] == cal.BM_CPC][vmc.AD_COST].to_list()[0]
+        assert cpc_cost == cpc_calc
+
+    def test_vm_load(self):
+        matrix = vm.VendorMatrix()
+        assert matrix.vm
+        bar_col = vmc.barsplitcol[0]
+        plan_val = matrix.vm[bar_col][vm.plan_key]
+        assert isinstance(plan_val, list)
+
+
 class TestDictionary:
     dic = dct.Dict()
     mock_rc_auto = ({dctc.TAR: [dctc.TB, dctc.DT1, dctc.GT]},
@@ -659,6 +689,21 @@ class TestCalc:
         df = cal.prog_fees_calculation(df)
         assert cal.PROG_FEES in df.columns
         assert df[cal.PROG_FEES].sum() == prog_fee * net_cost
+
+    def test_clicks_by_place_date(self):
+        click_one = 10
+        click_two = 30
+        df = pd.DataFrame({
+            vmc.date: ["2026-01-01", "2026-01-01", "2026-01-02"],
+            dctc.PN: ["A", "A", "B"],
+            dctc.BM: [cal.BM_FLAT, cal.BM_FLAT, "NOT_INCLUDED"],
+            vmc.impressions: [100, 300, 50],
+            vmc.clicks: [click_one, click_two, 5],
+        })
+        ndf = cal.clicks_by_place_date(df.copy())
+        assert cal.CLI_PD in ndf.columns
+        assert sum(ndf[cal.CLI_PD]) == 1
+        assert ndf[cal.CLI_PD][0] == (click_one / (click_one + click_two))
 
 
 class TestAnalyze:
@@ -1207,7 +1252,9 @@ class TestAnalyze:
                 0: 'mpBudget|mpVendor|mpCountry/Region|mpCampaign',
                 1: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
                 2: 'mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign',
-                3: ''}
+                3: ''},
+            vmc.filenamedict: {0: 'ven1_test.csv', 1: 'ven2_test.csv',
+                               2: 'ven3_test.csv', 3: 'plannet_test.csv'},
         }
         test_vm = self.generate_test_vm(vm_dict, 4)
         data1 = {
@@ -1247,14 +1294,17 @@ class TestAnalyze:
             test_vm[vmc.filename][0]: pd.DataFrame(data1),
             test_vm[vmc.filename][1]: pd.DataFrame(data2),
             test_vm[vmc.filename][2]: pd.DataFrame(data3),
-            test_vm[vmc.filename][3]: pd.DataFrame(plannet_data)
+            test_vm[vmc.filenamedict][3]: pd.DataFrame(plannet_data)
         }
-        for filename in files_to_write:
-            files_to_write[filename].to_csv('raw_data/{}'.format(filename),
-                                            index=False)
+        for filename, df in files_to_write.items():
+            file_folder = utl.raw_path
+            if 'plannet' in filename:
+                file_folder = utl.dict_path
+            full_file_name = '{}{}'.format(file_folder, filename)
+            df.to_csv(full_file_name, index=False)
         return test_vm
 
-    def test_autodict_analysis(self, setup_autodict_files):
+    def test_change_autodict_order(self, setup_autodict_files):
         """
         Tests CheckAutoDictOrder using auto dict order/data source
         combinations that should result in a positive shift via Vendor
@@ -1293,8 +1343,11 @@ class TestAnalyze:
             expected = expected_orders[suggested_orders[vmc.vendorkey][index]]
             suggested = suggested_orders['change_auto_order'][index]
             assert expected == suggested
-        for file in vm_dict[vmc.filename]:
-            os.remove('raw_data/{}'.format(file))
+        for file_name in vm_dict[vmc.filename]:
+            file_path = utl.raw_path
+            if not os.path.isfile(os.path.join(file_path, file_name)):
+                file_path = utl.dict_path
+            os.remove(os.path.join(file_path, file_name))
 
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
@@ -1859,8 +1912,8 @@ class TestExport:
         assert set(append_tables) == set(expected_tables)
 
 
-class TestBlankRun:
-    def test_run(self):
+class TestRun:
+    def test_blank_run(self):
         main('--analyze')
 
 

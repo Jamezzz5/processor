@@ -87,17 +87,14 @@ class VendorMatrix(object):
         self.vm_df = self.add_file_name_col()
         self.vm = self.vm_df.copy()
         self.plan_net_check()
-        drop = [item for item in self.vm.columns.values.tolist()
-                if (item[0] == '|')]
+        drop = self.vm.columns[self.vm.columns.str.startswith('|')]
         self.vm = utl.col_removal(self.vm, 'vm', drop)
         self.vm = utl.data_to_type(self.vm, [], vmc.datecol, vmc.barsplitcol)
         self.vl = self.vm[vmc.vendorkey].tolist()
-        self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
         for col in vmc.barsplitcol:
-            if col not in self.vm:
-                self.vm[col] = {}
-            self.vm[col] = ({key: list(value.split('|')) for key, value in
-                            self.vm[col].items()})
+            if col in self.vm.columns:
+                self.vm[col] = self.vm[col].str.split('|')
+        self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
 
     def vm_import_keys(self):
         for vk in self.vl:
@@ -181,7 +178,7 @@ class VendorMatrix(object):
                        for x in current_imports]
         data_sources = [self.get_data_source(vk) for vk in vendor_keys]
         for ds in data_sources:
-            ds.add_import_config_params(import_type, self, ic)
+            ds.add_import_config_params(import_type, self, ic, current_imports)
         return data_sources
 
     def get_data_sources(self):
@@ -232,8 +229,11 @@ class VendorMatrix(object):
         self.sort_vendor_list()
         for vk in self.vl:
             self.tdf = self.vendor_get(vk)
-            self.df = pd.concat([self.df, self.tdf], ignore_index=True,
-                                sort=True)
+            self.df = pd.concat(
+                [self.df.dropna(axis=1, how="all"),
+                 self.tdf.dropna(axis=1, how="all"),],
+                ignore_index=True,
+            )
         self.df = full_placement_creation(self.df, plan_key, dctc.PFPN,
                                           self.vm[vmc.fullplacename][plan_key])
         if not os.listdir(er.csv_path):
@@ -273,18 +273,18 @@ class ImportConfig(object):
     file_path = utl.config_path
 
     def __init__(self, matrix=None, default_param_ic=None, base_path=None):
-        self.matrix = None
+        self.matrix = matrix
         self.df = None
         self.matrix_df = None
         self.base_path = base_path
         self.default_param_ic = default_param_ic
-        if matrix:
-            self.import_vm()
+        self.import_vm()
         if not self.default_param_ic:
             self.default_param_ic = self
 
     def import_vm(self):
-        self.matrix = VendorMatrix(display_log=False)
+        if not self.matrix:
+            self.matrix = VendorMatrix(display_log=False)
         self.matrix_df = self.matrix.read()
         self.df = self.read()
 
@@ -497,7 +497,7 @@ class ImportConfig(object):
     def add_imports_to_vm(self, import_dicts):
         vks = []
         for import_dict in import_dicts:
-            current_imports = self.get_current_imports()
+            current_imports = self.get_current_imports(matrix=self.matrix)
             if import_dict in current_imports:
                 continue
             import_key = import_dict[self.key]
@@ -587,7 +587,7 @@ class ImportConfig(object):
         return account_id, filter_val
 
     def get_current_imports(self, import_type='API_', matrix=None):
-        if matrix:
+        if not matrix:
             self.import_vm()
         import_dicts = []
         api_keys = [x for x in self.matrix_df[vmc.vendorkey]
@@ -636,7 +636,17 @@ def full_placement_creation(df, key, full_col, full_place_cols):
 
 def combining_data(df, key, columns, **kwargs):
     logging.debug('Combining Data.')
-    combine_cols = [x for x in columns if x in kwargs and kwargs[x] != ['nan']]
+    combine_cols = []
+    float_cols = []
+    for col in columns:
+        if col in kwargs and kwargs[col] != ['nan']:
+            combine_cols.append(col)
+            if col in vmc.datafloatcol:
+                float_cols.append(col)
+                for item in kwargs[col]:
+                    float_cols.append(item)
+    if float_cols:
+        df = utl.data_to_type(df, float_col=float_cols)
     for col in combine_cols:
         if col in df.columns and col not in kwargs[col]:
             df[col] = 0
@@ -650,8 +660,7 @@ def combining_data(df, key, columns, **kwargs):
             if col not in df.columns:
                 df[col] = 0
             if col in vmc.datafloatcol:
-                df = utl.data_to_type(df, float_col=[col, item])
-                df[col] += df[item]
+                df[col] = df[[col, item]].sum(axis=1)
             else:
                 df[col] = df[item]
     for col in [x for x in columns if x not in combine_cols]:
@@ -661,21 +670,29 @@ def combining_data(df, key, columns, **kwargs):
 
 
 def ad_cost_calculation(df):
+    """
+    Calculates ad cost, reporting cost and verification cost from a df
+
+    :param df: The df to apply the calculations
+    :return: The df with the columns added and calculations made
+    """
     if df.empty:
         return df
     df = df.copy()
-    for cost_cols in [(vmc.AD_COST, dctc.AM, dctc.AR),
-                      (vmc.REP_COST, dctc.RFM, dctc.RFR),
-                      (vmc.VER_COST, dctc.VFM, dctc.VFR)]:
-        for col in [cost_cols[0], vmc.impressions, vmc.clicks]:
+    cost_cols = [(vmc.AD_COST, dctc.AM, dctc.AR),
+                 (vmc.REP_COST, dctc.RFM, dctc.RFR),
+                 (vmc.VER_COST, dctc.VFM, dctc.VFR)]
+    for cost_col, model_col, rate_col in cost_cols:
+        for col in [cost_col, vmc.impressions, vmc.clicks, model_col, rate_col]:
             if col not in df:
                 df[col] = 0
-        calc_ser = (df[df[cost_cols[1]].isin(cal.BUY_MODELS) &
-                       df[cost_cols[2]] != 0].
-                    apply(cal.net_cost, cost_col=cost_cols[0],
-                          bm_col=cost_cols[1], br_col=cost_cols[2], axis=1))
+        calc_ser = (df[df[model_col].isin(cal.BUY_MODELS) &
+                       df[rate_col] != 0].
+                    apply(cal.net_cost, cost_col=cost_col,
+                          bm_col=model_col, br_col=rate_col, axis=1))
         if not calc_ser.empty:
-            df[cost_cols[0]].update(calc_ser)
+            df = utl.data_to_type(df, float_col=[cost_col])
+            df.loc[calc_ser.index, cost_col] = calc_ser
     return df
 
 
@@ -809,12 +826,13 @@ class DataSource(object):
         return self.df
 
     def add_import_config_params(self, import_type='API_', matrix=None,
-                                 ic=None):
+                                 ic=None, current_imports=None):
         if not matrix:
             matrix = VendorMatrix()
         if not ic:
             ic = ImportConfig(matrix=matrix)
-        current_imports = ic.get_current_imports(matrix=True)
+        if not current_imports:
+            current_imports = ic.get_current_imports(matrix=matrix)
         for x in current_imports:
             name_part = [import_type, x[ImportConfig.key], x[ImportConfig.name]]
             vk_formats = ['{}{}_{}', '{}{}{}']
@@ -822,6 +840,7 @@ class DataSource(object):
             if self.key in possible_keys:
                 self.ic_params = x
                 return self.ic_params
+        return None
 
     def write(self, df=None):
         utl.write_file(df, self.p[vmc.filename_true])

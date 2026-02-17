@@ -62,6 +62,16 @@ DROP_COL = ([CLI_PD, NC_CUM_SUM, NC_SUM_DATE, PLACE_DATE,
 
 
 def clicks_by_place_date(df):
+    """
+    Creates columns 'Impressions by Placement Date' and
+    'Clicks by Placement Date' that is percent clicks by placement
+    and date for flat buy models
+
+    :param df: The df with placement name, date, buy  model, click columns
+    :return: The df with the new columns
+    """
+    if dctc.PN not in df.columns:
+        return df
     df[dctc.PN] = df[dctc.PN].replace(np.nan, 'None')
     df[PLACE_DATE] = (df[vmc.date].astype('U') + df[dctc.PN].astype('U'))
     df_cpd = df.loc[df[dctc.BM].isin([
@@ -172,7 +182,7 @@ def net_cost_calculation(df):
             df[col[1]] = 0
     calc_ser = df[df[dctc.BM].isin(BUY_MODELS)].apply(net_cost, axis=1)
     if not calc_ser.empty:
-        df[vmc.cost].update(calc_ser)
+        df.loc[calc_ser.index, vmc.cost] = calc_ser
     return df
 
 
@@ -182,7 +192,9 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
         if col not in df.columns:
             df[col] = 0
     df[p_cost] = df[p_cost].fillna(0)
-    nc_pnc = df[df[dctc.UNC] != True]
+    nc_pnc = df.copy()
+    if dctc.UNC in df.columns:
+        nc_pnc = df[df[dctc.UNC] != True]
     if p_col not in nc_pnc.columns:
         logging.warning('{} not in df, continuing.'.format(p_col))
         return df
@@ -198,6 +210,15 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
 
 
 def net_cum_sum(df, p_col=dctc.PFPN, n_cost=vmc.cost):
+    """
+    Calculates the cumulative sum by date and p_col, summing n_cost
+
+    :param df: The dataframe with the columns to perform the calculation
+    :param p_col: The column to group by withe date as a string
+    :param n_cost: The column to sum
+    :return: The df with the calculation made in the cumulative sum column
+    """
+    df = utl.data_to_type(df, float_col=[n_cost])
     nc_cum_sum = (df.groupby([p_col, vmc.date])[n_cost].sum()
                   .groupby(level=[0]).cumsum()).reset_index()
     nc_cum_sum.columns = [p_col] + NC_CUM_SUM_COL
@@ -291,7 +312,7 @@ def total_cost_calculation(df):
         return df
     df = utl.data_to_type(df, float_col=[NCF, AGENCY_FEES, vmc.AD_COST,
                                          vmc.dcm_service_fee, vmc.REP_COST,
-                                         vmc.VER_COST])
+                                         vmc.VER_COST, PROG_FEES])
     df[TOTAL_COST] = df[NCF] + df[AGENCY_FEES]
     cost_cols = [vmc.AD_COST, vmc.dcm_service_fee, vmc.REP_COST, vmc.VER_COST,
                  PROG_FEES]

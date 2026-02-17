@@ -162,9 +162,9 @@ class Analyze(object):
         if miss_cols:
             logging.warning('Df does not have cols {}'.format(miss_cols))
             return False
-        df = df.groupby(plan_names).apply(lambda x: 0 if x[dctc.PNC].sum() == 0
-                                          else x[vmc.cost].sum() /
-                                               x[dctc.PNC].sum())
+        df = df.groupby(plan_names).apply(
+            lambda x: 0 if x[dctc.PNC].sum() == 0 else
+            x[vmc.cost].sum() / x[dctc.PNC].sum())
         f_df = df[df > 1]
         if f_df.empty:
             delivery_msg = 'Nothing has delivered in full.'
@@ -285,10 +285,8 @@ class Analyze(object):
         df = df.dropna()
         df = df[~df.astype(str).apply(
             lambda row: row.str.lower().eq('nan')).any(axis=1)]
-        df_dict = '\n'.join(['{}{}'.format(k, v)
-                             for k, v in df.to_dict(orient='index').items()])
         undefined_msg = 'Missing planned spends have the following keys:'
-        logging.info('{}\n{}'.format(undefined_msg, df_dict))
+        self.format_log_msg_with_df(undefined_msg, df)
         self.add_to_analysis_dict(key_col=self.unknown_col,
                                   message=undefined_msg,
                                   data=df.to_dict())
@@ -300,10 +298,8 @@ class Analyze(object):
         dir_to_backup = [utl.config_path, utl.dict_path, utl.raw_path]
         for path in [utl.backup_path, bu] + dir_to_backup:
             utl.dir_check(path)
-        file_dicts = {'raw.gzip': self.df}
-        for file_name, df in file_dicts.items():
-            file_name = os.path.join(bu, file_name)
-            df.to_csv(file_name, compression='gzip')
+        raw_out = os.path.join(bu, "raw.gzip")
+        self.df.to_csv(raw_out, index=False, compression="gzip")
         for file_path in dir_to_backup:
             file_name = '{}.tar.gz'.format(file_path.replace('/', ''))
             file_name = os.path.join(bu, file_name)
@@ -601,7 +597,7 @@ class Analyze(object):
             metrics.extend(source.get_active_metrics())
         metrics = list(set(metrics))
         metrics = [x for x in metrics if x in df.columns]
-        agg_map = {x: [np.min, np.max] if (x == vmc.date) else np.sum
+        agg_map = {x: ['min', 'max'] if (x == vmc.date) else 'sum'
                    for x in metrics}
         if vmc.vendorkey not in df.columns or not agg_map:
             msg = '{} not in df could not get metrics'.format(vmc.vendorkey)
@@ -738,7 +734,7 @@ class Analyze(object):
         metrics = []
         for calc_metric in metric_dependencies.keys():
             if [metric for metric in metric_dependencies[calc_metric] if
-                    metric not in self.df.columns]:
+                metric not in self.df.columns]:
                 logging.warning('Missing metric, could not determine {} '
                                 'flag.'.format(calc_metric))
                 thresholds.pop(calc_metric)
@@ -827,17 +823,17 @@ class Analyze(object):
             elif max_date < sd:
                 msg = ('Last day in raw file {} is less than start date {}.\n'
                        'Result will be blank.  Change start date.'.format(
-                         max_date, sd))
+                    max_date, sd))
                 msg = (False, msg)
             elif min_date > ed:
                 msg = ('First day in raw file {} is less than end date {}.\n'
                        'Result will be blank.  Change end date.'.format(
-                         min_date, ed))
+                    min_date, ed))
                 msg = (False, msg)
             else:
                 msg = ('Some or all data in raw file with date range {} - {} '
                        'falls between start and end dates {} - {}'.format(
-                         sd, ed, min_date, max_date))
+                    sd, ed, min_date, max_date))
                 msg = (True, msg)
         cd[vmc.startdate][cds_name] = msg
         return cd
@@ -885,10 +881,10 @@ class Analyze(object):
                         old_total = cd[col]['Old'][1]
                     if (not isinstance(old_total, str) and
                             not isinstance(total, str) and old_total > total):
-                        msg = (
-                            False, 'Old file total {} was greater than new '
-                                   'file total {} for col {}'.format(
-                                old_total, total, col))
+                        msg = ('Old file total {} was greater than new file '
+                               'total {} for col {}'.format(old_total,
+                                                            total, col))
+                        msg = (False, msg)
                 cd[col][cds_name] = msg
         return cd
 
@@ -1058,7 +1054,7 @@ class Analyze(object):
                 'Dataframe empty, could not determine missing ad rate.')
             return False
         df = df[((df[vmc.vendorkey].str.contains(vmc.api_dc_key)) |
-                (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
+                 (df[vmc.vendorkey].str.contains(vmc.api_szk_key)))
                 & (df[dctc.SRV] != 'No Tracking')]
         df = df[(df[dctc.AR] == 0) | (df[dctc.AR].isnull()) |
                 (df[dctc.AR] == 'nan')]
@@ -1102,7 +1098,7 @@ class Analyze(object):
 
     def write_analysis_dict(self):
         with open(self.analysis_dict_file_name, 'w') as fp:
-            json.dump(self.analysis_dict, fp)
+            json.dump(self.analysis_dict, fp, default=str)
 
     def do_all_analysis(self):
         self.backup_files()
@@ -1247,8 +1243,9 @@ class CheckAutoDictOrder(AnalyzeBase):
         if not ven_list:
             ven_list = []
         plannet_filename = self.matrix.vendor_set(vm.plan_key)
-        if vmc.filename in plannet_filename:
-            plannet_filename = plannet_filename[vmc.filename]
+        if vmc.filenamedict in plannet_filename:
+            plannet_filename = plannet_filename[vmc.filenamedict]
+            plannet_filename = os.path.join(utl.dict_path, plannet_filename)
         if os.path.isfile(plannet_filename):
             pc = utl.import_read_csv(plannet_filename)
             if col not in pc.columns:
@@ -1309,17 +1306,17 @@ class CheckAutoDictOrder(AnalyzeBase):
         ven_list, cou_list, camp_list = (
             self.check_vendor_lists(ven_list, cou_list, camp_list))
         ven_auto_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                        if dctc.VEN in source.p[vmc.autodicord] else None)
+                        if dctc.VEN in source.p[vmc.autodicord] else -1)
         camp_auto_idx = (source.p[vmc.autodicord].index(dctc.CAM)
-                             if dctc.CAM in source.p[vmc.autodicord]
+                         if dctc.CAM in source.p[vmc.autodicord]
                          else ven_auto_idx)
         auto_order = source.p[vmc.autodicord]
-        if not ven_auto_idx or (len(auto_order) <= (ven_auto_idx + 1)):
+        if ven_auto_idx < 0 or (len(auto_order) <= (ven_auto_idx + 1)):
             return df
         if not auto_order[ven_auto_idx + 1] == dctc.COU:
             return df
         camp_shift = camp_auto_idx - ven_auto_idx
-        tdf = source.get_raw_df()
+        tdf = source.get_raw_df(nrows=100)
         auto_place = source.p[vmc.autodicplace]
         if auto_place == dctc.PN:
             auto_place = source.p[vmc.placement]
@@ -1401,7 +1398,7 @@ class CheckFirstRow(AnalyzeBase):
         :returns:Dataframe containing vendor key and the new first row if the
         first row is incorrect; otherwise an empty dataframe
         """
-        if vmc.filename not in source.p:
+        if vmc.filename not in source.p or vm.plan_key in source.key:
             return l_df
         raw_file = source.p[vmc.filename]
         place_cols = source.p[dctc.FPN]
@@ -1547,7 +1544,7 @@ class CheckLastRow(AnalyzeBase):
             new_last_row = '0'
         if df.empty:
             new_last_row = '0'
-        if new_last_row is not '0':
+        if new_last_row != '0':
             row_count = len(df)
             first_empty_row_idx = df.isna().all(axis=1).idxmax() \
                 if (df.isna().all(axis=1).any()) else None
@@ -1892,7 +1889,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         if vmc.filename not in source.p:
             return df
         api_file = source.p[vmc.apifile]
-        ic = vm.ImportConfig()
+        ic = vm.ImportConfig(matrix=self.matrix)
         api_config = ic.load_file(api_file, yaml)
         if not api_config or 'adwords' not in api_config:
             return df
@@ -1900,7 +1897,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         file_path = source.p[vmc.filename]
         start_date = source.p[vmc.startdate]
         if not adwords_filter and os.path.exists(file_path):
-            tdf = pd.read_csv(file_path, usecols = [self.camp_col])
+            tdf = pd.read_csv(file_path, usecols=[self.camp_col])
             tdf = tdf[self.camp_col].drop_duplicates().to_frame()
             sem_pattern = '|'.join(self.sem_list)
             yt_pattern = '|'.join(self.yt_list)
@@ -1909,8 +1906,8 @@ class CheckAdwordsSplit(AnalyzeBase):
                                                                case=False,
                                                                na=False)
             tdf['yt_check'] = tdf[self.camp_col].str.contains(yt_pattern,
-                                                               case=False,
-                                                               na=False)
+                                                              case=False,
+                                                              na=False)
             tdf['match_string'] = self.find_matching_substring_in_column(
                 all_list, tdf[self.camp_col])
             if tdf['sem_check'].any() and tdf['yt_check'].any():
@@ -1979,39 +1976,51 @@ class FindPlacementNameCol(AnalyzeBase):
     def find_placement_col_in_df(
             df, result_df, placement_col=vmc.placement,
             vk_name='test', max_underscore=30):
-        df = df.drop([vmc.fullplacename], axis=1, errors='ignore')
-        df = df.reset_index(drop=True)
-        total_rows = len(df)
         if df.empty:
             return result_df
+        df = df.drop([vmc.fullplacename], axis=1, errors='ignore').reset_index(
+            drop=True)
+        total_rows = len(df)
+        non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+        if not non_numeric_cols:
+            return result_df
+        vendor_list_lower = {x.lower() for x in
+                             CheckAutoDictOrder.get_vendor_list()}
         cols = []
-        vendor_list = [x.lower() for x in CheckAutoDictOrder.get_vendor_list()]
-        for col in df.columns:
-            first_val = str(df[col][0]).split('_')
-            if len(first_val) > 1:
-                vendor_val = first_val[1]
-                if vendor_val.lower() in vendor_list:
-                    cols.append(col)
-        df = df.applymap(
-            lambda x: str(x).count('_')).apply(lambda x: sum(x) / total_rows)
-        mask = df[df < max_underscore]
-        max_col = mask.idxmax()
+        first_row = df.iloc[0]
+        for col in non_numeric_cols:
+            parts = str(first_row[col]).split('_', 2)
+            if len(parts) > 1 and parts[1].lower() in vendor_list_lower:
+                cols.append(col)
+        underscore_counts = {}
+        for col in non_numeric_cols:
+            count = df[col].astype(str).str.count('_').sum() / total_rows
+            underscore_counts[col] = count
+        underscore_series = pd.Series(underscore_counts)
+        mask = underscore_series < max_underscore
+        if not mask.any():
+            return result_df
+        max_col = underscore_series[mask].idxmax()
         if cols and max_col not in cols:
-            cols = [x for x in cols if x in df]
-            if cols:
-                max_col = df[cols].idxmax()
-        max_exists = max_col in df
-        p_exists = placement_col in df
-        no_p_check = (not p_exists and max_exists)
+            valid_cols = [x for x in cols if x in underscore_series.index]
+            if valid_cols:
+                max_col = underscore_series[valid_cols].idxmax()
+        max_exists = max_col in underscore_series.index
+        p_exists = placement_col in underscore_series.index
+        no_p_check = not p_exists and max_exists
         p_check = (
-            max_exists and p_exists and
-            df[max_col] >= (df[placement_col] + 9)
-            and 18 <= df[max_col] <= max_underscore)
+                max_exists and p_exists and
+                underscore_series[max_col] >= (
+                        underscore_series[placement_col] + 9) and
+                18 <= underscore_series[max_col] <= max_underscore
+        )
         if no_p_check or p_check:
-            data_dict = {vmc.vendorkey: vk_name,
-                         'Current Placement Col': placement_col,
-                         FindPlacementNameCol.suggested_col: max_col}
-            result_df.append(data_dict)
+            result_df.append({
+                vmc.vendorkey: vk_name,
+                'Current Placement Col': placement_col,
+                FindPlacementNameCol.suggested_col: max_col
+            })
+
         return result_df
 
     def do_analysis_on_data_source(self, source, df):
@@ -2032,7 +2041,6 @@ class FindPlacementNameCol(AnalyzeBase):
         return df
 
     def do_analysis(self):
-        self.matrix = vm.VendorMatrix(display_log=False)
         data_sources = self.matrix.get_all_data_sources()
         df = []
         for source in data_sources:
@@ -2191,11 +2199,11 @@ class CheckColumnNames(AnalyzeBase):
         Loops through all data sources adds column names and flags if
         missing active metrics.
         """
-        self.matrix = vm.VendorMatrix(display_log=False)
+        self.matrix = self.aly.matrix
         data_sources = self.matrix.get_all_data_sources()
         data = []
         for source in data_sources:
-            if vmc.firstrow not in source.p:
+            if vmc.firstrow not in source.p or vm.plan_key in source.key:
                 continue
             first_row = source.p[vmc.firstrow]
             transforms = str(source.p[vmc.transform]).split(':::')
@@ -2637,7 +2645,7 @@ class GetPacingAnalysis(AnalyzeBase):
             logging.warning('Dataframe empty, could not get rolling mean.')
             return df
         pdf = pd.pivot_table(df, index=vmc.date, columns=group_cols,
-                             values=value_col, aggfunc=np.sum)
+                             values=value_col, aggfunc="sum")
         if len(pdf.columns) > 10000:
             logging.warning('Maximum 10K combos for calculation, data set '
                             'has {}'.format(len(pdf.columns)))
@@ -2678,10 +2686,11 @@ class GetPacingAnalysis(AnalyzeBase):
             self.proj_completion_col].dt.strftime('%Y-%m-%d')
         df.loc[
             no_date_map, self.proj_completion_col] = 'Greater than 1 Year'
-        df[self.proj_completion_col] = df[
-            self.proj_completion_col].replace(
-            [np.inf, -np.inf, np.datetime64('NaT'), 'NaT'], np.nan
-        ).fillna('Greater than 1 Year')
+        col = self.proj_completion_col
+        s = df[col].astype("object")
+        df[col] = (
+            s.replace([np.inf, -np.inf, np.datetime64("NaT"), "NaT"], np.nan)
+            .fillna("Greater than 1 Year"))
         df = df[final_cols]
         return df
 
@@ -2774,7 +2783,6 @@ class GetPacingAnalysis(AnalyzeBase):
                       [vmc.AD_COST])
         final_cols = [x for x in final_cols if x in tdf.columns]
         tdf = tdf[final_cols]
-        tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
         tdf = utl.data_to_type(
             tdf, float_col=[vmc.cost, dctc.PNC, vmc.AD_COST])
         for col in [dctc.PNC, vmc.cost, vmc.AD_COST]:
@@ -2819,48 +2827,51 @@ class GetDailyDelivery(AnalyzeBase):
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.aly.get_start_end_dates(df, plan_names)
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
-        pdf = self.matrix.vendor_get(vm.plan_key)
+        plannet_filename = self.matrix.vendor_set(vm.plan_key)
+        plannet_filename = plannet_filename[vmc.filenamedict]
+        plannet_filename = os.path.join(utl.dict_path, plannet_filename)
+        pdf = utl.import_read_csv(plannet_filename)
         pdf = pdf[pdf_cols]
         groups = plan_names + [vmc.date]
         metrics = [cal.NCF]
         df = df.groupby(groups)[metrics].sum().reset_index()
-        df = utl.data_to_type(df, date_col=[vmc.date])
-        unique_breakouts = df.groupby(plan_names).first().reset_index()
-        unique_breakouts = unique_breakouts[plan_names]
-        sort_ascending = [True for _ in plan_names]
-        sort_ascending.append(False)
-        for index, row in unique_breakouts.iterrows():
-            tdf = df
-            for x in plan_names:
-                tdf = tdf[tdf[x] == row[x]]
-            tdf = tdf.merge(start_dates, how='left', on=plan_names)
-            tdf = tdf.merge(end_dates, how='left', on=plan_names)
-            tdf = tdf.merge(pdf, how='left', on=plan_names)
-            tdf = utl.data_to_type(tdf, float_col=[dctc.PNC])
-            tdf[self.num_days] = (tdf[dctc.ED] - tdf[dctc.SD]).dt.days
-            tdf = tdf.replace([np.inf, -np.inf], np.nan).fillna(0)
-            if tdf[self.num_days][0] == 0 or tdf[dctc.PNC][0] == 0:
-                tdf[self.daily_spend_goal] = 0
-                tdf[self.day_pacing] = '0%'
-            else:
-                daily_spend_goal = (tdf[dctc.PNC][0] / tdf[self.num_days][0])
-                stop_date = (tdf[dctc.SD][0] +
-                             dt.timedelta(days=int(tdf[self.num_days][0])))
-                tdf[self.daily_spend_goal] = [daily_spend_goal if
-                                              (tdf[dctc.SD][0] <= x <= stop_date
-                                               ) else 0 for x in tdf[vmc.date]]
-                tdf[self.day_pacing] = (
-                        ((tdf[cal.NCF] / tdf[self.daily_spend_goal]) - 1) * 100)
-                tdf[self.day_pacing] = tdf[self.day_pacing].replace(
-                    [np.inf, -np.inf], np.nan).fillna(0.0)
-                tdf[self.day_pacing] = (
-                        tdf[self.day_pacing].round(2).astype(str) + '%')
-            tdf = tdf.sort_values(
-                plan_names + [vmc.date], ascending=sort_ascending)
-            tdf[[dctc.SD, dctc.ED, vmc.date]] = tdf[
-                [dctc.SD, dctc.ED, vmc.date]].astype(str)
-            tdf = tdf.reset_index(drop=True)
-            daily_dfs.append(tdf.to_dict())
+        df = utl.data_to_type(df, date_col=[vmc.date], str_col=plan_names)
+        pdf = utl.data_to_type(pdf, str_col=plan_names)
+        df = (
+            df.merge(start_dates, how="left", on=plan_names)
+            .merge(end_dates, how="left", on=plan_names)
+            .merge(pdf, how="left", on=plan_names))
+        df = utl.data_to_type(df, float_col=[dctc.PNC])
+        df[self.num_days] = (df[dctc.ED] - df[dctc.SD]).dt.days
+        df[self.num_days] = pd.to_numeric(
+            df[self.num_days], errors="coerce").fillna(0.0)
+        denom_ok = (df[self.num_days] > 0) & (df[dctc.PNC].fillna(0) > 0)
+        df["_daily_goal_scalar"] = 0.0
+        df.loc[denom_ok, "_daily_goal_scalar"] = (
+                df.loc[denom_ok, dctc.PNC] / df.loc[denom_ok, self.num_days]
+        )
+        df["_stop_date"] = df[dctc.SD] + pd.to_timedelta(
+            df[self.num_days].fillna(0).astype(int), unit="D")
+        in_flight = df[vmc.date].between(df[dctc.SD], df["_stop_date"],
+                                         inclusive="both")
+        df[self.daily_spend_goal] = np.where(in_flight,
+                                             df["_daily_goal_scalar"], 0.0)
+        df[self.day_pacing] = "0%"
+        goal_ok = df[self.daily_spend_goal] > 0
+        pacing = (((df.loc[goal_ok, cal.NCF] / df.loc[
+            goal_ok, self.daily_spend_goal]) - 1) * 100)
+        pacing = pacing.replace([np.inf, -np.inf], np.nan).fillna(0.0).round(
+            2).astype(str) + "%"
+        df.loc[goal_ok, self.day_pacing] = pacing
+        sort_ascending = [True] * len(plan_names) + [False]
+        df = df.sort_values(plan_names + [vmc.date],
+                            ascending=sort_ascending).reset_index(drop=True)
+        df[[dctc.SD, dctc.ED, vmc.date]] = df[
+            [dctc.SD, dctc.ED, vmc.date]].astype(str)
+        df = df.drop(columns=["_daily_goal_scalar", "_stop_date"],
+                     errors="ignore")
+        for _, g in df.groupby(plan_names, sort=False):
+            daily_dfs.append(g.fillna('').to_dict(orient="records"))
         return daily_dfs
 
     def do_analysis(self):
@@ -2910,10 +2921,9 @@ class GetServingAlerts(AnalyzeBase):
         df = self.get_serving_alerts()
         if df.empty:
             msg = 'No significant adserving overages.'
-            logging.info('{}\n{}'.format(msg, df))
         else:
             msg = 'Adserving cost significantly OVER for the following: '
-            logging.info('{}\n{}'.format(msg, df))
+        self.aly.format_log_msg_with_df(msg, df)
         self.aly.add_to_analysis_dict(key_col=self.aly.adserving_alert,
                                       message=msg, data=df.to_dict())
 
@@ -2941,7 +2951,7 @@ class CheckRawFileUpdateTime(AnalyzeBase):
                 if last_update.date() == dt.datetime.today().date():
                     update_tier = self.update_tier_today
                 elif last_update.date() > (
-                            dt.datetime.today() - dt.timedelta(days=7)).date():
+                        dt.datetime.today() - dt.timedelta(days=7)).date():
                     update_tier = self.update_tier_week
                 else:
                     update_tier = self.update_tier_greater_week
@@ -3002,21 +3012,21 @@ class GetDailyPacingAlerts(AnalyzeBase):
         over_df, under_df = self.get_daily_pacing_alerts()
         if over_df.empty:
             msg = 'No significant daily pacing overages.'
-            logging.info('{}\n{}'.format(msg, over_df))
+            self.aly.format_log_msg_with_df(msg, over_df)
         else:
             msg = ('Yesterday\'s spend for the following exceeded '
                    'daily pacing goal by:')
-            logging.info('{}\n{}'.format(msg, over_df))
+            self.aly.format_log_msg_with_df(msg, over_df)
         self.aly.add_to_analysis_dict(
             key_col=self.aly.daily_pacing_alert, message=msg,
             param=self.aly.over_daily_pace, data=over_df.to_dict())
         if under_df.empty:
             msg = 'No significant daily under pacing.'
-            logging.info('{}\n{}'.format(msg, under_df))
+            self.aly.format_log_msg_with_df(msg, under_df)
         else:
             msg = ('Yesterday\'s spend for the following under paced the '
                    'daily goal by:')
-            logging.info('{}\n{}'.format(msg, under_df))
+            self.aly.format_log_msg_with_df(msg, under_df)
         self.aly.add_to_analysis_dict(
             key_col=self.aly.daily_pacing_alert, message=msg,
             param=self.aly.under_daily_pace, data=under_df.to_dict())
@@ -3098,7 +3108,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
 
     def fix_analysis_for_data_source(self, df, vk, write=True):
         """
-        Suggest matches for placements not in the media plan using fuzzy matching.
+        Suggest matches for placements not in the plan using fuzzy matching.
 
         :param df: A df filtered for the current vk
         :param vk: Vendor key for the current df
@@ -3305,7 +3315,7 @@ class ValueCalc(object):
 
     @staticmethod
     def calculate_percent_total(df, metric, groupby='eventdate'):
-        groupby = groupby if type(groupby) == list else [groupby]
+        groupby = groupby if isinstance(groupby, list) else [groupby]
         group_df = df.groupby(groupby)[metric]
         group_sum = group_df.transform('sum')
         df['% of {} by {}'.format(metric, ' , '.join(groupby))] = (
@@ -3334,8 +3344,10 @@ class Intent(object):
     re_q_aux = ('can|should|does|do|did|is|are|was|were|has|have|will|would|'
                 'could|may|might')
     imper_create_key = 'imper_create'
-    imper_create = ('create|make|new|spin\s*up|add\s+.+'
-                    '\b(?:processor|plan|partner|placement)')
+    imper_create = (
+        r'(create|make|new|spin\s*up|add\s+.+'
+        r'\b(?:processor|plan|partner|placement))'
+    )
     imper_edit_key = 'imper_edit'
     imper_edit = 'change|edit|adjust|alter|update|set'
     imper_run_key = 'imper_run'
@@ -3672,7 +3684,7 @@ class AliChat(object):
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
-                         stream=False, timeout=120):
+                         stream=False, timeout=120, temperature=0.4):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3683,14 +3695,15 @@ class AliChat(object):
         :param previous_messages: List of previous messages
         :param stream: Boolean to stream response or return all at once
         :param timeout: Timeout to wait for response when not streaming
+        :param temperature: Temperature passed to the model
         :return: response from the llm as string
         """
         if not instructions:
             instructions = {
-                'answer':    AliChat.instruction_answer,
+                'answer': AliChat.instruction_answer,
                 'summarize': AliChat.instruction_summarize,
-                "rewrite":   AliChat.instruction_rewrite,
-                "extract":   AliChat.instruction_extract,
+                "rewrite": AliChat.instruction_rewrite,
+                "extract": AliChat.instruction_extract,
             }[mode]
         if not previous_messages:
             previous_messages = []
@@ -3725,7 +3738,7 @@ class AliChat(object):
             "prompt": prompt,
             "stream": stream,
             "options": {
-                "temperature": 0.6,
+                "temperature": temperature,
                 "num_ctx": 8192
             }
         }
@@ -4095,7 +4108,7 @@ class AliChat(object):
         return stop_words
 
     def get_response(self, message, models_to_search=None, db=None,
-                     current_user=None):
+                     current_user=None, is_question=False):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
@@ -4104,7 +4117,8 @@ class AliChat(object):
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
         intent_dict = self.intent.classify_intent(message)
-        is_question = intent_dict[Intent.resp_intent_key] == Intent.ASK
+        if not is_question:
+            is_question = intent_dict[Intent.resp_intent_key] == Intent.ASK
         if is_question:
             models_to_search = [
                 x for x in models_to_search if hasattr(x, 'llm_summary')]

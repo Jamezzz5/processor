@@ -580,11 +580,14 @@ class DictRelational(object):
         keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
         keys_list.dropna(subset=[self.key], inplace=True)
         keys_list = self.get_new_values(keys_list)
+        if keys_list.empty:
+            return False
         keys_list = self.auto_split(keys_list)
         self.df = utl.data_to_type(self.df, str_col=keys_list.columns)
-        self.df = self.df.merge(keys_list, how='outer').reset_index(drop=True)
+        self.df = pd.concat([self.df, keys_list], ignore_index=True)
         self.df.dropna(subset=[self.key], inplace=True)
         self.write(self.df)
+        return True
 
     def get_new_values(self, keys_list):
         keys_list = utl.data_to_type(keys_list, str_col=keys_list.columns)

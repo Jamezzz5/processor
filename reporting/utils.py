@@ -236,10 +236,10 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
     for col in float_col:
         if col not in df:
             continue
+        df[col] = df[col].fillna(0)
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: x.replace('$', ''))
         df[col] = df[col].apply(lambda x: x.replace(',', ''))
-        df[col] = df[col].replace(['nan', 'NA'], 0)
         df[col] = pd.to_numeric(df[col], errors='coerce')
         df[col] = df[col].astype(float)
     for col in date_col:
@@ -247,7 +247,11 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
             continue
         df[col] = df[col].replace(['1/0/1900', '1/1/1970'], '0')
         if fill_empty:
-            df[col] = df[col].fillna(dt.datetime.today())
+            df[col] = (
+                df[col]
+                .astype("object")
+                .where(df[col].notna(), dt.date.today())
+            )
         else:
             df[col] = df[col].fillna(pd.Timestamp('nat'))
         df[col] = df[col].astype('U')
@@ -257,8 +261,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
         if col not in df:
             continue
         df[col] = df[col].astype('U')
-        df[col] = df[col].str.strip()
-        df[col] = df[col].apply(lambda x: ' '.join(x.split()))
+        df[col] = df[col].str.replace(r"\s+", " ", regex=True).str.strip()
     for col in int_col:
         if col not in df:
             continue
@@ -308,21 +311,32 @@ def date_removal(df, date_col_name, start_date, end_date):
 
 
 def col_removal(df, key, removal_cols, warn=True):
+    """
+    Drops columns from a df
+
+    :param df: The df to remove columns from
+    :param key: Key string for logging purposes
+    :param removal_cols: List of column names to remove
+    :param warn: Boolean to log columns that were missing
+    :return: The df with columns removed
+    """
     logging.debug('Dropping unnecessary columns')
     if 'ALL' in removal_cols:
         plan_cols = [x + vmc.planned_suffix for x in vmc.datafloatcol]
         removal_cols = [x for x in df.columns
                         if x not in dctc.COLS + vmc.datacol + vmc.ad_rep_cols +
                         removal_cols + plan_cols]
-    for col in removal_cols:
-        if col not in df:
+    removal_cols = set(removal_cols)
+    missing_cols = removal_cols.difference(df.columns)
+    removal_cols = removal_cols.intersection(df.columns)
+    if warn:
+        for col in missing_cols:
             if col == 'nan':
                 continue
-            if warn:
-                logging.warning('{} is not or is no longer in {}.  '
-                                'It was not removed.'.format(col, key))
-            continue
-        df = df.drop(col, axis=1)
+            msg = '{} is not in {}.  It was not removed.'.format(col, key)
+            logging.warning(msg)
+    if removal_cols:
+        df = df.drop(columns=list(removal_cols))
     return df
 
 

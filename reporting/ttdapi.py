@@ -36,6 +36,7 @@ class TtdApi(object):
         self.default_config_file_name = 'ttdconfig.json'
         self.campaign_dict = {}
         self.report_name_is_advertiser = False
+        self.is_authorized = True
 
     def input_config(self, config):
         logging.info('Loading TTD config file: {}'.format(config))
@@ -109,17 +110,24 @@ class TtdApi(object):
         if r.status_code != 200:
             logging.error('Failed to authenticate with error code: {} '
                           'Error: {}'.format(r.status_code, r.content))
-            sys.exit(0)
-        auth_token = json.loads(r.text)['Token']
+            auth_token = None
+        else:
+            auth_token = json.loads(r.text)['Token']
         return auth_token
 
     def set_headers(self):
         auth_token = self.authenticate()
         self.headers = {'Content-Type': 'application/json',
                         'TTD-Auth': auth_token}
+        auth_success = True
+        if not auth_token:
+            auth_success = False
+        return auth_success
 
     def get_download_url(self):
-        self.set_headers()
+        auth_success = self.set_headers()
+        if not auth_success:
+            return None
         url = self.walmart_check()
         rep_url = '{0}/myreports/reportexecution/query/advertisers'.format(url)
         data = []
@@ -194,7 +202,7 @@ class TtdApi(object):
             logging.info(
                 'Getting TTD data for report: {}'.format(self.report_name))
             dl_url = self.get_download_url()
-            if dl_url is None:
+            if not dl_url:
                 logging.warning('Could not retrieve url, returning blank df.')
                 self.df = pd.DataFrame()
             else:
@@ -579,12 +587,21 @@ class TtdApi(object):
         headers = {'TTD-Auth': self.query_token}
         body = {'query': query, 'variables': {'advId': candidate_id}}
         r = requests.post(self.query_url, json=body, headers=headers)
-        if 'data' not in r.json():
+        request = r.json()
+        if request.get('data') is None:
             self.query_token = self.get_new_token(self.login, self.password)
             headers = {'TTD-Auth': self.query_token}
             r = requests.post(self.query_url, json=body, headers=headers)
-        if r.json()['data'] and 'advertiser' in r.json()['data']:
-            is_advertiser_id = True
+            request = r.json()
+        if r.status_code != 200 and 'Unauthorized' in r.text:
+            logging.warning('Checking if {} is advertiser failed with '
+                            'status code {}'.format(
+                                candidate_id, r.text))
+            self.is_authorized = False
+        else:
+            advertiser = request.get('data', {}).get('advertiser')
+            if advertiser and self.is_authorized:
+                is_advertiser_id = True
         return is_advertiser_id
 
     def get_child_object_ids(self, parent_id, parent_name='advertiser',
@@ -611,6 +628,8 @@ class TtdApi(object):
         }}
         """
         for _ in range(10000):
+            if not self.is_authorized:
+                break
             variables = {
                 'parentId': parent_id,
                 'cursor': cursor}
@@ -734,6 +753,8 @@ class TtdApi(object):
         """
         df = pd.DataFrame()
         for campaign_id in campaign_list:
+            if not self.is_authorized:
+                break
             campaign_name = self.campaign_dict[campaign_id]
             logging.info('Getting data for campaign {}'.format(campaign_id))
             adgroup_ids = self.get_child_object_ids(
