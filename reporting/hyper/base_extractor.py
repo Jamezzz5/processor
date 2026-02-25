@@ -610,8 +610,11 @@ class BaseExtractor(ABC):
         cursor = self.source_database_cursor()
         logger.info(f"Execute SQL:{sql_query}")
         import psycopg2
-        cursor.execute("BEGIN")
-        cursor.execute("SET LOCAL work_mem = '512MB'")
+        conn = cursor.connection
+        setup_cur = conn.cursor()
+        setup_cur.execute("BEGIN")
+        setup_cur.execute("SET LOCAL work_mem = '512MB'")
+        setup_cur.close()
         try:
             cursor.execute(sql_query)
         except psycopg2.errors.UndefinedTable as e:
