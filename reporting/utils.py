@@ -218,6 +218,8 @@ def string_to_date(my_string):
     elif len(my_string) == 23 and ' - ' in my_string:
         my_string = my_string.split(' - ')[0]
         return dt.datetime.strptime(my_string, '%Y-%m-%d')
+    elif len(my_string) == 7 and my_string[:2] == '20':
+        return dt.datetime.strptime(my_string, '%Y-%m').date()
     else:
         return my_string
 
