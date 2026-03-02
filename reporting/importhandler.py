@@ -156,7 +156,7 @@ class ImportHandler(object):
             args = [self.args]
         else:
             args = self.args
-        if arg_check in args or self.args == 'all':
+        if arg_check in args or 'all' in self.args:
             return True
         else:
             return False
