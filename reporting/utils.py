@@ -218,6 +218,8 @@ def string_to_date(my_string):
     elif len(my_string) == 23 and ' - ' in my_string:
         my_string = my_string.split(' - ')[0]
         return dt.datetime.strptime(my_string, '%Y-%m-%d')
+    elif len(my_string) == 7 and my_string[:2] == '20':
+        return dt.datetime.strptime(my_string, '%Y-%m').date()
     else:
         return my_string
 
@@ -570,6 +572,8 @@ def signal_handler(signum, frame):
 
 class SeleniumWrapper(object):
     driver_path = 'drivers'
+    selectize_xpath = 'selectized'
+    liquid_xpath = 'liquid'
 
     def __init__(self, mobile=False, headless=True):
         self.mobile = mobile
@@ -972,16 +976,22 @@ class SeleniumWrapper(object):
 
     def send_key_from_list(self, item, get_xpath_from_id=True,
                            clear_existing=True, send_escape=True):
-        select_xpath = 'selectized'
         elem_xpath = item[1]
         if get_xpath_from_id:
             elem_xpath = self.get_xpath_from_id(elem_xpath)
         elem = self.browser.find_element_by_xpath(elem_xpath)
+        is_selectized = self.selectize_xpath in elem_xpath
+        is_liquid = self.liquid_xpath in elem_xpath
         clear_specified = len(item) > 2 and item[2] == 'clear'
-        elem_to_clear = select_xpath in elem_xpath or clear_specified
+        elem_to_clear = is_selectized or is_liquid or clear_specified
         if clear_existing and elem_to_clear:
-            clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
-                        '../following-sibling::a[@class="clear"]']
+            if is_liquid:
+                clear_xs = [
+                    'following-sibling::div[contains(@class, "lq-actions")]'
+                    '/span[contains(@class, "lq-btn-clear")]']
+            else:
+                clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
+                            '../following-sibling::a[@class="clear"]']
             for clear_x in clear_xs:
                 clear_val = []
                 for x in range(5):
@@ -1005,7 +1015,8 @@ class SeleniumWrapper(object):
         return elem
 
     def send_key_new_value_check(self, item, get_xpath_from_id=True,
-                            clear_existing=True, send_escape=True, elem=None):
+                                 clear_existing=True, send_escape=True,
+                                 elem=None):
         attempts = 2
         for x in range(attempts):
             try:
@@ -1021,12 +1032,13 @@ class SeleniumWrapper(object):
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
                             clear_existing=True, send_escape=True,
                             new_value='', choose_existing=False):
-        select_xpath = 'selectized'
         for item in elem_input_list:
             elem = self.send_key_from_list(
                 item, get_xpath_from_id, clear_existing, send_escape)
             elem_xpath = item[1]
-            if select_xpath in elem_xpath:
+            is_selectized = self.selectize_xpath in elem_xpath
+            is_liquid = self.liquid_xpath in elem_xpath
+            if is_selectized or is_liquid:
                 if new_value:
                     elem = self.send_key_new_value_check(
                         item, get_xpath_from_id, clear_existing, send_escape,
@@ -1034,9 +1046,10 @@ class SeleniumWrapper(object):
                 for _ in range(3):
                     try:
                         if not choose_existing:
-                            elem.send_keys(Keys.BACKSPACE)
-                            elem.send_keys(item[0][-1])
-                            elem.send_keys(Keys.ARROW_UP)
+                            if is_selectized:
+                                elem.send_keys(Keys.BACKSPACE)
+                                elem.send_keys(item[0][-1])
+                                elem.send_keys(Keys.ARROW_UP)
                         elem.send_keys(u'\ue007')
                         break
                     except (ex.ElementNotInteractableException,
