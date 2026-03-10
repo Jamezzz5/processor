@@ -288,7 +288,7 @@ class SteApi(object):
             game_dict = self.apps
         else:
             game_df = self.get_game_dict()
-            game_dict = dict(game_df['appid'].astype('int64'), game_df['name'])
+            game_dict = dict(game_df['name'], game_df['appid'].astype('int64'),)
 
         app_ids = []
         names = []
@@ -296,7 +296,7 @@ class SteApi(object):
         achievements = []
         review_summaries = []
         app_details = []
-        for app_id, name in game_dict.items():
+        for name, app_id in game_dict.items():
             logging.info('Getting Steam metrics for appid: {}'.format(app_id))
             app_ids.append(app_id)
             names.append(name)
