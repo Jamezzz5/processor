@@ -87,7 +87,7 @@ class ImportHandler(object):
             vmc.api_sim_key: simapi.SimApi,
             vmc.api_pix_key: pixapi.PixApi,
             vmc.api_ias_key: iasapi.IasApi,
-            vmc.api_ste_key: steapi.SteamApi,
+            vmc.api_ste_key: steapi.SteApi,
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
