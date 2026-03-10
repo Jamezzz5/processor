@@ -248,21 +248,20 @@ class FbApi(object):
 
     def get_insights(self, field_list, params, date_list):
         insights = None
-        retry = True
         try:
             insights = self.account.get_insights(
                 fields=field_list,
                 params=params,
                 is_async=True)
         except FacebookRequestError as e:
-            retry = self.request_error(e, date_list, field_list)
+            self.request_error(e, date_list, field_list)
         except requests.exceptions.SSLError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
         except requests.exceptions.ConnectionError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
-        return insights, retry
+        return insights
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
                      action_breakdowns, attribution_window, ad_status,
@@ -287,8 +286,8 @@ class FbApi(object):
                                         'value': self.campaign_filter})
         insights = None
         for x in range(10):
-            insights, retry = self.get_insights(field_list, params, date_list)
-            if insights or not retry:
+            insights = self.get_insights(field_list, params, date_list)
+            if insights:
                 break
         if insights:
             init_dict = {
@@ -418,28 +417,28 @@ class FbApi(object):
         if code == 190:
             logging.info(e)
             logging.error("Facebook Access Token invalid. Aborting.")
-            retry = False
+            sys.exit(0)
         elif code == 100 and 'whitelist' in msg.lower():
             logging.error(
                 "Facebook API request failed because this server IP is not "
                 "whitelisted in Facebook. Aborting.\n{}".format(e)
             )
-            retry = False
+            sys.exit(0)
         elif code in (2, 100):
             logging.warning(
                 f"Unexpected Facebook error. Retrying later. {e}")
-            retry = True
+            return True
         elif status == 503 or code == 133004:
             logging.warning(
                 f"Facebook server temporarily unavailable. Retrying later. {e}")
-            retry = True
+            return True
         elif code == 17:
             logging.warning(
                 "Facebook rate limit reached. Pausing for 300 seconds.")
             time.sleep(300)
             if date_list:
                 self.date_lists.append(date_list)
-            retry = True
+            return True
         elif code == 1:
             if date_list:
                 if date_list[0] == date_list[-1]:
@@ -452,19 +451,20 @@ class FbApi(object):
                         self.field_lists.append(def_params + bh)
                     else:
                         self.field_lists.append(field_list)
+                    return True
                 logging.warning('Too much data queried.  Reducing time scale')
                 fh, bh = self.split_list(date_list)
                 self.date_lists.append(fh)
                 self.date_lists.append(bh)
+                return True
             logging.warning('Unknown FB error has occurred. Retrying.')
-            retry = True
+            return True
         else:
             logging.error('Aborting as the Facebook API call resulted '
                           'in the following error: {}'.format(e))
             if code:
                 logging.error('Api error subcode: {}'.format(code))
-            retry = False
-        return retry
+            sys.exit(0)
 
     @staticmethod
     def split_list(x):
