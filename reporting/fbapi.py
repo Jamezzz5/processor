@@ -416,25 +416,25 @@ class FbApi(object):
         msg = getattr(e, '_api_error_message', None)
         if code == 190:
             logging.info(e)
-            logging.error("Facebook Access Token invalid. Aborting.")
+            logging.error('Facebook Access Token invalid. Aborting.')
             sys.exit(0)
         elif code == 100 and 'whitelist' in msg.lower():
             logging.error(
-                "Facebook API request failed because this server IP is not "
-                "whitelisted in Facebook. Aborting.\n{}".format(e)
+                'Facebook API request failed because this server IP is not '
+                'whitelisted in Facebook. Aborting.\n{}'.format(e)
             )
             sys.exit(0)
         elif code in (2, 100):
             logging.warning(
-                f"Unexpected Facebook error. Retrying later. {e}")
+                'Unexpected Facebook error. Retrying later. {}'.format(e))
             return True
         elif status == 503 or code == 133004:
-            logging.warning(
-                f"Facebook server temporarily unavailable. Retrying later. {e}")
+            logging.warning('Facebook server temporarily unavailable. '
+                            'Retrying later. {}'.format(e))
             return True
         elif code == 17:
             logging.warning(
-                "Facebook rate limit reached. Pausing for 300 seconds.")
+                'Facebook rate limit reached. Pausing for 300 seconds.')
             time.sleep(300)
             if date_list:
                 self.date_lists.append(date_list)
