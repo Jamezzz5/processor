@@ -9,7 +9,7 @@ import datetime as dt
 import reporting.utils as utl
 
 
-class SteamApi(object):
+class SteApi(object):
     first_steam_id = 76561197960265729
     total_steam_users = (10 ** 9) * 4
     last_steam_id = first_steam_id + total_steam_users
