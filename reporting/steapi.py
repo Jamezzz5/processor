@@ -32,7 +32,7 @@ class SteApi(object):
     def __init__(self):
         self.config = None
         self.config_file = None
-        self.game_ids = None
+        self.apps = None
         self.key = None
         self.config_list = None
         self.df = pd.DataFrame()
@@ -55,9 +55,9 @@ class SteApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.game_ids = self.config['game_ids']
+        self.apps = self.config['apps']
         self.key = self.config['key']
-        self.config_list = [self.config, self.key, self.game_ids]
+        self.config_list = [self.config, self.key]
 
     def check_config(self):
         for item in self.config_list:
@@ -65,6 +65,8 @@ class SteApi(object):
                 logging.warning('{} not in Ste config file.'
                                 'Aborting.'.format(item))
                 sys.exit(0)
+        if not self.apps:
+            logging.warning('No configured apps. Fetching all Steam apps.')
 
     # def set_last_steam_id(self):
     #     self.total_steam_users = self.get_total_users()
@@ -97,7 +99,6 @@ class SteApi(object):
             logging.warning('ProtocolError - retrying: {}'.format(e))
             time.sleep(60)
             r = self.raw_request(url, method, params, body, header)
-        time.sleep(1)
         try:
             r.json()
             return r
@@ -214,23 +215,32 @@ class SteApi(object):
     def get_player_count(self, app_id):
         r = self.make_request(self.ccu_url, 'GET', params={'appid': app_id})
         try:
+            if 'player_count' not in r.json()['response']:
+                return 0
             return r.json()['response']['player_count']
         except Exception as e:
             logging.warning('Could not get player count for appid {}: '
                             '{}'.format(app_id, e))
             return None
 
-    def get_achievement_pct(self, app_id):
+    def get_achievements(self, app_id):
         r = self.make_request(self.achievement_url, 'GET',
                               params={'gameid': app_id})
         try:
+            if ('achievementpercentages' not in r.json() or
+                len(r.json()['achievementpercentages']['achievements']) == 0):
+                return {
+                    'achievement_pct': 0,
+                    'achievement_count': 0,
+                }
             achievements = r.json()['achievementpercentages']['achievements']
-            if not achievements:
-                return None
             pcts = [float(a['percent']) for a in achievements]
-            return sum(pcts) / len(pcts)
+            return {
+                'achievement_pct': sum(pcts) / len(pcts),
+                'achievement_count': len(pcts),
+            }
         except Exception as e:
-            logging.warning('Could not get achievement pct for appid {}: '
+            logging.warning('Could not get achievements for appid {}: '
                             '{}'.format(app_id, e))
             return None
 
@@ -244,33 +254,15 @@ class SteApi(object):
         except Exception as e:
             logging.warning('Could not get review summary for appid {}: '
                             '{}'.format(app_id, e))
-            return {
-                'review_score': None,
-                'review_score_desc': None,
-                'total_positive': None,
-                'total_negative': None,
-                'total_reviews': None
-            }
+            return {}
 
-    def get_app_details(self, app_list):
-        df = pd.DataFrame()
-        retry = []
-        for app_id in app_list:
-            logging.info('Getting app details for appid: {}'.format(app_id))
-            r = self.make_request(self.app_det_url, 'GET',
-                                  params={'appids': app_id})
-            data = r.json()
-            if data[str(app_id)]['success']:
-                tdf = pd.DataFrame([data[str(app_id)]['data']])
-                df = pd.concat([df, tdf], ignore_index=True)
-            else:
-                logging.warning('No details returned for appid: '
-                                '{}'.format(app_id))
-        if not df.empty:
-            df = df.rename(columns={'steam_appid': 'appid',
-                                    'name': 'app_detail_name'})
-            df['appid'] = df['appid'].astype('int64')
-        return df
+    def get_app_details(self, app_id):
+        logging.info('Getting app details for appid: {}'.format(app_id))
+        r = self.make_request(self.app_det_url, 'GET',
+                              params={'appids': app_id})
+        if not r.json()[str(app_id)]['success']:
+            return {}
+        return r.json()[str(app_id)]['data']
 
     # def get_player_stats(self, steam_ids):
     #     df = pd.DataFrame()
@@ -292,35 +284,40 @@ class SteApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         today = dt.datetime.now(dt.timezone.utc).date()
 
-        app_list = [int(v) for v in self.game_ids.values()]
-        configured_names = {int(v): k for k, v in self.game_ids.items()}
-
-        game_dict = self.get_game_dict()
-        if not game_dict.empty and 'appid' in game_dict.columns:
-            game_dict_map = dict(zip(game_dict['appid'].astype('int64'), game_dict['name']))
+        if self.apps:
+            game_dict = self.apps
         else:
-            game_dict_map = {}
+            game_df = self.get_game_dict()
+            game_dict = dict(game_df['appid'].astype('int64'), game_df['name'])
 
-        rows = []
-        for app_id in app_list:
+        app_ids = []
+        names = []
+        player_counts = []
+        achievements = []
+        review_summaries = []
+        app_details = []
+        for app_id, name in game_dict.items():
             logging.info('Getting Steam metrics for appid: {}'.format(app_id))
-            row = {
-                'appid': app_id,
-                'productname': configured_names.get(
-                    app_id, game_dict_map.get(app_id, str(app_id))),
-                'date': today,
-                'player_count': self.get_player_count(app_id),
-                'achievement_pct': self.get_achievement_pct(app_id),
-            }
-            row.update(self.get_review_summary(app_id))
-            rows.append(row)
+            app_ids.append(app_id)
+            names.append(name)
+            player_counts.append(self.get_player_count(app_id))
+            achievements.append(self.get_achievements(app_id))
+            review_summaries.append(self.get_review_summary(app_id))
+            app_details.append(self.get_app_details(app_id))
 
-        df = pd.DataFrame(rows)
+        df = pd.DataFrame({
+            'appid': app_ids,
+            'productname': names,
+            'date': today,
+            'player_count': player_counts,
+        })
 
-        app_details = self.get_app_details(app_list)
-        if not app_details.empty and 'appid' in app_details.columns:
-            meta_cols = [c for c in app_details.columns if c != 'app_detail_name']
-            df = df.merge(app_details[meta_cols], on='appid', how='left')
+        app_details_df = pd.DataFrame(app_details).drop(columns=['steam_appid', 'name'])
+
+        df = pd.concat([df, pd.DataFrame(achievements),
+                        pd.DataFrame(review_summaries),
+                        app_details_df
+                       ], axis=1)
 
         self.df = df
         return self.df
