@@ -15,6 +15,7 @@ class SteApi(object):
     # last_steam_id = first_steam_id + total_steam_users
     # default_search_num = 10 ** 5
     config_path = utl.config_path
+    default_config_file_name = 'steconfig.json'
     base_api_url = 'https://api.steampowered.com/'
     cur_players_url = (base_api_url +
                        'ISteamUserStats/GetNumberOfCurrentPlayers/v1/')
