@@ -36,6 +36,7 @@ import processor.reporting.ytdapi as ytdapi
 import processor.reporting.simapi as simapi
 import processor.reporting.pixapi as pixapi
 import processor.reporting.iasapi as iasapi
+import processor.reporting.steapi as steapi
 import processor.reporting.ftp as ftp
 import processor.reporting.awss3 as awss3
 import processor.reporting.azapi as azu
