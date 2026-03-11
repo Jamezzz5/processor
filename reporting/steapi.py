@@ -103,12 +103,11 @@ class SteApi(object):
     def get_apps(self):
         all_apps = []
         last_appid = None
-        logging.info('Getting list of all Steam apps.')
+        logging.info('Getting all Steam apps.')
         while True:
             params = {
                 'key': self.key,
-                # 'max_results': 50000,  # default 10k, max val 50k
-                'max_results': 100,
+                'max_results': 500,  # default 10k, max val 50k
             }
             if last_appid:
                 params['last_appid'] = last_appid
@@ -117,7 +116,7 @@ class SteApi(object):
             apps = data['apps']
             all_apps.extend(apps)
             # if not 'have_more_results' in data:
-            if True:
+            if True:  # limit to 1 page
                 break
             last_appid = data['last_appid']
         return pd.DataFrame(all_apps)
@@ -125,7 +124,6 @@ class SteApi(object):
     def get_current_players(self, app_ids):
         rows = []
         for app_id in app_ids:
-            logging.info('Getting player count for appid: {}'.format(app_id))
             r = self.make_request(self.cur_players_url, 'GET',
                                  params={'appid': app_id})
             data = r.json()['response']
@@ -141,18 +139,17 @@ class SteApi(object):
     def get_app_details(self, app_ids):
         rows = []
         for app_id in app_ids:
-            logging.info('Getting details for appid: {}'.format(app_id))
             while True:
-                r = self.make_request(self.app_det_url, 'GET',
-                                      params={'appids': app_id})
+                r = self.make_request(self.app_det_url, 'GET', params={
+                    'appids': app_id, 'cc': 'us', 'l': 'english'})
                 data = r.json()
                 if data and data[str(app_id)]['success']:
                     rows.append(data[str(app_id)]['data'])
                     break
                 elif not data:
                     logging.warning('Empty response for appid: {}. '
-                                    'Retrying in 5s.'.format(app_id))
-                    time.sleep(5)
+                                    'Retrying in 15s.'.format(app_id))
+                    time.sleep(15)
                     continue
                 else:
                     logging.warning('Could not get details for appid: '
@@ -163,10 +160,9 @@ class SteApi(object):
                                   'name': 'app_detail_name'})
 
     def get_avg_achievement_pcts(self, app_ids):
+        logging.info('Getting achievement percentages.')
         rows = []
         for app_id in app_ids:
-            logging.info('Getting achievement percentages for appid: '
-                         '{}'.format(app_id))
             r = self.make_request(self.achievements_url, 'GET',
                                   params={'gameid': app_id})
             data = r.json()
@@ -177,15 +173,15 @@ class SteApi(object):
                 avg_pct = sum(pcts) / len(pcts)
                 rows.append({'appid': app_id, 'avg_achievement_pct': avg_pct})
             else:
-                logging.warning('No achievements found for appid: '
-                                '{}'.format(app_id))
+                # logging.warning('No achievements found for appid: '
+                #                 '{}'.format(app_id))
+                pass
         return pd.DataFrame(rows)
 
     def get_review_summaries(self, app_ids):
+        logging.info('Getting review summaries.')
         rows = []
         for app_id in app_ids:
-            logging.info('Getting review summary for appid: '
-                         '{}'.format(app_id))
             r = self.make_request(self.reviews_url + str(app_id), 'GET',
                                   params={'json': 1, 'num_per_page': 0})
             data = r.json()
@@ -216,8 +212,8 @@ class SteApi(object):
         review_summaries = self.get_review_summaries(app_ids)
         df = df.merge(review_summaries, on='appid', how='left')
         # sampled_users = ...
-        # wishlists = ...(sampled_users, app_ids)
-        # df = df.merge(wishlists, on='appid', how='left')
+        # wishlists/owned = ...(sampled_users, app_ids)
+        # df = df.merge(wishlists/owned, on='appid', how='left')
         df['gameeventdate'] = today
         self.df = df
         return df
