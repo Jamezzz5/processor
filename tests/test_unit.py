@@ -37,6 +37,7 @@ import processor.reporting.tikapi as tikapi
 import processor.reporting.yvapi as yvapi
 import processor.reporting.gsapi as gsapi
 import processor.reporting.simapi as simapi
+import processor.reporting.steapi as steapi
 import processor.reporting.importhandler as ih
 
 
@@ -363,6 +364,10 @@ class TestApis:
         api = scapi.ScApi()
         self.send_api_call(api)
         self.send_test_api_call(api)
+
+    def test_steapi(self):
+        api = steapi.SteApi()
+        self.send_api_call(api)
 
     def test_iasapi(self):
         api = iasapi.IasApi()
