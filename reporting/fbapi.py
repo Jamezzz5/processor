@@ -401,49 +401,69 @@ class FbApi(object):
         return percent
 
     def request_error(self, e, date_list=None, field_list=None):
-        if e._api_error_code == 190:
+        """
+        Handles Facebook API request errors.  Retries if error is temporary and
+        exits if error is fatal.
+
+        :param e:FacebookRequestError object
+        :param date_list: list of dates that were being requested when
+        error occurred
+        :param field_list: list of fields that were being requested when
+        error occurred
+        """
+        code = getattr(e, '_api_error_code', None)
+        status = getattr(e, "_http_status", None)
+        msg = getattr(e, '_api_error_message', None)
+        if code == 190:
             logging.info(e)
-            logging.error('Facebook Access Token invalid.  Aborting.')
+            logging.error('Facebook Access Token invalid. Aborting.')
             sys.exit(0)
-        elif e._api_error_code == 2 or e._api_error_code == 100:
-            logging.warning('An unexpected error occurred.  '
-                            'Retrying request later. {}'.format(e))
+        elif code == 100 and 'whitelist' in msg.lower():
+            logging.error(
+                'Facebook API request failed because this server IP is not '
+                'whitelisted in Facebook. Aborting.\n{}'.format(e)
+            )
+            sys.exit(0)
+        elif code in (2, 100):
+            logging.warning(
+                'Unexpected Facebook error. Retrying later. {}'.format(e))
             return True
-        elif e._http_status == 503 or e._api_error_code == 133004:
-            logging.warning('Facebook server is temporarily unavailable. '
-                            'Retrying request later. {}'.format(e))
+        elif status == 503 or code == 133004:
+            logging.warning('Facebook server temporarily unavailable. '
+                            'Retrying later. {}'.format(e))
             return True
-        elif e._api_error_code == 17:
-            logging.warning('Facebook rate limit reached.  Pausing for '
-                            '300 seconds.')
+        elif code == 17:
+            logging.warning(
+                'Facebook rate limit reached. Pausing for 300 seconds.')
             time.sleep(300)
-            self.date_lists.append(date_list)
+            if date_list:
+                self.date_lists.append(date_list)
             return True
-        elif e._api_error_code == 1 and date_list is not None:
-            if date_list[0] == date_list[-1]:
-                logging.warning('Already daily.  Reducing requested fields.'
-                                'Error as follows: {}'.format(e))
-                metrics = [x for x in field_list if x not in def_params]
-                fh, bh = self.split_list(metrics)
-                if fh and bh:
-                    self.field_lists.append(def_params + fh)
-                    self.field_lists.append(def_params + bh)
-                else:
-                    self.field_lists.append(field_list)
+        elif code == 1:
+            if date_list:
+                if date_list[0] == date_list[-1]:
+                    logging.warning('Already daily.  Reducing requested fields.'
+                                    'Error as follows: {}'.format(e))
+                    metrics = [x for x in field_list if x not in def_params]
+                    fh, bh = self.split_list(metrics)
+                    if fh and bh:
+                        self.field_lists.append(def_params + fh)
+                        self.field_lists.append(def_params + bh)
+                    else:
+                        self.field_lists.append(field_list)
+                    return True
+                logging.warning('Too much data queried.  Reducing time scale')
+                fh, bh = self.split_list(date_list)
+                self.date_lists.append(fh)
+                self.date_lists.append(bh)
                 return True
-            logging.warning('Too much data queried.  Reducing time scale')
-            fh, bh = self.split_list(date_list)
-            self.date_lists.append(fh)
-            self.date_lists.append(bh)
-            return True
-        elif e._api_error_code == 1:
             logging.warning('Unknown FB error has occurred. Retrying.')
             return True
         else:
             logging.error('Aborting as the Facebook API call resulted '
                           'in the following error: {}'.format(e))
-            if e._api_error_code:
-                logging.error('Api error subcode: {}'.format(e._api_error_code))
+            if code:
+                logging.error('Api error subcode: {}'.format(code))
             sys.exit(0)
 
     @staticmethod
