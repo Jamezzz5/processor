@@ -10,24 +10,22 @@ import reporting.utils as utl
 
 
 class SteApi(object):
-    first_steam_id = 76561197960265729
-    total_steam_users = (10 ** 9) * 4
-    last_steam_id = first_steam_id + total_steam_users
-    default_search_num = 10 ** 5
+    # first_steam_id = 76561197960265729
+    # total_steam_users = (10 ** 9) * 4
+    # last_steam_id = first_steam_id + total_steam_users
+    # default_search_num = 10 ** 5
     config_path = utl.config_path
-
-    base_api_url = 'https://api.steampowered.com'
-    ccu_url = base_api_url + '/ISteamUserStats/GetNumberOfCurrentPlayers/v1'
-    achievement_url = (base_api_url +
-               '/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002')
-    owned_games_url = base_api_url + 'IPlayerService/GetOwnedGames/v0001'
-    apps_url = base_api_url + '/IStoreService/GetAppList/v1'
-    player_sum_url = base_api_url + '/ISteamUser/GetPlayerSummaries/v2'
-
-    base_store_url = 'https://store.steampowered.com'
-    reviews_url = base_store_url + '/appreviews'
-    app_det_url = base_store_url + '/api/appdetails'
-    wishlist_url = base_store_url + '/wishlist/profiles'
+    base_api_url = 'https://api.steampowered.com/'
+    cur_players_url = (base_api_url +
+                       'ISteamUserStats/GetNumberOfCurrentPlayers/v1/')
+    achievements_url = (base_api_url +
+                        'ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/')
+    apps_url = base_api_url + 'IStoreService/GetAppList/v1'
+    # owned_games_url = base_api_url + 'IPlayerService/GetOwnedGames/v1'
+    # wishlist_url = base_store_url + 'IWishlistService/GetWishlist/v1/'
+    base_store_url = 'https://store.steampowered.com/'
+    reviews_url = base_store_url + 'appreviews/'
+    app_det_url = base_store_url + 'api/appdetails/'
 
     def __init__(self):
         self.config = None
@@ -68,10 +66,6 @@ class SteApi(object):
         if not self.apps:
             logging.warning('No configured apps. Fetching all Steam apps.')
 
-    # def set_last_steam_id(self):
-    #     self.total_steam_users = self.get_total_users()
-    #     self.last_steam_id = self.first_steam_id + self.total_steam_users
-
     def make_request(self, url, method, params=None, body=None, header=None, attempt=1):
         try:
             response = self.raw_request(url, method, params=params, body=body,
@@ -105,6 +99,132 @@ class SteApi(object):
         except json.decoder.JSONDecodeError as e:
             return False
 
+    def get_apps(self):
+        all_apps = []
+        last_appid = None
+        logging.info('Getting list of all Steam apps.')
+        while True:
+            params = {
+                'key': self.key,
+                # 'max_results': 50000,  # default 10k, max val 50k
+                'max_results': 100,
+            }
+            if last_appid:
+                params['last_appid'] = last_appid
+            r = self.make_request(self.apps_url, 'GET', params)
+            data = r.json()['response']
+            apps = data['apps']
+            all_apps.extend(apps)
+            # if not 'have_more_results' in data:
+            if True:
+                break
+            last_appid = data['last_appid']
+        return pd.DataFrame(all_apps)
+
+    def get_current_players(self, app_ids):
+        rows = []
+        for app_id in app_ids:
+            logging.info('Getting player count for appid: {}'.format(app_id))
+            r = self.make_request(self.cur_players_url, 'GET',
+                                 params={'appid': app_id})
+            data = r.json()['response']
+            if data['result'] == 1:
+                rows.append({
+                    'player_count': data['player_count'],
+                    'appid': app_id})
+            else:
+                logging.warning('Could not get player count for appid: '
+                                '{}'.format(app_id))
+        return pd.DataFrame(rows)
+
+    def get_app_details(self, app_ids):
+        rows = []
+        for app_id in app_ids:
+            logging.info('Getting details for appid: {}'.format(app_id))
+            while True:
+                r = self.make_request(self.app_det_url, 'GET',
+                                      params={'appids': app_id})
+                data = r.json()
+                if data and data[str(app_id)]['success']:
+                    rows.append(data[str(app_id)]['data'])
+                    break
+                elif not data:
+                    logging.warning('Empty response for appid: {}. '
+                                    'Retrying in 5s.'.format(app_id))
+                    time.sleep(5)
+                    continue
+                else:
+                    logging.warning('Could not get details for appid: '
+                                    '{}'.format(app_id))
+                    break
+        df = pd.DataFrame(rows)
+        return df.rename(columns={'steam_appid': 'appid',
+                                  'name': 'app_detail_name'})
+
+    def get_avg_achievement_pcts(self, app_ids):
+        rows = []
+        for app_id in app_ids:
+            logging.info('Getting achievement percentages for appid: '
+                         '{}'.format(app_id))
+            r = self.make_request(self.achievements_url, 'GET',
+                                  params={'gameid': app_id})
+            data = r.json()
+            if ('achievementpercentages' in data and
+                    len(data['achievementpercentages']['achievements']) > 0):
+                achievements = data['achievementpercentages']['achievements']
+                pcts = [float(a['percent']) for a in achievements]
+                avg_pct = sum(pcts) / len(pcts)
+                rows.append({'appid': app_id, 'avg_achievement_pct': avg_pct})
+            else:
+                logging.warning('No achievements found for appid: '
+                                '{}'.format(app_id))
+        return pd.DataFrame(rows)
+
+    def get_review_summaries(self, app_ids):
+        rows = []
+        for app_id in app_ids:
+            logging.info('Getting review summary for appid: '
+                         '{}'.format(app_id))
+            r = self.make_request(self.reviews_url + str(app_id), 'GET',
+                                  params={'json': 1, 'num_per_page': 0})
+            data = r.json()
+            if data['success'] == 1:
+                summary: dict = data['query_summary']
+                summary.pop('num_reviews')  # always 0 with num_per_page=0
+                summary['appid'] = app_id
+                rows.append(summary)
+            else:
+                logging.warning('Could not get review summary for appid: '
+                                '{}'.format(app_id))
+        return pd.DataFrame(rows)
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        today = dt.datetime.now(dt.timezone.utc).date()
+        if self.apps:
+            df = pd.DataFrame(list(self.apps.items()),
+                              columns=['name', 'appid'])
+        else:
+            df = self.get_apps()
+        app_ids = df['appid'].tolist()
+        current_players = self.get_current_players(app_ids)
+        df = df.merge(current_players, on='appid', how='left')
+        app_details = self.get_app_details(app_ids)
+        df = df.merge(app_details, on='appid', how='left')
+        avg_achievement_pcts = self.get_avg_achievement_pcts(app_ids)
+        df = df.merge(avg_achievement_pcts, on='appid', how='left')
+        review_summaries = self.get_review_summaries(app_ids)
+        df = df.merge(review_summaries, on='appid', how='left')
+        # sampled_users = ...
+        # wishlists = ...(sampled_users, app_ids)
+        # df = df.merge(wishlists, on='appid', how='left')
+        df['gameeventdate'] = today
+        self.df = df
+        return df
+
+    # def set_last_steam_id(self):
+    #     self.total_steam_users = self.get_total_users()
+    #     self.last_steam_id = self.first_steam_id + self.total_steam_users
+    #
     # @staticmethod
     # def get_numbers_from_list(number_list):
     #     return sum([((10 ** y[0]) * y[1]) for y in number_list])
@@ -124,15 +244,6 @@ class SteApi(object):
     #                 number_list.append((exponent, multi))
     #                 break
     #     return self.get_numbers_from_list(number_list)
-    #
-    # def request_owned_games(self, user_id, error=True):
-    #     params = {
-    #         # 'key': self.key,
-    #         'steamid': user_id, 'format': 'json'}
-    #     r = self.raw_request(self.owned_games_url, 'GET', params=params)
-    #     if r is False:
-    #         return False
-    #     try:
     #
     # def user_search_loop(self, search_num=None):
     #     if not search_num:
@@ -173,151 +284,3 @@ class SteApi(object):
     #         tdf['steam_id'] = user_id
     #         df = df.append(tdf, ignore_index=True)
     #     return df, number_hits
-
-    def get_game_dict(self):
-        logging.info('Getting Steam app list.')
-        r = self.make_request(self.apps_url, 'GET',
-                              params={'key': self.key})
-        try:
-            apps = r.json()['response']['apps']
-            return pd.DataFrame(apps)
-        except Exception as e:
-            logging.warning('Could not get app list: {}'.format(e))
-            return pd.DataFrame()
-
-    # def get_data_write_df(self, search_num=None):
-    #     self.set_last_steam_id()
-    #     today_date = dt.datetime.today().date()
-    #     file_name = 'steam_users_{}.csv'.format(today_date.strftime('%Y%m%d'))
-    #     df = self.user_search_loop(search_num=search_num)
-    #     self.write_df(df, file_name)
-    #     app_list = df['appid'].unique().tolist()
-    #     current_players = self.get_current_players(app_list)
-    #     df = df.append(current_players, ignore_index=True, sort=True)
-    #     game_dict = self.get_game_dict()
-    #     df = df.merge(game_dict, on='appid', how='left')
-    #     steam_ids = df[df['steam_id'].notnull()]['steam_id'].unique().tolist()
-    #     player_stats = self.get_player_stats(steam_ids)
-    #     df = df.merge(player_stats, on='steam_id', how='left')
-    #     app_details = self.get_app_details(app_list)
-    #     df = df.merge(app_details, on='appid', how='left')
-    #     df['gameeventdate'] = today_date
-    #     utl.dir_check('data')
-    #     self.write_df(df, file_name)
-    #
-    # @staticmethod
-    # def write_df(df, file_name):
-    #     logging.info('Writing df to csv: {}'.format(file_name))
-    #     df.to_csv(os.path.join('data', file_name), index=False)
-    #     df.to_csv('steam_users.csv', index=False)
-    #     logging.info('Finished writing df to csv')
-
-    def get_player_count(self, app_id):
-        r = self.make_request(self.ccu_url, 'GET', params={'appid': app_id})
-        try:
-            if 'player_count' not in r.json()['response']:
-                return 0
-            return r.json()['response']['player_count']
-        except Exception as e:
-            logging.warning('Could not get player count for appid {}: '
-                            '{}'.format(app_id, e))
-            return None
-
-    def get_achievements(self, app_id):
-        r = self.make_request(self.achievement_url, 'GET',
-                              params={'gameid': app_id})
-        try:
-            if ('achievementpercentages' not in r.json() or
-                len(r.json()['achievementpercentages']['achievements']) == 0):
-                return {
-                    'achievement_pct': 0,
-                    'achievement_count': 0,
-                }
-            achievements = r.json()['achievementpercentages']['achievements']
-            pcts = [float(a['percent']) for a in achievements]
-            return {
-                'achievement_pct': sum(pcts) / len(pcts),
-                'achievement_count': len(pcts),
-            }
-        except Exception as e:
-            logging.warning('Could not get achievements for appid {}: '
-                            '{}'.format(app_id, e))
-            return None
-
-    def get_review_summary(self, app_id):
-        url = '{}/{}'.format(self.reviews_url, app_id)
-        r = self.make_request(url, 'GET', params={'json': 1, 'num_per_page': 0})
-        try:
-            qs = r.json()['query_summary']
-            del qs['num_reviews']  # always 0 with num_per_page=0
-            return qs
-        except Exception as e:
-            logging.warning('Could not get review summary for appid {}: '
-                            '{}'.format(app_id, e))
-            return {}
-
-    def get_app_details(self, app_id):
-        logging.info('Getting app details for appid: {}'.format(app_id))
-        r = self.make_request(self.app_det_url, 'GET',
-                              params={'appids': app_id})
-        if not r.json()[str(app_id)]['success']:
-            return {}
-        return r.json()[str(app_id)]['data']
-
-    # def get_player_stats(self, steam_ids):
-    #     df = pd.DataFrame()
-    #     steam_ids = [steam_ids[x:x + 100]
-    #                  for x in range(0, len(steam_ids), 100)]
-    #     for steam_id in [x for x in steam_ids if x]:
-    #         logging.info('Getting player stats for id: {}'.format(steam_id))
-    #         r = self.raw_request(
-    #             self.player_sum_url, sleep_length=60, params={
-    #                 'key': self.key,
-    #                 'steamids': ','.join([str(int(x)) for x in steam_id])})
-    #         tdf = pd.DataFrame(r.json()['response']['players'])
-    #         df = df.append(tdf, ignore_index=True)
-    #     df = df.rename(columns={'steamid': 'steam_id'})
-    #     logging.info(df)
-    #     df['steam_id'] = df['steam_id'].astype('int64')
-    #     return df
-
-    def get_data(self, sd=None, ed=None, fields=None):
-        today = dt.datetime.now(dt.timezone.utc).date()
-
-        if self.apps:
-            game_dict = self.apps
-        else:
-            game_df = self.get_game_dict()
-            game_dict = dict(zip(game_df['name'], game_df['appid'].astype('int64')))
-
-        app_ids = []
-        names = []
-        player_counts = []
-        achievements = []
-        review_summaries = []
-        app_details = []
-        for name, app_id in game_dict.items():
-            logging.info('Getting Steam metrics for appid: {}'.format(app_id))
-            app_ids.append(app_id)
-            names.append(name)
-            player_counts.append(self.get_player_count(app_id))
-            achievements.append(self.get_achievements(app_id))
-            review_summaries.append(self.get_review_summary(app_id))
-            app_details.append(self.get_app_details(app_id))
-
-        df = pd.DataFrame({
-            'appid': app_ids,
-            'productname': names,
-            'date': today,
-            'player_count': player_counts,
-        })
-
-        app_details_df = pd.DataFrame(app_details).drop(columns=['steam_appid', 'name'])
-
-        df = pd.concat([df, pd.DataFrame(achievements),
-                        pd.DataFrame(review_summaries),
-                        app_details_df
-                       ], axis=1)
-
-        self.df = df
-        return self.df
