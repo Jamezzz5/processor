@@ -101,10 +101,11 @@ class SteApi(object):
             return False
 
     def get_apps(self):
+        logging.info('Getting all Steam apps.')
         all_apps = []
         last_appid = None
-        logging.info('Getting all Steam apps.')
-        while True:
+        have_more_results = True
+        while have_more_results:
             params = {
                 'key': self.key,
                 'max_results': 500,  # default 10k, max val 50k
@@ -113,15 +114,14 @@ class SteApi(object):
                 params['last_appid'] = last_appid
             r = self.make_request(self.apps_url, 'GET', params)
             data = r.json()['response']
-            apps = data['apps']
-            all_apps.extend(apps)
-            # if not 'have_more_results' in data:
-            if True:  # limit to 1 page
-                break
-            last_appid = data['last_appid']
+            all_apps.extend(data['apps'])
+            # have_more_results = data.get('have_more_results', False)
+            have_more_results = False
+            last_appid = data.get('last_appid')
         return pd.DataFrame(all_apps)
 
     def get_current_players(self, app_ids):
+        logging.info('Getting player counts.')
         rows = []
         for app_id in app_ids:
             r = self.make_request(self.cur_players_url, 'GET',
@@ -137,9 +137,11 @@ class SteApi(object):
         return pd.DataFrame(rows)
 
     def get_app_details(self, app_ids):
+        logging.info('Getting details for apps.')
+        max_retries = 20  # 20 * 15s = 300s (5 min rate limit)
         rows = []
         for app_id in app_ids:
-            while True:
+            for attempt in range(max_retries):
                 r = self.make_request(self.app_det_url, 'GET', params={
                     'appids': app_id, 'cc': 'us', 'l': 'english'})
                 data = r.json()
@@ -147,8 +149,12 @@ class SteApi(object):
                     rows.append(data[str(app_id)]['data'])
                     break
                 elif not data:
-                    logging.warning('Empty response for appid: {}. '
-                                    'Retrying in 15s.'.format(app_id))
+                    if attempt == max_retries:
+                        logging.error('Max retries exceeded.  Aborting.')
+                        sys.exit(0)
+                    logging.warning('Empty response for appid: {}. Retrying '
+                                    '{}/{} in 15s.'.format(app_id, attempt + 1,
+                                                           max_retries))
                     time.sleep(15)
                     continue
                 else:
