@@ -413,7 +413,7 @@ class FbApi(object):
         """
         code = getattr(e, '_api_error_code', None)
         status = getattr(e, "_http_status", None)
-        msg = getattr(e, '_api_error_message', None)
+        msg = getattr(e, '_api_error_message', '') or ''
         if code == 190:
             logging.info(e)
             logging.error('Facebook Access Token invalid. Aborting.')
@@ -424,6 +424,13 @@ class FbApi(object):
                 'whitelisted in Facebook. Aborting.\n{}'.format(e)
             )
             sys.exit(0)
+        elif status == 500:
+            logging.error('Facebook API returned 500 with empty response. '
+                          'Retrying. {}'.format(e))
+            return True
+        elif code == 4 and status == 403:
+            logging.warning('Too many requests, retrying: {}'.format(e))
+            return True
         elif code in (2, 100):
             logging.warning(
                 'Unexpected Facebook error. Retrying later. {}'.format(e))
