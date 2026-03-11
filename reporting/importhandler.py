@@ -36,6 +36,7 @@ import processor.reporting.ytdapi as ytdapi
 import processor.reporting.simapi as simapi
 import processor.reporting.pixapi as pixapi
 import processor.reporting.iasapi as iasapi
+import processor.reporting.steapi as steapi
 import processor.reporting.ftp as ftp
 import processor.reporting.awss3 as awss3
 import processor.reporting.azapi as azu
@@ -87,6 +88,7 @@ class ImportHandler(object):
             vmc.api_sim_key: simapi.SimApi,
             vmc.api_pix_key: pixapi.PixApi,
             vmc.api_ias_key: iasapi.IasApi,
+            vmc.api_ste_key: steapi.SteApi,
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
