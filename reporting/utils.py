@@ -808,7 +808,7 @@ class SeleniumWrapper(object):
         else:
             log_val = elem
         logging.info('Element: {}\nError: {}'.format(log_val, e))
-        scroll_script = "arguments[0].scrollIntoView();"
+        scroll_script = "arguments[0].scrollIntoView({block:'center'});"
         if attempts > 5:
             scroll_script = "window.scrollTo(0, 0)"
         try:
@@ -822,14 +822,15 @@ class SeleniumWrapper(object):
         elem_click = True
         attempts = 10
         for x in range(attempts):
-            if not elem:
-                elem = self.browser.find_element_by_xpath(xpath)
+            cur_elem = elem
+            if xpath:
+                cur_elem = self.browser.find_element_by_xpath(xpath)
             try:
-                self.click_on_elem(elem, sleep)
+                self.click_on_elem(cur_elem, sleep)
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException,
                     ex.StaleElementReferenceException) as e:
-                elem_click = self.click_error(elem, e, x)
+                elem_click = self.click_error(cur_elem, e, x)
             if elem_click:
                 break
             else:
