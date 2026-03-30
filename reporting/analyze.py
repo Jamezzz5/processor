@@ -3744,7 +3744,12 @@ class AliChat(object):
             return self.llm_request_generator(body)
         else:
             r = requests.post(self.llm_url, json=body, timeout=timeout)
-            response = r.json()["choices"][0]["message"]["content"]
+            data = r.json()
+            if 'choices' not in data:
+                msg = 'LLM response missing choices: {}'.format(data)
+                logging.warning(msg)
+                raise ValueError(msg)
+            response = data["choices"][0]["message"]["content"]
             return response
 
     def search_db_models(self, db_model, message, response, html_response):
