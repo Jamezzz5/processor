@@ -237,29 +237,22 @@ class TikApi(object):
             df = df.join(tdf)
         return df
 
-    def request_and_get_data(self, sd, ed, fields):
+    def request_and_get_data(self, sd, ed):
         """
         Requests data from TikTok Ads API and returns a dataframe.
-        If fields is not None then will include deleted and inactive ads as well
 
         :param sd: start date for data pull
         :param ed: end date for data pull
-        :param fields: currently if fields is any value (ex: "all") then will
-        include deleted and inactive ads as well.  If None then will not include
-        deleted and inactive ads.
 
         :returns: dataframe
         """
         url = self.base_url + self.version + self.ad_report_url
         self.params['start_date'] = sd
         self.params['end_date'] = ed
-        if fields:
-            logging.info('"all" in fields, getting data on '
-                         'deleted and inactive ads as well')
-            filters = [{'field_name': 'ad_status',
-                        'filter_type': 'IN',
-                        'filter_value': "[\"STATUS_ALL\"]"}]
-            self.params['filtering'] = json.dumps(filters)
+        filters = [{'field_name': 'ad_status',
+                    'filter_type': 'IN',
+                    'filter_value': "[\"STATUS_ALL\"]"}]
+        self.params['filtering'] = json.dumps(filters)
         for x in range(1, 1000):
             logging.info('Getting data from {} to {}.  Page #{}.'
                          ''.format(sd, ed, x))
@@ -312,7 +305,7 @@ class TikApi(object):
         sd, ed = self.get_data_default_check(sd, ed)
         self.reset_params()
         self.get_ids()
-        self.df = self.request_and_get_data(sd, ed, fields)
+        self.df = self.request_and_get_data(sd, ed)
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
 
