@@ -22,6 +22,7 @@ import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 import xml.etree.ElementTree as et
+from reporting.ali.search import AliSearch
 
 
 class Analyze(object):
@@ -93,7 +94,8 @@ class Analyze(object):
 
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
                  load_chat=False, chat_path=utl.config_path, llm_url='',
-                 llm_model='', llm_instructions='', previous_messages=None):
+                 llm_model='', llm_instructions='', previous_messages=None,
+                 transformer=None, transformer_dict=None):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
@@ -120,7 +122,9 @@ class Analyze(object):
                 config_path=self.chat_path, llm_url=self.llm_url,
                 llm_model=self.llm_model,
                 llm_instructions=self.llm_instructions,
-                previous_messages=self.previous_messages)
+                previous_messages=self.previous_messages,
+                transformer=transformer,
+                transformer_dict=transformer_dict)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -2831,6 +2835,9 @@ class GetDailyDelivery(AnalyzeBase):
         plannet_filename = plannet_filename[vmc.filenamedict]
         plannet_filename = os.path.join(utl.dict_path, plannet_filename)
         pdf = utl.import_read_csv(plannet_filename)
+        if pdf.empty:
+            logging.warning('Plan net empty cannot get daily delivery.')
+            return daily_dfs
         pdf = pdf[pdf_cols]
         groups = plan_names + [vmc.date]
         metrics = [cal.NCF]
@@ -3448,7 +3455,8 @@ class AliChat(object):
 
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
-                 previous_messages=None):
+                 previous_messages=None, transformer=None,
+                 transformer_dict=None):
         self.config_name = config_name
         self.config_path = config_path
         self.db = None
@@ -3463,6 +3471,8 @@ class AliChat(object):
         self.config = self.load_config(self.config_name, self.config_path)
         self.intent = Intent()
         self.call_llm = False
+        self.transformer = transformer
+        self.transformer_dict = transformer_dict or {}
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3673,14 +3683,21 @@ class AliChat(object):
             for raw_line in r.iter_lines(decode_unicode=True):
                 if not raw_line:
                     continue
+                if raw_line.startswith("data: "):
+                    raw_line = raw_line[6:]
+                if raw_line.strip() == "[DONE]":
+                    return
                 try:
                     data = json.loads(raw_line)
                 except json.JSONDecodeError:
-                    yield {"type": "answer", "delta": raw_line}
+                    yield {"type": "response", "delta": raw_line}
                     continue
-                for resp_type in ['thinking', 'response']:
-                    if resp_type in data:
-                        yield {"type": resp_type, "delta": data[resp_type]}
+                delta = data.get("choices", [{}])[0].get("delta", {})
+                if delta.get("reasoning_content"):
+                    yield {"type": "thinking",
+                           "delta": delta["reasoning_content"]}
+                if delta.get("content"):
+                    yield {"type": "response", "delta": delta["content"]}
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
@@ -3707,52 +3724,39 @@ class AliChat(object):
             }[mode]
         if not previous_messages:
             previous_messages = []
-        previous_messages = [
-            (f"<user>\n{t.text}\n</user>\n"
-             f"<assistant>\n{t.response}\n</assistant>")
-            for t in previous_messages[-5:]]
-        previous_messages = '\n'.join(previous_messages)
-        prompt = f"""
-            Instructions: {instructions}
-            
-            Messages use <user> and <assistant> tags. 
-            Respond only as <assistant>.
-            Conversation history:
-            {previous_messages}
-
-            User question:
-            <question>
+        messages = [{"role": "system", "content": instructions}]
+        for t in previous_messages[-5:]:
+            messages.append({"role": "user", "content": t.text})
+            messages.append({"role": "assistant", "content": t.response})
+        user_content = f"""User question:
             {user_query}
-            </question>
-
+            
             Context (verbatim, may be long):
-            <context>
-            {context}
-            </context>
-            
-            Remember: Answer this most recent user query: 
-            {user_query}
-            """
+            {context}"""
+        messages.append({"role": "user", "content": user_content})
         body = {
             "model": self.llm_model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": stream,
-            "options": {
-                "temperature": temperature,
-                "num_ctx": 8192
-            }
+            "temperature": temperature,
         }
         if stream:
             return self.llm_request_generator(body)
         else:
             r = requests.post(self.llm_url, json=body, timeout=timeout)
-            response = r.json()["response"]
+            response = r.json()["choices"][0]["message"]["content"]
             return response
 
     def search_db_models(self, db_model, message, response, html_response):
         response = ''
         html_response = ''
-        model_ids, words = self.find_db_model(db_model, message)
+        try:
+            ali_search = AliSearch(
+                self, transformer=self.transformer,
+                transformer_dict=self.transformer_dict)
+            model_ids = ali_search.search(db_model, message)
+        except Exception:
+            model_ids, _words = self.find_db_model(db_model, message)
         if model_ids:
             if hasattr(db_model, 'llm_limit'):
                 n_limit = db_model.llm_limit

@@ -570,6 +570,38 @@ def signal_handler(signum, frame):
     raise SignalTimeoutException("Function timed out")
 
 
+def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
+                    raise_on_fail=True,
+                    exception_msg='Polling timed out before true.'):
+    """
+    Polls the specified function with the provided kwargs (if any) until it
+    returns true or the max number of attempts is reached. If function fails to
+    return true and raise_on_fail is set to true, raises exception.
+
+    :param func: Name of function to be polled
+    :param func_kwargs: Dictionary of keyword arguments to be passed into func
+    :param attempts: The amount of times to check before returning/ raising
+    exception; 20 by default
+    :param sleep: Time in seconds to sleep between polling; .1 s by default
+    :param raise_on_fail: Whether to raise an exception if function fails to
+    return true before the max number of attempts is reached; True by default
+    :param exception_msg: Text to give exception if raised;
+    'Polling timed out before true.' if not specified
+    :return: Whether polling succeeded in getting a true value
+    """
+    return_val = False
+    for x in range(attempts):
+        if not func_kwargs:
+            func_kwargs = {}
+        return_val = func(**func_kwargs)
+        if return_val:
+            break
+        time.sleep(sleep)
+    if not return_val and raise_on_fail:
+        raise Exception(exception_msg)
+    return return_val
+
+
 class SeleniumWrapper(object):
     driver_path = 'drivers'
     selectize_xpath = 'selectized'
@@ -776,7 +808,7 @@ class SeleniumWrapper(object):
         else:
             log_val = elem
         logging.info('Element: {}\nError: {}'.format(log_val, e))
-        scroll_script = "arguments[0].scrollIntoView();"
+        scroll_script = "arguments[0].scrollIntoView({block:'center'});"
         if attempts > 5:
             scroll_script = "window.scrollTo(0, 0)"
         try:
@@ -790,14 +822,15 @@ class SeleniumWrapper(object):
         elem_click = True
         attempts = 10
         for x in range(attempts):
-            if not elem:
-                elem = self.browser.find_element_by_xpath(xpath)
+            cur_elem = elem
+            if xpath:
+                cur_elem = self.browser.find_element_by_xpath(xpath)
             try:
-                self.click_on_elem(elem, sleep)
+                self.click_on_elem(cur_elem, sleep)
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException,
                     ex.StaleElementReferenceException) as e:
-                elem_click = self.click_error(elem, e, x)
+                elem_click = self.click_error(cur_elem, e, x)
             if elem_click:
                 break
             else:
@@ -1079,6 +1112,30 @@ class SeleniumWrapper(object):
     def wait_for_elem_load(self, elem_id, selector=None, attempts=1000,
                            sleep_time=.01, visible=False, new_value='',
                            attribute='value', raise_exception=True):
+        """
+        Incrementally checks if an element exists. If raise_exception is True,
+        raises exception if an element fitting the provided parameter conditions
+        does not exist by the specified number of attempts.
+
+        :param elem_id: Identifier of the element to monitor (e.x. ID)
+        :param selector: Method to find the element by based on the elem_id
+        provided; set to 'By.ID' if None
+        :param attempts: The amount of times to check before raising exception
+        or exiting; 1000 by default
+        :param sleep_time: Time in seconds to sleep between polling; .01 s by
+        default
+        :param visible: Whether the element needs to be visible before being
+        considered loaded; False by default
+        :param new_value: Value the element's attribute, specified by the
+        attribute parameter, should match before being considered loaded, if
+        any; empty string by default
+        :param attribute: Attribute of the element that must match new_value, if
+        specified, before the element is considered loaded; 'value' by default
+        :param raise_exception: Whether to raise an exception if element does
+        not load; True by default
+        :return: Whether an element fitting the provided parameter conditions
+        exists by the maximum number of attempts
+        """
         selector = selector if selector else self.select_id
         elem_found = False
         for x in range(attempts):
@@ -1110,6 +1167,34 @@ class SeleniumWrapper(object):
                 self.take_screenshot(file_name=file_name)
                 raise Exception(msg)
         return elem_found
+
+    def wait_for_elem_disappear(self, elem_id, selector=None, attempts=5,
+                                sleep_time=.1, raise_exception=True):
+        """
+        Incrementally checks if an element exists. If raise_exception is True,
+        raises exception if the element has not disappeared/ ceased to exist by
+        the specified number of attempts.
+
+        :param elem_id: Identifier of the element to monitor (e.x. ID)
+        :param selector: Method to find the element by based on the elem_id
+        provided; set to 'By.ID' if None
+        :param attempts: The amount of times to check before raising exception
+        or exiting; 5 by default
+        :param sleep_time: Time in seconds to sleep between polling; .1 s by
+        default
+        :param raise_exception: Whether to raise an exception if element does
+        not disappear; True by default
+        :return: Whether the element disappeared by the maximum number of
+        attempts
+        """
+        selector = selector if selector else self.select_id
+        func_kwargs = {'sw': self, 'elem_id': elem_id, 'selector': selector}
+        func = (lambda sw, elem_id, selector:
+                not sw.browser.find_elements(selector, elem_id))
+        exception_msg = 'Element {} did not disappear.'.format(elem_id)
+        task_complete = poll_until_true(func, func_kwargs, attempts, sleep_time,
+                                        raise_exception, exception_msg)
+        return task_complete
 
     def drag_and_drop(self, elem, target):
         action_chains = wd.ActionChains(self.browser)

@@ -168,6 +168,12 @@ class VendorMatrix(object):
                 else:
                     new_value = ''
                 self.vm_change(index, col, new_value)
+            for i, rule in source['vm_rules'].items():
+                for key, val in rule.items():
+                    col = 'RULE_{}_{}'.format((int(i) + 1), key)
+                    if col == val:
+                        continue
+                    self.vm_change(index, col, val)
         self.write()
 
     def get_import_data_sources(self, import_type='API_', default_param=None):
