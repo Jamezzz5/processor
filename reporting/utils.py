@@ -572,7 +572,8 @@ def signal_handler(signum, frame):
 
 def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
                     raise_on_fail=True,
-                    exception_msg='Polling timed out before true.'):
+                    exception_msg='Polling timed out before true.',
+                    click_elem_id='', load_elem_id=''):
     """
     Polls the specified function with the provided kwargs (if any) until it
     returns true or the max number of attempts is reached. If function fails to
@@ -587,6 +588,8 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
     return true before the max number of attempts is reached; True by default
     :param exception_msg: Text to give exception if raised;
     'Polling timed out before true.' if not specified
+    :param click_elem_id: The original element id that was clicked
+    :param load_elem_id: The element that loads after click
     :return: Whether polling succeeded in getting a true value
     """
     return_val = False
@@ -596,6 +599,9 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
         return_val = func(**func_kwargs)
         if return_val:
             break
+        if click_elem_id and x > (attempts / 2):
+            SeleniumWrapper.xpath_from_id_and_click(
+                SeleniumWrapper, click_elem_id, load_elem_id=load_elem_id)
         time.sleep(sleep)
     if not return_val and raise_on_fail:
         raise Exception(exception_msg)
