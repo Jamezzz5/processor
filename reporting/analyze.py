@@ -23,6 +23,7 @@ import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 import xml.etree.ElementTree as et
 from reporting.ali.search import AliSearch
+import reporting.ali.ticket_intent as ali_tic
 
 
 class Analyze(object):
@@ -3452,6 +3453,12 @@ class AliChat(object):
     instruction_extract = (
         "Extract key entities, dates, amounts, and decisions as JSON "
         "with keys: entities, dates, amounts, decisions.")
+    instruction_triage = (
+        "Analyze the ticket and provide a structured triage "
+        "assessment. Respond ONLY as valid JSON with keys: "
+        "suggested_priority, suggested_complexity, "
+        "suggested_category, suggested_labels, can_resolve, "
+        "resolution_plan, triage_reasoning.")
 
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
@@ -3721,7 +3728,8 @@ class AliChat(object):
                 'summarize': AliChat.instruction_summarize,
                 "rewrite": AliChat.instruction_rewrite,
                 "extract": AliChat.instruction_extract,
-            }[mode]
+                "triage": AliChat.instruction_triage,
+            }.get(mode, AliChat.instruction_answer)
         if not previous_messages:
             previous_messages = []
         messages = [{"role": "system", "content": instructions}]
@@ -4122,6 +4130,7 @@ class AliChat(object):
         self.current_user = current_user
         self.models_to_search = models_to_search
         self.message = message
+        ticket_offered = None
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
@@ -4131,12 +4140,14 @@ class AliChat(object):
         if is_question:
             models_to_search = [
                 x for x in models_to_search if hasattr(x, 'llm_summary')]
+        matched_models = []
         if not response and models_to_search and not is_question:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
                 if in_message:
                     response, html_response = self.db_model_response_functions(
                         db_model, message)
+                    matched_models.append(db_model)
                     break
         if not response:
             for db_model in models_to_search:
@@ -4144,18 +4155,35 @@ class AliChat(object):
                     db_model, message, response, html_response)
                 if r:
                     response = r
+                    matched_models.append(db_model)
                     upper_name = db_model.get_model_name_list()[0].upper()
                     hr = '{}<br>{}'.format(upper_name, hr)
                     if not html_response:
                         html_response = ''
                     html_response += hr
-        if not response:
+        if ali_tic.detect_ticket_intent(message):
+            coverage = ali_tic.check_existing_feature_coverage(
+                response, matched_models)
+            ticket_response = ali_tic.build_ticket_offer_response(
+                has_existing_docs=coverage['has_existing_docs'],
+                guidance_model_names=coverage['guidance_model_names'],
+                retrieval_response=response,
+            )
+            if coverage['has_existing_docs']:
+                response = ticket_response
+                self.call_llm = True
+                ticket_offered = 'soft'
+            else:
+                response = ticket_response
+                self.call_llm = False
+                ticket_offered = 'direct'
+        elif not response:
             response = ('Could not find any relevant docs, '
                         'but will attempt to answer.')
             html_response = ''
             self.call_llm = True
         response = self.polish_response(response)
-        return response, html_response
+        return response, html_response, ticket_offered
 
     def train_tf(self, training_data):
         import tensorflow as tf
