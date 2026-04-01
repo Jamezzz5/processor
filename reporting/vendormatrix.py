@@ -116,14 +116,21 @@ class VendorMatrix(object):
                     self.azu_dna_key.append(vk)
 
     def vm_rules(self):
-        for key in self.vm:
-            key_split = key.split('_')
-            if key_split[0] == 'RULE':
-                if key_split[1] in self.vm_rules_dict:
-                    (self.vm_rules_dict[key_split[1]].
-                        update({key_split[2]: key}))
+        rule_cols = [col for col in self.vm_df.columns if 'RULE_' in col]
+        rules_df = self.vm_df[[vmc.vendorkey] + rule_cols]
+        full_dict = self.vm_rules_dict
+        for i, row in rules_df.iterrows():
+            vk = row[vmc.vendorkey]
+            if vk not in full_dict:
+                full_dict[vk] = {}
+            for col in rule_cols:
+                val = col if pd.isna(row[col]) else row[col]
+                col_split = col.split('_')
+                if col_split[1] in full_dict[vk]:
+                    full_dict[vk][col_split[1]].update({col_split[2]: val})
                 else:
-                    self.vm_rules_dict[key_split[1]] = {key_split[2]: key}
+                    full_dict[vk][col_split[1]] = {col_split[2]: val}
+        self.vm_rules_dict = full_dict
 
     def make_omit_lists(self):
         self.plan_omit_list = [k for k, v in self.vm[vmc.omit_plan].items()
@@ -170,7 +177,7 @@ class VendorMatrix(object):
                 self.vm_change(index, col, new_value)
             for i, rule in source['vm_rules'].items():
                 for key, val in rule.items():
-                    col = 'RULE_{}_{}'.format((int(i) + 1), key)
+                    col = 'RULE_{}_{}'.format(i, key)
                     if col == val:
                         continue
                     self.vm_change(index, col, val)
@@ -196,7 +203,8 @@ class VendorMatrix(object):
             self.ven_param = self.vendor_set(vk)
         except KeyError:
             self.ven_param = self.vendor_set('{}_'.format(vk))
-        ds = DataSource(vk, self.vm_rules_dict, **self.ven_param)
+        rules = self.vm_rules_dict[vk] if vk in self.vm_rules_dict else {}
+        ds = DataSource(vk, rules, **self.ven_param)
         return ds
 
     def vendor_get(self, vk):
@@ -206,7 +214,8 @@ class VendorMatrix(object):
             self.tdf = import_plan_data(vk, self.df, self.plan_omit_list,
                                         **self.ven_param)
         else:
-            ds = DataSource(vk, self.vm_rules_dict, **self.ven_param)
+            rules = self.vm_rules_dict[vk] if vk in self.vm_rules_dict else {}
+            ds = DataSource(vk, rules, **self.ven_param)
             self.tdf = ds.import_data()
         return self.tdf
 
@@ -951,7 +960,9 @@ def df_single_transform(df, transform):
             matrix = VendorMatrix(display_log=False)
             matrix.sort_vendor_list()
             ven_param = matrix.vendor_set(merge_file)
-            ds = DataSource(merge_file, matrix.vm_rules_dict, **ven_param)
+            rules = matrix.vm_rules_dict
+            rules = rules[merge_file] if merge_file in rules else {}
+            ds = DataSource(merge_file, rules, **ven_param)
             merge_df = ds.get_raw_df_before_transform()
             if not merge_df.empty and merge_df is not None:
                 merge_df = df_transform(merge_df, ds.p[vmc.transform],
