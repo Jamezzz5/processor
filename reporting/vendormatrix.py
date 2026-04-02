@@ -1050,6 +1050,16 @@ def df_single_transform(df, transform):
                      var_name='{}-variable'.format(header_col_name),
                      value_name='{}-value'.format(header_col_name))
         df = df.reset_index(drop=True)
+    if transform_type == 'CombineColumnsUnderscore':
+        cols = transform[1].split('|')
+        if cols[0] not in df.columns or cols[1] not in df.columns:
+            log.warning('Unable to execute {} transform. Column "{}" or "{}" '
+                        'not in datasource.'.format(transform_type, cols[0],
+                                                    cols[1]))
+            return df
+        df[cols[0]] = (df[cols[0]].astype(str) + '_'
+                       + df[cols[1]].astype(str))
+        df.drop(cols[1], axis=1, inplace=True)
     if transform_type == vmc.transform_raw_translate:
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
