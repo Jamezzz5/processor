@@ -24,6 +24,7 @@ import reporting.dictcolumns as dctc
 import xml.etree.ElementTree as et
 from reporting.ali.search import AliSearch
 import reporting.ali.ticket_intent as ali_tic
+import reporting.ali.codebase as ali_code
 
 
 class Analyze(object):
@@ -3708,7 +3709,8 @@ class AliChat(object):
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
-                         stream=False, timeout=120, temperature=0.4):
+                         stream=False, timeout=120, temperature=0.4,
+                         source_context=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3720,6 +3722,7 @@ class AliChat(object):
         :param stream: Boolean to stream response or return all at once
         :param timeout: Timeout to wait for response when not streaming
         :param temperature: Temperature passed to the model
+        :param source_context: Context based on the codebase
         :return: response from the llm as string
         """
         if not instructions:
@@ -3736,11 +3739,14 @@ class AliChat(object):
         for t in previous_messages[-5:]:
             messages.append({"role": "user", "content": t.text})
             messages.append({"role": "assistant", "content": t.response})
-        user_content = f"""User question:
-            {user_query}
-            
-            Context (verbatim, may be long):
-            {context}"""
+        parts = [f"User question:\n{user_query}"]
+        if context:
+            parts.append(
+                f"Documentation and retrieval context:\n{context}")
+        if source_context:
+            parts.append(
+                f"Relevant source code:\n{source_context}")
+        user_content = '\n\n'.join(parts)
         messages.append({"role": "user", "content": user_content})
         body = {
             "model": self.llm_model,
@@ -4125,7 +4131,9 @@ class AliChat(object):
         return stop_words
 
     def get_response(self, message, models_to_search=None, db=None,
-                     current_user=None, is_question=False):
+                     current_user=None, is_question=False,
+                     file_map=None, base_path=None,
+                     doc_files=None, area_keywords=None):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
@@ -4182,8 +4190,14 @@ class AliChat(object):
                         'but will attempt to answer.')
             html_response = ''
             self.call_llm = True
+        source_context = None
+        if file_map and base_path:
+            source_context = ali_code.get_context_for_query(
+                message, file_map, base_path,
+                doc_files=doc_files,
+                area_keywords=area_keywords)
         response = self.polish_response(response)
-        return response, html_response, ticket_offered
+        return response, html_response, ticket_offered, source_context
 
     def train_tf(self, training_data):
         import tensorflow as tf

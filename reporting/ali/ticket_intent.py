@@ -101,10 +101,10 @@ def build_ticket_offer_response(has_existing_docs,
             "I'll capture your request properly."
         )
     return (
-        "It sounds like you might be describing a feature "
-        "request or reporting an issue. Would you like me "
-        "to open a ticket for this? I'll ask a few questions "
-        "to make sure we capture everything clearly.\n\n"
-        "Just say **yes** to start, or ignore this and I'll "
-        "answer your question normally."
+        "It sounds like you're describing a feature request "
+        "or reporting an issue. Want me to open a ticket for "
+        "this? I'll ask a few questions to make sure we "
+        "capture everything clearly.\n\n"
+        "Just say **yes** to start, or keep going and I'll "
+        "answer your question."
     )
