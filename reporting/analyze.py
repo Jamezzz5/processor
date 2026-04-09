@@ -3742,6 +3742,13 @@ class AliChat(object):
         for t in previous_messages[-5:]:
             messages.append({"role": "user", "content": t.text})
             messages.append({"role": "assistant", "content": t.response})
+        max_context_chars = 24000
+        if context and len(context) > max_context_chars:
+            context = (context[:max_context_chars]
+                       + "\n\n[Truncated due to length]")
+        if source_context and len(source_context) > max_context_chars:
+            source_context = (source_context[:max_context_chars]
+                              + "\n\n[Truncated due to length]")
         parts = [f"User question:\n{user_query}"]
         if context:
             parts.append(
@@ -4152,6 +4159,7 @@ class AliChat(object):
             models_to_search = [
                 x for x in models_to_search if hasattr(x, 'llm_summary')]
         matched_models = []
+        self.matched_models = matched_models
         if not response and models_to_search and not is_question:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
