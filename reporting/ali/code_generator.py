@@ -105,6 +105,83 @@ def _build_user_prompt(task_description, code_context,
     return '\n'.join(parts)
 
 
+def generate_patch(system_prompt, target_file_content,
+                   target_function, task_description,
+                   code_context, llm_call_fn):
+    """Generate a modified version of an existing function.
+
+    Instead of producing new files, reads an existing function and
+    produces a replacement. For bug patches and incremental
+    improvements to existing code.
+
+    :param system_prompt: System prompt with coding conventions.
+    :param target_file_content: Full content of the file to patch.
+    :param target_function: Name of the function to modify.
+    :param task_description: What needs to change.
+    :param code_context: Additional source context.
+    :param llm_call_fn: Callable ``(system_prompt, user_prompt)``
+        returning a string.
+    :returns: Dict with ``patched``, ``function_name``,
+        ``explanation``, or None on failure.
+    """
+    user_prompt = (
+        f"Task:\n{task_description}\n\n"
+        f"Target file contents:\n```\n{target_file_content}"
+        f"\n```\n\n"
+        f"Function to modify: {target_function}\n\n"
+        f"Additional context:\n{code_context}\n\n"
+        f"Produce ONLY the modified function. Include the full "
+        f"function definition (def line through the end), not "
+        f"just the changed lines. Then explain what changed "
+        f"and why.\n\n"
+        f"Format:\n"
+        f"PATCHED_FUNCTION:\n"
+        f"```python\n"
+        f"def {target_function}(...):\n"
+        f"    ...\n"
+        f"```\n\n"
+        f"CHANGES:\n"
+        f"- What changed and why"
+    )
+
+    response = llm_call_fn(system_prompt, user_prompt)
+    if not response:
+        return None
+
+    return _parse_patch_response(response, target_function)
+
+
+def _parse_patch_response(response_text, function_name):
+    """Parse a patch response into patched code and explanation.
+
+    :param response_text: Raw LLM output.
+    :param function_name: The function that was patched.
+    :returns: Dict with ``patched``, ``function_name``,
+        ``explanation``, or None.
+    """
+    pattern = re.compile(
+        r'PATCHED_FUNCTION:\s*\n```\w*\n(.*?)```',
+        re.DOTALL,
+    )
+    match = pattern.search(response_text)
+    if not match:
+        return None
+
+    patched = match.group(1).strip()
+
+    changes = ''
+    if 'CHANGES:' in response_text:
+        changes_start = (
+            response_text.index('CHANGES:') + len('CHANGES:'))
+        changes = response_text[changes_start:].strip()
+
+    return {
+        'patched': patched,
+        'function_name': function_name,
+        'explanation': changes,
+    }
+
+
 def _extract_file_blocks(text):
     """Extract ``FILE: path`` / code blocks from LLM output.
 

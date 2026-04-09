@@ -3688,6 +3688,7 @@ class AliChat(object):
     def llm_request_generator(self, body):
         with requests.post(self.llm_url, json=body, stream=True) as r:
             r.raise_for_status()
+            r.encoding = 'utf-8'
             for raw_line in r.iter_lines(decode_unicode=True):
                 if not raw_line:
                     continue
@@ -3698,7 +3699,9 @@ class AliChat(object):
                 try:
                     data = json.loads(raw_line)
                 except json.JSONDecodeError:
-                    yield {"type": "response", "delta": raw_line}
+                    logging.warning(
+                        f"Skipping unparseable LLM chunk:"
+                        f" {raw_line[:200]}")
                     continue
                 delta = data.get("choices", [{}])[0].get("delta", {})
                 if delta.get("reasoning_content"):

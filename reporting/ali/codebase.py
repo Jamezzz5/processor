@@ -126,6 +126,58 @@ def build_code_context(category, file_map, base_path,
     return '\n\n---\n\n'.join(sections)
 
 
+def extract_function(filepath, function_name, max_lines=200):
+    """Extract a single function from a source file.
+
+    Reads from the ``def function_name`` line through the end of
+    the function body (detected by indentation returning to the
+    function's level or a new top-level definition).
+
+    :param filepath: Path to the source file.
+    :param function_name: Name of the function to extract.
+    :param max_lines: Safety limit on function length.
+    :returns: Tuple of (function_text, start_line, end_line),
+        or (None, None, None) if not found.
+    """
+    try:
+        filepath = Path(filepath)
+        lines = filepath.read_text(encoding='utf-8').splitlines()
+
+        start = None
+        base_indent = None
+        for i, line in enumerate(lines):
+            stripped = line.lstrip()
+            if stripped.startswith(f'def {function_name}('):
+                start = i
+                base_indent = len(line) - len(stripped)
+                break
+
+        if start is None:
+            return None, None, None
+
+        end = start + 1
+        for i in range(start + 1,
+                       min(start + max_lines, len(lines))):
+            line = lines[i]
+            if not line.strip():
+                end = i + 1
+                continue
+            current_indent = len(line) - len(line.lstrip())
+            if current_indent <= base_indent and line.strip():
+                stripped = line.lstrip()
+                if (stripped.startswith('def ')
+                        or stripped.startswith('class ')
+                        or stripped.startswith('@')):
+                    break
+            end = i + 1
+
+        function_text = '\n'.join(lines[start:end])
+        return function_text, start + 1, end
+
+    except Exception:
+        return None, None, None
+
+
 def get_file_summary(filepath, max_lines=30):
     """Return just the docstring/header of a file for reference.
 
