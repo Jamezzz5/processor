@@ -527,9 +527,10 @@ class TwApi(object):
         cur_job = [x for x in self.async_requests
                    if x.data['data']['id'] == d['id']][0]
         logging.debug('Job {} completed adding to df'.format(d['id']))
-        data_dl_url = d['url']
+        data_dl_url = (f'https://ads-api.x.com/12/accounts/{self.account_id}'
+                       f'/ad-export/api/v1/exports/{d['id']}/download')
         try:
-            r = requests.get(data_dl_url)
+            r = requests.get(data_dl_url, auth=self.client.auth)
         except requests.exceptions.SSLError as e:
             logging.warning('SSL error with job: {} Retrying.'
                             'Error: {}'.format(d['id'], e))
