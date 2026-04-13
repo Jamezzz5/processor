@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import zipfile
+
 import yaml
 import nltk
 import random
@@ -918,7 +920,8 @@ class Analyze(object):
         missing_sheets = []
         try:
             xl = pd.read_excel(tds.p[vmc.filename], None)
-        except (ValueError, et.ParseError, FileNotFoundError) as e:
+        except (ValueError, et.ParseError, FileNotFoundError,
+                zipfile.BadZipfile) as e:
             logging.warning(e)
             return missing_sheets
         sheet_lists = list(xl.keys())
@@ -3849,6 +3852,8 @@ class AliChat(object):
         response = ''
         if not cur_model:
             return response
+        if not hasattr(cur_model, 'get_children'):
+            return response
         db_model_child = cur_model.get_children()
         if not db_model_child:
             return response
@@ -3967,6 +3972,8 @@ class AliChat(object):
         return db_model, other_db_model
 
     def create_db_model(self, db_model, message, response, html_response):
+        if not hasattr(db_model, 'get_first_unique_name'):
+            return response, html_response
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
         is_create = utl.is_list_in_list(create_words, words)
@@ -4055,6 +4062,8 @@ class AliChat(object):
 
     def check_children_for_edit(self, cur_model, words):
         response = ''
+        if not hasattr(cur_model, 'get_current_children'):
+            return response
         children = cur_model.get_current_children()
         omit_list = [cur_model.name, cur_model.__table__.name]
         for child in children:
