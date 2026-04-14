@@ -535,14 +535,18 @@ class TwApi(object):
             logging.warning('SSL error with job: {} Retrying.'
                             'Error: {}'.format(d['id'], e))
             return False
-        if r.status_code == 504:
-            logging.warning('504 code with job: {} Retrying.'.format(d['id']))
+        if r.status_code == 504 or r.status_code == 429:
+            logging.warning('{} code with job: {} Retrying.'.format(
+                r.status_code, d['id']))
             return False
         zip_obj = gzip.GzipFile(fileobj=io.BytesIO(r.content), mode='rb')
         response_data = json.loads(zip_obj.read())
         df = self.convert_response_to_df(
             data=response_data, date=cur_job.date, df=df)
         df = self.clean_df(df)
+        if df.empty:
+            cur_job.completed = True
+            return True
         spend = pd.to_numeric(
             df.get('billed_charge_local_micro'), errors='coerce').fillna(0)
         imp = pd.to_numeric(df.get('impressions'), errors='coerce').fillna(0)
