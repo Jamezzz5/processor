@@ -3429,9 +3429,48 @@ class Intent(object):
         }
 
 
+def _highlight_terms(text, words):
+    """Wrap matching words in <mark> tags for highlighting.
+
+    Case-insensitive word boundary matching. Returns text
+    unchanged when words is empty or None.
+    """
+    if not words or not text:
+        return text
+    for word in words:
+        if len(word) < 2:
+            continue
+        pattern = re.compile(
+            r'(?i)\b({})\b'.format(re.escape(word)))
+        text = pattern.sub(r'<mark>\1</mark>', text)
+    return text
+
+
+def _build_score_attrs(scores):
+    """Build HTML data-score-* attributes from a score dict.
+
+    Returns an empty string when scores is None or is not a
+    dict (e.g. legacy float scores or plain list of IDs).
+    """
+    if not isinstance(scores, dict):
+        return ''
+    return (
+        ' data-score-combined="{:.2f}"'
+        ' data-score-live="{:.2f}"'
+        ' data-score-bm25="{:.2f}"'
+        ' data-score-tfidf="{:.2f}"'
+    ).format(
+        scores.get('combined', 0),
+        scores.get('live', 0),
+        scores.get('bm25', 0),
+        scores.get('tfidf', 0),
+    )
+
+
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
-    openai_msg = 'I had trouble understanding but the openai gpt response is:'
+    openai_msg = ('I had trouble understanding but the '
+                  'openai gpt response is:')
     found_model_msg = 'Links are provided below.  '
     create_success_msg = 'The object has been successfully created.  '
     ex_prompt_wrap = "<br>Ex. prompt: <div class='examplePrompt'>"
@@ -3554,19 +3593,37 @@ class AliChat(object):
                     used_words.append(word)
         return word_idx
 
-    def convert_model_ids_to_message(self, db_model, model_ids, message='',
-                                     html_table=False, table_name=''):
+    def convert_model_ids_to_message(
+            self, db_model, model_ids, message='',
+            html_table=False, table_name='',
+            highlight_words=None):
+        """Build text and HTML from matched model IDs.
+
+        model_ids can be a dict {id: score_dict} from
+        AliSearch or a plain list of IDs.
+        """
         message = message + '<br>'
         html_response = ''
+        is_dict = isinstance(model_ids, dict)
         for idx, model_id in enumerate(model_ids):
             obj = self.db.session.get(db_model, model_id)
-            if obj:
-                html_response += """
-                    {}.  <a href="{}" target="_blank">{}</a><br>
-                    """.format(idx + 1, obj.get_url(), obj.name)
+            if not obj:
+                continue
+            scores = (
+                model_ids[model_id] if is_dict else None)
+            score_attrs = _build_score_attrs(scores)
+            display_name = _highlight_terms(
+                obj.name, highlight_words)
+            html_response += (
+                '{}.  <a href="{}" target="_blank"'
+                '{}>{}</a><br>\n'
+            ).format(
+                idx + 1, obj.get_url(),
+                score_attrs, display_name)
             if html_table:
                 table_elem = obj.get_table_elem(table_name)
-                html_response += '<br>{}'.format(table_elem)
+                html_response += '<br>{}'.format(
+                    table_elem)
         return message, html_response
 
     def check_db_model_table(self, db_model, words, model_ids):
@@ -3635,19 +3692,29 @@ class AliChat(object):
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
         return model_ids, words
 
-    def search_db_model_from_ids(self, db_model, words, model_ids):
-        response = self.run_db_model(db_model, words, model_ids)
+    def search_db_model_from_ids(
+            self, db_model, words, model_ids):
+        """Look up matched IDs, run/edit if requested, build
+        response text and HTML."""
+        response = self.run_db_model(
+            db_model, words, model_ids)
         if response:
             table_name = ''
         else:
-            table_name = self.check_db_model_table(db_model, words, model_ids)
+            table_name = self.check_db_model_table(
+                db_model, words, model_ids)
             response = self.found_model_msg
-        edit_made = self.edit_db_model(db_model, words, model_ids)
+        edit_made = self.edit_db_model(
+            db_model, words, model_ids)
         table_bool = True if table_name else False
         if edit_made:
-            response = '{}<br>{}'.format(edit_made, self.found_model_msg)
-        response, html_response = self.convert_model_ids_to_message(
-            db_model, model_ids, response, table_bool, table_name)
+            response = '{}<br>{}'.format(
+                edit_made, self.found_model_msg)
+        response, html_response = (
+            self.convert_model_ids_to_message(
+                db_model, model_ids, response,
+                table_bool, table_name,
+                highlight_words=words))
         return response, html_response
 
     def remove_stop_words_from_message(
@@ -3779,16 +3846,22 @@ class AliChat(object):
             response = data["choices"][0]["message"]["content"]
             return response
 
-    def search_db_models(self, db_model, message, response, html_response):
+    def search_db_models(self, db_model, message,
+                         response, html_response):
+        """Search for matching objects of db_model type."""
         response = ''
         html_response = ''
+        min_floor = getattr(db_model, 'llm_min_results', 0)
+        top_k = max(5, min_floor)
         try:
             ali_search = AliSearch(
                 self, transformer=self.transformer,
                 transformer_dict=self.transformer_dict)
-            model_ids = ali_search.search(db_model, message)
+            model_ids = ali_search.search(
+                db_model, message, top_k=top_k)
         except Exception:
-            model_ids, _words = self.find_db_model(db_model, message)
+            model_ids, _words = self.find_db_model(
+                db_model, message)
         if model_ids:
             if hasattr(db_model, 'llm_limit'):
                 n_limit = db_model.llm_limit
@@ -4206,8 +4279,22 @@ class AliChat(object):
                 self.call_llm = False
                 ticket_offered = 'direct'
         elif not response:
-            response = ('Could not find any relevant docs, '
-                        'but will attempt to answer.')
+            guidance_searched = [
+                m for m in models_to_search
+                if m.__name__ in ali_tic.GUIDANCE_MODELS]
+            if guidance_searched:
+                names = ', '.join(
+                    m.__name__ for m in guidance_searched)
+                response = (
+                    'Could not find matching docs in {}. '
+                    'Try browsing the tutorials or '
+                    'walkthroughs pages directly. '
+                    'Will attempt to answer.'
+                ).format(names)
+            else:
+                response = (
+                    'Could not find any relevant docs, '
+                    'but will attempt to answer.')
             html_response = ''
             self.call_llm = True
         source_context = None
