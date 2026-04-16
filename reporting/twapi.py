@@ -375,7 +375,7 @@ class TwApi(object):
         if not self.df.empty:
             self.df = self.add_parents(self.df)
             self.df = self.rename_cols()
-            # self.df = self.df.drop_duplicates()
+            self.df = self.df.drop_duplicates()
         return self.df
 
     def get_df_for_all_dates(self, sd, ed, fields, async_request=False):
