@@ -379,7 +379,7 @@ class TwApi(object):
         return self.df
 
     def get_df_for_all_dates(self, sd, ed, fields, async_request=False):
-        full_date_list = self.list_dates(sd, ed)
+        full_date_list = self.list_dates(sd, ed, days=2)
         timezone = self.get_account_timezone()
         if not timezone:
             timezone = self.find_account()
@@ -839,11 +839,11 @@ class TwApi(object):
         return dates
 
     @staticmethod
-    def list_dates(sd, ed):
+    def list_dates(sd, ed, days=1):
         dates = []
         while sd <= ed:
             dates.append(sd)
-            sd = sd + dt.timedelta(days=1)
+            sd = sd + dt.timedelta(days=days)
         return dates
 
     def rename_cols(self):
