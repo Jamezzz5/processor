@@ -174,6 +174,9 @@ def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
 def net_cost_calculation(df):
     logging.info('Calculating Net Cost')
     df = clicks_by_place_date(df)
+    if dctc.BM not in df.columns:
+        logging.warning('{} not in df, continuing.'.format(dctc.BM))
+        return df
     for col in [(BM_CPA, vmc.conv1), (BM_CPE, vmc.engagements),
                 (BM_CPVM, vmc.view_imps)]:
         if col[0] in df[dctc.BM].unique() and col[1] not in df.columns:

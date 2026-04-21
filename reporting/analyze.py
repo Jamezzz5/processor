@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import zipfile
+
 import yaml
 import nltk
 import random
@@ -23,6 +25,8 @@ import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 import xml.etree.ElementTree as et
 from reporting.ali.search import AliSearch
+import reporting.ali.ticket_intent as ali_tic
+import reporting.ali.codebase as ali_code
 
 
 class Analyze(object):
@@ -916,7 +920,8 @@ class Analyze(object):
         missing_sheets = []
         try:
             xl = pd.read_excel(tds.p[vmc.filename], None)
-        except (ValueError, et.ParseError, FileNotFoundError) as e:
+        except (ValueError, et.ParseError, FileNotFoundError,
+                zipfile.BadZipfile) as e:
             logging.warning(e)
             return missing_sheets
         sheet_lists = list(xl.keys())
@@ -3424,9 +3429,48 @@ class Intent(object):
         }
 
 
+def _highlight_terms(text, words):
+    """Wrap matching words in <mark> tags for highlighting.
+
+    Case-insensitive word boundary matching. Returns text
+    unchanged when words is empty or None.
+    """
+    if not words or not text:
+        return text
+    for word in words:
+        if len(word) < 2:
+            continue
+        pattern = re.compile(
+            r'(?i)\b({})\b'.format(re.escape(word)))
+        text = pattern.sub(r'<mark>\1</mark>', text)
+    return text
+
+
+def _build_score_attrs(scores):
+    """Build HTML data-score-* attributes from a score dict.
+
+    Returns an empty string when scores is None or is not a
+    dict (e.g. legacy float scores or plain list of IDs).
+    """
+    if not isinstance(scores, dict):
+        return ''
+    return (
+        ' data-score-combined="{:.2f}"'
+        ' data-score-live="{:.2f}"'
+        ' data-score-bm25="{:.2f}"'
+        ' data-score-tfidf="{:.2f}"'
+    ).format(
+        scores.get('combined', 0),
+        scores.get('live', 0),
+        scores.get('bm25', 0),
+        scores.get('tfidf', 0),
+    )
+
+
 class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
-    openai_msg = 'I had trouble understanding but the openai gpt response is:'
+    openai_msg = ('I had trouble understanding but the '
+                  'openai gpt response is:')
     found_model_msg = 'Links are provided below.  '
     create_success_msg = 'The object has been successfully created.  '
     ex_prompt_wrap = "<br>Ex. prompt: <div class='examplePrompt'>"
@@ -3452,6 +3496,12 @@ class AliChat(object):
     instruction_extract = (
         "Extract key entities, dates, amounts, and decisions as JSON "
         "with keys: entities, dates, amounts, decisions.")
+    instruction_triage = (
+        "Analyze the ticket and provide a structured triage "
+        "assessment. Respond ONLY as valid JSON with keys: "
+        "suggested_priority, suggested_complexity, "
+        "suggested_category, suggested_labels, can_resolve, "
+        "resolution_plan, triage_reasoning.")
 
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
@@ -3543,19 +3593,37 @@ class AliChat(object):
                     used_words.append(word)
         return word_idx
 
-    def convert_model_ids_to_message(self, db_model, model_ids, message='',
-                                     html_table=False, table_name=''):
+    def convert_model_ids_to_message(
+            self, db_model, model_ids, message='',
+            html_table=False, table_name='',
+            highlight_words=None):
+        """Build text and HTML from matched model IDs.
+
+        model_ids can be a dict {id: score_dict} from
+        AliSearch or a plain list of IDs.
+        """
         message = message + '<br>'
         html_response = ''
+        is_dict = isinstance(model_ids, dict)
         for idx, model_id in enumerate(model_ids):
             obj = self.db.session.get(db_model, model_id)
-            if obj:
-                html_response += """
-                    {}.  <a href="{}" target="_blank">{}</a><br>
-                    """.format(idx + 1, obj.get_url(), obj.name)
+            if not obj:
+                continue
+            scores = (
+                model_ids[model_id] if is_dict else None)
+            score_attrs = _build_score_attrs(scores)
+            display_name = _highlight_terms(
+                obj.name, highlight_words)
+            html_response += (
+                '{}.  <a href="{}" target="_blank"'
+                '{}>{}</a><br>\n'
+            ).format(
+                idx + 1, obj.get_url(),
+                score_attrs, display_name)
             if html_table:
                 table_elem = obj.get_table_elem(table_name)
-                html_response += '<br>{}'.format(table_elem)
+                html_response += '<br>{}'.format(
+                    table_elem)
         return message, html_response
 
     def check_db_model_table(self, db_model, words, model_ids):
@@ -3624,19 +3692,29 @@ class AliChat(object):
             model_ids = {k: v for k, v in model_ids.items() if v == max_value}
         return model_ids, words
 
-    def search_db_model_from_ids(self, db_model, words, model_ids):
-        response = self.run_db_model(db_model, words, model_ids)
+    def search_db_model_from_ids(
+            self, db_model, words, model_ids):
+        """Look up matched IDs, run/edit if requested, build
+        response text and HTML."""
+        response = self.run_db_model(
+            db_model, words, model_ids)
         if response:
             table_name = ''
         else:
-            table_name = self.check_db_model_table(db_model, words, model_ids)
+            table_name = self.check_db_model_table(
+                db_model, words, model_ids)
             response = self.found_model_msg
-        edit_made = self.edit_db_model(db_model, words, model_ids)
+        edit_made = self.edit_db_model(
+            db_model, words, model_ids)
         table_bool = True if table_name else False
         if edit_made:
-            response = '{}<br>{}'.format(edit_made, self.found_model_msg)
-        response, html_response = self.convert_model_ids_to_message(
-            db_model, model_ids, response, table_bool, table_name)
+            response = '{}<br>{}'.format(
+                edit_made, self.found_model_msg)
+        response, html_response = (
+            self.convert_model_ids_to_message(
+                db_model, model_ids, response,
+                table_bool, table_name,
+                highlight_words=words))
         return response, html_response
 
     def remove_stop_words_from_message(
@@ -3680,6 +3758,7 @@ class AliChat(object):
     def llm_request_generator(self, body):
         with requests.post(self.llm_url, json=body, stream=True) as r:
             r.raise_for_status()
+            r.encoding = 'utf-8'
             for raw_line in r.iter_lines(decode_unicode=True):
                 if not raw_line:
                     continue
@@ -3690,7 +3769,9 @@ class AliChat(object):
                 try:
                     data = json.loads(raw_line)
                 except json.JSONDecodeError:
-                    yield {"type": "response", "delta": raw_line}
+                    logging.warning(
+                        f"Skipping unparseable LLM chunk:"
+                        f" {raw_line[:200]}")
                     continue
                 delta = data.get("choices", [{}])[0].get("delta", {})
                 if delta.get("reasoning_content"):
@@ -3701,7 +3782,8 @@ class AliChat(object):
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
-                         stream=False, timeout=120, temperature=0.4):
+                         stream=False, timeout=120, temperature=0.4,
+                         source_context=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3713,6 +3795,7 @@ class AliChat(object):
         :param stream: Boolean to stream response or return all at once
         :param timeout: Timeout to wait for response when not streaming
         :param temperature: Temperature passed to the model
+        :param source_context: Context based on the codebase
         :return: response from the llm as string
         """
         if not instructions:
@@ -3721,18 +3804,29 @@ class AliChat(object):
                 'summarize': AliChat.instruction_summarize,
                 "rewrite": AliChat.instruction_rewrite,
                 "extract": AliChat.instruction_extract,
-            }[mode]
+                "triage": AliChat.instruction_triage,
+            }.get(mode, AliChat.instruction_answer)
         if not previous_messages:
             previous_messages = []
         messages = [{"role": "system", "content": instructions}]
         for t in previous_messages[-5:]:
             messages.append({"role": "user", "content": t.text})
             messages.append({"role": "assistant", "content": t.response})
-        user_content = f"""User question:
-            {user_query}
-            
-            Context (verbatim, may be long):
-            {context}"""
+        max_context_chars = 24000
+        if context and len(context) > max_context_chars:
+            context = (context[:max_context_chars]
+                       + "\n\n[Truncated due to length]")
+        if source_context and len(source_context) > max_context_chars:
+            source_context = (source_context[:max_context_chars]
+                              + "\n\n[Truncated due to length]")
+        parts = [f"User question:\n{user_query}"]
+        if context:
+            parts.append(
+                f"Documentation and retrieval context:\n{context}")
+        if source_context:
+            parts.append(
+                f"Relevant source code:\n{source_context}")
+        user_content = '\n\n'.join(parts)
         messages.append({"role": "user", "content": user_content})
         body = {
             "model": self.llm_model,
@@ -3744,19 +3838,30 @@ class AliChat(object):
             return self.llm_request_generator(body)
         else:
             r = requests.post(self.llm_url, json=body, timeout=timeout)
-            response = r.json()["choices"][0]["message"]["content"]
+            data = r.json()
+            if 'choices' not in data:
+                msg = 'LLM response missing choices: {}'.format(data)
+                logging.warning(msg)
+                raise ValueError(msg)
+            response = data["choices"][0]["message"]["content"]
             return response
 
-    def search_db_models(self, db_model, message, response, html_response):
+    def search_db_models(self, db_model, message,
+                         response, html_response):
+        """Search for matching objects of db_model type."""
         response = ''
         html_response = ''
+        min_floor = getattr(db_model, 'llm_min_results', 0)
+        top_k = max(5, min_floor)
         try:
             ali_search = AliSearch(
                 self, transformer=self.transformer,
                 transformer_dict=self.transformer_dict)
-            model_ids = ali_search.search(db_model, message)
+            model_ids = ali_search.search(
+                db_model, message, top_k=top_k)
         except Exception:
-            model_ids, _words = self.find_db_model(db_model, message)
+            model_ids, _words = self.find_db_model(
+                db_model, message)
         if model_ids:
             if hasattr(db_model, 'llm_limit'):
                 n_limit = db_model.llm_limit
@@ -3819,6 +3924,8 @@ class AliChat(object):
     def create_db_model_children(self, cur_model, words):
         response = ''
         if not cur_model:
+            return response
+        if not hasattr(cur_model, 'get_children'):
             return response
         db_model_child = cur_model.get_children()
         if not db_model_child:
@@ -3938,6 +4045,8 @@ class AliChat(object):
         return db_model, other_db_model
 
     def create_db_model(self, db_model, message, response, html_response):
+        if not hasattr(db_model, 'get_first_unique_name'):
+            return response, html_response
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
         is_create = utl.is_list_in_list(create_words, words)
@@ -4026,6 +4135,8 @@ class AliChat(object):
 
     def check_children_for_edit(self, cur_model, words):
         response = ''
+        if not hasattr(cur_model, 'get_current_children'):
+            return response
         children = cur_model.get_current_children()
         omit_list = [cur_model.name, cur_model.__table__.name]
         for child in children:
@@ -4112,11 +4223,14 @@ class AliChat(object):
         return stop_words
 
     def get_response(self, message, models_to_search=None, db=None,
-                     current_user=None, is_question=False):
+                     current_user=None, is_question=False,
+                     file_map=None, base_path=None,
+                     doc_files=None, area_keywords=None):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
         self.message = message
+        ticket_offered = None
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
         response, html_response = self.check_if_openai_message(message)
@@ -4126,12 +4240,15 @@ class AliChat(object):
         if is_question:
             models_to_search = [
                 x for x in models_to_search if hasattr(x, 'llm_summary')]
+        matched_models = []
+        self.matched_models = matched_models
         if not response and models_to_search and not is_question:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
                 if in_message:
                     response, html_response = self.db_model_response_functions(
                         db_model, message)
+                    matched_models.append(db_model)
                     break
         if not response:
             for db_model in models_to_search:
@@ -4139,18 +4256,55 @@ class AliChat(object):
                     db_model, message, response, html_response)
                 if r:
                     response = r
+                    matched_models.append(db_model)
                     upper_name = db_model.get_model_name_list()[0].upper()
                     hr = '{}<br>{}'.format(upper_name, hr)
                     if not html_response:
                         html_response = ''
                     html_response += hr
-        if not response:
-            response = ('Could not find any relevant docs, '
-                        'but will attempt to answer.')
+        if ali_tic.detect_ticket_intent(message):
+            coverage = ali_tic.check_existing_feature_coverage(
+                response, matched_models)
+            ticket_response = ali_tic.build_ticket_offer_response(
+                has_existing_docs=coverage['has_existing_docs'],
+                guidance_model_names=coverage['guidance_model_names'],
+                retrieval_response=response,
+            )
+            if coverage['has_existing_docs']:
+                response = ticket_response
+                self.call_llm = True
+                ticket_offered = 'soft'
+            else:
+                response = ticket_response
+                self.call_llm = False
+                ticket_offered = 'direct'
+        elif not response:
+            guidance_searched = [
+                m for m in models_to_search
+                if m.__name__ in ali_tic.GUIDANCE_MODELS]
+            if guidance_searched:
+                names = ', '.join(
+                    m.__name__ for m in guidance_searched)
+                response = (
+                    'Could not find matching docs in {}. '
+                    'Try browsing the tutorials or '
+                    'walkthroughs pages directly. '
+                    'Will attempt to answer.'
+                ).format(names)
+            else:
+                response = (
+                    'Could not find any relevant docs, '
+                    'but will attempt to answer.')
             html_response = ''
             self.call_llm = True
+        source_context = None
+        if file_map and base_path:
+            source_context = ali_code.get_context_for_query(
+                message, file_map, base_path,
+                doc_files=doc_files,
+                area_keywords=area_keywords)
         response = self.polish_response(response)
-        return response, html_response
+        return response, html_response, ticket_offered, source_context
 
     def train_tf(self, training_data):
         import tensorflow as tf

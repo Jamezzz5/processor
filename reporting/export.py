@@ -109,7 +109,11 @@ class ExportHandler(object):
             exc.product_name, filter_val, exc.product_table,
             view_name)
         dbu.db.connect()
-        dbu.db.cursor.execute(view_script, [filter_val])
+        try:
+            dbu.db.cursor.execute(view_script, [filter_val])
+        except psycopg2.errors.UniqueViolation as e:
+            logging.warning('Could not create view error: {}'.format(e))
+            return False
         dbu.db.connection.commit()
         logging.info('View created.')
         return True

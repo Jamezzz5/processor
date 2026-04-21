@@ -146,6 +146,14 @@ class TikApi(object):
         return sd, ed
 
     def get_data_default_check(self, sd, ed):
+        """
+        Insures start date and end date are valid and if not sets them to
+        default
+
+        :param sd: start date
+        :param ed: end date
+        :returns: start date and end date
+        """
         if sd is None:
             sd = dt.datetime.today() - dt.timedelta(days=2)
         if ed is None:
@@ -156,6 +164,14 @@ class TikApi(object):
         return sd, ed
 
     def get_ids(self, ad=True):
+        """
+        Gets ad ids or campaign ids depending on ad parameter.
+        Will pull all pages of ids and return a list of lists of 100 ids each.
+
+        :param ad: boolean, if True will pull ad ids,
+        if False will pull campaign ids
+        :returns: list of lists of 100 ids each
+        """
         logging.info('Getting ad ids.')
         self.set_headers()
         url = self.base_url + self.version
@@ -184,6 +200,19 @@ class TikApi(object):
         return ids
 
     def request_id(self, url, params, ids, ad_ids=True):
+        """
+        Requests ad ids or campaign ids depending on ad_ids parameter and
+        importantly, appends to self.ad_id_list, which is used for merging later
+        on
+
+        :param url: url endpoint for request
+        :param params: request parameters
+        :param ids: list of ids to append to
+        :param ad_ids: boolean, if True will pull ad ids,
+        if False will pull campaign ids
+
+        :returns: list of ids and request response
+        """
         key = 'ad_id' if ad_ids else 'campaign_id'
         r = self.make_request(url, method='GET', headers=self.headers,
                               params=params)
@@ -209,9 +238,21 @@ class TikApi(object):
         return df
 
     def request_and_get_data(self, sd, ed):
+        """
+        Requests data from TikTok Ads API and returns a dataframe.
+
+        :param sd: start date for data pull
+        :param ed: end date for data pull
+
+        :returns: dataframe
+        """
         url = self.base_url + self.version + self.ad_report_url
         self.params['start_date'] = sd
         self.params['end_date'] = ed
+        filters = [{'field_name': 'ad_status',
+                    'filter_type': 'IN',
+                    'filter_value': "[\"STATUS_ALL\"]"}]
+        self.params['filtering'] = json.dumps(filters)
         for x in range(1, 1000):
             logging.info('Getting data from {} to {}.  Page #{}.'
                          ''.format(sd, ed, x))
@@ -240,6 +281,13 @@ class TikApi(object):
         return self.df
 
     def filter_df_on_campaign(self, df):
+        """
+        Filters dataframe on campaign name column based on campaign_id
+        in config file
+
+        :param df: dataframe to filter
+        :returns: filtered dataframe
+        """
         campaign_col = 'campaign_name'
         if self.campaign_id:
             df = utl.filter_df_on_col(df, campaign_col, self.campaign_id)
@@ -250,6 +298,10 @@ class TikApi(object):
         self.ad_id_list = []
 
     def get_data(self, sd=None, ed=None, fields=None):
+        """
+        Main function to get data from TikTok Ads API,
+        called in importhandler.py
+        """
         sd, ed = self.get_data_default_check(sd, ed)
         self.reset_params()
         self.get_ids()

@@ -572,7 +572,8 @@ def signal_handler(signum, frame):
 
 def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
                     raise_on_fail=True,
-                    exception_msg='Polling timed out before true.'):
+                    exception_msg='Polling timed out before true.',
+                    click_elem_id='', load_elem_id=''):
     """
     Polls the specified function with the provided kwargs (if any) until it
     returns true or the max number of attempts is reached. If function fails to
@@ -587,6 +588,8 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
     return true before the max number of attempts is reached; True by default
     :param exception_msg: Text to give exception if raised;
     'Polling timed out before true.' if not specified
+    :param click_elem_id: The original element id that was clicked
+    :param load_elem_id: The element that loads after click
     :return: Whether polling succeeded in getting a true value
     """
     return_val = False
@@ -596,6 +599,9 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
         return_val = func(**func_kwargs)
         if return_val:
             break
+        if click_elem_id and x > (attempts / 2):
+            SeleniumWrapper.xpath_from_id_and_click(
+                SeleniumWrapper, click_elem_id, load_elem_id=load_elem_id)
         time.sleep(sleep)
     if not return_val and raise_on_fail:
         raise Exception(exception_msg)
@@ -974,6 +980,24 @@ class SeleniumWrapper(object):
             time.sleep(5)
         return ads
 
+    def clear_elem(self, elem_id, attempts=10, sleep_time=.1):
+        """Clear an input, retrying while it is not yet interactable.
+
+        Mirrors ``send_keys_wrapper``: re-fetches the element between
+        attempts so stale references don't propagate, and gives the
+        browser a 100ms polling window for cells that transition into
+        editable inputs asynchronously after a click.
+        """
+        for attempt in range(attempts):
+            try:
+                self.browser.find_element(By.ID, elem_id).clear()
+                return
+            except (ex.ElementNotInteractableException,
+                    ex.StaleElementReferenceException):
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(sleep_time)
+
     def send_keys_wrapper(self, elem, value, elem_xpath=''):
         elem_sent = True
         for x in range(10):
@@ -1216,6 +1240,123 @@ class SeleniumWrapper(object):
         tbody = elem.find_element(By.CSS_SELECTOR, "table > tbody")
         rows = tbody.find_elements(By.TAG_NAME, "tr")
         return len(rows)
+
+    def resolve_select_id(self, base_id):
+        """Return the input ID for a select element, preferring LiquidSelect
+        (``-liquid``) and falling back to Selectize (``-selectized``)."""
+        liquid_id = f'{base_id}-{self.liquid_xpath}'
+        if self.browser.find_elements(By.ID, liquid_id):
+            return liquid_id
+        return f'{base_id}-{self.selectize_xpath}'
+
+    def submit_form(self, form_names=None, select_form_names=None,
+                    submit_id='loadContinue', test_name='test',
+                    clear_existing=True, send_escape=True, new_value='',
+                    choose_existing=False):
+        """
+        Fill a form and optionally submit it.
+
+        :param form_names: List of element ids for form items
+        :param select_form_names: List of element ids for select items
+        :param submit_id: Element id clicked to submit the form, or falsy
+            to skip submission
+        :param test_name: Value entered into every non-date form item
+        :param clear_existing: Remove the existing value before entry
+        :param send_escape: Press escape after filling each selectize item
+        :param new_value: Value to wait for in the first field before submit
+        :param choose_existing: Treat values as existing options
+        """
+        if not form_names:
+            form_names = []
+        if not select_form_names:
+            select_form_names = []
+        elem_form = []
+        for x in form_names + select_form_names:
+            form_name = x
+            form_val = test_name
+            if 'cur' in x or 'Select' in x or x in select_form_names:
+                form_name = self.resolve_select_id(form_name)
+            if 'date' in form_name:
+                form_val = dt.datetime.now().strftime('%m-%d-%Y')
+            elem_form.append((form_val, form_name))
+        if test_name:
+            self.send_keys_from_list(
+                elem_form, clear_existing=clear_existing,
+                send_escape=send_escape, new_value=new_value,
+                choose_existing=choose_existing)
+        if submit_id:
+            if new_value:
+                elem_id = elem_form[0][1].replace(
+                    f'-{self.selectize_xpath}', '')
+                self.wait_for_elem_load(elem_id, new_value=new_value)
+            self.xpath_from_id_and_click(submit_id, .01)
+
+    def run_worker(self, worker, attempts=20, raise_on_fail=True):
+        """
+        Drain the given RQ worker until a task completes.
+
+        :param worker: Worker exposing ``.work(burst=True)``
+        :param attempts: Max polling attempts
+        :param raise_on_fail: Raise if no task completes within attempts
+        :return: Whether a task completed
+        """
+        return poll_until_true(
+            lambda worker: worker.work(burst=True),
+            {'worker': worker}, attempts, .1, raise_on_fail,
+            'Worker did not complete task.')
+
+    def click_and_run_worker(self, elem_id, worker, load_elem_id='',
+                             worker_attempts=20):
+        """Click an element by id then drain ``worker``."""
+        self.xpath_from_id_and_click(elem_id, load_elem_id=load_elem_id)
+        return self.run_worker(worker, attempts=worker_attempts)
+
+    def navigate_and_submit(self, url, form_names=None,
+                            select_form_names=None,
+                            submit_id='loadContinue', worker=None,
+                            **submit_kwargs):
+        """Go to ``url``, fill & submit the form, drain ``worker`` if given."""
+        self.go_to_url(url, elem_id=submit_id)
+        self.submit_form(form_names=form_names,
+                         select_form_names=select_form_names,
+                         submit_id=submit_id, **submit_kwargs)
+        if worker:
+            self.run_worker(worker)
+
+    def wait_for_condition(self, func, func_kwargs=None, attempts=20,
+                           sleep=.1, raise_on_fail=True,
+                           exception_msg='Condition not met.'):
+        """Thin wrapper around ``poll_until_true`` for test ergonomics."""
+        return poll_until_true(func, func_kwargs, attempts, sleep,
+                               raise_on_fail, exception_msg)
+
+    def check_app_alert(self, key_terms=None):
+        """
+        Return True if a toast stack entry matches any of ``key_terms``,
+        or any toast exists when ``key_terms`` is falsy.
+        """
+        stack = self.browser.find_elements(
+            By.CSS_SELECTOR, '#lqToastStack .lq-toast')
+        if not stack:
+            return False
+        if not key_terms:
+            return True
+        combined_text = ' '.join(
+            t.get_attribute('innerHTML') for t in stack)
+        found_terms = [x for x in key_terms if x in combined_text]
+        return len(found_terms) > 0
+
+    def wait_for_app_alert(self, key_terms=None, attempts=10, sleep=.1):
+        """Poll until a toast matching ``key_terms`` appears."""
+        exception_msg = 'App alert not found.'
+        if key_terms:
+            terms = ', '.join(key_terms)
+            exception_msg = (
+                f'App alert containing one or more of the terms '
+                f'({terms}) not found.')
+        return poll_until_true(
+            self.check_app_alert, {'key_terms': key_terms}, attempts,
+            sleep, exception_msg=exception_msg)
 
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100, sleep=60):
