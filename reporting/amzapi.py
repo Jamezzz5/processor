@@ -13,6 +13,7 @@ import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 import reporting.vmcolumns as vmc
+from bs4 import BeautifulSoup
 
 config_path = utl.config_path
 
@@ -75,13 +76,18 @@ class AmzApi(object):
         self.df = pd.DataFrame()
         self.r = None
         self.cache_file = os.path.join(config_path, 'report_cache.json')
+        self.seen_asin = {}
+        self.asin_path = os.path.join(config_path,
+                                      'asin_product_mapping.csv')
         if not os.path.exists(self.cache_file):
             with open(self.cache_file, 'w') as f:
                 json.dump({}, f)
         with open(self.cache_file, 'r') as f:
             self.report_cache = json.load(f)
         self.fresh_pull = False
+        self.product_report = False
         self.include_keywords = False
+        self.dsp_id = ''
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -167,8 +173,8 @@ class AmzApi(object):
         """
         profile = None
         for dsp_profile in dsp_profiles:
-            dsp_id = str(dsp_profile['profileId'])
-            self.headers['Amazon-Advertising-API-Scope'] = dsp_id
+            self.dsp_id = str(dsp_profile['profileId'])
+            self.headers['Amazon-Advertising-API-Scope'] = self.dsp_id
             url = '{}/dsp/advertisers'.format(endpoint)
             r = self.make_request(
                 url, method='GET', headers=self.headers,
@@ -267,6 +273,8 @@ class AmzApi(object):
                     logging.info('Keyword-level data enabled via API Fields')
                 if field.lower() == 'refresh':
                     self.fresh_pull = True
+                if field.lower() == 'product':
+                    self.product_report = True
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:
@@ -325,7 +333,44 @@ class AmzApi(object):
         self.df = self.check_and_get_reports(report_ids)
         logging.info('All reports downloaded - returning dataframe.')
         self.df = self.filter_df_on_campaign(self.df)
+        if self.product_report and not self.amazon_dsp:
+            self.df = self.get_product_name_df(self.df)
         return self.df
+
+    def set_product_body(self, body):
+        if self.amazon_dsp:
+            body.update({
+                "configuration": {
+                    'adProduct': 'DEMAND_SIDE_PLATFORM',
+                    'columns': ['date', 'productName', 'marketplace',
+                                'asin', 'featuredAsin', 'totalNewToBrandDPVs',
+                                'totalPurchases', 'lineItemName', 'lineItemId',
+                                'productCategory'],
+                    'reportTypeId': 'dspProduct',
+                    'filters': [{
+                        'field': 'advertiserId',
+                        'values': [self.advertiser_id]
+                    }],
+                    'format': 'GZIP_JSON',
+                    'groupBy': ['lineItem'],
+                    'timeUnit': 'DAILY'
+                }
+            })
+        else:
+            body.update({
+                "configuration": {
+                    'adProduct': 'SPONSORED_PRODUCTS',
+                    'columns': ['purchasedAsin', 'advertisedAsin',
+                                'adGroupName', 'campaignName',
+                                'campaignId', 'date', 'adGroupId', 'sales14d',
+                                'unitsSoldClicks14d', 'purchases14d'],
+                    'reportTypeId': 'spPurchasedProduct',
+                    'format': 'GZIP_JSON',
+                    'groupBy': ['asin'],
+                    'timeUnit': 'DAILY'
+                }
+            })
+        return body
 
     def filter_df_on_campaign(self, df):
         if self.campaign_id and self.campaign_col in df.columns:
@@ -497,20 +542,27 @@ class AmzApi(object):
         msg = 'Requesting{}report for dates: {} to {}'.format(is_dsp, sd, ed)
         logging.info(msg)
         base_body = {"endDate": ed, "startDate": sd}
-        if self.amazon_dsp:
+        if self.product_report:
+            url = '{}/reporting/reports'.format(self.base_url)
+            prod_body = self.set_product_body(base_body)
+            request_bodies = [prod_body]
+            if self.amazon_dsp:
+                self.headers['Amazon-Advertising-API-Scope'] = self.dsp_id
+        elif self.amazon_dsp:
             sp_body = self.get_dsp_request_body(base_body)
             header = 'application/vnd.dspcreatereports.v3+json'
             url = '{}/accounts/{}/dsp/reports'.format(
                 self.base_url, self.profile_id)
             request_bodies = [sp_body]
+            self.headers['Accept'] = header
         else:
             header = 'application/vnd.createasyncreportrequest.v3+json'
             url = '{}/reporting/reports'.format(self.base_url)
             request_bodies = self.get_sponsored_bodies(base_body)
+            self.headers['Accept'] = header
             if not self.export_id:
                 self.export_id = self.request_export()
                 self.campaign_export_id = self.request_export('campaigns')
-        self.headers['Accept'] = header
         report_ids = []
         for request_body in request_bodies:
             report_id = self.get_report_id(url, request_body)
@@ -574,8 +626,74 @@ class AmzApi(object):
                 self.df = self.df.merge(id_df, on=id_col, how='left')
         return self.df
 
+    @staticmethod
+    def get_product_name_from_asin(asin):
+        if pd.isna(asin):
+            return None
+        url = f'https://www.amazon.com/gp/product/{asin}'
+        product_name = ''
+        try:
+            r = requests.get(url)
+            if r.status_code != 200:
+                return None
+            soup = BeautifulSoup(r.text, 'html.parser')
+            title_tag = soup.find(id='productTitle')
+            if title_tag:
+                product_name = title_tag.get_text(strip=True)
+        except Exception as e:
+            print(f'Error for ASIN {asin}: {e}')
+        return product_name
+
+    def get_product_name_df(self, df):
+        unique_asins = pd.concat([df['advertisedAsin'],
+                                  df['purchasedAsin']]).dropna().unique()
+        product_list = {}
+        if os.path.exists(self.asin_path):
+            existing_df = pd.read_csv(self.asin_path)
+        else:
+            existing_df = pd.DataFrame(columns=['asin', 'productName'])
+        existing_asin = dict(zip(existing_df['asin'], existing_df['productName']))
+        for asin in unique_asins:
+            if asin in existing_asin:
+                product_list[asin] = existing_asin[asin]
+                continue
+            product_name = self.get_product_name_from_asin(asin)
+            product_list[asin] = product_name
+        asin_df = self.asin_csv(product_list)
+        asin_lookup = dict(zip(asin_df['asin'], asin_df['productName']))
+        df['advertised_title'] = df['advertisedAsin'].map(asin_lookup)
+        df['purchased_title'] = df['purchasedAsin'].map(asin_lookup)
+        return df
+
+    def asin_csv(self, product_list):
+        if os.path.exists(self.asin_path):
+            existing_df = pd.read_csv(self.asin_path)
+        else:
+            existing_df = pd.DataFrame(columns=['asin', 'productName'])
+        new_df = pd.DataFrame(
+            list(product_list.items()),
+            columns=['asin', 'productName']
+        )
+        combined = pd.concat([existing_df, new_df])
+        combined['productName'] = combined['productName'].astype(
+            str).str.strip()
+        combined = combined[
+            combined['productName'].notna() &
+            (combined['productName'] != '') &
+            (combined['productName'].str.lower() != 'nan')
+            ]
+        combined = combined.drop_duplicates(subset=['asin'], keep='last')
+        combined.to_csv(self.asin_path, index=False)
+        return combined
+
+
+
     def check_report_status(self, report_id, attempts, wait):
-        if self.amazon_dsp:
+        complete_status = 'COMPLETED'
+        url_key = 'url'
+        if self.product_report:
+            url = '{}/reporting/reports/{}'.format(self.base_url, report_id)
+        elif self.amazon_dsp:
             self.headers['Accept'] = 'application/vnd.dspgetreports.v3+json'
             url = '{}/accounts/{}/dsp/reports/{}'.format(
                 self.base_url, self.profile_id, report_id)
@@ -586,8 +704,6 @@ class AmzApi(object):
                 'application/vnd.createasyncreportrequest.v3+json')
             url = '{}/reporting/reports/{}'.format(
                 self.base_url, report_id)
-            complete_status = 'COMPLETED'
-            url_key = 'url'
         df = pd.DataFrame()
         for attempt in range(attempts):
             logging.info(
@@ -598,7 +714,7 @@ class AmzApi(object):
                 if r.json()['status'] == complete_status:
                     report_url = r.json()[url_key]
                     r = requests.get(report_url)
-                    if self.amazon_dsp:
+                    if self.amazon_dsp and not self.product_report:
                         df = pd.DataFrame(r.json())
                     else:
                         df = pd.read_json(
@@ -608,7 +724,8 @@ class AmzApi(object):
                         logging.warning('Dataframe empty, likely no data  - '
                                         'returning empty dataframe')
                     else:
-                        if self.amazon_dsp and 'date' in df.columns:
+                        if (self.amazon_dsp and 'date' in df.columns and
+                                not self.product_report):
                             df['date'] = df['date'].apply(
                                 lambda x: dt.datetime.fromtimestamp(
                                     x / 1000, tz=pytz.UTC).date())
@@ -727,6 +844,8 @@ class AmzApi(object):
                      attempt=1, json_response=True, json_response_key='',
                      skip_error_type='', sleep_time=30):
         self.get_client()
+        if self.amazon_dsp and self.product_report:
+            self.headers['Amazon-Advertising-API-Scope'] = self.dsp_id
         attempts = 10
         for x in range(attempts):
             request_success = True
