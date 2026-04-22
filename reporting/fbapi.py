@@ -319,6 +319,10 @@ class FbApi(object):
             logging.warning('Warning ConnectionError as follows {}'.format(e))
             time.sleep(30)
             report = self.get_report(ar)
+        except TypeError as e:
+            logging.warning('Warning TypeError as follows {}'.format(e))
+            time.sleep(30)
+            report = self.get_report(ar)
         return report
 
     def reset_report_request(self, fb_request):
