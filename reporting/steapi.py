@@ -37,6 +37,9 @@ class SteApi(object):
         self.r = None
         self.min_players = None
         self.last_run_timestamp = None
+        self.last_appid = None
+        self.sweep_start_timestamp = None
+        self.pagination_cursor = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -64,6 +67,8 @@ class SteApi(object):
                           'Aborting.'.format(self.min_players))
             sys.exit(0)
         self.last_run_timestamp = self.config.get('last_run_timestamp')
+        self.last_appid = self.config.get('last_appid')
+        self.sweep_start_timestamp = self.config.get('sweep_start_timestamp')
         self.config_list = [self.config, self.key, self.min_players]
 
     def check_config(self):
@@ -106,10 +111,11 @@ class SteApi(object):
         except json.decoder.JSONDecodeError as e:
             return False
 
-    def get_apps(self, if_modified_since=None):
+    def get_apps(self, if_modified_since=None, start_appid=None,
+                 max_games=None):
         logging.info('Getting all Steam games.')
         all_apps = []
-        last_appid = None
+        last_appid = start_appid
         have_more_results = True
         while have_more_results:
             params = {
@@ -126,6 +132,11 @@ class SteApi(object):
             all_apps.extend(data.get('apps', []))
             have_more_results = data.get('have_more_results', False)
             last_appid = data.get('last_appid')
+            if max_games and len(all_apps) >= max_games:
+                all_apps = all_apps[:max_games]
+                last_appid = all_apps[-1]['appid']
+                break
+        self.pagination_cursor = last_appid if have_more_results else None
         logging.info('Retrieved {} games from Steam.'.format(len(all_apps)))
         return pd.DataFrame(all_apps)
 
@@ -206,11 +217,35 @@ class SteApi(object):
                                 '{}'.format(app_id))
         return pd.DataFrame(rows)
 
+    def parse_fields(self, fields):
+        """An int-parseable entry caps games pulled per run. 'no_details' skips
+        the rate-limited game details endpoint."""
+        max_games = None
+        pull_details = True
+        for f in (fields or []):
+            if f == 'no_details':
+                pull_details = False
+                continue
+            try:
+                max_games = int(f)
+            except (TypeError, ValueError):
+                pass
+        return max_games, pull_details
+
     def get_data(self, sd=None, ed=None, fields=None):
+        max_games, pull_details = self.parse_fields(fields)
         run_time = dt.datetime.now(dt.timezone.utc)
-        all_apps = self.get_apps()
-        if True:
-            all_apps = all_apps.head(100)
+        if max_games and self.last_appid:
+            start_appid = self.last_appid
+            sweep_start = (self.sweep_start_timestamp or
+                           int(run_time.timestamp()))
+        else:
+            # No cap or no in-progress sweep, start fresh.
+            start_appid = None
+            sweep_start = int(run_time.timestamp())
+        all_apps = self.get_apps(start_appid=start_appid,
+                                 max_games=max_games)
+        next_appid = self.pagination_cursor
         all_app_ids = all_apps['appid'].tolist()
         current_players = self.get_current_players(all_app_ids)
         active = current_players[
@@ -231,19 +266,29 @@ class SteApi(object):
                             if app_id in active_app_ids]
         logging.info('{} active new games or modified since last run.'.format(
             len(modified_app_ids)))
-        app_details = self.get_app_details(modified_app_ids)
-        if not app_details.empty:
-            df = df.merge(app_details, on='appid', how='left')
+        if pull_details:
+            app_details = self.get_app_details(modified_app_ids)
+            if not app_details.empty:
+                df = df.merge(app_details, on='appid', how='left')
         df['appid'] = df['appid'].astype('int64')
         df['player_count'] = df['player_count'].fillna(0).astype('int64')
         df['gameeventdate'] = run_time.replace(tzinfo=None)
-        df['gameeventname'] = str(run_time.date()) + df['appid'].astype(str)
-        self.save_timestamp(run_time)
+        df['gameeventname'] = str(int(run_time.timestamp())) + df['appid'].astype(str)
+        self.save_cursor(next_appid, sweep_start)
         self.df = df
         return df
 
-    def save_timestamp(self, run_time):
-        self.config['last_run_timestamp'] = int(run_time.timestamp())
+    def save_cursor(self, next_appid, sweep_start):
+        """Cached pagination state. If next_appid is set, the sweep
+        didn't finish, save the cursor plus the sweep's start timestamp
+        so the next run resumes the same modified-since window."""
+        if next_appid:
+            self.config['last_appid'] = next_appid
+            self.config['sweep_start_timestamp'] = sweep_start
+        else:
+            self.config['last_run_timestamp'] = sweep_start
+            self.config.pop('last_appid', None)
+            self.config.pop('sweep_start_timestamp', None)
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f)
 
