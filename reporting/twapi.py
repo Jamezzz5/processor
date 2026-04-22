@@ -375,6 +375,7 @@ class TwApi(object):
         if not self.df.empty:
             self.df = self.add_parents(self.df)
             self.df = self.rename_cols()
+            self.df = self.df.drop_duplicates()
         return self.df
 
     def get_df_for_all_dates(self, sd, ed, fields, async_request=False):
@@ -535,8 +536,9 @@ class TwApi(object):
             logging.warning('SSL error with job: {} Retrying.'
                             'Error: {}'.format(d['id'], e))
             return False
-        if r.status_code == 504:
-            logging.warning('504 code with job: {} Retrying.'.format(d['id']))
+        if r.status_code in [429, 503, 504]:
+            logging.warning('{} code with job: {} Retrying.'.format(
+                r.status_code, d['id']))
             return False
         zip_obj = gzip.GzipFile(fileobj=io.BytesIO(r.content), mode='rb')
         response_data = json.loads(zip_obj.read())
@@ -545,22 +547,29 @@ class TwApi(object):
         df = self.clean_df(df)
         spend = pd.to_numeric(
             df.get('billed_charge_local_micro'), errors='coerce').fillna(0)
-        imp = pd.to_numeric(df.get('impressions'), errors='coerce').fillna(0)
+        imp = pd.to_numeric(
+            df.get('impressions'), errors='coerce').fillna(0)
         has_imp_no_spend = ((imp > 0) & (spend <= 0)).any()
         if has_imp_no_spend:
-            msg = 'Imps no spend, re-requesting job id {}'.format(d['id'])
-            logging.warning(msg)
-            self.make_request_for_date_asynchronous(
-                cur_job.ids, cur_job.fields,
-                cur_job.sd, cur_job.ed,
-                cur_job.date, cur_job.place,
-                cur_job.entity,
-                times_requested=cur_job.times_requested + 1
-            )
-            self.async_requests = [x for x in self.async_requests
-                                   if x.data['data']['id'] != d['id']]
-            return False
-        self.df = pd.concat([self.df, df], sort=True).reset_index(drop=True)
+            if cur_job.times_requested > 20:
+                logging.warning(f'Imps with no spend persisted after '
+                                f'20 attempts for job {d["id"]}.'
+                                ' Accepting data as-is.')
+            else:
+                msg = f'Imps no spend, re-requesting job id {d['id']}'
+                logging.warning(msg)
+                self.make_request_for_date_asynchronous(
+                    cur_job.ids, cur_job.fields,
+                    cur_job.sd, cur_job.ed,
+                    cur_job.date, cur_job.place,
+                    cur_job.entity,
+                    times_requested=cur_job.times_requested + 1
+                )
+                self.async_requests = [x for x in self.async_requests
+                                       if x.data['data']['id'] != d['id']]
+                return False
+        self.df = pd.concat(
+            [self.df, df], sort=True).reset_index(drop=True)
         cur_job.completed = True
         return True
 
