@@ -646,7 +646,7 @@ class DFTranslation(object):
         self.text_columns = [k for k, v in self.translation_type.items()
                              if v == 'TEXT']
         self.date_columns = [k for k, v in self.translation_type.items()
-                             if v == 'DATE']
+                             if v == 'DATE' or v == 'DATETIME']
         self.int_columns = [k for k, v in self.translation_type.items()
                             if v == 'INT' or v == 'BIGINT'
                             or v == 'BIGSERIAL']
@@ -786,7 +786,7 @@ class DFTranslation(object):
         if data_type == 'REAL':
             df[col] = df[col].replace(np.nan, 0)
             df[col] = df[col].astype(float)
-        if data_type == 'DATE':
+        if data_type in ('DATE', 'DATETIME'):
             df[col] = pd.to_datetime(df[col], errors='coerce')
             df[col] = df[col].replace(pd.NaT, None)
             df[col] = df[col].replace(pd.NaT, dt.datetime.today())
