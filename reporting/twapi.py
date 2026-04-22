@@ -379,7 +379,7 @@ class TwApi(object):
         return self.df
 
     def get_df_for_all_dates(self, sd, ed, fields, async_request=False):
-        full_date_list = self.list_dates(sd, ed, days=2)
+        full_date_list = self.list_dates(sd, ed)
         timezone = self.get_account_timezone()
         if not timezone:
             timezone = self.find_account()
@@ -545,34 +545,33 @@ class TwApi(object):
         df = self.convert_response_to_df(
             data=response_data, date=cur_job.date, df=df)
         df = self.clean_df(df)
-        if not df.empty:
-            spend = pd.to_numeric(
-                df.get('billed_charge_local_micro'), errors='coerce').fillna(0)
-            imp = pd.to_numeric(
-                df.get('impressions'), errors='coerce').fillna(0)
-            has_imp_no_spend = ((imp > 0) & (spend <= 0)).any()
-            if has_imp_no_spend:
-                if cur_job.times_requested > 20:
-                    logging.warning(f'Imps with no spend persisted after '
-                                    f'20 attempts for job {d["id"]}.'
-                                    ' Accepting data as-is.')
-                else:
-                    msg = f'Imps no spend, re-requesting job id {d['id']}'
-                    logging.warning(msg)
-                    self.make_request_for_date_asynchronous(
-                        cur_job.ids, cur_job.fields,
-                        cur_job.sd, cur_job.ed,
-                        cur_job.date, cur_job.place,
-                        cur_job.entity,
-                        times_requested=cur_job.times_requested + 1
-                    )
-                    self.async_requests = [x for x in self.async_requests
-                                           if x.data['data']['id'] != d['id']]
-                    return False
-            self.df = pd.concat(
-                [self.df, df], sort=True).reset_index(drop=True)
-            cur_job.completed = True
-            return True
+        spend = pd.to_numeric(
+            df.get('billed_charge_local_micro'), errors='coerce').fillna(0)
+        imp = pd.to_numeric(
+            df.get('impressions'), errors='coerce').fillna(0)
+        has_imp_no_spend = ((imp > 0) & (spend <= 0)).any()
+        if has_imp_no_spend:
+            if cur_job.times_requested > 20:
+                logging.warning(f'Imps with no spend persisted after '
+                                f'20 attempts for job {d["id"]}.'
+                                ' Accepting data as-is.')
+            else:
+                msg = f'Imps no spend, re-requesting job id {d['id']}'
+                logging.warning(msg)
+                self.make_request_for_date_asynchronous(
+                    cur_job.ids, cur_job.fields,
+                    cur_job.sd, cur_job.ed,
+                    cur_job.date, cur_job.place,
+                    cur_job.entity,
+                    times_requested=cur_job.times_requested + 1
+                )
+                self.async_requests = [x for x in self.async_requests
+                                       if x.data['data']['id'] != d['id']]
+                return False
+        self.df = pd.concat(
+            [self.df, df], sort=True).reset_index(drop=True)
+        cur_job.completed = True
+        return True
 
     @staticmethod
     def get_date_info(sd, ed):
@@ -839,11 +838,11 @@ class TwApi(object):
         return dates
 
     @staticmethod
-    def list_dates(sd, ed, days=1):
+    def list_dates(sd, ed):
         dates = []
         while sd <= ed:
             dates.append(sd)
-            sd = sd + dt.timedelta(days=days)
+            sd = sd + dt.timedelta(days=1)
         return dates
 
     def rename_cols(self):
