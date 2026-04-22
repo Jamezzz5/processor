@@ -2835,6 +2835,11 @@ class GetDailyDelivery(AnalyzeBase):
             return daily_dfs
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.aly.get_start_end_dates(df, plan_names)
+        if start_dates is None or end_dates is None:
+            logging.warning(
+                'Start/end dates unavailable (missing vendorkey); '
+                'cannot get daily delivery.')
+            return daily_dfs
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
         plannet_filename = self.matrix.vendor_set(vm.plan_key)
         plannet_filename = plannet_filename[vmc.filenamedict]
