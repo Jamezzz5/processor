@@ -1035,41 +1035,38 @@ class SeleniumWrapper(object):
                            clear_existing=True, send_escape=True):
         elem_xpath = item[1]
         if get_xpath_from_id:
+            if '-selectized' in elem_xpath or '-liquid' in elem_xpath:
+                elem_xpath = self.resolve_select_id(elem_xpath)
             elem_xpath = self.get_xpath_from_id(elem_xpath)
         elem = self.browser.find_element_by_xpath(elem_xpath)
-        is_selectized = self.selectize_xpath in elem_xpath
         is_liquid = self.liquid_xpath in elem_xpath
         clear_specified = len(item) > 2 and item[2] == 'clear'
-        elem_to_clear = is_selectized or is_liquid or clear_specified
-        if clear_existing and elem_to_clear:
-            if is_liquid:
-                clear_xs = [
-                    'following-sibling::div[contains(@class, "lq-actions")]'
-                    '/span[contains(@class, "lq-btn-clear")]']
-            else:
-                clear_xs = ['preceding-sibling::span/a[@class="remove-single"]',
-                            '../following-sibling::a[@class="clear"]']
-            for clear_x in clear_xs:
-                clear_val = []
-                for x in range(5):
-                    try:
-                        clear_val = elem.find_elements_by_xpath(clear_x)
-                        break
-                    except ex.StaleElementReferenceException as e:
-                        logging.warning(e)
-                    time.sleep(.1)
-                if len(clear_val) > 0:
-                    self.click_on_xpath(elem=clear_val[0], sleep=.1)
-                    break
+        if clear_existing and (is_liquid or clear_specified):
+            self._click_liquid_clear_button(elem)
         elem_type = self.get_elem_type(elem_xpath, elem)
         if elem_type == 'checkbox':
             self.click_on_xpath(elem=elem, sleep=.1)
+        elif isinstance(item[0], list):
+            self.send_multiple_keys_wrapper(elem, item[0])
         else:
-            if type(item[0]) == list:
-                self.send_multiple_keys_wrapper(elem, item[0])
-            else:
-                self.send_keys_wrapper(elem, item[0], elem_xpath)
+            self.send_keys_wrapper(elem, item[0], elem_xpath)
         return elem
+
+    def _click_liquid_clear_button(self, elem):
+        """Click the clear-all X on a LiquidSelect input, if present."""
+        clear_x = (
+            'following-sibling::div[contains(@class, "lq-actions")]'
+            '/span[contains(@class, "lq-btn-clear")]')
+        for _ in range(5):
+            try:
+                matches = elem.find_elements_by_xpath(clear_x)
+                break
+            except ex.StaleElementReferenceException as e:
+                logging.warning(e)
+                matches = []
+                time.sleep(.1)
+        if matches:
+            self.click_on_xpath(elem=matches[0], sleep=.1)
 
     def send_key_new_value_check(self, item, get_xpath_from_id=True,
                                  clear_existing=True, send_escape=True,
@@ -1092,29 +1089,34 @@ class SeleniumWrapper(object):
         for item in elem_input_list:
             elem = self.send_key_from_list(
                 item, get_xpath_from_id, clear_existing, send_escape)
-            elem_xpath = item[1]
-            is_selectized = self.selectize_xpath in elem_xpath
-            is_liquid = self.liquid_xpath in elem_xpath
-            if is_selectized or is_liquid:
-                if new_value:
-                    elem = self.send_key_new_value_check(
-                        item, get_xpath_from_id, clear_existing, send_escape,
-                        elem=elem)
-                for _ in range(3):
-                    try:
-                        if not choose_existing:
-                            if is_selectized:
-                                elem.send_keys(Keys.BACKSPACE)
-                                elem.send_keys(item[0][-1])
-                                elem.send_keys(Keys.ARROW_UP)
-                        elem.send_keys(u'\ue007')
-                        break
-                    except (ex.ElementNotInteractableException,
-                            ex.StaleElementReferenceException) as e:
-                        logging.warning(e)
-                if send_escape:
-                    wd.ActionChains(self.browser).send_keys(
-                        Keys.ESCAPE).perform()
+            if not self._is_liquid_xpath(item[1], get_xpath_from_id):
+                continue
+            if new_value:
+                elem = self.send_key_new_value_check(
+                    item, get_xpath_from_id, clear_existing, send_escape,
+                    elem=elem)
+            for _ in range(3):
+                try:
+                    elem.send_keys(Keys.ENTER)
+                    break
+                except (ex.ElementNotInteractableException,
+                        ex.StaleElementReferenceException) as e:
+                    logging.warning(e)
+            if send_escape:
+                wd.ActionChains(self.browser).send_keys(
+                    Keys.ESCAPE).perform()
+
+    def _is_liquid_xpath(self, elem_xpath, get_xpath_from_id):
+        """True when ``elem_xpath`` drives a LiquidSelect widget —
+        either because it already carries the ``-liquid`` suffix, or
+        because its ``-selectized`` id resolves to one."""
+        if self.liquid_xpath in elem_xpath:
+            return True
+        if not get_xpath_from_id:
+            return False
+        if self.selectize_xpath not in elem_xpath:
+            return False
+        return self.liquid_xpath in self.resolve_select_id(elem_xpath)
 
     def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
         if load_elem_id:
@@ -1162,8 +1164,15 @@ class SeleniumWrapper(object):
         """
         selector = selector if selector else self.select_id
         elem_found = False
+        widget_suffixed = (
+            selector == self.select_id
+            and isinstance(elem_id, str)
+            and ('-selectized' in elem_id or '-liquid' in elem_id))
         for x in range(attempts):
-            e = self.browser.find_elements(selector, elem_id)
+            lookup_id = (
+                self.resolve_select_id(elem_id)
+                if widget_suffixed else elem_id)
+            e = self.browser.find_elements(selector, lookup_id)
             if e:
                 elem_visible = True
                 if visible:
@@ -1242,12 +1251,17 @@ class SeleniumWrapper(object):
         return len(rows)
 
     def resolve_select_id(self, base_id):
-        """Return the input ID for a select element, preferring LiquidSelect
-        (``-liquid``) and falling back to Selectize (``-selectized``)."""
-        liquid_id = f'{base_id}-{self.liquid_xpath}'
-        if self.browser.find_elements(By.ID, liquid_id):
-            return liquid_id
-        return f'{base_id}-{self.selectize_xpath}'
+        """Return the LiquidSelect wrapper input id for a select element.
+
+        Accepts a bare base id (``partnerSelect``) or either legacy
+        suffix (``partnerSelect-selectized`` / ``-liquid``); the suffix
+        is stripped before lookup so tests written against the old
+        Selectize id keep working unchanged."""
+        for suffix in (f'-{self.liquid_xpath}', f'-{self.selectize_xpath}'):
+            if base_id.endswith(suffix):
+                base_id = base_id[: -len(suffix)]
+                break
+        return f'{base_id}-{self.liquid_xpath}'
 
     def submit_form(self, form_names=None, select_form_names=None,
                     submit_id='loadContinue', test_name='test',
@@ -1262,22 +1276,22 @@ class SeleniumWrapper(object):
             to skip submission
         :param test_name: Value entered into every non-date form item
         :param clear_existing: Remove the existing value before entry
-        :param send_escape: Press escape after filling each selectize item
+        :param send_escape: Press escape after filling each select item
         :param new_value: Value to wait for in the first field before submit
-        :param choose_existing: Treat values as existing options
+        :param choose_existing: Unused — retained for call-site compat
         """
-        if not form_names:
-            form_names = []
-        if not select_form_names:
-            select_form_names = []
+        form_names = form_names or []
+        select_form_names = select_form_names or []
         elem_form = []
-        for x in form_names + select_form_names:
-            form_name = x
-            form_val = test_name
-            if 'cur' in x or 'Select' in x or x in select_form_names:
-                form_name = self.resolve_select_id(form_name)
+        for raw_id in form_names + select_form_names:
+            if self._looks_like_select_id(raw_id, select_form_names):
+                form_name = self.resolve_select_id(raw_id)
+            else:
+                form_name = raw_id
             if 'date' in form_name:
                 form_val = dt.datetime.now().strftime('%m-%d-%Y')
+            else:
+                form_val = test_name
             elem_form.append((form_val, form_name))
         if test_name:
             self.send_keys_from_list(
@@ -1286,10 +1300,42 @@ class SeleniumWrapper(object):
                 choose_existing=choose_existing)
         if submit_id:
             if new_value:
-                elem_id = elem_form[0][1].replace(
-                    f'-{self.selectize_xpath}', '')
-                self.wait_for_elem_load(elem_id, new_value=new_value)
+                first_id = elem_form[0][1]
+                base_id = (first_id
+                    .replace(f'-{self.selectize_xpath}', '')
+                    .replace(f'-{self.liquid_xpath}', ''))
+                self.wait_for_elem_load(base_id, new_value=new_value)
             self.xpath_from_id_and_click(submit_id, .01)
+
+    def _looks_like_select_id(self, raw_id, select_form_names):
+        """True when ``raw_id`` names a LiquidSelect-backed field."""
+        return (
+            raw_id in select_form_names
+            or 'cur' in raw_id or 'Select' in raw_id
+            or '-selectized' in raw_id or '-liquid' in raw_id)
+
+    def select_widget_rendered(self, elem_id):
+        """Return True when the LiquidSelect wrapper input for this
+        select id exists in the DOM. Accepts a bare id or one with
+        the legacy ``-selectized`` / ``-liquid`` suffix."""
+        return bool(
+            self.browser.find_elements(
+                By.ID, self.resolve_select_id(elem_id)))
+
+    def get_select_tag_elements(self, base_id):
+        """Return the selected-tag chips inside a LiquidSelect wrapper.
+
+        ``base_id`` may be a plain select id or a suffixed wrapper
+        input id (``{base}-selectized`` / ``{base}-liquid``).
+        """
+        for suffix in (f'-{self.liquid_xpath}', f'-{self.selectize_xpath}'):
+            if base_id.endswith(suffix):
+                base_id = base_id[: -len(suffix)]
+                break
+        wraps = self.browser.find_elements(By.ID, f'lq-wrap-{base_id}')
+        if not wraps:
+            return []
+        return wraps[0].find_elements(By.CSS_SELECTOR, '.lq-tag')
 
     def run_worker(self, worker, attempts=20, raise_on_fail=True):
         """
