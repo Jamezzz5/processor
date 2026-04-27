@@ -1,5 +1,7 @@
+import html
 import io
 import os
+import re
 import sys
 import pytz
 import json
@@ -335,7 +337,43 @@ class AmzApi(object):
         self.df = self.filter_df_on_campaign(self.df)
         if self.product_report and not self.amazon_dsp:
             self.df = self.get_product_name_df(self.df)
+        if self.product_report:
+            self.df = self.apply_categorization(self.df)
         return self.df
+
+    def apply_categorization(self, df):
+        non_game_keywords = ['shirt', 't-shirt', 'hoodie', 'poster', 'mug',
+                             'toy', 'figure', 'action figure', 'plush',
+                             'book', 'novel', 'soundtrack', 'clothes',
+                             'game console', 'hardware console', 'controller',
+                             'jersey', 'genesis flashback', 'luminasta', 'unit',
+                             'evangelion', 'statue', 'miku series', 'perching',
+                             'pillow', 'desktop', 'decorate', 'figurine', 'tee',
+                             'dreamcast console', 'console sytem', 'bundle',
+                             'genesis 1', 'genesis 2', 'genesis 32x', 'genesis mini',
+                             'sega goods', 'swim trunks', 'crew sock', 'pants',
+                             'jogger', 'dress', 'tank top', 'jacket', 'figur',
+                             'sleeve', 'puffer']
+        #double check: bundle, dress
+        if self.amazon_dsp:
+            df['myProductCategory'] = df['productName'].apply(
+                lambda x: self.classify_product(x, non_game_keywords))
+        else:
+            df['advertisedCategory'] = df['advertised_title'].apply(
+                lambda x: self.classify_product(x, non_game_keywords))
+            df['purchasedCategory'] = df['purchased_title'].apply(
+                lambda x: self.classify_product(x, non_game_keywords))
+        return df
+
+    @staticmethod
+    def classify_product(name, non_game_keywords):
+        category = 'Game'
+        if pd.isna(name):
+            return category
+        name_lower = name.lower()
+        if any(keyword in name_lower for keyword in non_game_keywords):
+            category = 'Non-Game'
+        return category
 
     def set_product_body(self, body):
         if self.amazon_dsp:
@@ -361,9 +399,9 @@ class AmzApi(object):
                 "configuration": {
                     'adProduct': 'SPONSORED_PRODUCTS',
                     'columns': ['purchasedAsin', 'advertisedAsin',
-                                'adGroupName', 'campaignName',
                                 'campaignId', 'date', 'adGroupId', 'sales14d',
-                                'unitsSoldClicks14d', 'purchases14d'],
+                                'unitsSoldClicks14d', 'purchases14d',
+                                'adGroupName', 'campaignName'],
                     'reportTypeId': 'spPurchasedProduct',
                     'format': 'GZIP_JSON',
                     'groupBy': ['asin'],
@@ -528,9 +566,14 @@ class AmzApi(object):
             ed = ed - dt.timedelta(days=new_date)
         sd = dt.datetime.strftime(sd, '%Y-%m-%d')
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
-        cache_key = ('DSP_{}_{}_{}'.format(self.advertiser_id, sd, ed)
-                     if self.amazon_dsp else
-                     'SP_{}_{}_{}'.format(self.advertiser_id, sd, ed))
+        amz_type = 'sp'
+        report_type = 'normal'
+        if self.amazon_dsp:
+            amz_type = 'dsp'
+        if self.product_report:
+            report_type = 'product'
+        cache_key = '{}_{}_{}_{}_{}'.format(amz_type, report_type,
+                                         self.advertiser_id, sd, ed)
         if cache_key in self.report_cache:
             logging.info('reusing cached report IDs for {}'.format(cache_key))
             report_ids = self.report_cache[cache_key]['report_ids']
@@ -624,6 +667,13 @@ class AmzApi(object):
                     self.df.drop(columns=drop_cols, inplace=True)
                 id_df = self.check_and_get_export(export_id, entity=entity)
                 self.df = self.df.merge(id_df, on=id_col, how='left')
+            if self.product_report:
+                self.df['adGroupName'] = self.df['adGroupName_x']
+                self.df['campaignName'] = self.df['campaignName_x']
+                self.df = self.df.drop(columns=[
+                    'adGroupName_x', 'adGroupName_y',
+                    'campaignName_x', 'campaignName_y'
+                ])
         return self.df
 
     @staticmethod
@@ -636,12 +686,14 @@ class AmzApi(object):
             r = requests.get(url)
             if r.status_code != 200:
                 return None
-            soup = BeautifulSoup(r.text, 'html.parser')
-            title_tag = soup.find(id='productTitle')
-            if title_tag:
-                product_name = title_tag.get_text(strip=True)
+            html_text = r.text
+            match = re.search(r'<span[^>]*id=["\']productTitle["\'][^>]*>(.*?)'
+                              r'</span>', html_text, re.DOTALL)
+            if match:
+                product_name = html.unescape(match.group(1).strip())
         except Exception as e:
             print(f'Error for ASIN {asin}: {e}')
+        logging.info(f'ASIN: {asin} - Product Name: {product_name}')
         return product_name
 
     def get_product_name_df(self, df):
@@ -656,9 +708,11 @@ class AmzApi(object):
         for asin in unique_asins:
             if asin in existing_asin:
                 product_list[asin] = existing_asin[asin]
+                logging.info(f'asin already found: {asin}-{product_list[asin]}')
                 continue
             product_name = self.get_product_name_from_asin(asin)
-            product_list[asin] = product_name
+            if product_name:
+                product_list[asin] = product_name
         asin_df = self.asin_csv(product_list)
         asin_lookup = dict(zip(asin_df['asin'], asin_df['productName']))
         df['advertised_title'] = df['advertisedAsin'].map(asin_lookup)
