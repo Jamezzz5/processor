@@ -31,11 +31,12 @@ class SteApi(object):
     def __init__(self):
         self.config = None
         self.config_file = None
-        self.apps = None
         self.key = None
         self.config_list = None
         self.df = pd.DataFrame()
         self.r = None
+        self.min_players = None
+        self.last_run_timestamp = None
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -54,18 +55,23 @@ class SteApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.apps = self.config['apps']
         self.key = self.config['key']
-        self.config_list = [self.config, self.key]
+        self.min_players = self.config.get('min_players', 1)
+        try:
+            self.min_players = int(self.min_players)
+        except ValueError:
+            logging.error('{} cannot be converted to an integer. '
+                          'Aborting.'.format(self.min_players))
+            sys.exit(0)
+        self.last_run_timestamp = self.config.get('last_run_timestamp')
+        self.config_list = [self.config, self.key, self.min_players]
 
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in Ste config file.'
+                logging.warning('{} not in Ste config file. '
                                 'Aborting.'.format(item))
                 sys.exit(0)
-        if not self.apps:
-            logging.warning('No configured apps. Fetching all Steam apps.')
 
     def make_request(self, url, method, params=None, body=None, header=None, attempt=1):
         try:
@@ -100,24 +106,27 @@ class SteApi(object):
         except json.decoder.JSONDecodeError as e:
             return False
 
-    def get_apps(self):
-        logging.info('Getting all Steam apps.')
+    def get_apps(self, if_modified_since=None):
+        logging.info('Getting all Steam games.')
         all_apps = []
         last_appid = None
         have_more_results = True
         while have_more_results:
             params = {
                 'key': self.key,
-                'max_results': 500,  # default 10k, max val 50k
+                'max_results': 50000, # default 10k, max 50k
+                'include_games': 1
             }
             if last_appid:
                 params['last_appid'] = last_appid
+            if if_modified_since:
+                params['if_modified_since'] = if_modified_since
             r = self.make_request(self.apps_url, 'GET', params)
             data = r.json()['response']
-            all_apps.extend(data['apps'])
-            # have_more_results = data.get('have_more_results', False)
-            have_more_results = False
+            all_apps.extend(data.get('apps', []))
+            have_more_results = data.get('have_more_results', False)
             last_appid = data.get('last_appid')
+        logging.info('Retrieved {} games from Steam.'.format(len(all_apps)))
         return pd.DataFrame(all_apps)
 
     def get_current_players(self, app_ids):
@@ -137,8 +146,8 @@ class SteApi(object):
         return pd.DataFrame(rows)
 
     def get_app_details(self, app_ids):
-        logging.info('Getting details for apps.')
-        max_retries = 20  # 20 * 15s = 300s (5 min rate limit)
+        logging.info('Getting game details.')
+        max_retries = 22  # 22 * 15s = 330s (5 min rate limit + 30s)
         rows = []
         for app_id in app_ids:
             for attempt in range(max_retries):
@@ -178,10 +187,6 @@ class SteApi(object):
                 pcts = [float(a['percent']) for a in achievements]
                 avg_pct = sum(pcts) / len(pcts)
                 rows.append({'appid': app_id, 'avg_achievement_pct': avg_pct})
-            else:
-                # logging.warning('No achievements found for appid: '
-                #                 '{}'.format(app_id))
-                pass
         return pd.DataFrame(rows)
 
     def get_review_summaries(self, app_ids):
@@ -202,27 +207,45 @@ class SteApi(object):
         return pd.DataFrame(rows)
 
     def get_data(self, sd=None, ed=None, fields=None):
-        today = dt.datetime.now(dt.timezone.utc).date()
-        if self.apps:
-            df = pd.DataFrame(list(self.apps.items()),
-                              columns=['name', 'appid'])
-        else:
-            df = self.get_apps()
-        app_ids = df['appid'].tolist()
-        current_players = self.get_current_players(app_ids)
-        df = df.merge(current_players, on='appid', how='left')
-        app_details = self.get_app_details(app_ids)
-        df = df.merge(app_details, on='appid', how='left')
-        avg_achievement_pcts = self.get_avg_achievement_pcts(app_ids)
+        run_time = dt.datetime.now(dt.timezone.utc)
+        all_apps = self.get_apps()
+        if True:
+            all_apps = all_apps.head(100)
+        all_app_ids = all_apps['appid'].tolist()
+        current_players = self.get_current_players(all_app_ids)
+        active = current_players[
+            current_players['player_count'] >= self.min_players]
+        active_app_ids = active['appid'].tolist()
+        logging.info('{} of {} games have >= {} players.'.format(
+            len(active_app_ids), len(all_app_ids), self.min_players))
+        df = all_apps[all_apps['appid'].isin(active_app_ids)].copy()
+        df = df.merge(active, on='appid', how='left')
+        avg_achievement_pcts = self.get_avg_achievement_pcts(active_app_ids)
         df = df.merge(avg_achievement_pcts, on='appid', how='left')
-        review_summaries = self.get_review_summaries(app_ids)
+        review_summaries = self.get_review_summaries(active_app_ids)
         df = df.merge(review_summaries, on='appid', how='left')
-        # sampled_users = ...
-        # wishlists/owned = ...(sampled_users, app_ids)
-        # df = df.merge(wishlists/owned, on='appid', how='left')
-        df['gameeventdate'] = today
+        modified_apps = self.get_apps(if_modified_since=self.last_run_timestamp)
+        modified_app_ids = [app_id for app_id in
+                            (modified_apps['appid'].tolist()
+                             if not modified_apps.empty else [])
+                            if app_id in active_app_ids]
+        logging.info('{} active new games or modified since last run.'.format(
+            len(modified_app_ids)))
+        app_details = self.get_app_details(modified_app_ids)
+        if not app_details.empty:
+            df = df.merge(app_details, on='appid', how='left')
+        df['appid'] = df['appid'].astype('int64')
+        df['player_count'] = df['player_count'].fillna(0).astype('int64')
+        df['gameeventdate'] = run_time.replace(tzinfo=None)
+        df['gameeventname'] = str(run_time.date()) + df['appid'].astype(str)
+        self.save_timestamp(run_time)
         self.df = df
         return df
+
+    def save_timestamp(self, run_time):
+        self.config['last_run_timestamp'] = int(run_time.timestamp())
+        with open(self.config_file, 'w') as f:
+            json.dump(self.config, f)
 
     # def set_last_steam_id(self):
     #     self.total_steam_users = self.get_total_users()
