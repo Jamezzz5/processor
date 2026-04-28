@@ -608,7 +608,8 @@ class TwApi(object):
 
     @staticmethod
     def get_passwords_df():
-        df = gsapi.GsApi().get_passwords_df()
+        df = gsapi.GsApi().get_simple_df(
+            sheet_id='18dt84mxha8fAVuhTxMaGcaMBHwf0_mhTS7q7XMadg2o')
         df.columns = df.iloc[0]
         df = df[1:].reset_index(drop=True)
         df = df.iloc[:, [0, 1, 4, 5]]

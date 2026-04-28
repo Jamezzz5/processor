@@ -15,7 +15,7 @@ import datetime as dt
 import reporting.utils as utl
 from requests_oauthlib import OAuth2Session
 import reporting.vmcolumns as vmc
-from bs4 import BeautifulSoup
+import reporting.gsapi as gsapi
 
 config_path = utl.config_path
 
@@ -341,32 +341,39 @@ class AmzApi(object):
             self.df = self.apply_categorization(self.df)
         return self.df
 
+    @staticmethod
+    def get_categorization_keywords():
+        """
+        :return: list of keyword strings from google sheet
+        """
+        df = gsapi.GsApi().get_simple_df(
+            sheet_id='1BIc9mreRHelaI8sXdnFm8eRW4kB3iJyN4w0BbcqIsjg')
+        keywords = df.values.tolist()
+        keywords = [x for sublist in keywords for x in sublist]
+        return keywords
+
     def apply_categorization(self, df):
-        non_game_keywords = ['shirt', 't-shirt', 'hoodie', 'poster', 'mug',
-                             'toy', 'figure', 'action figure', 'plush',
-                             'book', 'novel', 'soundtrack', 'clothes',
-                             'game console', 'hardware console', 'controller',
-                             'jersey', 'genesis flashback', 'luminasta', 'unit',
-                             'evangelion', 'statue', 'miku series', 'perching',
-                             'pillow', 'desktop', 'decorate', 'figurine', 'tee',
-                             'dreamcast console', 'console sytem', 'bundle',
-                             'genesis 1', 'genesis 2', 'genesis 32x', 'genesis mini',
-                             'sega goods', 'swim trunks', 'crew sock', 'pants',
-                             'jogger', 'dress', 'tank top', 'jacket', 'figur',
-                             'sleeve', 'puffer']
-        #double check: bundle, dress
+        """
+        Categorizes products as Game or Non-Game based on presence of keywords
+        in product name
+        :return: dataframe with new column for category
+        """
+        keywords = self.get_categorization_keywords()
         if self.amazon_dsp:
             df['myProductCategory'] = df['productName'].apply(
-                lambda x: self.classify_product(x, non_game_keywords))
+                lambda x: self.classify_product(x, keywords))
         else:
             df['advertisedCategory'] = df['advertised_title'].apply(
-                lambda x: self.classify_product(x, non_game_keywords))
+                lambda x: self.classify_product(x, keywords))
             df['purchasedCategory'] = df['purchased_title'].apply(
-                lambda x: self.classify_product(x, non_game_keywords))
+                lambda x: self.classify_product(x, keywords))
         return df
 
     @staticmethod
     def classify_product(name, non_game_keywords):
+        """
+        Classifies a product as Game or Non-Game based on presence of keywords
+        """
         category = 'Game'
         if pd.isna(name):
             return category
@@ -376,6 +383,10 @@ class AmzApi(object):
         return category
 
     def set_product_body(self, body):
+        """
+        Create request body for product report which includes ASIN-level data
+        and product
+        """
         if self.amazon_dsp:
             body.update({
                 "configuration": {
@@ -739,8 +750,6 @@ class AmzApi(object):
         combined = combined.drop_duplicates(subset=['asin'], keep='last')
         combined.to_csv(self.asin_path, index=False)
         return combined
-
-
 
     def check_report_status(self, report_id, attempts, wait):
         complete_status = 'COMPLETED'
