@@ -990,7 +990,10 @@ class SeleniumWrapper(object):
         """
         for attempt in range(attempts):
             try:
-                self.browser.find_element(By.ID, elem_id).clear()
+                elem = self.browser.find_element(By.ID, elem_id)
+                self.browser.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", elem)
+                elem.clear()
                 return
             except (ex.ElementNotInteractableException,
                     ex.StaleElementReferenceException):
@@ -1243,12 +1246,22 @@ class SeleniumWrapper(object):
         return first_element_position < second_element_position
 
     def count_rows_in_table(self, elem_id=''):
+        """Count visible data rows in a table.
+
+        LiquidTable interleaves each visible ``trN`` with a hidden
+        ``trHiddenN`` form row, so the Hidden ones must be filtered.
+        Returns 0 when no tbody exists yet (empty tables haven't had
+        ``addRowToTable`` lazily create one).
+        """
         elem = self.browser.find_element
         if elem_id:
             elem = elem(By.ID, elem_id)
-        tbody = elem.find_element(By.CSS_SELECTOR, "table > tbody")
-        rows = tbody.find_elements(By.TAG_NAME, "tr")
-        return len(rows)
+        tbodies = elem.find_elements(By.CSS_SELECTOR, "table > tbody")
+        if not tbodies:
+            return 0
+        rows = tbodies[0].find_elements(By.TAG_NAME, "tr")
+        return sum(1 for r in rows
+                   if 'Hidden' not in (r.get_attribute('id') or ''))
 
     def resolve_select_id(self, base_id):
         """Return the LiquidSelect wrapper input id for a select element.
@@ -1387,8 +1400,11 @@ class SeleniumWrapper(object):
             return False
         if not key_terms:
             return True
-        combined_text = ' '.join(
-            t.get_attribute('innerHTML') for t in stack)
+        try:
+            combined_text = ' '.join(
+                t.get_attribute('innerHTML') for t in stack)
+        except ex.StaleElementReferenceException:
+            return False
         found_terms = [x for x in key_terms if x in combined_text]
         return len(found_terms) > 0
 
