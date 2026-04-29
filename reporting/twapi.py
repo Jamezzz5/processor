@@ -109,6 +109,7 @@ class TwApi(object):
         self.async_requests = []
         self.v = 12
         self.default_config_file_name = 'twconfig.json'
+        self.pw_sheet_id = '18dt84mxha8fAVuhTxMaGcaMBHwf0_mhTS7q7XMadg2o'
 
     def reset_dicts(self):
         self.df = pd.DataFrame()
@@ -606,10 +607,8 @@ class TwApi(object):
             return timezone
         return False
 
-    @staticmethod
-    def get_passwords_df():
-        df = gsapi.GsApi().get_simple_df(
-            sheet_id='18dt84mxha8fAVuhTxMaGcaMBHwf0_mhTS7q7XMadg2o')
+    def get_passwords_df(self):
+        df = gsapi.GsApi().get_simple_df(sheet_id=self.pw_sheet_id)
         df.columns = df.iloc[0]
         df = df[1:].reset_index(drop=True)
         df = df.iloc[:, [0, 1, 4, 5]]

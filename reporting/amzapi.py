@@ -90,6 +90,7 @@ class AmzApi(object):
         self.product_report = False
         self.include_keywords = False
         self.dsp_id = ''
+        self.product_sheet_id = '1BIc9mreRHelaI8sXdnFm8eRW4kB3iJyN4w0BbcqIsjg'
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -341,13 +342,11 @@ class AmzApi(object):
             self.df = self.apply_categorization(self.df)
         return self.df
 
-    @staticmethod
-    def get_categorization_keywords():
+    def get_categorization_keywords(self):
         """
         :return: list of keyword strings from google sheet
         """
-        df = gsapi.GsApi().get_simple_df(
-            sheet_id='1BIc9mreRHelaI8sXdnFm8eRW4kB3iJyN4w0BbcqIsjg')
+        df = gsapi.GsApi().get_simple_df(sheet_id=self.product_sheet_id)
         keywords = df.values.tolist()
         keywords = [x for sublist in keywords for x in sublist]
         return keywords
@@ -703,7 +702,7 @@ class AmzApi(object):
             if match:
                 product_name = html.unescape(match.group(1).strip())
         except Exception as e:
-            print(f'Error for ASIN {asin}: {e}')
+            logging.warning(f'Error for ASIN {asin}: {e}')
         logging.info(f'ASIN: {asin} - Product Name: {product_name}')
         return product_name
 
