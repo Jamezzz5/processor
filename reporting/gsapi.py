@@ -120,8 +120,13 @@ class GsApi(object):
         self.get_client()
         url = self.create_url()
         r = self.client.get(url)
-        response = r.json()
-        self.df = self.parse_response(response)
+        try:
+            response = r.json()
+        except json.JSONDecodeError as e:
+            logging.warning('Error parsing JSON: {}'.format(e))
+            response = ''
+        if response:
+            self.df = self.parse_response(response)
         return self.df
 
     def get_simple_df(self, sheet_id=''):
@@ -445,8 +450,12 @@ class GsApi(object):
             msg = ('Permissions NOT Granted. '
                    'Double Check Sheet ID and Ensure Permissions were granted.'
                    '\n Error Msg:')
-            r = r.json()
-            row = [acc_col, ' '.join([failure_msg, msg, r['error']['message']]), False]
+            try:
+                r = r.json()
+                error_msg = r['error']['message']
+            except json.JSONDecodeError as e:
+                error_msg = e
+            row = [acc_col, ' '.join([failure_msg, msg, error_msg]), False]
             results.append(row)
         return results, r
 

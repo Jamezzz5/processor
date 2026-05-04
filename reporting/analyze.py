@@ -243,6 +243,12 @@ class Analyze(object):
                        and not pd.isnull(x[dctc.SD])
                        and not pd.isnull(x[dctc.ED])), axis=1)]
         vm_dates[plan_names] = vm_dates[plan_names].astype(object)
+        missing = [k for k in plan_names if k not in vm_dates.columns
+                   or k not in start_end_dates.columns]
+        if missing:
+            logging.warning(
+                'Plan name cols missing for date merge: {}'.format(missing))
+            return None, None
         vm_dates = vm_dates.merge(
             start_end_dates, how='left', on=plan_names, indicator=True)
         vm_dates = vm_dates[vm_dates['_merge'] == 'left_only']
@@ -824,7 +830,7 @@ class Analyze(object):
             min_date = tdf[min_col][0].date()
             sd = cds.p[vmc.startdate].date()
             ed = cds.p[vmc.enddate].date()
-            if any(pd.isnull(x) for x in [max_date, min_date]):
+            if any(pd.isnull(x) for x in [max_date, min_date, sd, ed]):
                 msg = 'Max date {} or min date {} is not a date.'.format(
                     max_date, min_date)
                 msg = (False, msg)
@@ -2749,6 +2755,9 @@ class GetPacingAnalysis(AnalyzeBase):
         average_df = average_df.drop(columns=[vmc.cost])
         start_dates, end_dates = self.aly.get_start_end_dates(
             df, plan_names)
+        if start_dates is None or end_dates is None:
+            logging.warning('Start/end dates unavailable; skipping pacing.')
+            return pd.DataFrame()
         cols = [vmc.cost, dctc.PNC, vmc.AD_COST]
         missing_cols = [x for x in cols if x not in df.columns]
         if missing_cols:

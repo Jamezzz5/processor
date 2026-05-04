@@ -261,6 +261,9 @@ class FbApi(object):
         except requests.exceptions.ConnectionError as e:
             logging.warning('Warning SSLError as follows {}'.format(e))
             time.sleep(30)
+        except TypeError as e:
+            logging.warning('Malformed FB response, retrying: {}'.format(e))
+            time.sleep(30)
         return insights
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
