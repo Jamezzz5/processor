@@ -3983,6 +3983,8 @@ class AliChat(object):
             new_child = new_child[0]
         db_model_g_child = new_child.get_children()
         cur_g_children = new_child.get_current_children()
+        if not db_model_g_child:
+            return response
         partner_list, partner_type_list = db_model_g_child.get_name_list()
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
         part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
