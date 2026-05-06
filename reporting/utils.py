@@ -988,17 +988,27 @@ class SeleniumWrapper(object):
         browser a 100ms polling window for cells that transition into
         editable inputs asynchronously after a click.
         """
+        scroll_js = (
+            "arguments[0].scrollIntoView({block:'center'});"
+            "const r=arguments[0].getBoundingClientRect();"
+            "const tb=parseFloat(getComputedStyle(document.documentElement)"
+            ".getPropertyValue('--lq-topbar-h'))||48;"
+            "if(r.top<tb+8)window.scrollBy(0,r.top-tb-12);")
         for attempt in range(attempts):
             try:
                 elem = self.browser.find_element(By.ID, elem_id)
-                self.browser.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'});", elem)
+                self.browser.execute_script(scroll_js, elem)
                 elem.clear()
                 return
             except (ex.ElementNotInteractableException,
                     ex.StaleElementReferenceException):
                 if attempt == attempts - 1:
-                    raise
+                    self.browser.execute_script(
+                        "arguments[0].value='';"
+                        "['input','change'].forEach(t=>arguments[0]"
+                        ".dispatchEvent(new Event(t,{bubbles:true})));",
+                        elem)
+                    return
                 time.sleep(sleep_time)
 
     def send_keys_wrapper(self, elem, value, elem_xpath=''):
