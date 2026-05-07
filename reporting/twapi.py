@@ -13,6 +13,7 @@ import datetime as dt
 import reporting.utils as utl
 import reporting.gsapi as gsapi
 import reporting.dictcolumns as dctc
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from requests_oauthlib import OAuth1Session
 from requests.exceptions import ConnectionError
@@ -670,23 +671,22 @@ class TwApi(object):
         """
         if not username or not password:
             return self.configfile
-        sw = utl.SeleniumWrapper(headless=True)
-        browser = sw.browser
+        options = uc.ChromeOptions()
+        browser = uc.Chrome(options=options, headless=False)
         tw_url = 'https://x.com/i/flow/login'
-        sw.go_to_url(tw_url)
+        browser.get(tw_url)
         user_xpath = '//label[normalize-space(.)="Phone, email, or username"]'
         next_button_xpath = '//button[normalize-space(.)="Next"]'
         password_xpath = '//label[normalize-space(.)="Password"]'
         login_xpath = '//button[normalize-space(.)="Log in"]'
-        sw.wait_for_elem_load(user_xpath, selector=By.XPATH)
-        sw.click_on_xpath(user_xpath)
-        elem = browser.find_element_by_xpath(user_xpath)
+        elem = browser.find_element(By.XPATH, user_xpath)
+        elem.click()
         elem.send_keys(username)
-        sw.click_on_xpath(next_button_xpath)
-        sw.click_on_xpath(password_xpath)
-        elem = browser.find_element_by_xpath(password_xpath)
+        browser.find_element(By.XPATH, next_button_xpath).click()
+        elem = browser.find_element(By.XPATH, password_xpath)
+        elem.click()
         elem.send_keys(password)
-        sw.click_on_xpath(login_xpath)
+        browser.find_element(By.XPATH, login_xpath).click()
         url = "https://api.twitter.com/oauth/request_token"
         oauth = OAuth1Session(client_key=self.consumer_key,
                               client_secret=self.consumer_secret)
@@ -694,9 +694,9 @@ class TwApi(object):
         token = fetch_response.get('oauth_token')
         url = 'https://api.twitter.com/oauth/authorize?oauth_token={}'.format(
             token)
-        sw.go_to_url(url)
-        sw.xpath_from_id_and_click(elem_id='allow')
-        lqa_url = sw.browser.current_url
+        browser.get(url)
+        browser.find_element(By.ID, 'allow').click()
+        lqa_url = browser.current_url
         oauth_verifier = lqa_url.split("oauth_verifier=", 1)[1]
         access_token_url = (
             'https://api.twitter.com/oauth/access_token?oauth_consumer_key={}'
@@ -710,7 +710,7 @@ class TwApi(object):
         self.config['ACCESS_TOKEN_SECRET'] = new_secret
         with open(self.configfile, 'w') as f:
             json.dump(self.config, f)
-        sw.quit()
+        browser.quit()
         return self.configfile
 
     def get_account_timezone(self):
