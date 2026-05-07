@@ -3962,6 +3962,8 @@ class AliChat(object):
         db_model_child = cur_model.get_children()
         if not db_model_child:
             return response
+        if not hasattr(db_model_child, 'get_name_list'):
+            return response
         cur_children = cur_model.get_current_children()
         child_list = db_model_child.get_name_list()
         child_name = [x for x in words if x in child_list]
