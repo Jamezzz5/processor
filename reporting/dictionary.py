@@ -519,6 +519,8 @@ class RelationalConfig(object):
     def get_relation_params(self, relational_key):
         relational_params = {}
         for param in self.rc:
+            if relational_key not in self.rc[param]:
+                continue
             value = self.rc[param][relational_key]
             relational_params[param] = value
         return relational_params

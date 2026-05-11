@@ -4384,22 +4384,23 @@ class AliChat(object):
                 self.call_llm = False
                 ticket_offered = 'direct'
         elif not response:
-            guidance_searched = [
-                m for m in models_to_search
-                if m.__name__ in ali_tic.GUIDANCE_MODELS]
-            if guidance_searched:
-                names = ', '.join(
-                    m.__name__ for m in guidance_searched)
-                response = (
-                    'Could not find matching docs in {}. '
-                    'Try browsing the tutorials or '
-                    'walkthroughs pages directly. '
-                    'Will attempt to answer.'
-                ).format(names)
-            else:
-                response = (
-                    'Could not find any relevant docs, '
-                    'but will attempt to answer.')
+            if ali_tic.is_doc_style_prompt(message):
+                guidance_searched = [
+                    m for m in models_to_search
+                    if m.__name__ in ali_tic.GUIDANCE_MODELS]
+                if guidance_searched:
+                    names = ', '.join(
+                        m.__name__ for m in guidance_searched)
+                    response = (
+                        'Could not find matching docs in '
+                        '{}. Try browsing the tutorials or '
+                        'walkthroughs pages directly. '
+                        'Will attempt to answer.'
+                    ).format(names)
+                else:
+                    response = (
+                        'Could not find any relevant docs, '
+                        'but will attempt to answer.')
             html_response = ''
             self.call_llm = True
         source_context = None
