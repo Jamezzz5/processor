@@ -148,7 +148,7 @@ class SteApi(object):
             items = response.get('items') or []
             for item in items:
                 appid = item.get('appid')
-                if appid is None:
+                if not appid:
                     continue
                 rows.append({'steam_id': steam_id, 'appid': appid})
         return pd.DataFrame(rows)
