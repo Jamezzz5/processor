@@ -241,11 +241,9 @@ class DBUpload(object):
 
     def update_rows(self, df, cols, table):
         df_update = df[df['_merge'] == 'both']
+        updated_index = []
         set_cols = [x for x in cols if x not in
                     [self.name, self.id_col, exc.upload_id_col]]
-        if 'about_the_game_y' in df_update.columns:
-            df_update = df_update[df_update['about_the_game_y'] != 'None']
-        updated_index = []
         for col in set_cols:
             df_changed = (df_update[df_update[col + '_y'] !=
                                     df_update[col + '_x']]
