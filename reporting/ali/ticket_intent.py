@@ -29,6 +29,33 @@ INTAKE_PATTERNS = [
 
 GUIDANCE_MODELS = {'TutorialStage', 'Notes', 'WalkthroughSlide'}
 
+DOC_STYLE_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r'\bhow\s+(?:do|can|should)\s+(?:i|we|you)\b',
+        r'\bhow\s+to\b',
+        r'\b(?:where|what)\s+is\s+(?:the\s+)?(?:doc|docs|'
+        r'documentation|tutorial|walkthrough|guide)\b',
+        r'\b(?:show|find|read)\s+(?:me\s+)?(?:the\s+)?'
+        r'(?:doc|docs|documentation|tutorial|walkthrough|guide)',
+        r'\b(?:doc|docs|documentation|tutorial|walkthrough|'
+        r'guide|instructions)\b',
+        r'\bexplain\s+(?:how|what|why)\b',
+    ]
+]
+
+
+def is_doc_style_prompt(message):
+    """True if ``message`` looks like a documentation-seeking
+    query.
+
+    Used to gate the "Could not find matching docs in X"
+    fallback message so it only surfaces when the user
+    actually asked about docs.
+    """
+    if not message:
+        return False
+    return any(p.search(message) for p in DOC_STYLE_PATTERNS)
+
 
 def detect_ticket_intent(message):
     """Check if a message matches ticket/request intake patterns.

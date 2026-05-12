@@ -22,6 +22,7 @@ config_path = utl.config_path
 
 class AmzApi(object):
     base_url = 'https://advertising-api.amazon.com'
+    na_url = 'https://advertising-api.amazon.com'
     eu_url = 'https://advertising-api-eu.amazon.com'
     fe_url = 'https://advertising-api-fe.amazon.com'
     refresh_url = 'https://api.amazon.com/auth/o2/token'
@@ -217,7 +218,7 @@ class AmzApi(object):
                       'EU': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'SE', 'PL',
                              'BE'],
                       'FE': ['JP', 'SG', 'AU']}
-        endpoints = {'NA': self.base_url,
+        endpoints = {'NA': self.na_url,
                      'EU': self.eu_url,
                      'FE': self.fe_url}
         country_code = profile[0]['countryCode']
@@ -228,7 +229,7 @@ class AmzApi(object):
 
     def get_profiles(self):
         self.set_headers()
-        for endpoint in [self.base_url, self.eu_url, self.fe_url]:
+        for endpoint in [self.na_url, self.eu_url, self.fe_url]:
             url = '{}/v{}/profiles'.format(endpoint, self.version)
             json_response = []
             for _ in range(5):
