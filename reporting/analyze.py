@@ -243,6 +243,12 @@ class Analyze(object):
                        and not pd.isnull(x[dctc.SD])
                        and not pd.isnull(x[dctc.ED])), axis=1)]
         vm_dates[plan_names] = vm_dates[plan_names].astype(object)
+        missing = [k for k in plan_names if k not in vm_dates.columns
+                   or k not in start_end_dates.columns]
+        if missing:
+            logging.warning(
+                'Plan name cols missing for date merge: {}'.format(missing))
+            return None, None
         vm_dates = vm_dates.merge(
             start_end_dates, how='left', on=plan_names, indicator=True)
         vm_dates = vm_dates[vm_dates['_merge'] == 'left_only']
@@ -824,7 +830,7 @@ class Analyze(object):
             min_date = tdf[min_col][0].date()
             sd = cds.p[vmc.startdate].date()
             ed = cds.p[vmc.enddate].date()
-            if any(pd.isnull(x) for x in [max_date, min_date]):
+            if any(pd.isnull(x) for x in [max_date, min_date, sd, ed]):
                 msg = 'Max date {} or min date {} is not a date.'.format(
                     max_date, min_date)
                 msg = (False, msg)
@@ -1993,7 +1999,7 @@ class FindPlacementNameCol(AnalyzeBase):
         non_numeric_cols = df.select_dtypes(exclude=['number']).columns.tolist()
         if not non_numeric_cols:
             return result_df
-        vendor_list_lower = {x.lower() for x in
+        vendor_list_lower = {str(x).lower() for x in
                              CheckAutoDictOrder.get_vendor_list()}
         cols = []
         first_row = df.iloc[0]
@@ -2749,6 +2755,9 @@ class GetPacingAnalysis(AnalyzeBase):
         average_df = average_df.drop(columns=[vmc.cost])
         start_dates, end_dates = self.aly.get_start_end_dates(
             df, plan_names)
+        if start_dates is None or end_dates is None:
+            logging.warning('Start/end dates unavailable; skipping pacing.')
+            return pd.DataFrame()
         cols = [vmc.cost, dctc.PNC, vmc.AD_COST]
         missing_cols = [x for x in cols if x not in df.columns]
         if missing_cols:
@@ -2835,6 +2844,11 @@ class GetDailyDelivery(AnalyzeBase):
             return daily_dfs
         plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
         start_dates, end_dates = self.aly.get_start_end_dates(df, plan_names)
+        if start_dates is None or end_dates is None:
+            logging.warning(
+                'Start/end dates unavailable (missing vendorkey); '
+                'cannot get daily delivery.')
+            return daily_dfs
         pdf_cols = plan_names + [dctc.PNC, dctc.UNC]
         plannet_filename = self.matrix.vendor_set(vm.plan_key)
         plannet_filename = plannet_filename[vmc.filenamedict]
@@ -3773,17 +3787,30 @@ class AliChat(object):
                         f"Skipping unparseable LLM chunk:"
                         f" {raw_line[:200]}")
                     continue
-                delta = data.get("choices", [{}])[0].get("delta", {})
+                choice = data.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
+                finish_reason = choice.get("finish_reason")
                 if delta.get("reasoning_content"):
                     yield {"type": "thinking",
                            "delta": delta["reasoning_content"]}
                 if delta.get("content"):
                     yield {"type": "response", "delta": delta["content"]}
+                if delta.get("tool_calls"):
+                    yield {
+                        "type": "tool_call_delta",
+                        "delta": delta["tool_calls"],
+                    }
+                if finish_reason:
+                    yield {
+                        "type": "finish",
+                        "delta": finish_reason,
+                    }
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
                          stream=False, timeout=120, temperature=0.4,
-                         source_context=None):
+                         source_context=None, tools=None,
+                         tool_choice='auto', extra_messages=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -3828,12 +3855,17 @@ class AliChat(object):
                 f"Relevant source code:\n{source_context}")
         user_content = '\n\n'.join(parts)
         messages.append({"role": "user", "content": user_content})
+        if extra_messages:
+            messages.extend(extra_messages)
         body = {
             "model": self.llm_model,
             "messages": messages,
             "stream": stream,
             "temperature": temperature,
         }
+        if tools:
+            body['tools'] = tools
+            body['tool_choice'] = tool_choice
         if stream:
             return self.llm_request_generator(body)
         else:
@@ -3951,6 +3983,8 @@ class AliChat(object):
             new_child = new_child[0]
         db_model_g_child = new_child.get_children()
         cur_g_children = new_child.get_current_children()
+        if not db_model_g_child:
+            return response
         partner_list, partner_type_list = db_model_g_child.get_name_list()
         p_list = utl.get_dict_values_from_list(words, partner_list, True)
         part_add_msg = '{}(s) added '.format(db_model_g_child.__name__)
@@ -4222,17 +4256,70 @@ class AliChat(object):
         stop_words = list(nltk.corpus.stopwords.words('english'))
         return stop_words
 
+    @staticmethod
+    def _format_page_context_line(page_context):
+        """Build the single-sentence system-prompt addendum.
+
+        Mirrors ``app.features.ali.page_context``'s formatter so the
+        submodule has no Flask-layer dependency.
+        """
+        if not page_context:
+            return ''
+        object_type = page_context.get('object_type')
+        if not object_type:
+            return ''
+        object_id = page_context.get('object_id')
+        object_name = page_context.get('object_name')
+        sub_view = page_context.get('sub_view')
+        name_clause = (
+            " '{}'".format(object_name) if object_name else '')
+        id_clause = (
+            ' (id {})'.format(object_id) if object_id else '')
+        sub_clause = (
+            ', {} tab'.format(sub_view) if sub_view else '')
+        return (
+            'The user is currently viewing '
+            '{}{}{}{}.'.format(
+                object_type, name_clause, id_clause, sub_clause))
+
+    @staticmethod
+    def _resolve_page_context_model(page_context, models_to_search):
+        """Match page-context object_type to a model class.
+
+        Returns ``(model_class, object_id)`` if the page context
+        names an object whose class is in ``models_to_search``,
+        else ``None``.
+        """
+        if not page_context or not models_to_search:
+            return None
+        object_type = (page_context.get('object_type') or '').lower()
+        object_id = page_context.get('object_id')
+        if not object_type or not object_id:
+            return None
+        for model in models_to_search:
+            if model.__name__.lower() == object_type:
+                return model, object_id
+        return None
+
     def get_response(self, message, models_to_search=None, db=None,
                      current_user=None, is_question=False,
                      file_map=None, base_path=None,
-                     doc_files=None, area_keywords=None):
+                     doc_files=None, area_keywords=None,
+                     page_context=None):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
         self.message = message
+        self.page_context = page_context
         ticket_offered = None
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
+        if page_context:
+            line = self._format_page_context_line(page_context)
+            if line:
+                base = self.llm_instructions or ''
+                self.llm_instructions = (
+                    f'{base}\n\n{line}' if base else line)
         response, html_response = self.check_if_openai_message(message)
         intent_dict = self.intent.classify_intent(message)
         if not is_question:
@@ -4242,6 +4329,24 @@ class AliChat(object):
                 x for x in models_to_search if hasattr(x, 'llm_summary')]
         matched_models = []
         self.matched_models = matched_models
+        pc_resolved = self._resolve_page_context_model(
+            page_context, models_to_search)
+        if pc_resolved and not response and not is_question:
+            pc_model, pc_id = pc_resolved
+            try:
+                words = self.remove_stop_words_from_message(
+                    message, pc_model)
+                response, html_response = (
+                    self.search_db_model_from_ids(
+                        pc_model, words, {pc_id: 1}))
+                if response:
+                    matched_models.append(pc_model)
+                    if (self.llm_url and
+                            hasattr(pc_model, 'llm_summary')):
+                        self.call_llm = True
+            except Exception:
+                response = ''
+                html_response = ''
         if not response and models_to_search and not is_question:
             for db_model in models_to_search:
                 in_message = self.db_model_name_in_message(message, db_model)
