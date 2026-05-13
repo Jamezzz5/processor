@@ -237,6 +237,18 @@ class TikApi(object):
             df = df.join(tdf)
         return df
 
+    @staticmethod
+    def clean_ad_name(df):
+        # ACO / Dynamic Creative ads come back with the video material
+        # filename prepended to ad_name (e.g. 'Video4_..._abc.mp4_<real name>').
+        # Strip everything up to and including the last <video ext>_ marker.
+        if 'ad_name' not in df.columns:
+            return df
+        pattern = r'(?i)^.*\.(?:mp4|mov|avi|webm|m4v)_'
+        df['ad_name'] = df['ad_name'].astype(str).str.replace(
+            pattern, '', regex=True)
+        return df
+
     def request_and_get_data(self, sd, ed):
         """
         Requests data from TikTok Ads API and returns a dataframe.
@@ -274,6 +286,7 @@ class TikApi(object):
                          ''.format(page_rem - x))
         self.df = self.df.merge(pd.DataFrame(self.ad_id_list), on='ad_id',
                                 how='left')
+        self.df = self.clean_ad_name(self.df)
         cols = self.metrics.copy()
         cols[self.new_date] = self.old_date
         self.df = self.df.rename(columns=cols)
