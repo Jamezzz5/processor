@@ -131,7 +131,7 @@ class SteApi(object):
             for game in games:
                 game['steam_id'] = user_id
                 rows.append(game)
-        logging.info('Sampled {} users, {} owned games, '
+        logging.info('Sampled {} users, {} users found, '
                      '{} ownership rows.'.format(
                          self.search_num, number_hits, len(rows)))
         return pd.DataFrame(rows)
