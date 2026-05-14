@@ -4560,14 +4560,8 @@ class AliChat(object):
         return response
 
     def polish_response(self, response):
-        """
-        Combine multiple formatting functions into one 'polish' step.
-
-        :param response: Current raw response as text.
-        :return: Text that has been edited
-        """
-        # response = self.add_bullet_response(response)
-        response = self.add_polite_flair(response)
+        """Pass-through. Flair wrappers are disabled — they
+        fought the system prompt's concise/confident rule."""
         return response
 
 
