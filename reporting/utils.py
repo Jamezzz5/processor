@@ -1430,6 +1430,27 @@ class SeleniumWrapper(object):
             self.check_app_alert, {'key_terms': key_terms}, attempts,
             sleep, exception_msg=exception_msg)
 
+    def search_liquid_table(self, table_name, search_val=None, submit_id=''):
+        """
+        Clears and/or enters new value into the search bar of a liquid table.
+
+        :param table_name: Name of liquid table to search
+        :param search_val: Value to enter into the search bar after clearing it,
+            if any
+        :param submit_id: ID of HTML element to click after the search bar has
+            been modified, if any (e.x. the id of a row to open/ reveal the
+            hidden row of)
+
+        """
+        search_id = 'tableSearchInput{}Table'.format(table_name)
+        search_elem = self.browser.find_element_by_id(search_id)
+        search_elem.clear()
+        if search_val:
+            self.submit_form(form_names=[search_id], submit_id=submit_id,
+                             test_name=search_val)
+        else:
+            search_elem.send_keys(Keys.ENTER)
+
 
 def copy_file(old_file, new_file, attempt=1, max_attempts=100, sleep=60):
     try:

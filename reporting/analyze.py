@@ -99,7 +99,8 @@ class Analyze(object):
     def __init__(self, df=pd.DataFrame(), file_name=None, matrix=None,
                  load_chat=False, chat_path=utl.config_path, llm_url='',
                  llm_model='', llm_instructions='', previous_messages=None,
-                 transformer=None, transformer_dict=None):
+                 transformer=None, transformer_dict=None,
+                 write_authority=None):
         self.analysis_dict = []
         self.df = df
         self.file_name = file_name
@@ -128,7 +129,8 @@ class Analyze(object):
                 llm_instructions=self.llm_instructions,
                 previous_messages=self.previous_messages,
                 transformer=transformer,
-                transformer_dict=transformer_dict)
+                transformer_dict=transformer_dict,
+                write_authority=write_authority)
 
     def get_base_analysis_dict_format(self):
         analysis_dict_format = {
@@ -3520,7 +3522,7 @@ class AliChat(object):
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
                  previous_messages=None, transformer=None,
-                 transformer_dict=None):
+                 transformer_dict=None, write_authority=None):
         self.config_name = config_name
         self.config_path = config_path
         self.db = None
@@ -3537,6 +3539,35 @@ class AliChat(object):
         self.call_llm = False
         self.transformer = transformer
         self.transformer_dict = transformer_dict or {}
+        self.write_authority = write_authority
+
+    def _propose_column_write(self, cur_model, column, new_val):
+        """setattr+commit a heuristic column write, gated by the
+        optional write_authority. Returns True when the write
+        proceeded, False when the authority deferred it; deferred
+        writes must not be reflected in the response string."""
+        if self.write_authority:
+            proceed = self.write_authority(
+                op='column_write', model=cur_model,
+                column=column, new_val=new_val,
+                existing_val=getattr(cur_model, column, None))
+            if not proceed:
+                return False
+        setattr(cur_model, column, new_val)
+        self.db.session.commit()
+        return True
+
+    def _propose_create(self, new_model, parent=None,
+                        op='create'):
+        """Commit a heuristic create. The write_authority is
+        invoked for audit logging only — net-new creates always
+        proceed."""
+        if self.write_authority is not None:
+            self.write_authority(
+                op=op, model=new_model, parent=parent)
+        self.db.session.add(new_model)
+        self.db.session.commit()
+        return True
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3962,6 +3993,8 @@ class AliChat(object):
         db_model_child = cur_model.get_children()
         if not db_model_child:
             return response
+        if not hasattr(db_model_child, 'get_name_list'):
+            return response
         cur_children = cur_model.get_current_children()
         child_list = db_model_child.get_name_list()
         child_name = [x for x in words if x in child_list]
@@ -3970,8 +4003,8 @@ class AliChat(object):
         if child_name:
             new_child = db_model_child()
             new_child.set_from_form({'name': child_name[0]}, cur_model)
-            self.db.session.add(new_child)
-            self.db.session.commit()
+            self._propose_create(
+                new_child, parent=cur_model, op='create_child')
             msg = 'The {} is named {}.  '.format(
                 db_model_child.__name__, child_name[0])
             self.check_db_model_col(db_model_child, words, new_child)
@@ -4012,8 +4045,8 @@ class AliChat(object):
                 g_child['total_budget'] = cost
                 new_g_child = db_model_g_child()
                 new_g_child.set_from_form(g_child, new_child)
-                self.db.session.add(new_g_child)
-                self.db.session.commit()
+                self._propose_create(
+                    new_g_child, parent=new_child, op='create_child')
                 if part_add_msg not in response:
                     response += part_add_msg
                 response += '{} ({}) '.format(g_child_name, cost)
@@ -4103,8 +4136,8 @@ class AliChat(object):
                 name = new_model.get_first_unique_name(name[0])
                 new_model.set_from_form({'name': name}, parent_model,
                                         self.current_user.id)
-                self.db.session.add(new_model)
-                self.db.session.commit()
+                self._propose_create(
+                    new_model, parent=parent_model, op='create')
             response = self.check_db_model_col(db_model, words, new_model)
             response += self.create_db_model_children(new_model, words)
             response = '{}{}'.format(self.create_success_msg, response)
@@ -4160,11 +4193,11 @@ class AliChat(object):
                 new_val = utl.get_next_number_from_list(
                     words, k, cur_model.name, last_instance=True)
             if new_val:
-                setattr(cur_model, k, new_val)
-                self.db.session.commit()
-                response += 'The {} for {} was changed to {}.  '.format(
-                    k, cur_model.name, new_val)
+                applied = self._propose_column_write(cur_model, k, new_val)
                 words = [x for x in words if x not in in_list]
+                if applied:
+                    response += 'The {} for {} was changed to {}.  '.format(
+                        k, cur_model.name, new_val)
         return response
 
     def check_children_for_edit(self, cur_model, words):
@@ -4199,6 +4232,8 @@ class AliChat(object):
 
     def edit_db_model(self, db_model, words, model_ids):
         response = ''
+        if not getattr(db_model, 'chat_editable', False):
+            return response
         edit_words = ['change', 'edit', 'adjust', 'alter', 'add']
         is_edit = utl.is_list_in_list(edit_words, words)
         if is_edit:
@@ -4525,14 +4560,8 @@ class AliChat(object):
         return response
 
     def polish_response(self, response):
-        """
-        Combine multiple formatting functions into one 'polish' step.
-
-        :param response: Current raw response as text.
-        :return: Text that has been edited
-        """
-        # response = self.add_bullet_response(response)
-        response = self.add_polite_flair(response)
+        """Pass-through. Flair wrappers are disabled — they
+        fought the system prompt's concise/confident rule."""
         return response
 
 
