@@ -3487,7 +3487,7 @@ class AliChat(object):
     openai_found = 'Here is the openai gpt response: '
     openai_msg = ('I had trouble understanding but the '
                   'openai gpt response is:')
-    found_model_msg = 'Links are provided below.  '
+    found_model_msg = ''
     create_success_msg = 'The object has been successfully created.  '
     ex_prompt_wrap = "<br>Ex. prompt: <div class='examplePrompt'>"
     opening_phrases = [
