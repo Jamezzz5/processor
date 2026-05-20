@@ -24,6 +24,9 @@
 # Logs and databases #
 ######################
 *.log
+logs/
+tests/logs/
+tmp/
 *.sql
 *.sqlite
 

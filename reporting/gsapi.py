@@ -158,6 +158,14 @@ class GsApi(object):
         response = self.client.put(url=url, params=params, json=body)
         return response
 
+    def batch_update(self, spreadsheet_id, requests):
+        """POST a list of Sheets requests (repeatCell, mergeCells,
+        updateBorders, ...) to spreadsheets.batchUpdate."""
+        if not requests:
+            return None
+        url = f'{self.sheets_url}/{spreadsheet_id}:batchUpdate'
+        return self.client.post(url=url, json={'requests': requests})
+
     @staticmethod
     def spreadsheet_url(spreadsheet_id):
         return 'https://docs.google.com/spreadsheets/d/{}/edit'.format(
