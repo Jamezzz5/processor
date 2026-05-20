@@ -356,4 +356,19 @@ api_partner_name_translation = {
     api_ias_key: ['Integral']
 }
 
+top_apis = [
+    api_aw_key,
+    api_fb_key,
+    api_dc_key,
+    api_red_key,
+    api_tik_key,
+    api_tw_key,
+    api_amz_key,
+    api_sam_key,
+    api_amd_key,
+    api_yv_key,
+    api_gs_key,
+    api_ga_key,
+]
+
 output_file = 'Raw Data Output.csv'
