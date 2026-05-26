@@ -288,6 +288,8 @@ class DBUpload(object):
             col = self.dbs.fk[fk_table][0]
             if col in df_insert.columns:
                 df_insert = self.dft.df_col_to_type(df_insert, col, 'INT')
+                if fk_table != exc.upload_tbl:
+                    df_insert = df_insert[df_insert[col] != 0]
         if self.id_col in df_insert.columns:
             df_insert = df_insert.drop([self.id_col], axis=1)
         if not df_insert.empty:

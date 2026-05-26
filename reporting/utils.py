@@ -1001,6 +1001,7 @@ class SeleniumWrapper(object):
                 elem.clear()
                 return
             except (ex.ElementNotInteractableException,
+                    ex.InvalidElementStateException,
                     ex.StaleElementReferenceException):
                 if attempt == attempts - 1:
                     self.browser.execute_script(

@@ -154,7 +154,12 @@ class VendorMatrix(object):
         for source in data_sources:
             vendor_key = source['original_vendor_key']
             logging.info('Setting datasource for {}.'.format(vendor_key))
-            index = self.vm_df[self.vm_df[vmc.vendorkey] == vendor_key].index[0]
+            matches = self.vm_df[self.vm_df[vmc.vendorkey] == vendor_key].index
+            if matches.empty:
+                logging.warning(
+                    'Vendor key {} not in vm; skipping.'.format(vendor_key))
+                continue
+            index = matches[0]
             for col in [vmc.autodicplace, vmc.placement, vmc.vendorkey]:
                 self.vm_change(index, col, source[col])
             for col in [vmc.autodicord, vmc.fullplacename]:
@@ -599,6 +604,8 @@ class ImportConfig(object):
         if not matrix:
             self.import_vm()
         import_dicts = []
+        if self.matrix_df is None:
+            return import_dicts
         api_keys = [x for x in self.matrix_df[vmc.vendorkey]
                     if x[:4] == import_type]
         for api_key in api_keys:

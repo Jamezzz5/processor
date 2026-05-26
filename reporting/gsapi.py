@@ -183,7 +183,7 @@ class GsApi(object):
         self.add_permissions(presentation_id)
         return presentation_id
 
-    def add_permissions(self, presentation_id, domain="liquidarcade.com"):
+    def add_permissions(self, presentation_id, domain="liquidadvertising.com"):
         url = self.files_url + "/" + presentation_id + "/permissions"
         body = {
             "role": "writer",
