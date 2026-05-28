@@ -159,7 +159,24 @@ class VendorMatrix(object):
                 logging.warning(
                     'Vendor key {} not in vm; skipping.'.format(vendor_key))
                 continue
+            if len(matches) > 1:
+                logging.warning(
+                    f'Vendor key {vendor_key} appears {len(matches)} '
+                    f'times in vm; refusing to write to avoid a '
+                    f'duplicate-key cascade.  Resolve duplicates and '
+                    f'retry.')
+                continue
             index = matches[0]
+            new_key = source[vmc.vendorkey]
+            if new_key != vendor_key:
+                other = self.vm_df.index[
+                    (self.vm_df[vmc.vendorkey] == new_key)
+                    & (self.vm_df.index != index)]
+                if not other.empty:
+                    logging.warning(
+                        f'Refusing to rename {vendor_key} -> {new_key}: '
+                        f'target key already on row(s) {list(other)}.')
+                    continue
             for col in [vmc.autodicplace, vmc.placement, vmc.vendorkey]:
                 self.vm_change(index, col, source[col])
             for col in [vmc.autodicord, vmc.fullplacename]:
@@ -442,7 +459,7 @@ class ImportConfig(object):
         original_keys = [import_key, '{}_{}'.format(import_type, import_key)]
         df = df[df[vmc.vendorkey].isin(original_keys)].copy()
         df = df.reset_index(drop=True)
-        df = df.iloc[0:]
+        df = df.head(1)
         if df.empty and not default_param:
             df = self.get_default_vm_value(import_key, import_type, True)
         return df

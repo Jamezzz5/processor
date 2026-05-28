@@ -267,7 +267,7 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
     for col in int_col:
         if col not in df:
             continue
-        df[col] = df[col].astype(int)
+        df[col] = df[col].astype('int64')
     return df
 
 

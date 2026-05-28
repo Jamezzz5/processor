@@ -1423,7 +1423,7 @@ class CheckFirstRow(AnalyzeBase):
                       else s for s in place_cols]
         old_first_row = int(source.p[vmc.firstrow])
         df = utl.import_read_csv(raw_file, nrows=10)
-        if df.empty:
+        if df is None or df.empty:
             return l_df
         new_first_row = None
         for idx in range(len(df)):

@@ -192,6 +192,11 @@ class GsApi(object):
             "allowFileDiscovery": True
         }
         response = self.client.post(url=url, json=body)
+        if response.status_code not in (200, 204):
+            logging.warning(
+                'Failed to share {} with domain {}: {} (Status {})'.format(
+                    presentation_id, domain, response.text,
+                    response.status_code))
         return response
 
     def add_image_slide(self, presentation_id=None, ad_id=None,

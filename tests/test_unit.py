@@ -125,7 +125,7 @@ class TestUtils:
         date_list = [pd.NaT] * len(nat_list) + cor_date_list
         df_dict = {str_col: str_list, date_col: date_list,
                    float_col: [float(x) for x in float_list],
-                   int_col: [np.int32(x) for x in float_list]}
+                   int_col: [np.int64(x) for x in float_list]}
         df = pd.DataFrame(df_dict)
         df[int_col] = df[int_col].astype('int64')
         for col in [str_col, float_col, date_col, int_col]:
@@ -437,6 +437,51 @@ class TestVendormatrix:
         bar_col = vmc.barsplitcol[0]
         plan_val = matrix.vm[bar_col][vm.plan_key]
         assert isinstance(plan_val, list)
+
+    @staticmethod
+    def _bare_source(original, new):
+        return {
+            'original_vendor_key': original,
+            vmc.vendorkey: new,
+            vmc.autodicplace: '',
+            vmc.placement: '',
+            vmc.autodicord: '',
+            vmc.fullplacename: '',
+            'active_metrics': {},
+            'vm_rules': {},
+        }
+
+    def test_set_data_sources_refuses_duplicate_key_cascade(self):
+        matrix = vm.VendorMatrix()
+        matrix.vm_df = pd.DataFrame({
+            vmc.vendorkey: ['DBM', 'DBM', 'DBM', 'DBM'],
+            vmc.filename: ['a.csv', 'b.csv', 'c.csv', 'd.csv'],
+        })
+        matrix.write = lambda: None
+        sources = [self._bare_source('DBM', 'API_DBM_DBM')] * 4
+        matrix.set_data_sources(sources)
+        assert matrix.vm_df[vmc.vendorkey].tolist() == ['DBM'] * 4
+
+    def test_set_data_sources_refuses_collision_rename(self):
+        matrix = vm.VendorMatrix()
+        matrix.vm_df = pd.DataFrame({
+            vmc.vendorkey: ['Adikteev', 'API_DBM_DBM'],
+            vmc.filename: ['adikteev.csv', 'dbm.csv'],
+        })
+        matrix.write = lambda: None
+        matrix.set_data_sources(
+            [self._bare_source('Adikteev', 'API_DBM_DBM')])
+        assert matrix.vm_df.loc[0, vmc.vendorkey] == 'Adikteev'
+        assert matrix.vm_df.loc[1, vmc.vendorkey] == 'API_DBM_DBM'
+
+    def test_get_default_vm_value_returns_single_row(self):
+        ic = vm.ImportConfig()
+        ic.matrix_df = pd.DataFrame({
+            vmc.vendorkey: ['DBM', 'DBM', 'DBM'],
+            vmc.filename: ['a.csv', 'b.csv', 'c.csv'],
+        })
+        result = ic.get_default_vm_value('DBM', 'API')
+        assert len(result) == 1
 
 
 class TestDictionary:
@@ -997,6 +1042,29 @@ class TestAnalyze:
         place_analyze.do_analysis()
         rdf = place_analyze.fix_analysis(rdf, write=False)
         assert new_place in rdf[dctc.DICT_COL_VALUE].values
+
+    def test_placement_not_in_mp_combine_underscore(self):
+        """CombineColumnsUnderscore joins with underscore before
+        RawTranslate so the combined name can be translated."""
+        col_a = dctc.PN
+        col_b = 'secondary'
+        df = pd.DataFrame({col_a: ['camp1', 'camp2'],
+                           col_b: ['adg1', 'adg2']})
+        transform = (f'CombineColumnsUnderscore::{col_a}|{col_b}'
+                     f':::RawTranslate')
+        tc = dct.DictTranslationConfig()
+        tc.df = pd.DataFrame({
+            dctc.DICT_COL_NAME: [col_a],
+            dctc.DICT_COL_VALUE: ['camp1_adg1'],
+            dctc.DICT_COL_NVALUE: ['plan_placement'],
+        })
+        tc.write(tc.df, dctc.filename_tran_config)
+        df = vm.df_transform(df, transform)
+        assert col_b not in df.columns
+        assert df[col_a].iloc[0] == 'plan_placement'
+        assert df[col_a].iloc[1] == 'camp2_adg2'
+        os.remove(os.path.join(
+            tc.csv_path, dctc.filename_tran_config))
 
     def test_placement_not_in_mp_fix(self):
         creative_names = ['a', 'b', 'c']
