@@ -40,6 +40,19 @@ import processor.reporting.simapi as simapi
 import processor.reporting.steapi as steapi
 import processor.reporting.importhandler as ih
 
+# Dev machines carry gitignored credentials and data artifacts that
+# CI checkouts lack; gate the tests that genuinely need them.
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
+requires_api_configs = pytest.mark.skipif(
+    not os.path.exists(os.path.join(CONFIG_PATH, 'fbconfig.json')),
+    reason='channel API configs not present')
+requires_base_config = pytest.mark.skipif(
+    not os.path.exists(os.path.join(CONFIG_PATH, 'Vendormatrix.csv')),
+    reason='base config artifacts not present')
+requires_local_browser = pytest.mark.skipif(
+    os.environ.get('CI', '').lower() == 'true',
+    reason='headed browser unavailable on CI')
+
 
 def func(x):
     return x + 1
@@ -139,6 +152,7 @@ class TestUtils:
         assert sw.headless is True
         sw.quit()
 
+    @requires_local_browser
     def test_screenshot(self):
         sw = utl.SeleniumWrapper(headless=False)
         test_url = 'https://www.google.com/'
@@ -208,6 +222,7 @@ class TestUtils:
         assert vmc.date in tdf.columns
 
 
+@requires_api_configs
 class TestApis:
 
     @staticmethod
@@ -431,6 +446,7 @@ class TestVendormatrix:
         cpc_calc = df[df[dctc.AM] == cal.BM_CPC][vmc.AD_COST].to_list()[0]
         assert cpc_cost == cpc_calc
 
+    @requires_base_config
     def test_vm_load(self):
         matrix = vm.VendorMatrix()
         assert matrix.vm
@@ -816,6 +832,7 @@ class TestAnalyze:
         df = cfs.find_missing_flat_spend(df)
         assert df.empty
 
+    @requires_base_config
     def test_flat_fix(self):
         first_click_date = '2022-07-25'
         cfs = az.CheckFlatSpends(az.Analyze())
@@ -1025,6 +1042,7 @@ class TestAnalyze:
                 df = pd.concat([df, tdf], ignore_index=True)
         return df
 
+    @requires_base_config
     def test_placement_not_in_mp(self):
         df = self.get_output_as_df()
         base_analyze = az.Analyze(matrix=vm.VendorMatrix())
@@ -1105,6 +1123,7 @@ class TestAnalyze:
         df = cdc.find_metric_double_counting(df)
         assert df.empty
 
+    @requires_base_config
     def test_adwords_split(self):
         df = pd.DataFrame()
         ic = vm.ImportConfig()
@@ -1163,6 +1182,7 @@ class TestAnalyze:
         cas.aly.matrix.vm_df = vm_df
         cas.aly.matrix.write()
 
+    @requires_base_config
     def test_max_date_reached(self):
         start_date, date1, date2, date3, date4 = [
             (dt.datetime.today() - dt.timedelta(days=i)).strftime('%Y-%m-%d')
@@ -1379,6 +1399,7 @@ class TestAnalyze:
             df.to_csv(full_file_name, index=False)
         return test_vm
 
+    @requires_base_config
     def test_change_autodict_order(self, setup_autodict_files):
         """
         Tests CheckAutoDictOrder using auto dict order/data source
@@ -1424,10 +1445,12 @@ class TestAnalyze:
                 file_path = utl.dict_path
             os.remove(os.path.join(file_path, file_name))
 
+    @requires_base_config
     def test_all_analysis_on_empty_df(self):
         aly = az.Analyze(df=pd.DataFrame(), matrix=vm.VendorMatrix())
         aly.do_all_analysis()
 
+    @requires_base_config
     def test_all_analysis_on_header_df(self):
         df = pd.DataFrame(columns=[
             vmc.btnclick, vmc.clicks, vmc.date, dctc.FPN, vmc.impressions,
@@ -1452,6 +1475,7 @@ class TestAnalyze:
         aly = az.Analyze(df=df, matrix=vm.VendorMatrix())
         aly.do_all_analysis()
 
+    @requires_base_config
     def test_all_analysis_on_df(self):
         d = {vmc.clicks: [38, 2078, 2428, 0, 399, 405],
              vmc.date: ['4/9/2025' for x in range(6)],
@@ -1485,6 +1509,7 @@ class TestAnalyze:
         bm25_scores = transformer.bm25_search(user_text, top_k=top_k)
         assert bm25_scores
 
+    @requires_base_config
     def test_do_analysis_and_fix_processor(self):
         output_dfs = [pd.DataFrame(),
                       self.get_output_as_df(with_plan=True),
@@ -1988,11 +2013,13 @@ class TestExport:
 
 
 class TestRun:
+    @requires_base_config
     def test_blank_run(self):
         main('--analyze')
 
 
 class TestImportPlanData:
+    @requires_base_config
     def test_import_plan_data(self, tmp_path_factory):
         df = pd.DataFrame({
             vmc.vendorkey: ['API_Test1', 'API_Test2', 'API_Test3'],
