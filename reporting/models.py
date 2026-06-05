@@ -668,7 +668,8 @@ class Fullplacement(Base):
     environmentid = Column(ForeignKey(
         'lqadb.environment.environmentid', ondelete='CASCADE'))
     kpiid = Column(ForeignKey('lqadb.kpi.kpiid', ondelete='CASCADE'))
-    uploadid = Column(ForeignKey('lqadb.upload.uploadid', ondelete='CASCADE'))
+    uploadid = Column(ForeignKey(
+        'lqadb.upload.uploadid', ondelete='CASCADE'), index=True)
     modelid = Column(ForeignKey('lqadb.model.modelid', ondelete='CASCADE'))
     factionid = Column(ForeignKey(
         'lqadb.faction.factionid', ondelete='CASCADE'))
@@ -713,7 +714,7 @@ class Event(Base):
     eventid = Column(BigInteger, primary_key=True, server_default=text(
         "nextval('lqadb.event_eventid_seq'::regclass)"))
     eventname = Column(Text)
-    eventdate = Column(Date)
+    eventdate = Column(Date, index=True)
     fullplacementid = Column(ForeignKey(
         'lqadb.fullplacement.fullplacementid', ondelete='CASCADE'), index=True)
     impressions = Column(Numeric)
