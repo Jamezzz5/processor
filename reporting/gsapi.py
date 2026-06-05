@@ -28,9 +28,15 @@ class GsApi(object):
     text_format = 'NORMAL_TEXT'
     screenshot_dir = os.path.join('screenshots', 'charts/')
     default_config_file_name = 'gsapi.json'
+    default_config = 'gsapi_screenshots.json'
+    required_scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/presentations',
+        'https://www.googleapis.com/auth/documents',
+    ]
 
     def __init__(self):
-        self.default_config = "gsapi_screenshots.json"
         self.config = None
         self.config_file = None
         self.client_id = None
@@ -44,6 +50,7 @@ class GsApi(object):
         self.df = pd.DataFrame()
         self.r = None
         self.google_doc = False
+        self.on_token_refresh = None
         self.parse_response = self.parse_sheets_response
 
     def input_config(self, config):
@@ -72,6 +79,20 @@ class GsApi(object):
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.sheet_id]
 
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict, bypassing the
+        CWD-relative config file load (used by the app-layer vault)."""
+        self.config = config
+        self.client_id = config['client_id']
+        self.client_secret = config['client_secret']
+        self.access_token = config['access_token']
+        self.refresh_token = config['refresh_token']
+        self.refresh_url = config['refresh_url']
+        self.sheet_id = config.get('sheet_id', '')
+        self.config_list = [self.config, self.client_id,
+                            self.client_secret, self.refresh_token,
+                            self.refresh_url]
+
     def check_config(self):
         for item in self.config_list:
             if item == '':
@@ -97,6 +118,8 @@ class GsApi(object):
         self.client = OAuth2Session(self.client_id, token=token)
         token = self.client.refresh_token(self.refresh_url, **extra)
         self.client = OAuth2Session(self.client_id, token=token)
+        if self.on_token_refresh:
+            self.on_token_refresh(token)
 
     def create_url(self):
         if self.google_doc:

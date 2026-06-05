@@ -6,6 +6,7 @@ import logging
 import operator
 import calendar
 import requests
+from urllib.parse import urlencode
 from requests.auth import HTTPBasicAuth
 import pandas as pd
 import datetime as dt
@@ -35,7 +36,12 @@ class RedApi(object):
     redirect_uri_str = 'redirect_uri'
     refresh_token_str = 'refresh_token'
     access_token_str = 'access_token'
-    access_token_url = 'https://www.reddit.com/api/v1/access_token'
+    base_reddit_url = 'https://www.reddit.com/api/v1'
+    access_token_url = '{}/access_token'.format(base_reddit_url)
+    auth_url = '{}/authorize'.format(base_reddit_url)
+    revoke_url = '{}/revoke_token'.format(base_reddit_url)
+    identity_url = 'https://oauth.reddit.com/api/v1/me'
+    default_scope = 'adsread,adsconversions,history,adsedit,read'
     version = '3'
     base_api_url = 'https://ads-api.reddit.com/api/v{}/'.format(version)
     business_url = '{}me/businesses'.format(base_api_url)
@@ -98,6 +104,20 @@ class RedApi(object):
         self.access_token = self.config.get(self.access_token_str)
         self.refresh_token = self.config.get(self.refresh_token_str)
         self.config_list = [ self.username, self.password]
+
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict, bypassing the
+        config file load (used by the app-layer credential vault)."""
+        self.config = config
+        self.username = config.get(self.username_str)
+        self.password = config.get(self.password_str)
+        self.code = config.get(self.code_str)
+        self.client_id = config.get(self.client_id_str)
+        self.client_secret = config.get(self.client_secret_str)
+        self.redirect_uri = config.get(self.redirect_uri_str)
+        self.access_token = config.get(self.access_token_str)
+        self.refresh_token = config.get(self.refresh_token_str)
+        self.config_list = [self.username, self.password]
 
     def check_config(self):
         for item in self.config_list:
@@ -364,6 +384,29 @@ class RedApi(object):
         account_xpath = '//a[text()="{}"]'.format(self.account)
         self.sw.click_on_xpath(account_xpath)
 
+    def get_auth_url(self, state='lqadata', redirect_uri=None, scope=None,
+                     old_ui=False):
+        if not redirect_uri:
+            redirect_uri = self.redirect_uri
+        if not scope:
+            scope = self.default_scope
+        params = {
+            "client_id": self.client_id,
+            "response_type": "code",
+            "state": state,
+            "redirect_uri": redirect_uri,
+            "duration": "permanent",
+            "scope": scope,
+        }
+        url = self.auth_url
+        if old_ui:
+            url = url.replace('www.reddit.com', 'old.reddit.com')
+        return f"{url}?{urlencode(params)}"
+
+    def get_user_agent(self, user_agent=None):
+        """UA for OAuth calls — Reddit rejects generic agents."""
+        return user_agent if user_agent else self.redirect_uri
+
     def get_access_token(self):
         url = self.access_token_url
         headers = {
@@ -379,6 +422,87 @@ class RedApi(object):
         self.access_token = r.json()['access_token']
         self.headers = {'Accept': 'application/json',
                         'Authorization': 'Bearer {}'.format(self.access_token)}
+
+    def exchange_code(self, code, redirect_uri=None, user_agent=None,
+                      timeout=15):
+        """Trade an authorization code for a token dict."""
+        if not redirect_uri:
+            redirect_uri = self.redirect_uri
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': self.get_user_agent(user_agent)
+        }
+        data = {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': redirect_uri
+        }
+        auth = HTTPBasicAuth(self.client_id, self.client_secret)
+        r = requests.post(self.access_token_url, headers=headers,
+                          data=data, auth=auth, timeout=timeout)
+        return r.json()
+
+    def get_identity(self, user_agent=None, timeout=10):
+        """Username for the current access token (identity scope)."""
+        headers = {
+            'Authorization': 'Bearer {}'.format(self.access_token),
+            'User-Agent': self.get_user_agent(user_agent)
+        }
+        try:
+            r = requests.get(self.identity_url, headers=headers,
+                             timeout=timeout)
+        except requests.exceptions.RequestException:
+            return None
+        if r.status_code != 200:
+            return None
+        return r.json().get('name')
+
+    def check_liveness(self, timeout=8, user_agent=None):
+        """True when the refresh token still grants an access token."""
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': self.get_user_agent(user_agent)
+        }
+        data = {
+            'grant_type': 'refresh_token',
+            'refresh_token': self.refresh_token
+        }
+        auth = HTTPBasicAuth(self.client_id, self.client_secret)
+        try:
+            r = requests.post(self.access_token_url, headers=headers,
+                              data=data, auth=auth, timeout=timeout)
+        except requests.exceptions.RequestException:
+            return False
+        if r.status_code != 200:
+            return False
+        token = r.json()
+        if 'access_token' not in token:
+            return False
+        self.access_token = token['access_token']
+        self.headers = {'Accept': 'application/json',
+                        'Authorization': 'Bearer {}'.format(
+                            self.access_token)}
+        return True
+
+    def revoke_token(self, user_agent=None, timeout=10):
+        """Best-effort revoke of the refresh token at Reddit."""
+        if not self.refresh_token:
+            return False
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': self.get_user_agent(user_agent)
+        }
+        data = {
+            'token': self.refresh_token,
+            'token_type_hint': 'refresh_token'
+        }
+        auth = HTTPBasicAuth(self.client_id, self.client_secret)
+        try:
+            r = requests.post(self.revoke_url, headers=headers,
+                              data=data, auth=auth, timeout=timeout)
+        except requests.exceptions.RequestException:
+            return False
+        return r.status_code == 200
 
     def get_all_business_ids(self):
         """

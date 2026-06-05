@@ -27,6 +27,9 @@ base_url = 'https://ads-api.twitter.com'
 standard_base_url = 'https://api.twitter.com/1.1'
 user_url = '/users/lookup.json?'
 status_url = '/statuses/lookup.json?'
+oauth_request_url = 'https://api.twitter.com/oauth/request_token'
+oauth_authorize_url = 'https://api.twitter.com/oauth/authorize'
+oauth_access_url = 'https://api.twitter.com/oauth/access_token'
 reqdformat = '%Y-%m-%dT%H:%M:%SZ'
 
 colspend = 'billed_charge_local_micro'
@@ -86,6 +89,8 @@ user_fields = ['id', 'name', 'screen_name', 'location', 'description',
 
 
 class TwApi(object):
+    default_config_file_name = 'twconfig.json'
+
     def __init__(self):
         self.df = pd.DataFrame()
         self.configfile = None
@@ -108,7 +113,6 @@ class TwApi(object):
         self.usernames = None
         self.async_requests = []
         self.v = 12
-        self.default_config_file_name = 'twconfig.json'
         self.pw_sheet_id = '18dt84mxha8fAVuhTxMaGcaMBHwf0_mhTS7q7XMadg2o'
 
     def reset_dicts(self):
@@ -152,9 +156,65 @@ class TwApi(object):
                                 ' Aborting.'.format(item))
                 sys.exit(0)
 
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict, bypassing the
+        config file load (used by the app-layer credential vault)."""
+        self.config = config
+        self.consumer_key = config.get('CONSUMER_KEY', '')
+        self.consumer_secret = config.get('CONSUMER_SECRET', '')
+        self.access_token = config.get('ACCESS_TOKEN', '')
+        self.access_token_secret = config.get('ACCESS_TOKEN_SECRET', '')
+        self.account_id = config.get('ACCOUNT_ID', '')
+        self.campaign_filter = config.get('CAMPAIGN_FILTER', '')
+        self.config_list = [self.consumer_key, self.consumer_secret,
+                            self.access_token, self.access_token_secret]
+
     def get_client(self):
         self.client = OAuth1Session(self.consumer_key, self.consumer_secret,
                                     self.access_token, self.access_token_secret)
+
+    def get_request_token(self, callback_uri):
+        """Start a browser-consent 3-legged OAuth1 flow.
+
+        Returns ``(authorize_url, owner_key, owner_secret)``; the
+        caller keeps the owner pair to pass to ``exchange_verifier``
+        when the callback returns.
+        """
+        oauth = OAuth1Session(self.consumer_key,
+                              client_secret=self.consumer_secret,
+                              callback_uri=callback_uri)
+        fetch_response = oauth.fetch_request_token(oauth_request_url)
+        owner_key = fetch_response.get('oauth_token')
+        owner_secret = fetch_response.get('oauth_token_secret')
+        authorize_url = oauth.authorization_url(oauth_authorize_url)
+        return authorize_url, owner_key, owner_secret
+
+    def exchange_verifier(self, owner_key, owner_secret, verifier):
+        """Trade an OAuth1 verifier for an access token dict.
+
+        The returned dict carries ``oauth_token``,
+        ``oauth_token_secret`` and ``screen_name``.
+        """
+        oauth = OAuth1Session(self.consumer_key,
+                              client_secret=self.consumer_secret,
+                              resource_owner_key=owner_key,
+                              resource_owner_secret=owner_secret,
+                              verifier=verifier)
+        return oauth.fetch_access_token(oauth_access_url)
+
+    def check_account_access(self, account_id, timeout=8):
+        """True when the loaded token can read the given ads account."""
+        if not account_id:
+            return False
+        client = OAuth1Session(self.consumer_key, self.consumer_secret,
+                               self.access_token,
+                               self.access_token_secret)
+        url = '{}/{}/accounts/{}'.format(base_url, self.v, account_id)
+        try:
+            r = client.get(url, timeout=timeout)
+        except requests.exceptions.RequestException:
+            return False
+        return r.status_code == 200
 
     def make_request(self, url, params=None, method='GET'):
         self.get_client()
