@@ -28,6 +28,7 @@ import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
+import processor.reporting.afapi as afapi
 import processor.reporting.twapi as twapi
 import processor.reporting.scapi as scapi
 import processor.reporting.awss3 as awss3
@@ -400,6 +401,10 @@ class TestApis:
 
     def test_twapi(self, tmp_path_factory):
         api = twapi.TwApi()
+        self.send_api_call(api)
+
+    def test_afapi(self, tmp_path_factory):
+        api = afapi.AfApi()
         self.send_api_call(api)
 
     @staticmethod

@@ -85,6 +85,9 @@ class VendorMatrix(object):
             self.vm_df = pd.DataFrame(columns=vmc.datacol)
             self.vm_df = self.read()
         self.vm_df = self.add_file_name_col()
+        if self.vm_df is None:
+            cols = vmc.vmkeys + vmc.datacol
+            self.vm_df = pd.DataFrame(columns=cols)
         self.vm = self.vm_df.copy()
         self.plan_net_check()
         drop = self.vm.columns[self.vm.columns.str.startswith('|')]
@@ -161,10 +164,8 @@ class VendorMatrix(object):
                 continue
             if len(matches) > 1:
                 logging.warning(
-                    f'Vendor key {vendor_key} appears {len(matches)} '
-                    f'times in vm; refusing to write to avoid a '
-                    f'duplicate-key cascade.  Resolve duplicates and '
-                    f'retry.')
+                    f'Vendor key {vendor_key} has {len(matches)} '
+                    f'duplicates in vm; skipping to avoid cascade.')
                 continue
             index = matches[0]
             new_key = source[vmc.vendorkey]
@@ -174,8 +175,8 @@ class VendorMatrix(object):
                     & (self.vm_df.index != index)]
                 if not other.empty:
                     logging.warning(
-                        f'Refusing to rename {vendor_key} -> {new_key}: '
-                        f'target key already on row(s) {list(other)}.')
+                        f'{vendor_key} -> {new_key} would collide with '
+                        f'row(s) {list(other)}; skipping.')
                     continue
             for col in [vmc.autodicplace, vmc.placement, vmc.vendorkey]:
                 self.vm_change(index, col, source[col])

@@ -1,6 +1,5 @@
 import io
 import os
-import sys
 import json
 import time
 import logging
@@ -11,7 +10,10 @@ import reporting.utils as utl
 
 config_path = utl.config_path
 
-base_url = 'https://hq.appsflyer.com/export/'
+agg_base_url = 'https://hq1.appsflyer.com/api/agg-data/export/app/'
+raw_base_url = 'https://hq1.appsflyer.com/api/raw-data/export/app/'
+
+raw_report_types = ['installs_report', 'in_app_events_report']
 
 report_types = ['geo_by_date_report', 'partners_by_date_report',
                 'installs_report', 'in_app_events_report', 'geo_report',
@@ -25,49 +27,63 @@ class AfApi(object):
         self.api_token = None
         self.app_id = None
         self.config_list = None
+        self.default_config_file_name = 'afconfig.json'
         self.df = pd.DataFrame()
         self.r = None
 
     def input_config(self, config):
         if str(config) == 'nan':
             logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
-            sys.exit(0)
+                            'Skipping AppsFlyer.')
+            return
         logging.info('Loading AF config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
-        self.load_config()
-        self.check_config()
+        if self.load_config():
+            self.check_config()
 
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
-        self.api_token = self.config['api_token']
-        self.app_id = self.config['app_id']
-        self.config_list = [self.config, self.api_token, self.app_id]
+            logging.error('{} not found.  Skipping AppsFlyer.'.format(
+                self.config_file))
+            return False
+        self.api_token = self.config.get('api_token', '')
+        self.app_id = self.config.get('app_id', '')
+        self.config_list = [('api_token', self.api_token),
+                            ('app_id', self.app_id)]
+        return True
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in AF config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        for name, item in self.config_list:
+            if not item:
+                logging.warning('{} not in AF config file.  AppsFlyer '
+                                'pull may not return data.'.format(name))
+
+    def get_headers(self):
+        return {'Authorization': 'Bearer {}'.format(self.api_token),
+                'accept': 'text/csv'}
+
+    @staticmethod
+    def get_base_url(field):
+        if field in raw_report_types:
+            return raw_base_url
+        return agg_base_url
 
     @staticmethod
     def parse_fields(items):
         sources = []
         category = None
         field = None
-        for item in items:
-            if item in report_types:
-                field = item
-            elif item == 'standard':
-                category = 'standard'
-            else:
-                sources.append(item)
+        if items:
+            for item in items:
+                if item in report_types:
+                    field = item
+                elif item == 'standard':
+                    category = 'standard'
+                else:
+                    sources.append(item)
         if not field:
             field = 'partners_by_date_report'
         return field, sources, category
@@ -81,12 +97,11 @@ class AfApi(object):
         return sd, ed
 
     def create_url(self, sd, ed, field, sources, category, retarget=False):
+        base_url = self.get_base_url(field)
         report_url = '/{}/v5?'.format(field)
-        token_url = 'api_token={}'.format(self.api_token)
-        sded_url = '&from={}&to={}'.format(sd, ed)
+        sded_url = 'from={}&to={}'.format(sd, ed)
         tz_url = '&timezone=America/Los_Angeles'
-        full_url = (base_url + self.app_id + report_url + token_url +
-                    sded_url + tz_url)
+        full_url = base_url + self.app_id + report_url + sded_url + tz_url
         if sources:
             source_url = '&media_source={}'.format(','.join(sources))
             full_url += source_url
@@ -98,6 +113,10 @@ class AfApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
+        if not self.api_token or not self.app_id:
+            logging.warning('AppsFlyer not configured (missing api_token '
+                            'or app_id).  Returning empty df.')
+            return pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         if sd > ed:
             logging.warning('Start date greater than end date.  Start date '
@@ -120,40 +139,63 @@ class AfApi(object):
                      ''.format(field, sd, ed, sources, category, retarget))
         full_url = self.create_url(sd, ed, field, sources, category, retarget)
         try:
-            self.r = requests.get(full_url, timeout=1200)
+            self.r = requests.get(full_url, headers=self.get_headers(),
+                                  timeout=1200)
         except (requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError) as err:
-            logging.warning('Request exceeded 1200 seconds, remaking request: '
-                            '\n {}'.format(err))
-        if self.r and self.r.status_code == 200:
-            df = self.data_to_df(self.r)
-        else:
-            attempts = self.request_error(attempts)
-            df = self.get_raw_data(sd, ed, field, sources, category, retarget,
-                                   attempts=attempts)
-        return df
+            logging.warning('Request failed (timeout or connection error): '
+                            '{}'.format(err))
+            self.r = None
+        if self.r is not None and self.r.status_code == 200:
+            return self.data_to_df(self.r)
+        attempts, fatal = self.request_error(attempts)
+        if fatal:
+            return pd.DataFrame()
+        return self.get_raw_data(sd, ed, field, sources, category, retarget,
+                                 attempts=attempts)
 
     def request_error(self, attempts=0):
         limit_error = 'Limit reached for'
         wrong_error = 'Something went wrong.'
         attempts += 1
         if attempts > 10:
-            logging.warning('Max attempts exceeded: {}'.format(self.r.text))
-            sys.exit(0)
-        if not self.r:
-            pass
-        if self.r.status_code == 403 and self.r.text[:17] == limit_error:
-            logging.warning('Limit reached pausing for 60 seconds.  '
-                            'Response: {}'.format(self.r.text))
+            msg = (self.r.text if self.r is not None
+                   else 'No response from server.')
+            logging.warning('Max attempts exceeded, skipping AppsFlyer '
+                            'pull: {}'.format(msg))
+            return attempts, True
+        if self.r is None:
+            logging.warning('No response from server (timeout or '
+                            'connection error).  Pausing for 5 seconds.')
+            time.sleep(5)
+            return attempts, False
+        if self.r.status_code == 401:
+            logging.error('Unauthorized (401).  The AF config api_token '
+                          'must be a valid V2 token.  Skipping AppsFlyer '
+                          'pull.  Response: {}'.format(self.r.text))
+            return attempts, True
+        if self.r.status_code == 404:
+            logging.error('Not found (404).  Check the AF config app_id.  '
+                          'Skipping AppsFlyer pull.  Response: {}'.format(
+                              self.r.text))
+            return attempts, True
+        if (self.r.status_code == 429 or
+                (self.r.status_code == 403 and
+                 self.r.text[:17] == limit_error)):
+            logging.warning(
+                'Limit reached ({}).  Pausing for 5 seconds.  '
+                'Response: {}'.format(self.r.status_code, self.r.text))
         elif (self.r.status_code == 504 or self.r.status_code == 502 or
                 self.r.text[:21] == wrong_error):
-            logging.warning('Gateway timeout.  Pausing for 60 seconds.  '
-                            'Response: {}'.format(self.r.text))
+            logging.warning(
+                'Gateway timeout ({}).  Pausing for 5 seconds.  '
+                'Response: {}'.format(self.r.status_code, self.r.text))
         else:
-            logging.warning('Unknown error.  Pausing for 60 seconds.  '
-                            'Response: {}'.format(self.r.text))
-        time.sleep(60)
-        return attempts
+            logging.warning(
+                'Unknown error ({}).  Pausing for 5 seconds.  '
+                'Response: {}'.format(self.r.status_code, self.r.text))
+        time.sleep(5)
+        return attempts, False
 
     @staticmethod
     def data_to_df(r):
