@@ -206,21 +206,44 @@ class GsApi(object):
         self.add_permissions(presentation_id)
         return presentation_id
 
-    def add_permissions(self, presentation_id, domain="liquidadvertising.com"):
-        url = self.files_url + "/" + presentation_id + "/permissions"
-        body = {
+    def _create_permission(self, file_id, body, params=None):
+        """POST a single Drive permission and return the response.
+
+        Shared by the domain-wide and per-user share helpers so the
+        request + warning-log path lives in one place."""
+        url = '{}/{}/permissions'.format(self.files_url, file_id)
+        response = self.client.post(
+            url=url, params=params or {}, json=body)
+        if response.status_code not in (200, 204):
+            logging.warning(
+                'Failed to set permission on {}: {} (Status {})'.format(
+                    file_id, response.text, response.status_code))
+        return response
+
+    def add_permissions(self, presentation_id,
+                        domain="liquidadvertising.com"):
+        """Share a Drive file with an entire Workspace domain."""
+        return self._create_permission(presentation_id, {
             "role": "writer",
             "type": "domain",
             "domain": domain,
-            "allowFileDiscovery": True
-        }
-        response = self.client.post(url=url, json=body)
-        if response.status_code not in (200, 204):
-            logging.warning(
-                'Failed to share {} with domain {}: {} (Status {})'.format(
-                    presentation_id, domain, response.text,
-                    response.status_code))
-        return response
+            "allowFileDiscovery": True,
+        })
+
+    def add_user_permission(self, file_id, email, role="writer",
+                            notify=False):
+        """Share a Drive file with a single Google account.
+
+        More reliable than domain sharing: a ``type:"user"`` grant to
+        a Workspace member does not depend on the admin's domain-wide
+        sharing policy, so the recipient keeps access even when
+        whole-domain sharing is refused. ``notify=False`` skips the
+        "shared with you" email since the caller usually opens the
+        file itself."""
+        return self._create_permission(
+            file_id,
+            {"role": role, "type": "user", "emailAddress": email},
+            {"sendNotificationEmail": "true" if notify else "false"})
 
     def add_image_slide(self, presentation_id=None, ad_id=None,
                         image_url=None):
