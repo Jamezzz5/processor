@@ -78,6 +78,20 @@ class TestUtils:
         assert pd.testing.assert_frame_equal(df, ndf) is None
         os.remove(file_name)
 
+    def test_import_read_xlsx_with_sheet_split(self):
+        file_name = 'test.xlsx'
+        df1 = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})
+        df2 = pd.DataFrame({'a': [5], 'b': [6]})
+        with pd.ExcelWriter(file_name) as writer:
+            df1.to_excel(writer, sheet_name='Sheet1', index=False)
+            df2.to_excel(writer, sheet_name='Sheet2', index=False)
+        splitter_name = (f'{file_name}{utl.sheet_name_splitter}'
+                         f'Sheet1{utl.sheet_name_splitter}Sheet2')
+        ndf = utl.import_read_csv(splitter_name)
+        expected = pd.concat([df1, df2], ignore_index=True, sort=True)
+        assert pd.testing.assert_frame_equal(expected, ndf) is None
+        os.remove(file_name)
+
     def test_filter_df_on_col(self):
         col_name = 'a'
         col_val = 'x'
