@@ -75,7 +75,10 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
     kwargs = {'parse_dates': True, 'keep_default_na': False,
               'na_values': na_values, 'nrows': nrows}
     if sheet_names:
-        kwargs['sheet_name'] = sheet_names
+        if file_type == '.xlsx':
+            kwargs['sheet_name'] = sheet_names
+        else:
+            logging.info(f'Ignoring sheet_name for non-excel file {filename}')
     if file_type == '.xlsx':
         read_func = pd.read_excel
     else:
