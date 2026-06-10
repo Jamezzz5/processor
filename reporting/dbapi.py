@@ -251,9 +251,10 @@ class DbApi(object):
         for x in range(1, 101):
             full_url = self.create_url()
             self.r = self.make_request(full_url, method='get')
-            if 'googleCloudStoragePath' in self.r.json()['metadata']:
-                report_url = (
-                    self.r.json()['metadata']['googleCloudStoragePath'])
+            response = self.r.json()
+            if (response and 'metadata' in response
+                    and 'googleCloudStoragePath' in response['metadata']):
+                report_url = response['metadata']['googleCloudStoragePath']
                 logging.info('Found report url, downloading.')
                 self.df = utl.import_read_csv(report_url, file_check=False,
                                               error_bad='warn')
