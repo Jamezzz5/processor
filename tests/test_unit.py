@@ -860,8 +860,8 @@ class TestAnalyze:
             dctc.DICT_COL_NAME: [],
             dctc.DICT_COL_VALUE: [],
             dctc.DICT_COL_NVALUE: [],
-            'Function': [],
-            'Selection': [],
+            dctc.DICT_COL_FNC: [],
+            dctc.DICT_COL_SEL: [],
             'index': []
         })
         translation.write(translation.df, dctc.filename_tran_config)
