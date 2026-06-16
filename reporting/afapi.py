@@ -74,7 +74,7 @@ class AfApi(object):
     @staticmethod
     def parse_fields(items):
         sources = []
-        category = None
+        category = 'facebook'
         field = None
         if items:
             for item in items:
@@ -82,6 +82,8 @@ class AfApi(object):
                     field = item
                 elif item == 'standard':
                     category = 'standard'
+                elif item == 'organic':
+                    category = 'organic'
                 else:
                     sources.append(item)
         if not field:
@@ -126,10 +128,12 @@ class AfApi(object):
         ed = dt.datetime.strftime(ed, '%Y-%m-%d')
         field, sources, category = self.parse_fields(fields)
         self.df = pd.DataFrame()
+        dfs = []
         for rt in [True, False]:
-            tdf = self.get_raw_data(sd, ed, field, sources, category, rt)
-            self.df = pd.concat([self.df, tdf], ignore_index=True, sort=True)
-            time.sleep(60)
+                dfs.append(
+                    self.get_raw_data(sd, ed, field, sources, category, rt))
+                time.sleep(60)
+        self.df = pd.concat(dfs, ignore_index=True, sort=True)
         return self.df
 
     def get_raw_data(self, sd, ed, field, sources, category, retarget=False,
