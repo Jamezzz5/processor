@@ -856,15 +856,16 @@ class TestAnalyze:
         first_click_date = '2022-07-25'
         cfs = az.CheckFlatSpends(az.Analyze())
         translation = dct.DictTranslationConfig()
-        translation.df = pd.DataFrame({
-            dctc.DICT_COL_NAME: [],
-            dctc.DICT_COL_VALUE: [],
-            dctc.DICT_COL_NVALUE: [],
-            dctc.DICT_COL_FNC: [],
-            dctc.DICT_COL_SEL: [],
-            'index': []
-        })
-        translation.write(translation.df, dctc.filename_tran_config)
+        if translation.df.empty:
+            translation.df = pd.DataFrame({
+                dctc.DICT_COL_NAME: [],
+                dctc.DICT_COL_VALUE: [],
+                dctc.DICT_COL_NVALUE: [],
+                dctc.DICT_COL_FNC: [],
+                dctc.DICT_COL_SEL: [],
+                'index': []
+            })
+            translation.write(translation.df, dctc.filename_tran_config)
         df = pd.DataFrame({
             dctc.VEN: ['IMGN'],
             dctc.COU: ['US'],
