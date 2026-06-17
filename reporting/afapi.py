@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import processor.reporting.vmcolumns as vmc
 
 config_path = utl.config_path
 
@@ -26,6 +27,7 @@ class AfApi(object):
         self.config_file = None
         self.api_token = None
         self.app_id = None
+        self.source = []
         self.config_list = None
         self.default_config_file_name = 'afconfig.json'
         self.df = pd.DataFrame()
@@ -51,9 +53,16 @@ class AfApi(object):
             return False
         self.api_token = self.config.get('api_token', '')
         self.app_id = self.config.get('app_id', '')
+        if 'source' in self.config:
+            self.source = self.remove_space(self.config.get('source', []))
+            self.source = self.source.split(',') if self.source else []
         self.config_list = [('api_token', self.api_token),
                             ('app_id', self.app_id)]
         return True
+
+    @staticmethod
+    def remove_space(val):
+        return str(val).replace(', ', ',')
 
     def check_config(self):
         for name, item in self.config_list:
@@ -74,7 +83,7 @@ class AfApi(object):
     @staticmethod
     def parse_fields(items):
         sources = []
-        category = 'facebook'
+        category = None
         field = None
         if items:
             for item in items:
@@ -82,8 +91,6 @@ class AfApi(object):
                     field = item
                 elif item == 'standard':
                     category = 'standard'
-                elif item == 'organic':
-                    category = 'organic'
                 else:
                     sources.append(item)
         if not field:
@@ -132,8 +139,11 @@ class AfApi(object):
         for rt in [True, False]:
                 dfs.append(
                     self.get_raw_data(sd, ed, field, sources, category, rt))
-                time.sleep(60)
         self.df = pd.concat(dfs, ignore_index=True, sort=True)
+        if self.source and not self.df.empty:
+            if 'Media Source (pid)' in self.df.columns:
+                self.df = self.df[
+                    self.df['Media Source (pid)'].isin(self.source)]
         return self.df
 
     def get_raw_data(self, sd, ed, field, sources, category, retarget=False,
@@ -205,3 +215,16 @@ class AfApi(object):
     def data_to_df(r):
         df = pd.read_csv(io.StringIO(r.text))
         return df
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        results = []
+        sd = dt.datetime.today() - dt.timedelta(days=2)
+        ed = dt.datetime.today()
+        df = self.get_data(sd=sd, ed=ed)
+        if df.empty:
+            row = [acc_col, 'Failure, double check app_id and api_token', False]
+            results.append(row)
+        else:
+            row = [acc_col, 'Success', True]
+            results.append(row)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
