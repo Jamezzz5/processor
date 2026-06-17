@@ -122,6 +122,7 @@ class AfApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
+        filter_col = 'Media Source (pid)'
         if not self.api_token or not self.app_id:
             logging.warning('AppsFlyer not configured (missing api_token '
                             'or app_id).  Returning empty df.')
@@ -137,13 +138,12 @@ class AfApi(object):
         self.df = pd.DataFrame()
         dfs = []
         for rt in [True, False]:
-                dfs.append(
-                    self.get_raw_data(sd, ed, field, sources, category, rt))
+            dfs.append(self.get_raw_data(sd, ed, field, sources, category, rt))
         self.df = pd.concat(dfs, ignore_index=True, sort=True)
         if self.source and not self.df.empty:
-            if 'Media Source (pid)' in self.df.columns:
+            if filter_col in self.df.columns:
                 self.df = self.df[
-                    self.df['Media Source (pid)'].isin(self.source)]
+                    self.df[filter_col].isin(self.source)]
         return self.df
 
     def get_raw_data(self, sd, ed, field, sources, category, retarget=False,
