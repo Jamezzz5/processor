@@ -420,6 +420,7 @@ class TestApis:
     def test_afapi(self, tmp_path_factory):
         api = afapi.AfApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     @staticmethod
     def send_test_api_call(api):
