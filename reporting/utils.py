@@ -698,6 +698,18 @@ class SeleniumWrapper(object):
         random_user_agent = random.choice(user_agents)
         return random_user_agent
 
+    def create_browser(self, co):
+        """Chrome via the locally downloaded driver when one exists
+        (kept current by the retry in ``init_browser`` whenever Chrome
+        auto-updates past the driver), else whatever is on PATH."""
+        local_driver = os.path.join(
+            self.driver_path, 'chromedriver-win64', 'chromedriver.exe')
+        if os.path.exists(local_driver):
+            service = wd.chrome.service.Service(
+                executable_path=local_driver)
+            return wd.Chrome(service=service, options=co)
+        return wd.Chrome(options=co)
+
     def init_browser(self, headless):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
@@ -722,13 +734,13 @@ class SeleniumWrapper(object):
             mobile_emulation = {"deviceName": "iPhone X"}
             co.add_experimental_option("mobileEmulation", mobile_emulation)
         try:
-            browser = wd.Chrome(options=co)
+            browser = self.create_browser(co)
         except (ex.SessionNotCreatedException, FileNotFoundError) as e:
             logging.warning(e)
             chrome_version = self.get_chrome_version()
             driver_version = self.get_chromedriver_version(chrome_version)
             self.download_chromedriver(driver_version)
-            browser = wd.Chrome(options=co)
+            browser = self.create_browser(co)
         browser.execute_script("""
             Object.defineProperty(navigator, 'webdriver', 
             { get: () => undefined });
@@ -744,6 +756,7 @@ class SeleniumWrapper(object):
         browser.set_page_load_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
         return browser, co
+
 
     @staticmethod
     def enable_download_in_headless_chrome(driver, download_dir):

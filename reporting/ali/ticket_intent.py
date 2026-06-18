@@ -24,6 +24,22 @@ INTAKE_PATTERNS = [
          r'|any chance we could)\b'),
         (r'\b(?:this doesn\'?t work|not working correctly'
          r'|keeps breaking|wrong data)\b'),
+        (r'\b(?:add|build|create|make)\b.{0,40}\b(?:button|feature'
+         r'|page|screen|export|toggle|dropdown|integration'
+         r'|shortcut|widget|tab)\b'),
+        r'\b(?:is|are|seems?\s+to\s+be)\s+broken\b',
+    ]
+]
+
+CONTENT_TASK_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in [
+        (r'\b(?:emoji|emojis|rewrite|reword|rephrase|paraphrase'
+         r'|proofread|spell\s*check|copy\s*edit|punch\s*ier'
+         r'|punch\s*it\s*up)\b'),
+        r'\b(?:summari[sz]e|tl;?dr)\b',
+        r'\b(?:draft|compose)\s+(?:me\s+)?(?:an?|the|some|this)\b',
+        r'\b(?:make|turn|format)\s+(?:this|it|the\s+following|these)\b',
+        r'\btranslate\b',
     ]
 ]
 
@@ -55,6 +71,44 @@ def is_doc_style_prompt(message):
     if not message:
         return False
     return any(p.search(message) for p in DOC_STYLE_PATTERNS)
+
+
+def command_region(message):
+    """Return the leading imperative clause of ``message``.
+
+    Imperative commands lead with their verb; pasted content
+    (slide text, lists, quotes) trails after a delimiter. We cut
+    at the first newline and at the first ``": "`` -- but only when
+    the leading clause is itself a content-authoring lead-in
+    ("emojis in this slide: <pasted>"), so a create/edit trigger
+    buried in pasted content is not mistaken for a command. A plain
+    descriptive preamble ("...through chat or UI: add a partner")
+    keeps its trailing command. ``"add a plan"`` stays a command;
+    ``"...slide: ... Add ... Plan"`` does not.
+    """
+    if not message:
+        return ''
+    head = message.split('\n', 1)[0]
+    m = re.search(r':\s', head)
+    if m and m.start() >= 3 and is_content_task(head[:m.start()]):
+        head = head[:m.start()]
+    return head
+
+
+def is_content_task(message):
+    """True if ``message`` is a content-authoring / rewriting
+    request (add emojis, draft a slide, summarize this, ...).
+
+    These are conversational LLM tasks — never object mutations
+    or ticket intake — even when the pasted content happens to
+    contain words like 'add', 'new', or a model name. Used to
+    gate both the heuristic create/edit path and the ticket
+    offer so a request like "add emojis to this slide" can't
+    edit a column or open a ticket.
+    """
+    if not message:
+        return False
+    return any(p.search(message) for p in CONTENT_TASK_PATTERNS)
 
 
 def detect_ticket_intent(message):
