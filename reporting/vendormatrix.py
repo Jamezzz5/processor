@@ -1147,9 +1147,6 @@ def df_single_transform(df, transform):
     if transform_type == 'PriceCalculate':
         count_suffix = ' Count'
         prefix_filter = 'Purchase - '
-        # transform[1:] are 'product|price' pairs, e.g.
-        # PriceCalculate::Purchase - GW2 POF|19.49::Purchase - EOD Deluxe|35.74
-        # Keyed case-insensitively; blank/invalid price -> product is unpriced.
         prices = {}
         for pair in transform[1:]:
             if pair.count('|') != 1:
@@ -1159,21 +1156,16 @@ def df_single_transform(df, transform):
             product, price = pair.split('|')
             product, price = product.strip().lower(), price.strip()
             if not price:
-                continue  # blank price: product intentionally left unpriced
+                continue
             price = pd.to_numeric(price, errors='coerce')
             if product and pd.notna(price):
                 prices[product] = float(price)
             else:
                 log.warning('{}: ignoring "{}" (invalid product or price).'
                             .format(transform_type, pair))
-        # Find every purchase Count column. We scan the data (not just the
-        # priced products) because 'Gamesight purchases' below counts purchases
-        # that have no price too.
         purchase_count_cols = [c for c in df.columns
                                if str(c).startswith(prefix_filter)
                                and str(c).endswith(count_suffix)]
-        # For each product that has a price, add a '<product> Revenue' column
-        # (count * unit price) directly after its Count column.
         revenue_cols = []
         for count_col in purchase_count_cols:
             product = count_col[:-len(count_suffix)]
@@ -1185,10 +1177,8 @@ def df_single_transform(df, transform):
             df.insert(df.columns.get_loc(count_col) + 1, revenue_col,
                       (counts * price).round(2))
             revenue_cols.append(revenue_col)
-        # Total revenue: add up every product's revenue column.
         df['Revenue'] = (df[revenue_cols].sum(axis=1).round(2)
                          if revenue_cols else 0.0)
-        # Total purchases: add up every purchase Count column, priced or not.
         df['Gamesight purchases'] = (
             df[purchase_count_cols].apply(pd.to_numeric, errors='coerce')
             .fillna(0).sum(axis=1) if purchase_count_cols else 0)
