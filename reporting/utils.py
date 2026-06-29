@@ -85,7 +85,7 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         read_func = pd.read_csv
         kwargs['encoding'] = 'utf-8'
         kwargs['on_bad_lines'] = error_bad
-        kwargs['low_memory'] = False
+        kwargs['low_memory'] = True
     try:
         df = read_func(filename, **kwargs)
     except UnicodeDecodeError:

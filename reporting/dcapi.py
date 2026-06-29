@@ -246,6 +246,32 @@ class DcApi(object):
                 else:
                     tdf = self.add_placement_name(tdf)
             df = pd.concat([df, tdf], ignore_index=True)
+        df = self.drop_empty_conversion_cols(df)
+        return df
+
+    @staticmethod
+    def drop_empty_conversion_cols(df):
+        """Drop all-zero Floodlight activity conversion columns.
+
+        DCM emits six conversion columns per Floodlight activity
+        (default_conversion_metrics); the vast majority are
+        entirely zero and bloat the raw file. Activity columns
+        carry the ' : ' group separator that core metrics never
+        use, so the filter can never drop a mapped metric or the
+        account-level Total Conversions column.
+        """
+        sep = ' : '
+        empty_cols = []
+        for col in df.columns:
+            if sep not in str(col):
+                continue
+            numeric = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            if numeric.eq(0).all():
+                empty_cols.append(col)
+        if empty_cols:
+            df = df.drop(columns=empty_cols)
+            logging.info('Dropped {} all-zero DCM conversion '
+                         'columns.'.format(len(empty_cols)))
         return df
 
     def check_for_campaign_vendor_dicts(self, tdf):
