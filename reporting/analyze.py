@@ -24,9 +24,9 @@ import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
 import xml.etree.ElementTree as et
-from reporting.ali.search import AliSearch
-import reporting.ali.ticket_intent as ali_tic
-import reporting.ali.codebase as ali_code
+from .ali.search import AliSearch
+from .ali import ticket_intent as ali_tic
+from .ali import codebase as ali_code
 
 
 class Analyze(object):
@@ -3377,7 +3377,7 @@ class Intent(object):
         r'\b(?:processor|plan|partner|placement))'
     )
     imper_edit_key = 'imper_edit'
-    imper_edit = 'change|edit|adjust|alter|update|set'
+    imper_edit = 'change|edit|adjust|alter|update|set|add'
     imper_run_key = 'imper_run'
     imper_run = 'run|execute|launch'
     imper_search_key = 'imper_search'
@@ -3537,22 +3537,29 @@ class AliChat(object):
         self.config = self.load_config(self.config_name, self.config_path)
         self.intent = Intent()
         self.call_llm = False
+        self.action_allowed = True
         self.transformer = transformer
         self.transformer_dict = transformer_dict or {}
         self.write_authority = write_authority
 
     def _propose_column_write(self, cur_model, column, new_val):
         """setattr+commit a heuristic column write, gated by the
-        optional write_authority. Returns True when the write
-        proceeded, False when the authority deferred it; deferred
-        writes must not be reflected in the response string."""
-        if self.write_authority:
-            proceed = self.write_authority(
-                op='column_write', model=cur_model,
-                column=column, new_val=new_val,
-                existing_val=getattr(cur_model, column, None))
-            if not proceed:
-                return False
+        write_authority. Returns True when the write proceeded,
+        False when it was deferred/skipped; deferred writes must
+        not be reflected in the response string.
+
+        Fails closed: with no write_authority attached (e.g. a
+        chat turn with no conversation yet) the write is skipped
+        rather than auto-committed, so a heuristic edit can never
+        silently mutate without a confirmation path."""
+        if not self.write_authority:
+            return False
+        proceed = self.write_authority(
+            op='column_write', model=cur_model,
+            column=column, new_val=new_val,
+            existing_val=getattr(cur_model, column, None))
+        if not proceed:
+            return False
         setattr(cur_model, column, new_val)
         self.db.session.commit()
         return True
@@ -4114,6 +4121,8 @@ class AliChat(object):
     def create_db_model(self, db_model, message, response, html_response):
         if not hasattr(db_model, 'get_first_unique_name'):
             return response, html_response
+        if not getattr(self, 'action_allowed', True):
+            return response, html_response
         create_words = ['create', 'make', 'new']
         words = utl.lower_words_from_str(message)
         is_create = utl.is_list_in_list(create_words, words)
@@ -4182,16 +4191,19 @@ class AliChat(object):
                 pw = pw[1:]
             skip_words = [cur_model.name.lower()] + omit_list + self.stop_words
             pw = [x for x in pw if x not in skip_words]
+            is_cost = any(x in k for x in ['cost', 'budget'])
             if 'date' in k:
                 new_val = pw[0]
                 if pw[1] in ['/', '-']:
                     new_val = ''.join(pw[x] for x in range(5))
                 new_val = utl.string_to_date(new_val)
-            else:
-                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
-            if any(x in k for x in ['cost', 'budget']):
+            elif is_cost:
                 new_val = utl.get_next_number_from_list(
                     words, k, cur_model.name, last_instance=True)
+            elif len(pw) > 12:
+                continue
+            else:
+                new_val = re.split('[?.,]', ' '.join(pw))[0].rstrip()
             if new_val:
                 applied = self._propose_column_write(cur_model, k, new_val)
                 words = [x for x in words if x not in in_list]
@@ -4234,7 +4246,10 @@ class AliChat(object):
         response = ''
         if not getattr(db_model, 'chat_editable', False):
             return response
-        edit_words = ['change', 'edit', 'adjust', 'alter', 'add']
+        if not getattr(self, 'action_allowed', True):
+            return response
+        edit_words = ['change', 'edit', 'adjust', 'alter', 'update', 'set',
+                      'add']
         is_edit = utl.is_list_in_list(edit_words, words)
         if is_edit:
             cur_model = self.db.session.get(db_model, next(iter(model_ids)))
@@ -4249,6 +4264,8 @@ class AliChat(object):
 
     def run_db_model(self, db_model, words, model_ids):
         response = ''
+        if not getattr(self, 'action_allowed', True):
+            return response
         edit_words = ['run']
         is_run = utl.is_list_in_list(edit_words, words)
         if is_run:
@@ -4336,6 +4353,33 @@ class AliChat(object):
                 return model, object_id
         return None
 
+    # Intents whose imperative trigger may mutate state, mapped to
+    # the compiled-regex key that must anchor in the command clause.
+    ACTION_INTENTS = {
+        Intent.CREATE: Intent.imper_create_key,
+        Intent.EDIT: Intent.imper_edit_key,
+        Intent.RUN: Intent.imper_run_key,
+    }
+
+    def _is_action_allowed(self, message, intent_dict):
+        """Whether the heuristic create/edit/run path may run.
+
+        Guards the classic path against benign messages: a
+        content-authoring task ("add emojis to this slide") never
+        mutates, and the create/edit/run trigger must be anchored
+        in the leading command clause — not buried in pasted
+        content after a colon. Returns False for ASK/SEARCH/OTHER.
+        """
+        intent = intent_dict.get(Intent.resp_intent_key)
+        trigger_key = self.ACTION_INTENTS.get(intent)
+        if not trigger_key:
+            return False
+        if ali_tic.is_content_task(message):
+            return False
+        region = ali_tic.command_region(message)
+        trigger_re = self.intent.compiled_regex.get(trigger_key)
+        return bool(trigger_re and trigger_re.search(region))
+
     def get_response(self, message, models_to_search=None, db=None,
                      current_user=None, is_question=False,
                      file_map=None, base_path=None,
@@ -4357,6 +4401,7 @@ class AliChat(object):
                     f'{base}\n\n{line}' if base else line)
         response, html_response = self.check_if_openai_message(message)
         intent_dict = self.intent.classify_intent(message)
+        self.action_allowed = self._is_action_allowed(message, intent_dict)
         if not is_question:
             is_question = intent_dict[Intent.resp_intent_key] == Intent.ASK
         if is_question:
@@ -4402,7 +4447,8 @@ class AliChat(object):
                     if not html_response:
                         html_response = ''
                     html_response += hr
-        if ali_tic.detect_ticket_intent(message):
+        if (ali_tic.detect_ticket_intent(message)
+                and not ali_tic.is_content_task(message)):
             coverage = ali_tic.check_existing_feature_coverage(
                 response, matched_models)
             ticket_response = ali_tic.build_ticket_offer_response(

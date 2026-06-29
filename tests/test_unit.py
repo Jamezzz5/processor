@@ -466,6 +466,23 @@ class TestVendormatrix:
         cpc_calc = df[df[dctc.AM] == cal.BM_CPC][vmc.AD_COST].to_list()[0]
         assert cpc_cost == cpc_calc
 
+    def test_price_calculate_transform(self):
+        df = pd.DataFrame({
+            'Campaign': ['row_a', 'row_b'],
+            'Purchase - Priced Item Count': [2, 0],    # priced
+            'Purchase - Unpriced Item Count': [5, 1],  # listed, blank price -> none
+            'Download - Other Item Count': [9, 9],     # ' Count' but not 'Purchase - '
+        })
+        transform = ('PriceCalculate::purchase - priced item|19.49'
+                     '::Purchase - Unpriced Item|')
+        out = vm.df_transform(df, transform)
+        assert out['Purchase - Priced Item Revenue'].tolist() == [38.98, 0.0]
+        assert 'Purchase - Unpriced Item Revenue' not in out.columns
+        assert out['Revenue'].tolist() == [38.98, 0.0]
+        assert out['Gamesight purchases'].tolist() == [7, 1]
+        assert out['Download - Other Item Count'].tolist() == [9, 9]
+        assert 'Download - Other Item Revenue' not in out.columns
+
     @requires_base_config
     def test_vm_load(self):
         matrix = vm.VendorMatrix()

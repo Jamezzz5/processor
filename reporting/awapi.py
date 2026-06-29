@@ -54,7 +54,7 @@ class AwApiReportBuilder(object):
     impressions = ReportColumn('impressions', 'Impressions', 'metrics')
     clicks = ReportColumn('clicks', 'Clicks', 'metrics')
     cost = ReportColumn('cost_micros', 'Cost', 'metrics')
-    views = ReportColumn('video_views', 'Views', 'metrics')
+    views = ReportColumn('video_trueview_views', 'Views', 'metrics')
     views25_rate = ReportColumn(
         'video_quartile_p25_rate', 'Video played to 25%', 'metrics')
     views50_rate = ReportColumn(
@@ -136,7 +136,7 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
-    version = 20
+    version = 24
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
