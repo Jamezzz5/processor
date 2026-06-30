@@ -107,6 +107,7 @@ class TestEndToEnd:
         df = utl.import_read_csv(vmc.output_file)
         file_name = os.path.join('tests', 'results.csv')
         # df.to_csv(file_name, index=False)
+        df.to_csv(os.path.join('tests', 'results_test.csv'), index=False)
         df = df.groupby(group_cols)[metric_cols].sum().reset_index()
         rdf = utl.import_read_csv(file_name)
         rdf = rdf.groupby(group_cols)[metric_cols].sum().reset_index()

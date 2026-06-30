@@ -712,7 +712,6 @@ def ad_cost_calculation(df):
     """
     if df.empty:
         return df
-    df = df.copy()
     cost_cols = [(vmc.AD_COST, dctc.AM, dctc.AR),
                  (vmc.REP_COST, dctc.RFM, dctc.RFR),
                  (vmc.VER_COST, dctc.VFM, dctc.VFR)]

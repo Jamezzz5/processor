@@ -390,6 +390,24 @@ class TestApis:
         self.send_api_call(api)
         self.send_test_api_call(api)
 
+    def test_drop_empty_conversion_cols(self):
+        """All-zero Floodlight activity cols drop; core metrics stay."""
+        df = pd.DataFrame({
+            'Placement': ['p1', 'p2'],
+            'Impressions': [10, 20],
+            'Total Conversions': [0, 0],
+            'Act : Foo: Total Conversions': [0, 0],
+            'Act : Foo: Total Revenue': [0.0, 0.0],
+            'Act : Bar: Total Conversions': [0, 5],
+        })
+        ndf = dcapi.DcApi.drop_empty_conversion_cols(df)
+        assert 'Act : Foo: Total Conversions' not in ndf.columns
+        assert 'Act : Foo: Total Revenue' not in ndf.columns
+        assert 'Act : Bar: Total Conversions' in ndf.columns
+        assert 'Total Conversions' in ndf.columns
+        assert 'Impressions' in ndf.columns
+        assert 'Placement' in ndf.columns
+
     def test_scapi(self):
         api = scapi.ScApi()
         self.send_api_call(api)
@@ -759,6 +777,16 @@ class TestErrorReport:
         dic = pd.DataFrame({dctc.FPN: [np.nan]})
         err = er.ErrorReport(df, dic, place_col, error_filename)
         assert not err.data_err.empty
+
+    def test_error_report_duplicate_placement_col(self, tmp_path_factory):
+        """pn == FPN must not raise 'not unique' on the merge."""
+        file_path = tmp_path_factory.mktemp(utl.error_path)
+        error_filename = '{}/ER_dup.csv'.format(file_path)
+        df = pd.DataFrame({dctc.FPN: ['a_b', 'b_c']})
+        dic = pd.DataFrame({dctc.FPN: ['b_c']})
+        err = er.ErrorReport(df, dic, dctc.FPN, error_filename)
+        assert not err.data_err.empty
+        assert len(err.data_err) == 1
 
 
 class TestCalc:
