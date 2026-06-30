@@ -16,6 +16,7 @@ class TikApi(object):
     version = 'v1.3'
     base_url = 'https://business-api.tiktok.com/open_api/'
     ad_url = '/ad/get/'
+    smart_url = '/smart_plus/ad/get/'
     campaign_url = '/campaign/get/'
     advertiser_url = '/oauth2/advertiser/get/'
     ad_report_url = '/report/integrated/get/'
@@ -37,6 +38,7 @@ class TikApi(object):
                'video_views_p25': 'play_first_quartile',
                'video_play_actions': 'total_play',
                'comments': 'ad_comment',
+               'campaign_automation_type': 'campaign_automation_type',
                'likes': 'ad_like',
                'shares': 'ad_share',
                'follows': 'ad_follows',
@@ -178,7 +180,7 @@ class TikApi(object):
         url = url + self.ad_url if ad else url + self.campaign_url
         params = {'advertiser_id': self.advertiser_id,
                   'page': 1,
-                  'page_size': 1000}
+                  'page_size': 100}
         filters = {'primary_status': 'STATUS_ALL',
                    'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
         for buying_types in [['AUCTION', 'RESERVATION_RF'],
@@ -224,6 +226,11 @@ class TikApi(object):
             return ids, r
         results = response_data['list']
         if ad_ids:
+            for result in results:
+                creative_list = result.get('creative_list', [])
+                if creative_list:
+                    result['ad_id'] = creative_list[0].get(
+                        'smart_plus_creative_id')
             self.ad_id_list.extend(results)
         else:
             self.campaign_id_list.extend(results)
@@ -284,7 +291,8 @@ class TikApi(object):
                 break
             logging.info('Data retrieved {} pages remaining'
                          ''.format(page_rem - x))
-        self.df = self.df.merge(pd.DataFrame(self.ad_id_list), on='ad_id',
+        id_df = (pd.DataFrame(self.ad_id_list).drop_duplicates(subset="ad_id"))
+        self.df = self.df.merge(pd.DataFrame(id_df), on='ad_id',
                                 how='left')
         self.df = self.clean_ad_name(self.df)
         cols = self.metrics.copy()
@@ -317,10 +325,31 @@ class TikApi(object):
         """
         sd, ed = self.get_data_default_check(sd, ed)
         self.reset_params()
+        self.check_url()
         self.get_ids()
         self.df = self.request_and_get_data(sd, ed)
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
+
+    def check_url(self):
+        self.set_headers()
+        campaign_type = 'Manual'
+        url = self.base_url + self.version + self.campaign_url
+        params = {'advertiser_id': self.advertiser_id,
+                  'fields': '["campaign_automation_type"]'}
+        r = self.make_request(url=url, method='GET', headers=self.headers,
+                              params=params)
+        response = r.json()
+        campaign_list = response.get('data', {}).get('list', [])
+        if self.campaign_id:
+            campaign_list = [c for c in campaign_list if
+                             c['campaign_id'] == self.campaign_id]
+        if campaign_list:
+            campaign_type = campaign_list[0].get('campaign_automation_type')
+        if 'SMART' in campaign_type:
+            self.ad_url = self.smart_url
+        return campaign_type
+
 
     def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
         metrics = 'spend'
