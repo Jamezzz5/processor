@@ -390,6 +390,24 @@ class TestApis:
         self.send_api_call(api)
         self.send_test_api_call(api)
 
+    def test_drop_empty_conversion_cols(self):
+        """All-zero Floodlight activity cols drop; core metrics stay."""
+        df = pd.DataFrame({
+            'Placement': ['p1', 'p2'],
+            'Impressions': [10, 20],
+            'Total Conversions': [0, 0],
+            'Act : Foo: Total Conversions': [0, 0],
+            'Act : Foo: Total Revenue': [0.0, 0.0],
+            'Act : Bar: Total Conversions': [0, 5],
+        })
+        ndf = dcapi.DcApi.drop_empty_conversion_cols(df)
+        assert 'Act : Foo: Total Conversions' not in ndf.columns
+        assert 'Act : Foo: Total Revenue' not in ndf.columns
+        assert 'Act : Bar: Total Conversions' in ndf.columns
+        assert 'Total Conversions' in ndf.columns
+        assert 'Impressions' in ndf.columns
+        assert 'Placement' in ndf.columns
+
     def test_scapi(self):
         api = scapi.ScApi()
         self.send_api_call(api)
@@ -465,6 +483,23 @@ class TestVendormatrix:
         cpc_cost = clicks * ad_rate
         cpc_calc = df[df[dctc.AM] == cal.BM_CPC][vmc.AD_COST].to_list()[0]
         assert cpc_cost == cpc_calc
+
+    def test_price_calculate_transform(self):
+        df = pd.DataFrame({
+            'Campaign': ['row_a', 'row_b'],
+            'Purchase - Priced Item Count': [2, 0],    # priced
+            'Purchase - Unpriced Item Count': [5, 1],  # listed, blank price -> none
+            'Download - Other Item Count': [9, 9],     # ' Count' but not 'Purchase - '
+        })
+        transform = ('PriceCalculate::purchase - priced item|19.49'
+                     '::Purchase - Unpriced Item|')
+        out = vm.df_transform(df, transform)
+        assert out['Purchase - Priced Item Revenue'].tolist() == [38.98, 0.0]
+        assert 'Purchase - Unpriced Item Revenue' not in out.columns
+        assert out['Revenue'].tolist() == [38.98, 0.0]
+        assert out['Gamesight purchases'].tolist() == [7, 1]
+        assert out['Download - Other Item Count'].tolist() == [9, 9]
+        assert 'Download - Other Item Revenue' not in out.columns
 
     @requires_base_config
     def test_vm_load(self):
@@ -742,6 +777,16 @@ class TestErrorReport:
         dic = pd.DataFrame({dctc.FPN: [np.nan]})
         err = er.ErrorReport(df, dic, place_col, error_filename)
         assert not err.data_err.empty
+
+    def test_error_report_duplicate_placement_col(self, tmp_path_factory):
+        """pn == FPN must not raise 'not unique' on the merge."""
+        file_path = tmp_path_factory.mktemp(utl.error_path)
+        error_filename = '{}/ER_dup.csv'.format(file_path)
+        df = pd.DataFrame({dctc.FPN: ['a_b', 'b_c']})
+        dic = pd.DataFrame({dctc.FPN: ['b_c']})
+        err = er.ErrorReport(df, dic, dctc.FPN, error_filename)
+        assert not err.data_err.empty
+        assert len(err.data_err) == 1
 
 
 class TestCalc:
