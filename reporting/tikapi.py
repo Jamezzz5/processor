@@ -165,24 +165,30 @@ class TikApi(object):
         sd, ed = self.date_check(sd, ed)
         return sd, ed
 
-    def get_ids(self, ad=True):
+    def get_ids(self, ad=True, ad_url=ad_url, campaign_id=None):
         """
         Gets ad ids or campaign ids depending on ad parameter.
         Will pull all pages of ids and return a list of lists of 100 ids each.
 
         :param ad: boolean, if True will pull ad ids,
         if False will pull campaign ids
+        :param ad_url: url endpoint for ad ids
+        :param campaign_id: list of campaign ids to filter on
         :returns: list of lists of 100 ids each
         """
-        logging.info('Getting ad ids.')
+        logging.info('Getting ad ids for campaign_id: {}'.format(campaign_id))
         self.set_headers()
         url = self.base_url + self.version
-        url = url + self.ad_url if ad else url + self.campaign_url
+        if ad:
+            url += ad_url
+        else:
+            url += self.campaign_url
         params = {'advertiser_id': self.advertiser_id,
                   'page': 1,
                   'page_size': 100}
         filters = {'primary_status': 'STATUS_ALL',
-                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
+                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL',
+                   'campaign_ids': [campaign_id]}
         for buying_types in [['AUCTION', 'RESERVATION_RF'],
                              ['RESERVATION_TOP_VIEW']]:
             filters['buying_types'] = buying_types
@@ -325,30 +331,34 @@ class TikApi(object):
         """
         sd, ed = self.get_data_default_check(sd, ed)
         self.reset_params()
-        self.check_url()
-        self.get_ids()
+        for ad_url in self.check_url():
+            self.get_ids(ad_url=ad_url['ad_url'],
+                         campaign_id=ad_url['campaign_id'])
         self.df = self.request_and_get_data(sd, ed)
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
 
     def check_url(self):
         self.set_headers()
-        campaign_type = 'Manual'
         url = self.base_url + self.version + self.campaign_url
         params = {'advertiser_id': self.advertiser_id,
-                  'fields': '["campaign_automation_type"]'}
+                  'fields': '["campaign_automation_type", "campaign_name"]'}
         r = self.make_request(url=url, method='GET', headers=self.headers,
                               params=params)
         response = r.json()
         campaign_list = response.get('data', {}).get('list', [])
         if self.campaign_id:
-            campaign_list = [c for c in campaign_list if
-                             c['campaign_id'] == self.campaign_id]
-        if campaign_list:
-            campaign_type = campaign_list[0].get('campaign_automation_type')
-        if 'SMART' in campaign_type:
-            self.ad_url = self.smart_url
-        return campaign_type
+            campaign_list = [
+                c for c in campaign_list
+                if self.campaign_id in c.get('campaign_name', '')
+            ]
+        urls = []
+        for campaign in campaign_list:
+            ad_url = self.smart_url if 'SMART' in campaign.get(
+                'campaign_automation_type', '') else self.ad_url
+            urls.append(
+                {'ad_url': ad_url, 'campaign_id': campaign.get('campaign_id')})
+        return urls
 
 
     def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
