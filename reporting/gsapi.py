@@ -304,6 +304,175 @@ class GsApi(object):
         response = self.client.post(url=url, json=body, headers=headers)
         return response
 
+    # --- Report-deck builders (additive; used by app report_export) ------
+    # 16:9 page geometry, EMU (914400 EMU/inch).
+    PAGE_W_EMU = 9144000
+    PAGE_H_EMU = 5143500
+    MARGIN_EMU = 457200
+    # Deck typography — mirrors the app export brand kit
+    # (app/features/exports.py BRAND_FONT / BRAND_NAVY / BRAND_MUTED);
+    # duplicated here because the submodule cannot import the app.
+    DECK_FONT = 'Segoe UI'
+    DECK_INK = {'red': 0.173, 'green': 0.243, 'blue': 0.314}
+    DECK_MUTED = {'red': 0.533, 'green': 0.533, 'blue': 0.533}
+
+    def slides_batch_update(self, presentation_id, requests):
+        if not requests:
+            return None
+        url = '{}/{}:batchUpdate'.format(self.slides_url, presentation_id)
+        return self.client.post(url=url, json={'requests': requests})
+
+    def get_presentation(self, presentation_id):
+        url = '{}/{}'.format(self.slides_url, presentation_id)
+        return self.client.get(url).json()
+
+    @staticmethod
+    def presentation_url(presentation_id):
+        return 'https://docs.google.com/presentation/d/{}/edit'.format(
+            presentation_id)
+
+    @staticmethod
+    def _emu(magnitude):
+        return {'magnitude': int(magnitude), 'unit': 'EMU'}
+
+    def _elem_props(self, page_id, w, h, x, y):
+        return {
+            'pageObjectId': page_id,
+            'size': {'width': self._emu(w), 'height': self._emu(h)},
+            'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': int(x),
+                          'translateY': int(y), 'unit': 'EMU'},
+        }
+
+    @staticmethod
+    def _fit_box(img_w, img_h, box_x, box_y, box_w, box_h):
+        """Aspect-preserving centered fit of an image into a content box."""
+        if not img_w or not img_h:
+            return int(box_x), int(box_y), int(box_w), int(box_h)
+        scale = min(box_w / float(img_w), box_h / float(img_h))
+        draw_w, draw_h = img_w * scale, img_h * scale
+        return (int(box_x + (box_w - draw_w) / 2),
+                int(box_y + (box_h - draw_h) / 2),
+                int(draw_w), int(draw_h))
+
+    def _blank_slide_req(self, slide_id):
+        return {'createSlide': {
+            'objectId': slide_id,
+            'slideLayoutReference': {'predefinedLayout': 'BLANK'}}}
+
+    def _text_box_reqs(self, slide_id, shape_id, text, x, y, w, h,
+                       font_pt=18, bold=False, align='START', color=None):
+        style = {'fontSize': {'magnitude': font_pt, 'unit': 'PT'},
+                 'bold': bold, 'fontFamily': self.DECK_FONT,
+                 'foregroundColor': {'opaqueColor': {
+                     'rgbColor': color or self.DECK_INK}}}
+        return [
+            {'createShape': {
+                'objectId': shape_id, 'shapeType': 'TEXT_BOX',
+                'elementProperties': self._elem_props(slide_id, w, h, x, y)}},
+            {'insertText': {
+                'objectId': shape_id, 'insertionIndex': 0,
+                'text': text or ''}},
+            {'updateTextStyle': {
+                'objectId': shape_id, 'style': style,
+                'textRange': {'type': 'ALL'},
+                'fields': 'fontSize,bold,fontFamily,foregroundColor'}},
+            {'updateParagraphStyle': {
+                'objectId': shape_id, 'style': {'alignment': align},
+                'textRange': {'type': 'ALL'}, 'fields': 'alignment'}},
+        ]
+
+    def create_title_slide(self, presentation_id, meta, slide_id='rbtitle'):
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        logo_url = meta.get('logo_url')
+        if logo_url:
+            lw, lh = 1524000, 508000  # 3:1 brand mark, centered near the top
+            reqs.append({'createImage': {
+                'objectId': slide_id + 'logo', 'url': logo_url,
+                'elementProperties': self._elem_props(
+                    slide_id, lw, lh, (self.PAGE_W_EMU - lw) // 2, 520000)}})
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 't', meta.get('title', ''),
+            cx, 1600200, cw, 900000, font_pt=30, bold=True, align='CENTER')
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 's', meta.get('subtitle', ''),
+            cx, 2600000, cw, 600000, font_pt=16, align='CENTER',
+            color=self.DECK_MUTED)
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 'b', meta.get('brand', ''),
+            cx, self.PAGE_H_EMU - 700000, cw, 400000, font_pt=12,
+            align='CENTER', color=self.DECK_MUTED)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def add_section_slide(self, presentation_id, slide_id, heading):
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 't', heading or '',
+            cx, (self.PAGE_H_EMU - 900000) // 2, cw, 900000,
+            font_pt=26, bold=True, align='CENTER')
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def add_chart_slide(self, presentation_id, slide_id, title=None,
+                        image_url=None, caption=None, notes=None,
+                        img_w=None, img_h=None):
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        if title:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 't', title, cx, 228600, cw, 560000,
+                font_pt=18, bold=True, align='START')
+        if image_url:
+            box_y = 900000
+            box_h = self.PAGE_H_EMU - box_y - (700000 if caption else 300000)
+            x, y, w, h = self._fit_box(img_w, img_h, cx, box_y, cw, box_h)
+            reqs.append({'createImage': {
+                'objectId': slide_id + 'i', 'url': image_url,
+                'elementProperties': self._elem_props(slide_id, w, h, x, y)}})
+        if caption:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'c', caption, cx,
+                self.PAGE_H_EMU - 640000, cw, 520000, font_pt=11,
+                align='START', color=self.DECK_MUTED)
+        self.slides_batch_update(presentation_id, reqs)
+        if notes:
+            self.add_speaker_notes(presentation_id, slide_id, notes)
+        return slide_id
+
+    def delete_non_report_slides(self, presentation_id, keep_prefix='rb'):
+        """Drop the blank slide Google auto-creates with a new deck so the
+        report's own title slide leads (report slide ids use ``keep_prefix``)."""
+        pres = self.get_presentation(presentation_id)
+        for slide in pres.get('slides', []):
+            oid = slide.get('objectId')
+            if oid and not str(oid).startswith(keep_prefix):
+                self.slides_batch_update(
+                    presentation_id, [{'deleteObject': {'objectId': oid}}])
+
+    def add_notes_batch(self, presentation_id, notes_by_slide):
+        """Insert speaker notes for many slides in ONE round-trip: read the
+        deck once to resolve each slide's speaker-notes shape, then batch the
+        inserts. Avoids the per-slide poll+sleep of ``add_speaker_notes``."""
+        if not notes_by_slide:
+            return None
+        pres = self.get_presentation(presentation_id)
+        requests = []
+        for slide in pres.get('slides', []):
+            sid = slide.get('objectId')
+            text = notes_by_slide.get(sid)
+            if not text:
+                continue
+            try:
+                notes_id = (slide['slideProperties']['notesPage']
+                            ['notesProperties']['speakerNotesObjectId'])
+            except (KeyError, TypeError):
+                continue
+            requests.append({'insertText': {
+                'objectId': notes_id, 'insertionIndex': 0, 'text': text}})
+        return self.slides_batch_update(presentation_id, requests)
+
     @staticmethod
     def get_s3_image_url_from_obj(s3, img_obj, img_name, folder='images'):
         if not s3:
@@ -445,7 +614,8 @@ class GsApi(object):
                                                   self.text_format))
         return table_requests, index - 1
 
-    def add_image_doc(self, presigned_url, index):
+    def add_image_doc(self, presigned_url, index, width_pt=250,
+                      height_pt=250):
         if not presigned_url:
             return [], index
         img_request = [{'insertInlineImage': {
@@ -455,11 +625,11 @@ class GsApi(object):
             'uri': presigned_url,
             'objectSize': {
                 'height': {
-                    'magnitude': 250,
+                    'magnitude': height_pt,
                     'unit': 'PT'
                 },
                 'width': {
-                    'magnitude': 250,
+                    'magnitude': width_pt,
                     'unit': 'PT'
                 }
             }
@@ -514,7 +684,15 @@ class GsApi(object):
                 table_req = []
                 if 'imgURI' in item['data']['cols']:
                     presigned_url = item['url']
-                    table_req, index = self.add_image_doc(presigned_url, index)
+                    w_pt, h_pt = item.get('img_pt_w'), item.get('img_pt_h')
+                    if not (w_pt and h_pt):
+                        w_pt, h_pt = 320, 200
+                        iw, ih = item.get('img_w'), item.get('img_h')
+                        if iw and ih:  # size charts to page width by aspect
+                            w_pt = 460
+                            h_pt = max(90, min(380, int(round(w_pt * ih / iw))))
+                    table_req, index = self.add_image_doc(
+                        presigned_url, index, w_pt, h_pt)
                 elif item['data']['cols']:
                     table_req, index = self.add_table(item['data']['data'],
                                                       index=index)

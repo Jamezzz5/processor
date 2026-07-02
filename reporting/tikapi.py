@@ -16,6 +16,7 @@ class TikApi(object):
     version = 'v1.3'
     base_url = 'https://business-api.tiktok.com/open_api/'
     ad_url = '/ad/get/'
+    smart_url = '/smart_plus/ad/get/'
     campaign_url = '/campaign/get/'
     advertiser_url = '/oauth2/advertiser/get/'
     ad_report_url = '/report/integrated/get/'
@@ -37,6 +38,7 @@ class TikApi(object):
                'video_views_p25': 'play_first_quartile',
                'video_play_actions': 'total_play',
                'comments': 'ad_comment',
+               'campaign_automation_type': 'campaign_automation_type',
                'likes': 'ad_like',
                'shares': 'ad_share',
                'follows': 'ad_follows',
@@ -163,24 +165,30 @@ class TikApi(object):
         sd, ed = self.date_check(sd, ed)
         return sd, ed
 
-    def get_ids(self, ad=True):
+    def get_ids(self, ad=True, ad_url=ad_url, campaign_id=None):
         """
         Gets ad ids or campaign ids depending on ad parameter.
         Will pull all pages of ids and return a list of lists of 100 ids each.
 
         :param ad: boolean, if True will pull ad ids,
         if False will pull campaign ids
+        :param ad_url: url endpoint for ad ids
+        :param campaign_id: list of campaign ids to filter on
         :returns: list of lists of 100 ids each
         """
-        logging.info('Getting ad ids.')
+        logging.info('Getting ad ids for campaign_id: {}'.format(campaign_id))
         self.set_headers()
         url = self.base_url + self.version
-        url = url + self.ad_url if ad else url + self.campaign_url
+        if ad:
+            url += ad_url
+        else:
+            url += self.campaign_url
         params = {'advertiser_id': self.advertiser_id,
                   'page': 1,
-                  'page_size': 1000}
+                  'page_size': 100}
         filters = {'primary_status': 'STATUS_ALL',
-                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
+                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL',
+                   'campaign_ids': [campaign_id]}
         for buying_types in [['AUCTION', 'RESERVATION_RF'],
                              ['RESERVATION_TOP_VIEW']]:
             filters['buying_types'] = buying_types
@@ -224,6 +232,11 @@ class TikApi(object):
             return ids, r
         results = response_data['list']
         if ad_ids:
+            for result in results:
+                creative_list = result.get('creative_list', [])
+                if creative_list:
+                    result['ad_id'] = creative_list[0].get(
+                        'smart_plus_creative_id')
             self.ad_id_list.extend(results)
         else:
             self.campaign_id_list.extend(results)
@@ -284,7 +297,8 @@ class TikApi(object):
                 break
             logging.info('Data retrieved {} pages remaining'
                          ''.format(page_rem - x))
-        self.df = self.df.merge(pd.DataFrame(self.ad_id_list), on='ad_id',
+        id_df = (pd.DataFrame(self.ad_id_list).drop_duplicates(subset="ad_id"))
+        self.df = self.df.merge(pd.DataFrame(id_df), on='ad_id',
                                 how='left')
         self.df = self.clean_ad_name(self.df)
         cols = self.metrics.copy()
@@ -317,10 +331,35 @@ class TikApi(object):
         """
         sd, ed = self.get_data_default_check(sd, ed)
         self.reset_params()
-        self.get_ids()
+        for ad_url in self.check_url():
+            self.get_ids(ad_url=ad_url['ad_url'],
+                         campaign_id=ad_url['campaign_id'])
         self.df = self.request_and_get_data(sd, ed)
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
+
+    def check_url(self):
+        self.set_headers()
+        url = self.base_url + self.version + self.campaign_url
+        params = {'advertiser_id': self.advertiser_id,
+                  'fields': '["campaign_automation_type", "campaign_name"]'}
+        r = self.make_request(url=url, method='GET', headers=self.headers,
+                              params=params)
+        response = r.json()
+        campaign_list = response.get('data', {}).get('list', [])
+        if self.campaign_id:
+            campaign_list = [
+                c for c in campaign_list
+                if self.campaign_id in c.get('campaign_name', '')
+            ]
+        urls = []
+        for campaign in campaign_list:
+            ad_url = self.smart_url if 'SMART' in campaign.get(
+                'campaign_automation_type', '') else self.ad_url
+            urls.append(
+                {'ad_url': ad_url, 'campaign_id': campaign.get('campaign_id')})
+        return urls
+
 
     def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
         metrics = 'spend'
