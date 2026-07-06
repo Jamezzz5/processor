@@ -1160,7 +1160,8 @@ class SeleniumWrapper(object):
                 self.wait_for_elem_load(load_elem_id, attempts=200)
             except Exception as e:
                 logging.warning('Attempt to re-click: {}'.format(e))
-                self.click_on_xpath(elem_xpath, sleep)
+                if self.browser.find_elements(By.XPATH, elem_xpath):
+                    self.click_on_xpath(elem_xpath, sleep)
                 self.wait_for_elem_load(load_elem_id, attempts=800)
 
     @staticmethod
@@ -1340,13 +1341,13 @@ class SeleniumWrapper(object):
                 elem_form, clear_existing=clear_existing,
                 send_escape=send_escape, new_value=new_value,
                 choose_existing=choose_existing)
+        if new_value and elem_form:
+            first_id = elem_form[0][1]
+            base_id = (first_id.replace(
+                f'-{self.selectize_xpath}', '').replace(
+                f'-{self.liquid_xpath}', ''))
+            self.wait_for_elem_load(base_id, new_value=new_value)
         if submit_id:
-            if new_value:
-                first_id = elem_form[0][1]
-                base_id = (first_id
-                    .replace(f'-{self.selectize_xpath}', '')
-                    .replace(f'-{self.liquid_xpath}', ''))
-                self.wait_for_elem_load(base_id, new_value=new_value)
             self.xpath_from_id_and_click(submit_id, .01)
 
     def _looks_like_select_id(self, raw_id, select_form_names):

@@ -56,6 +56,7 @@ class Analyze(object):
     placement_col = 'placement_col'
     api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
+    plan_partners_pending = 'plan_partners_pending'
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
@@ -116,6 +117,7 @@ class Analyze(object):
         self.class_list = [
             CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
             CheckColumnNames, FindPlacementNameCol, CheckPlacementsNotInMp,
+            CheckPlanPartnersNotDelivered,
             CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
             CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
             GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
@@ -3186,6 +3188,53 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         return change_df
 
 
+class CheckPlanPartnersNotDelivered(AnalyzeBase):
+    """The reverse of CheckPlacementsNotInMp: media-plan partners with no
+    delivered rows yet, so a report can account for every planned partner
+    with one 'pending delivery' note instead of empty per-partner
+    sections."""
+    name = Analyze.plan_partners_pending
+    all_files = True
+    pre_run = True
+    merge_col = '_merge'
+    merge_filter = 'left_only'
+
+    def find_plan_partners_not_delivered(self, df):
+        """
+        Find media plan partners with no delivered (non-plan) rows.
+
+        :param df: The full output df including MediaPlan rows
+        :return: df of pending partners, one row per mpVendor
+        """
+        cols = [dctc.VEN]
+        if df.empty or vmc.vendorkey not in df.columns:
+            return pd.DataFrame(columns=cols)
+        mp_vendors = df.loc[
+            df[vmc.vendorkey] == vmc.api_mp_key, cols].drop_duplicates()
+        if mp_vendors.empty:
+            return pd.DataFrame(columns=cols)
+        delivered = df.loc[
+            df[vmc.vendorkey] != vmc.api_mp_key, cols].drop_duplicates()
+        merged_df = pd.merge(mp_vendors, delivered, how='left', on=cols,
+                             indicator=True)
+        rdf = merged_df[merged_df[self.merge_col] == self.merge_filter]
+        rdf = rdf[cols].dropna()
+        rdf = rdf[~rdf[dctc.VEN].isin(['0', 'nan', 'None', ''])]
+        return rdf.reset_index(drop=True)
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_plan_partners_not_delivered(df)
+        if rdf.empty:
+            msg = 'All media plan partners have delivered data.'
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following media plan partners have no delivered '
+                   'data yet (pending launch or delayed reporting):')
+            self.aly.format_log_msg_with_df(msg, rdf)
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+
+
 class CheckLive(AnalyzeBase):
     name = Analyze.check_live
     cols = [dctc.VEN, dctc.COU, dctc.TB, dctc.PKD, dctc.LI]
@@ -3263,14 +3312,14 @@ class ValueCalc(object):
     @staticmethod
     def get_default_metrics():
         metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
-                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'CPV']
+                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'CPV', 'ROAS']
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
                    'Net Cost Final/Video Views 100',
                    'Net Cost Final/Landing Page', 'Net Cost Final/Purchase',
                    'Net Cost Final/Impressions', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views']
+                   'Net Cost Final/Video Views', 'Revenue/Net Cost Final']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
