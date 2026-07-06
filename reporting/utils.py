@@ -576,7 +576,7 @@ def signal_handler(signum, frame):
 def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
                     raise_on_fail=True,
                     exception_msg='Polling timed out before true.',
-                    click_elem_id='', load_elem_id=''):
+                    click_elem_id='', load_elem_id='', sw=None):
     """
     Polls the specified function with the provided kwargs (if any) until it
     returns true or the max number of attempts is reached. If function fails to
@@ -591,8 +591,10 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
     return true before the max number of attempts is reached; True by default
     :param exception_msg: Text to give exception if raised;
     'Polling timed out before true.' if not specified
-    :param click_elem_id: The original element id that was clicked
+    :param click_elem_id: The original element id that was clicked; re-clicked
+    past the halfway point in case the first click no-opped
     :param load_elem_id: The element that loads after click
+    :param sw: SeleniumWrapper instance, required for the re-click
     :return: Whether polling succeeded in getting a true value
     """
     return_val = False
@@ -602,9 +604,9 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
         return_val = func(**func_kwargs)
         if return_val:
             break
-        if click_elem_id and x > (attempts / 2):
-            SeleniumWrapper.xpath_from_id_and_click(
-                SeleniumWrapper, click_elem_id, load_elem_id=load_elem_id)
+        if sw and click_elem_id and x > (attempts / 2):
+            sw.xpath_from_id_and_click(
+                click_elem_id, load_elem_id=load_elem_id)
         time.sleep(sleep)
     if not return_val and raise_on_fail:
         raise Exception(exception_msg)
@@ -1377,19 +1379,24 @@ class SeleniumWrapper(object):
             return []
         return wraps[0].find_elements(By.CSS_SELECTOR, '.lq-tag')
 
-    def run_worker(self, worker, attempts=20, raise_on_fail=True):
+    def run_worker(self, worker, attempts=20, raise_on_fail=True,
+                   click_elem_id='', load_elem_id=''):
         """
         Drain the given RQ worker until a task completes.
 
         :param worker: Worker exposing ``.work(burst=True)``
         :param attempts: Max polling attempts
         :param raise_on_fail: Raise if no task completes within attempts
+        :param click_elem_id: Element to re-click halfway through the
+            attempts — for launches whose original click can no-op
+        :param load_elem_id: Element that loads after the re-click
         :return: Whether a task completed
         """
         return poll_until_true(
             lambda worker: worker.work(burst=True),
             {'worker': worker}, attempts, .1, raise_on_fail,
-            'Worker did not complete task.')
+            'Worker did not complete task.',
+            click_elem_id=click_elem_id, load_elem_id=load_elem_id, sw=self)
 
     def click_and_run_worker(self, elem_id, worker, load_elem_id='',
                              worker_attempts=20):
