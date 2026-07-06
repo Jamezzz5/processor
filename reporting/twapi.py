@@ -560,6 +560,9 @@ class TwApi(object):
                 idx + 1, len(async_requests)))
             params['job_ids'] = ','.join('{}'.format(x) for x in job_id)
             data = self.raw_request(url=url, params=params, method='GET')
+            if not data:
+                logging.error('No data retrieved from async request.')
+                continue
             if data['next_cursor']:
                 logging.error('Cursor without pagination')
             for d in data['data']:
