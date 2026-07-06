@@ -239,6 +239,38 @@ class SteApi(object):
         return df.rename(columns={'steam_appid': 'appid',
                                   'name': 'app_detail_name'})
 
+    def get_store_app_art(self, name):
+        """Best-effort key-art URL from the public Steam store for a
+        title name. Returns the header image URL or None; uses the
+        keyless store endpoints so no config/key is required."""
+        if not name:
+            return None
+        try:
+            search = requests.get(
+                self.base_store_url + 'api/storesearch/',
+                params={'term': name, 'cc': 'us', 'l': 'english'}, timeout=8)
+            items = search.json().get('items') or []
+        except Exception:
+            return None
+        if not items:
+            return None
+        appid = items[0].get('id')
+        if not appid:
+            return None
+        try:
+            det = requests.get(
+                self.app_det_url,
+                params={'appids': appid, 'cc': 'us', 'l': 'english'},
+                timeout=8)
+            entry = det.json().get(str(appid)) or {}
+        except Exception:
+            return None
+        if not entry.get('success'):
+            return None
+        data = entry.get('data') or {}
+        return (data.get('header_image') or data.get('capsule_imagev5')
+                or data.get('capsule_image'))
+
     def get_data(self, sd=None, ed=None, fields=None):
         run_time = dt.datetime.now(dt.timezone.utc)
         user_games = self.user_search_loop()
