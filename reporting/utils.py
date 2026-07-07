@@ -1357,6 +1357,20 @@ class SeleniumWrapper(object):
             or 'cur' in raw_id or 'Select' in raw_id
             or '-selectized' in raw_id or '-liquid' in raw_id)
 
+    def elem_displayed(self, elem_id, selector=None):
+        """True when an element with this id exists and is visible.
+
+        Swallows not-found and stale-element races so it is safe to
+        call repeatedly inside a poll condition (``is_displayed`` on a
+        captured WebElement raises once the DOM re-renders).
+        """
+        selector = selector if selector else self.select_id
+        try:
+            elems = self.browser.find_elements(selector, elem_id)
+            return bool(elems) and elems[0].is_displayed()
+        except ex.StaleElementReferenceException:
+            return False
+
     def select_widget_rendered(self, elem_id):
         """Return True when the LiquidSelect wrapper input for this
         select id exists in the DOM. Accepts a bare id or one with
