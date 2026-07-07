@@ -3856,42 +3856,82 @@ class AliChat(object):
             tokens = ngram_tokens
         return tokens
 
-    def llm_request_generator(self, body):
-        with requests.post(self.llm_url, json=body, stream=True) as r:
-            r.raise_for_status()
-            r.encoding = 'utf-8'
-            for raw_line in r.iter_lines(decode_unicode=True):
-                if not raw_line:
-                    continue
-                if raw_line.startswith("data: "):
-                    raw_line = raw_line[6:]
-                if raw_line.strip() == "[DONE]":
-                    return
-                try:
-                    data = json.loads(raw_line)
-                except json.JSONDecodeError:
+    @staticmethod
+    def _parse_llm_stream_lines(r):
+        """Parse an SSE response's lines into delta dicts."""
+        for raw_line in r.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+            if raw_line.startswith("data: "):
+                raw_line = raw_line[6:]
+            if raw_line.strip() == "[DONE]":
+                return
+            try:
+                data = json.loads(raw_line)
+            except json.JSONDecodeError:
+                logging.warning(
+                    f"Skipping unparseable LLM chunk:"
+                    f" {raw_line[:200]}")
+                continue
+            choice = data.get("choices", [{}])[0]
+            delta = choice.get("delta", {})
+            finish_reason = choice.get("finish_reason")
+            if delta.get("reasoning_content"):
+                yield {"type": "thinking",
+                       "delta": delta["reasoning_content"]}
+            if delta.get("content"):
+                yield {"type": "response", "delta": delta["content"]}
+            if delta.get("tool_calls"):
+                yield {
+                    "type": "tool_call_delta",
+                    "delta": delta["tool_calls"],
+                }
+            if finish_reason:
+                yield {
+                    "type": "finish",
+                    "delta": finish_reason,
+                }
+
+    def llm_request_generator(self, body, connect_timeout=5,
+                              read_timeout=120, retries=1):
+        """Stream parsed LLM deltas, never hanging or raising.
+
+        A connect-phase failure (connection refused / timed out
+        before any delta arrived) is retried once — nothing has
+        streamed, so the request is safe to repeat. Once deltas
+        have been yielded a dropped stream cannot be resumed
+        against the stateless completions endpoint, so a terminal
+        ``{'type': 'error', 'delta': <reason>}`` sentinel is
+        yielded instead of raising — callers keep the partial
+        response and surface the error to the user.
+        """
+        attempts = 0
+        yielded = False
+        while True:
+            try:
+                with requests.post(
+                        self.llm_url, json=body, stream=True,
+                        timeout=(connect_timeout, read_timeout)) as r:
+                    r.raise_for_status()
+                    r.encoding = 'utf-8'
+                    for delta in self._parse_llm_stream_lines(r):
+                        yielded = True
+                        yield delta
+                return
+            except requests.exceptions.RequestException as exc:
+                retryable = isinstance(
+                    exc, (requests.exceptions.ConnectionError,
+                          requests.exceptions.Timeout))
+                if retryable and not yielded and attempts < retries:
+                    attempts += 1
                     logging.warning(
-                        f"Skipping unparseable LLM chunk:"
-                        f" {raw_line[:200]}")
+                        f"LLM connect failed ({exc}) — retrying "
+                        f"({attempts}/{retries}).")
                     continue
-                choice = data.get("choices", [{}])[0]
-                delta = choice.get("delta", {})
-                finish_reason = choice.get("finish_reason")
-                if delta.get("reasoning_content"):
-                    yield {"type": "thinking",
-                           "delta": delta["reasoning_content"]}
-                if delta.get("content"):
-                    yield {"type": "response", "delta": delta["content"]}
-                if delta.get("tool_calls"):
-                    yield {
-                        "type": "tool_call_delta",
-                        "delta": delta["tool_calls"],
-                    }
-                if finish_reason:
-                    yield {
-                        "type": "finish",
-                        "delta": finish_reason,
-                    }
+                logging.warning(f"LLM stream failed: {exc}")
+                yield {"type": "error",
+                       "delta": f"{type(exc).__name__}: {exc}"}
+                return
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
