@@ -4391,12 +4391,33 @@ class AliChat(object):
                 message, self.openai_found)
         return response, html_response
 
+    _STOP_WORDS_CACHE = None
+
+    @staticmethod
+    def _ensure_nltk_corpus(name, path):
+        """Download an nltk corpus only when it isn't already present.
+
+        ``nltk.download`` reaches out to the network to check the
+        package index on EVERY call even when the corpus is installed
+        (and blocks on connect/read timeouts behind a firewall), so
+        guard it with ``nltk.data.find``. This ran twice per ``AliChat``
+        construction — i.e. once per ``/post_chat`` — and was a
+        multi-second synchronous cost in the chat path."""
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(name, quiet=True)
+
     @staticmethod
     def get_stop_words():
-        nltk.download('stopwords', quiet=True)
-        nltk.download('wordnet', quiet=True)
-        stop_words = list(nltk.corpus.stopwords.words('english'))
-        return stop_words
+        # Cache per process: the english stopword list never changes,
+        # so building it (and probing nltk data) once is enough.
+        if AliChat._STOP_WORDS_CACHE is None:
+            AliChat._ensure_nltk_corpus('stopwords', 'corpora/stopwords')
+            AliChat._ensure_nltk_corpus('wordnet', 'corpora/wordnet')
+            AliChat._STOP_WORDS_CACHE = list(
+                nltk.corpus.stopwords.words('english'))
+        return AliChat._STOP_WORDS_CACHE
 
     @staticmethod
     def _format_page_context_line(page_context):
