@@ -3357,7 +3357,8 @@ class ValueCalc(object):
         if db_translate:
             formula = list(utl.db_df_translation(formula).values())
         for item in formula:
-            if item.lower() == 'impressions' and 'Clicks' not in formula:
+            if item.lower() == 'impressions' and not any(
+                    str(f).lower() == 'clicks' for f in formula):
                 df[item] = df[item] / 1000
             if current_op:
                 if col in df and item in df:

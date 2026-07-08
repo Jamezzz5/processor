@@ -415,6 +415,21 @@ class GsApi(object):
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
+    def add_narrative_slide(self, presentation_id, slide_id, title, text):
+        """A text slide — bold title + narrative body — for the executive
+        summary and any analysis not paired with a chart, so the ALI story
+        carries on the deck rather than only in speaker notes."""
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 't', title or '', cx, 300000, cw, 560000,
+            font_pt=22, bold=True, align='START')
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 'b', text or '', cx, 980000, cw,
+            self.PAGE_H_EMU - 980000 - 300000, font_pt=13, align='START')
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
     def add_chart_slide(self, presentation_id, slide_id, title=None,
                         image_url=None, caption=None, notes=None,
                         img_w=None, img_h=None):
@@ -689,8 +704,9 @@ class GsApi(object):
                         w_pt, h_pt = 320, 200
                         iw, ih = item.get('img_w'), item.get('img_h')
                         if iw and ih:  # size charts to page width by aspect
-                            w_pt = 460
-                            h_pt = max(90, min(380, int(round(w_pt * ih / iw))))
+                            w_pt = 468  # US-Letter content width (8.5"-1")
+                            h_pt = max(120, min(600,
+                                                int(round(w_pt * ih / iw))))
                     table_req, index = self.add_image_doc(
                         presigned_url, index, w_pt, h_pt)
                 elif item['data']['cols']:
