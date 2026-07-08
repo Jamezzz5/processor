@@ -628,6 +628,7 @@ class SeleniumWrapper(object):
         self.select_xpath = By.XPATH
         self.select_css = By.CSS_SELECTOR
         self.use_js_click = False
+        self.default_elem_sleep = 2
 
     @staticmethod
     def get_chrome_version():
@@ -717,6 +718,10 @@ class SeleniumWrapper(object):
         co = wd.chrome.options.Options()
         if headless:
             co.add_argument('--headless=new')
+            # --headless=new spawns a real (black) window on Windows;
+            # park it far off-screen so it never flashes on the desktop
+            # while keeping new-headless rendering for the screenshot tests.
+            co.add_argument('--window-position=-32000,-32000')
         random_user_agent = self.get_random_user_agent()
         co.add_argument('user-agent={}'.format(random_user_agent))
         co.add_argument('--disable-features=VizDisplayCompositor')
@@ -753,7 +758,12 @@ class SeleniumWrapper(object):
             { get: () => ['en-US', 'en'] });
         """)
         co.page_load_strategy = 'none'
-        browser.maximize_window()
+        if headless:
+            # maximize_window with no screen shrinks the viewport
+            # below the requested --window-size; pin it instead.
+            browser.set_window_size(1920, 1080)
+        else:
+            browser.maximize_window()
         browser.set_script_timeout(10)
         browser.set_page_load_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
@@ -816,7 +826,12 @@ class SeleniumWrapper(object):
     def click_error(self, elem, e, attempts=0):
         if self.use_js_click:
             try:
-                self.browser.execute_script("arguments[0].click();", elem)
+                self.browser.execute_script(
+                    "var el = arguments[0];"
+                    "['mousedown', 'mouseup', 'click'].forEach("
+                    "    function (t) { el.dispatchEvent(new MouseEvent("
+                    "        t, {bubbles: true, cancelable: true,"
+                    "            view: window})); });", elem)
                 return True
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException,
@@ -842,7 +857,9 @@ class SeleniumWrapper(object):
         time.sleep(.1)
         return False
 
-    def click_on_xpath(self, xpath='', sleep=2, elem=None):
+    def click_on_xpath(self, xpath='', sleep=None, elem=None):
+        if sleep is None:
+            sleep = self.default_elem_sleep
         elem_click = True
         attempts = 10
         for x in range(attempts):
@@ -874,20 +891,29 @@ class SeleniumWrapper(object):
 
     @staticmethod
     def get_file_as_df(temp_path=None):
+        """Poll ``temp_path`` for a downloaded csv (500s ceiling,
+        matching the old 100 x 5s loop) and read it once its size is
+        stable — i.e. the browser finished writing."""
         df = pd.DataFrame()
-        for x in range(100):
-            logging.info('Checking for file.  Attempt {}.'.format(x + 1))
-            files = os.listdir(temp_path)
-            files = [x for x in files if x[-4:] == '.csv']
-            if files:
-                files = files[-1]
-                logging.info('File downloaded.')
-                temp_file = os.path.join(temp_path, files)
-                time.sleep(5)
-                df = import_read_csv(temp_file, empty_df=True)
-                os.remove(temp_file)
-                break
-            time.sleep(5)
+        deadline = time.time() + 500
+        logging.info('Checking for file in {}.'.format(temp_path))
+        while time.time() < deadline:
+            files = [x for x in os.listdir(temp_path) if x[-4:] == '.csv']
+            if not files:
+                time.sleep(.25)
+                continue
+            temp_file = os.path.join(temp_path, files[-1])
+            last_size = -1
+            while time.time() < deadline:
+                size = os.path.getsize(temp_file)
+                if size and size == last_size:
+                    break
+                last_size = size
+                time.sleep(.25)
+            logging.info('File downloaded.')
+            df = import_read_csv(temp_file, empty_df=True)
+            os.remove(temp_file)
+            break
         shutil.rmtree(temp_path)
         return df
 
@@ -1150,7 +1176,9 @@ class SeleniumWrapper(object):
             return False
         return self.liquid_xpath in self.resolve_select_id(elem_xpath)
 
-    def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
+    def xpath_from_id_and_click(self, elem_id, sleep=None, load_elem_id=''):
+        if sleep is None:
+            sleep = self.default_elem_sleep
         if load_elem_id:
             sleep = .01
         elem_xpath = self.get_xpath_from_id(elem_id)
@@ -1229,7 +1257,8 @@ class SeleniumWrapper(object):
             tt = attempts * sleep_time
             msg = 'Element {} not found in {}s.'.format(elem_id, tt)
             if raise_exception:
-                file_name = 'NOT_FOUND_ERROR.png'
+                file_name = os.environ.get(
+                    'LQ_ERROR_SHOT', 'NOT_FOUND_ERROR.png')
                 self.take_screenshot(file_name=file_name)
                 raise Exception(msg)
         return elem_found
@@ -1394,22 +1423,31 @@ class SeleniumWrapper(object):
             return []
         return wraps[0].find_elements(By.CSS_SELECTOR, '.lq-tag')
 
-    def run_worker(self, worker, attempts=20, raise_on_fail=True,
+    def run_worker(self, worker, attempts=None, raise_on_fail=True,
                    click_elem_id='', load_elem_id=''):
         """
         Drain the given RQ worker until a task completes.
 
         :param worker: Worker exposing ``.work(burst=True)``
-        :param attempts: Max polling attempts
+        :param attempts: Max polling attempts; ``None`` resolves to
+            ``default_worker_attempts`` (20 unless an instance sets it)
         :param raise_on_fail: Raise if no task completes within attempts
         :param click_elem_id: Element to re-click halfway through the
             attempts — for launches whose original click can no-op
         :param load_elem_id: Element that loads after the re-click
         :return: Whether a task completed
         """
+        if attempts is None:
+            if raise_on_fail:
+                attempts = getattr(self, 'default_worker_attempts', 20)
+            else:
+                attempts = getattr(
+                    self, 'default_worker_idle_attempts',
+                    getattr(self, 'default_worker_attempts', 20))
+        sleep = getattr(self, 'default_worker_sleep', .1)
         return poll_until_true(
             lambda worker: worker.work(burst=True),
-            {'worker': worker}, attempts, .1, raise_on_fail,
+            {'worker': worker}, attempts, sleep, raise_on_fail,
             'Worker did not complete task.',
             click_elem_id=click_elem_id, load_elem_id=load_elem_id, sw=self)
 

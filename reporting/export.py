@@ -24,11 +24,13 @@ config_path = utl.config_path
 
 
 class ExportHandler(object):
-    def __init__(self):
+    def __init__(self, config_file=None):
         self.export_list = None
         self.config = None
         self.args = None
-        self.config_file = 'config/export_handler.csv'
+        self.config_file = (config_file
+                            or os.environ.get('EXP_HANDLER_FILE')
+                            or 'config/export_handler.csv')
         self.config_loaded = self.load_config(self.config_file)
 
     def load_config(self, config_file):
