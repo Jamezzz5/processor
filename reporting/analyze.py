@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import zipfile
 
 import yaml
@@ -3569,6 +3570,19 @@ class AliChat(object):
         "suggested_category, suggested_labels, can_resolve, "
         "resolution_plan, triage_reasoning.")
 
+    # index_db_model_by_word loads and word-indexes EVERY row of a
+    # model, and get_response runs it for each searched model — an
+    # O(sum of table sizes) cost per chat send that grows with the
+    # database. Entries are keyed per model class and reused across
+    # requests for ``word_index_ttl`` seconds. A cached entry is
+    # revalidated against the model's current row count, so creates
+    # and deletes take effect immediately; renames from outside this
+    # process converge within the TTL. In-process writes (heuristic
+    # proposes, tool-loop writes) call invalidate_word_index().
+    # {(model_name, split_underscore): (word_idx, built_at, count)}
+    _WORD_INDEX_CACHE = {}
+    word_index_ttl = 60
+
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
                  previous_messages=None, transformer=None,
@@ -3612,6 +3626,7 @@ class AliChat(object):
             return False
         setattr(cur_model, column, new_val)
         self.db.session.commit()
+        self.invalidate_word_index()
         return True
 
     def _propose_create(self, new_model, parent=None,
@@ -3624,7 +3639,17 @@ class AliChat(object):
                 op=op, model=new_model, parent=parent)
         self.db.session.add(new_model)
         self.db.session.commit()
+        self.invalidate_word_index()
         return True
+
+    @classmethod
+    def invalidate_word_index(cls):
+        """Drop the cached per-model word indexes.
+
+        Called after any in-process write ALI makes so its own
+        creates/edits are immediately findable; external writers
+        are covered by the row-count check + TTL."""
+        cls._WORD_INDEX_CACHE = {}
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3674,6 +3699,19 @@ class AliChat(object):
 
     def index_db_model_by_word(self, db_model, model_is_list=False,
                                split_underscore=False):
+        cache_key = None
+        row_count = None
+        if not model_is_list and hasattr(db_model, '__name__'):
+            cache_key = (db_model.__name__, split_underscore)
+            try:
+                row_count = db_model.query.count()
+            except Exception:
+                cache_key = None
+            cached = (AliChat._WORD_INDEX_CACHE.get(cache_key)
+                      if cache_key else None)
+            if (cached and cached[2] == row_count
+                    and time.time() - cached[1] < self.word_index_ttl):
+                return cached[0]
         word_idx = {}
         db_all = db_model
         if not model_is_list:
@@ -3693,6 +3731,9 @@ class AliChat(object):
                     else:
                         word_idx[word] = [obj.id]
                     used_words.append(word)
+        if cache_key:
+            AliChat._WORD_INDEX_CACHE[cache_key] = (
+                word_idx, time.time(), row_count)
         return word_idx
 
     def convert_model_ids_to_message(
@@ -4828,20 +4869,24 @@ class TfIdfTransformer(object):
             return []
         query_vec = self.compute_vector(text)
 
-        # Cosine similarity with each doc
-        # sim = dot(query_vec, doc_vec) / (norm(query_vec)*norm(doc_vec))
+        # Cosine similarity with each doc, vectorized:
+        # sim = (matrix @ query) / (norm(query) * norms(docs)).
+        # Doc norms are cached on the instance; the getattr guard
+        # covers transformers unpickled from before the attribute
+        # existed (pickle restores state without __init__).
         query_norm = np.linalg.norm(query_vec)
         if query_norm < 1e-10:
             return []
-        similar_docs = []
-        for doc_idx, doc_vec in enumerate(self.tfidf_matrix):
-            dot_val = np.dot(query_vec, doc_vec)
-            doc_norm = np.linalg.norm(doc_vec)
-            if doc_norm < 1e-10:
-                sim_score = 0.0
-            else:
-                sim_score = dot_val / (query_norm * doc_norm)
-            similar_docs.append((doc_idx, sim_score))
+        doc_norms = getattr(self, 'doc_norms', None)
+        if doc_norms is None or len(doc_norms) != self.tfidf_matrix.shape[0]:
+            doc_norms = np.linalg.norm(self.tfidf_matrix, axis=1)
+            self.doc_norms = doc_norms
+        dots = self.tfidf_matrix @ query_vec
+        sims = np.divide(
+            dots, doc_norms * query_norm,
+            out=np.zeros_like(dots, dtype=np.float64),
+            where=doc_norms >= 1e-10)
+        similar_docs = list(enumerate(sims.tolist()))
         similar_docs.sort(key=lambda x: x[1], reverse=True)
         similar_docs = similar_docs[:top_k]
         return similar_docs
