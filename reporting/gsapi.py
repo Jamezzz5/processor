@@ -315,6 +315,22 @@ class GsApi(object):
     DECK_FONT = 'Segoe UI'
     DECK_INK = {'red': 0.173, 'green': 0.243, 'blue': 0.314}
     DECK_MUTED = {'red': 0.533, 'green': 0.533, 'blue': 0.533}
+    # Accent (3B82F6 = app BRAND_ACCENT) and tile-card fill (F4F7FA =
+    # BRAND_ZEBRA). Defaults for the native tiles / scorecard / dividers; the
+    # app passes a per-client ``brand`` dict of rgbColor values to override.
+    DECK_ACCENT = {'red': 0.231, 'green': 0.510, 'blue': 0.965}
+    DECK_CARD = {'red': 0.957, 'green': 0.969, 'blue': 0.980}
+    DECK_WHITE = {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+
+    def _brand_colors(self, brand):
+        """Resolve a deck color set from an optional ``brand`` dict (rgbColor
+        values keyed accent/ink/muted/card), falling back to the Liquid
+        DECK_* defaults so a deck with no client brand looks exactly as today."""
+        brand = brand or {}
+        return {'accent': brand.get('accent') or self.DECK_ACCENT,
+                'ink': brand.get('ink') or self.DECK_INK,
+                'muted': brand.get('muted') or self.DECK_MUTED,
+                'card': brand.get('card') or self.DECK_CARD}
 
     def slides_batch_update(self, presentation_id, requests):
         if not requests:
@@ -405,13 +421,37 @@ class GsApi(object):
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
-    def add_section_slide(self, presentation_id, slide_id, heading):
+    def add_section_slide(self, presentation_id, slide_id, heading,
+                          brand=None):
+        """A divider slide: a full-width brand-accent band with the section
+        heading in white centered on it (the gold-deck convention), instead of
+        plain centered text on white."""
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        band_h = 1200000
+        band_y = (self.PAGE_H_EMU - band_h) // 2
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._rect_reqs(slide_id, slide_id + 'band', 0, band_y,
+                                self.PAGE_W_EMU, band_h, colors['accent'])
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 't', heading or '',
+            cx, band_y + (band_h - 700000) // 2, cw, 700000,
+            font_pt=26, bold=True, align='CENTER', color=self.DECK_WHITE)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def add_narrative_slide(self, presentation_id, slide_id, title, text):
+        """A text slide — bold title + narrative body — for the executive
+        summary and any analysis not paired with a chart, so the ALI story
+        carries on the deck rather than only in speaker notes."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._text_box_reqs(
-            slide_id, slide_id + 't', heading or '',
-            cx, (self.PAGE_H_EMU - 900000) // 2, cw, 900000,
-            font_pt=26, bold=True, align='CENTER')
+            slide_id, slide_id + 't', title or '', cx, 300000, cw, 560000,
+            font_pt=22, bold=True, align='START')
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 'b', text or '', cx, 980000, cw,
+            self.PAGE_H_EMU - 980000 - 300000, font_pt=13, align='START')
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -439,6 +479,149 @@ class GsApi(object):
         self.slides_batch_update(presentation_id, reqs)
         if notes:
             self.add_speaker_notes(presentation_id, slide_id, notes)
+        return slide_id
+
+    def _rect_reqs(self, slide_id, shape_id, x, y, w, h, fill_color):
+        """A filled rectangle (no outline) — the card behind a stat tile and
+        the band behind a section heading."""
+        return [
+            {'createShape': {
+                'objectId': shape_id, 'shapeType': 'RECTANGLE',
+                'elementProperties': self._elem_props(slide_id, w, h, x, y)}},
+            {'updateShapeProperties': {
+                'objectId': shape_id,
+                'shapeProperties': {
+                    'shapeBackgroundFill': {'solidFill': {
+                        'color': {'rgbColor': fill_color}}},
+                    'outline': {'propertyState': 'NOT_RENDERED'}},
+                'fields': ('shapeBackgroundFill.solidFill.color,'
+                           'outline.propertyState')}},
+        ]
+
+    def add_stat_tile_slide(self, presentation_id, slide_id, title, tiles,
+                            brand=None):
+        """A slide of native stat tiles — each a card with a hero number, a
+        label, and a one-line comparison caption — built from Slides shapes so
+        the export never screenshots a KPI chart. ``tiles`` = list of
+        ``{'value','label','caption'}`` (6-8 read best; capped at 8)."""
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        if title:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 't', title, cx, 228600, cw, 520000,
+                font_pt=20, bold=True, align='START')
+        tiles = list(tiles or [])[:8]
+        if tiles:
+            cols = 4 if len(tiles) > 3 else len(tiles)
+            n_rows = (len(tiles) + cols - 1) // cols
+            gap = 137160  # 0.15"
+            grid_y = 900000
+            grid_h = self.PAGE_H_EMU - grid_y - self.MARGIN_EMU
+            cell_w = (cw - gap * (cols - 1)) // cols
+            cell_h = (grid_h - gap * (n_rows - 1)) // n_rows
+            pad = 100000
+            for i, tile in enumerate(tiles):
+                r, c = divmod(i, cols)
+                x = cx + c * (cell_w + gap)
+                y = grid_y + r * (cell_h + gap)
+                base = '{}c{}'.format(slide_id, i)
+                reqs += self._rect_reqs(slide_id, base + 'r', x, y,
+                                        cell_w, cell_h, colors['card'])
+                reqs += self._text_box_reqs(
+                    slide_id, base + 'v', str(tile.get('value', '')),
+                    x + pad, y + pad, cell_w - 2 * pad, cell_h * 45 // 100,
+                    font_pt=26, bold=True, align='START',
+                    color=colors['accent'])
+                reqs += self._text_box_reqs(
+                    slide_id, base + 'l', str(tile.get('label', '')),
+                    x + pad, y + cell_h * 45 // 100, cell_w - 2 * pad,
+                    cell_h * 26 // 100, font_pt=11, align='START',
+                    color=colors['ink'])
+                if tile.get('caption'):
+                    reqs += self._text_box_reqs(
+                        slide_id, base + 'p', str(tile['caption']),
+                        x + pad, y + cell_h * 71 // 100, cell_w - 2 * pad,
+                        cell_h * 26 // 100, font_pt=9, align='START',
+                        color=colors['muted'])
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def _table_reqs(self, slide_id, table_id, x, y, w, h, header, body_rows,
+                    colors):
+        """Requests for a native table with a filled, white-on-accent header
+        row. Empty cells are left unstyled (Slides rejects an ALL text range on
+        an empty cell)."""
+        all_rows = [list(header)] + [list(r) for r in body_rows]
+        n_cols = len(header)
+        reqs = [{'createTable': {
+            'objectId': table_id,
+            'elementProperties': self._elem_props(slide_id, w, h, x, y),
+            'rows': len(all_rows), 'columns': n_cols}}]
+        for r, row in enumerate(all_rows):
+            is_header = (r == 0)
+            for c in range(n_cols):
+                val = '' if c >= len(row) or row[c] is None else str(row[c])
+                if not val:
+                    continue
+                loc = {'rowIndex': r, 'columnIndex': c}
+                reqs.append({'insertText': {
+                    'objectId': table_id, 'cellLocation': loc,
+                    'insertionIndex': 0, 'text': val}})
+                reqs.append({'updateTextStyle': {
+                    'objectId': table_id, 'cellLocation': loc,
+                    'style': {
+                        'fontSize': {'magnitude': 11 if is_header else 10,
+                                     'unit': 'PT'},
+                        'bold': is_header, 'fontFamily': self.DECK_FONT,
+                        'foregroundColor': {'opaqueColor': {'rgbColor': (
+                            self.DECK_WHITE if is_header else colors['ink'])}}},
+                    'textRange': {'type': 'ALL'},
+                    'fields': 'fontSize,bold,fontFamily,foregroundColor'}})
+        reqs.append({'updateTableCellProperties': {
+            'objectId': table_id,
+            'tableRange': {'location': {'rowIndex': 0, 'columnIndex': 0},
+                           'rowSpan': 1, 'columnSpan': n_cols},
+            'tableCellProperties': {'tableCellBackgroundFill': {
+                'solidFill': {'color': {'rgbColor': colors['accent']}}}},
+            'fields': 'tableCellBackgroundFill.solidFill.color'}})
+        return reqs
+
+    def add_table_slide(self, presentation_id, slide_id, title, header,
+                        body_rows, brand=None):
+        """A slide with a native Slides table (styled header) — the KPI
+        scorecard and any tabular/appendix panel, built native rather than
+        screenshotted."""
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        if title:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 't', title, cx, 228600, cw, 520000,
+                font_pt=20, bold=True, align='START')
+        ty = 900000
+        th = self.PAGE_H_EMU - ty - self.MARGIN_EMU
+        reqs += self._table_reqs(slide_id, slide_id + 'tbl', cx, ty, cw, th,
+                                 header, body_rows, colors)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def add_toc_slide(self, presentation_id, slide_id, entries, brand=None):
+        """A table-of-contents slide: numbered section labels (gold-deck
+        convention). ``entries`` is a list of section-label strings."""
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 't', 'Contents', cx, 300000, cw, 560000,
+            font_pt=22, bold=True, align='START')
+        body = '\n'.join('{}.  {}'.format(i + 1, e)
+                         for i, e in enumerate(entries or []))
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 'b', body, cx, 980000, cw,
+            self.PAGE_H_EMU - 980000 - 300000, font_pt=14, align='START',
+            color=colors['ink'])
+        self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def delete_non_report_slides(self, presentation_id, keep_prefix='rb'):
@@ -689,8 +872,9 @@ class GsApi(object):
                         w_pt, h_pt = 320, 200
                         iw, ih = item.get('img_w'), item.get('img_h')
                         if iw and ih:  # size charts to page width by aspect
-                            w_pt = 460
-                            h_pt = max(90, min(380, int(round(w_pt * ih / iw))))
+                            w_pt = 468  # US-Letter content width (8.5"-1")
+                            h_pt = max(120, min(600,
+                                                int(round(w_pt * ih / iw))))
                     table_req, index = self.add_image_doc(
                         presigned_url, index, w_pt, h_pt)
                 elif item['data']['cols']:

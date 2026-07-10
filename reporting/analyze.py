@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import zipfile
 
 import yaml
@@ -56,6 +57,7 @@ class Analyze(object):
     placement_col = 'placement_col'
     api_split = 'api_split'
     non_mp_placement_col = 'non_mp_placement_col'
+    plan_partners_pending = 'plan_partners_pending'
     max_api_length = 'max_api_length'
     double_counting_all = 'double_counting_all'
     double_counting_partial = 'double_counting_partial'
@@ -116,6 +118,7 @@ class Analyze(object):
         self.class_list = [
             CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
             CheckColumnNames, FindPlacementNameCol, CheckPlacementsNotInMp,
+            CheckPlanPartnersNotDelivered,
             CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
             CheckDoubleCounting, GetPacingAnalysis, GetDailyDelivery,
             GetServingAlerts, GetDailyPacingAlerts, CheckPackageCapping,
@@ -3186,6 +3189,53 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         return change_df
 
 
+class CheckPlanPartnersNotDelivered(AnalyzeBase):
+    """The reverse of CheckPlacementsNotInMp: media-plan partners with no
+    delivered rows yet, so a report can account for every planned partner
+    with one 'pending delivery' note instead of empty per-partner
+    sections."""
+    name = Analyze.plan_partners_pending
+    all_files = True
+    pre_run = True
+    merge_col = '_merge'
+    merge_filter = 'left_only'
+
+    def find_plan_partners_not_delivered(self, df):
+        """
+        Find media plan partners with no delivered (non-plan) rows.
+
+        :param df: The full output df including MediaPlan rows
+        :return: df of pending partners, one row per mpVendor
+        """
+        cols = [dctc.VEN]
+        if df.empty or vmc.vendorkey not in df.columns:
+            return pd.DataFrame(columns=cols)
+        mp_vendors = df.loc[
+            df[vmc.vendorkey] == vmc.api_mp_key, cols].drop_duplicates()
+        if mp_vendors.empty:
+            return pd.DataFrame(columns=cols)
+        delivered = df.loc[
+            df[vmc.vendorkey] != vmc.api_mp_key, cols].drop_duplicates()
+        merged_df = pd.merge(mp_vendors, delivered, how='left', on=cols,
+                             indicator=True)
+        rdf = merged_df[merged_df[self.merge_col] == self.merge_filter]
+        rdf = rdf[cols].dropna()
+        rdf = rdf[~rdf[dctc.VEN].isin(['0', 'nan', 'None', ''])]
+        return rdf.reset_index(drop=True)
+
+    def do_analysis(self):
+        df = self.aly.df
+        rdf = self.find_plan_partners_not_delivered(df)
+        if rdf.empty:
+            msg = 'All media plan partners have delivered data.'
+            logging.info('{}'.format(msg))
+        else:
+            msg = ('The following media plan partners have no delivered '
+                   'data yet (pending launch or delayed reporting):')
+            self.aly.format_log_msg_with_df(msg, rdf)
+        self.add_to_analysis_dict(df=rdf, msg=msg)
+
+
 class CheckLive(AnalyzeBase):
     name = Analyze.check_live
     cols = [dctc.VEN, dctc.COU, dctc.TB, dctc.PKD, dctc.LI]
@@ -3263,14 +3313,14 @@ class ValueCalc(object):
     @staticmethod
     def get_default_metrics():
         metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
-                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'CPV']
+                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'CPV', 'ROAS']
         formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
                    'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
                    'Net Cost Final/Button Click', 'Video Views 100/Video Views',
                    'Net Cost Final/Video Views 100',
                    'Net Cost Final/Landing Page', 'Net Cost Final/Purchase',
                    'Net Cost Final/Impressions', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views']
+                   'Net Cost Final/Video Views', 'Revenue/Net Cost Final']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
@@ -3308,7 +3358,8 @@ class ValueCalc(object):
         if db_translate:
             formula = list(utl.db_df_translation(formula).values())
         for item in formula:
-            if item.lower() == 'impressions' and 'Clicks' not in formula:
+            if item.lower() == 'impressions' and not any(
+                    str(f).lower() == 'clicks' for f in formula):
                 df[item] = df[item] / 1000
             if current_op:
                 if col in df and item in df:
@@ -3519,6 +3570,19 @@ class AliChat(object):
         "suggested_category, suggested_labels, can_resolve, "
         "resolution_plan, triage_reasoning.")
 
+    # index_db_model_by_word loads and word-indexes EVERY row of a
+    # model, and get_response runs it for each searched model — an
+    # O(sum of table sizes) cost per chat send that grows with the
+    # database. Entries are keyed per model class and reused across
+    # requests for ``word_index_ttl`` seconds. A cached entry is
+    # revalidated against the model's current row count, so creates
+    # and deletes take effect immediately; renames from outside this
+    # process converge within the TTL. In-process writes (heuristic
+    # proposes, tool-loop writes) call invalidate_word_index().
+    # {(model_name, split_underscore): (word_idx, built_at, count)}
+    _WORD_INDEX_CACHE = {}
+    word_index_ttl = 60
+
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
                  previous_messages=None, transformer=None,
@@ -3562,6 +3626,7 @@ class AliChat(object):
             return False
         setattr(cur_model, column, new_val)
         self.db.session.commit()
+        self.invalidate_word_index()
         return True
 
     def _propose_create(self, new_model, parent=None,
@@ -3574,7 +3639,17 @@ class AliChat(object):
                 op=op, model=new_model, parent=parent)
         self.db.session.add(new_model)
         self.db.session.commit()
+        self.invalidate_word_index()
         return True
+
+    @classmethod
+    def invalidate_word_index(cls):
+        """Drop the cached per-model word indexes.
+
+        Called after any in-process write ALI makes so its own
+        creates/edits are immediately findable; external writers
+        are covered by the row-count check + TTL."""
+        cls._WORD_INDEX_CACHE = {}
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3624,6 +3699,19 @@ class AliChat(object):
 
     def index_db_model_by_word(self, db_model, model_is_list=False,
                                split_underscore=False):
+        cache_key = None
+        row_count = None
+        if not model_is_list and hasattr(db_model, '__name__'):
+            cache_key = (db_model.__name__, split_underscore)
+            try:
+                row_count = db_model.query.count()
+            except Exception:
+                cache_key = None
+            cached = (AliChat._WORD_INDEX_CACHE.get(cache_key)
+                      if cache_key else None)
+            if (cached and cached[2] == row_count
+                    and time.time() - cached[1] < self.word_index_ttl):
+                return cached[0]
         word_idx = {}
         db_all = db_model
         if not model_is_list:
@@ -3643,6 +3731,9 @@ class AliChat(object):
                     else:
                         word_idx[word] = [obj.id]
                     used_words.append(word)
+        if cache_key:
+            AliChat._WORD_INDEX_CACHE[cache_key] = (
+                word_idx, time.time(), row_count)
         return word_idx
 
     def convert_model_ids_to_message(
@@ -3807,42 +3898,82 @@ class AliChat(object):
             tokens = ngram_tokens
         return tokens
 
-    def llm_request_generator(self, body):
-        with requests.post(self.llm_url, json=body, stream=True) as r:
-            r.raise_for_status()
-            r.encoding = 'utf-8'
-            for raw_line in r.iter_lines(decode_unicode=True):
-                if not raw_line:
-                    continue
-                if raw_line.startswith("data: "):
-                    raw_line = raw_line[6:]
-                if raw_line.strip() == "[DONE]":
-                    return
-                try:
-                    data = json.loads(raw_line)
-                except json.JSONDecodeError:
+    @staticmethod
+    def _parse_llm_stream_lines(r):
+        """Parse an SSE response's lines into delta dicts."""
+        for raw_line in r.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+            if raw_line.startswith("data: "):
+                raw_line = raw_line[6:]
+            if raw_line.strip() == "[DONE]":
+                return
+            try:
+                data = json.loads(raw_line)
+            except json.JSONDecodeError:
+                logging.warning(
+                    f"Skipping unparseable LLM chunk:"
+                    f" {raw_line[:200]}")
+                continue
+            choice = data.get("choices", [{}])[0]
+            delta = choice.get("delta", {})
+            finish_reason = choice.get("finish_reason")
+            if delta.get("reasoning_content"):
+                yield {"type": "thinking",
+                       "delta": delta["reasoning_content"]}
+            if delta.get("content"):
+                yield {"type": "response", "delta": delta["content"]}
+            if delta.get("tool_calls"):
+                yield {
+                    "type": "tool_call_delta",
+                    "delta": delta["tool_calls"],
+                }
+            if finish_reason:
+                yield {
+                    "type": "finish",
+                    "delta": finish_reason,
+                }
+
+    def llm_request_generator(self, body, connect_timeout=5,
+                              read_timeout=120, retries=1):
+        """Stream parsed LLM deltas, never hanging or raising.
+
+        A connect-phase failure (connection refused / timed out
+        before any delta arrived) is retried once — nothing has
+        streamed, so the request is safe to repeat. Once deltas
+        have been yielded a dropped stream cannot be resumed
+        against the stateless completions endpoint, so a terminal
+        ``{'type': 'error', 'delta': <reason>}`` sentinel is
+        yielded instead of raising — callers keep the partial
+        response and surface the error to the user.
+        """
+        attempts = 0
+        yielded = False
+        while True:
+            try:
+                with requests.post(
+                        self.llm_url, json=body, stream=True,
+                        timeout=(connect_timeout, read_timeout)) as r:
+                    r.raise_for_status()
+                    r.encoding = 'utf-8'
+                    for delta in self._parse_llm_stream_lines(r):
+                        yielded = True
+                        yield delta
+                return
+            except requests.exceptions.RequestException as exc:
+                retryable = isinstance(
+                    exc, (requests.exceptions.ConnectionError,
+                          requests.exceptions.Timeout))
+                if retryable and not yielded and attempts < retries:
+                    attempts += 1
                     logging.warning(
-                        f"Skipping unparseable LLM chunk:"
-                        f" {raw_line[:200]}")
+                        f"LLM connect failed ({exc}) — retrying "
+                        f"({attempts}/{retries}).")
                     continue
-                choice = data.get("choices", [{}])[0]
-                delta = choice.get("delta", {})
-                finish_reason = choice.get("finish_reason")
-                if delta.get("reasoning_content"):
-                    yield {"type": "thinking",
-                           "delta": delta["reasoning_content"]}
-                if delta.get("content"):
-                    yield {"type": "response", "delta": delta["content"]}
-                if delta.get("tool_calls"):
-                    yield {
-                        "type": "tool_call_delta",
-                        "delta": delta["tool_calls"],
-                    }
-                if finish_reason:
-                    yield {
-                        "type": "finish",
-                        "delta": finish_reason,
-                    }
+                logging.warning(f"LLM stream failed: {exc}")
+                yield {"type": "error",
+                       "delta": f"{type(exc).__name__}: {exc}"}
+                return
 
     def get_llm_response(self, context, user_query, mode='answer',
                          instructions='', previous_messages=None,
@@ -4301,12 +4432,33 @@ class AliChat(object):
                 message, self.openai_found)
         return response, html_response
 
+    _STOP_WORDS_CACHE = None
+
+    @staticmethod
+    def _ensure_nltk_corpus(name, path):
+        """Download an nltk corpus only when it isn't already present.
+
+        ``nltk.download`` reaches out to the network to check the
+        package index on EVERY call even when the corpus is installed
+        (and blocks on connect/read timeouts behind a firewall), so
+        guard it with ``nltk.data.find``. This ran twice per ``AliChat``
+        construction — i.e. once per ``/post_chat`` — and was a
+        multi-second synchronous cost in the chat path."""
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(name, quiet=True)
+
     @staticmethod
     def get_stop_words():
-        nltk.download('stopwords', quiet=True)
-        nltk.download('wordnet', quiet=True)
-        stop_words = list(nltk.corpus.stopwords.words('english'))
-        return stop_words
+        # Cache per process: the english stopword list never changes,
+        # so building it (and probing nltk data) once is enough.
+        if AliChat._STOP_WORDS_CACHE is None:
+            AliChat._ensure_nltk_corpus('stopwords', 'corpora/stopwords')
+            AliChat._ensure_nltk_corpus('wordnet', 'corpora/wordnet')
+            AliChat._STOP_WORDS_CACHE = list(
+                nltk.corpus.stopwords.words('english'))
+        return AliChat._STOP_WORDS_CACHE
 
     @staticmethod
     def _format_page_context_line(page_context):
@@ -4717,20 +4869,24 @@ class TfIdfTransformer(object):
             return []
         query_vec = self.compute_vector(text)
 
-        # Cosine similarity with each doc
-        # sim = dot(query_vec, doc_vec) / (norm(query_vec)*norm(doc_vec))
+        # Cosine similarity with each doc, vectorized:
+        # sim = (matrix @ query) / (norm(query) * norms(docs)).
+        # Doc norms are cached on the instance; the getattr guard
+        # covers transformers unpickled from before the attribute
+        # existed (pickle restores state without __init__).
         query_norm = np.linalg.norm(query_vec)
         if query_norm < 1e-10:
             return []
-        similar_docs = []
-        for doc_idx, doc_vec in enumerate(self.tfidf_matrix):
-            dot_val = np.dot(query_vec, doc_vec)
-            doc_norm = np.linalg.norm(doc_vec)
-            if doc_norm < 1e-10:
-                sim_score = 0.0
-            else:
-                sim_score = dot_val / (query_norm * doc_norm)
-            similar_docs.append((doc_idx, sim_score))
+        doc_norms = getattr(self, 'doc_norms', None)
+        if doc_norms is None or len(doc_norms) != self.tfidf_matrix.shape[0]:
+            doc_norms = np.linalg.norm(self.tfidf_matrix, axis=1)
+            self.doc_norms = doc_norms
+        dots = self.tfidf_matrix @ query_vec
+        sims = np.divide(
+            dots, doc_norms * query_norm,
+            out=np.zeros_like(dots, dtype=np.float64),
+            where=doc_norms >= 1e-10)
+        similar_docs = list(enumerate(sims.tolist()))
         similar_docs.sort(key=lambda x: x[1], reverse=True)
         similar_docs = similar_docs[:top_k]
         return similar_docs

@@ -104,24 +104,78 @@ class AliSearch:
 
     def _transformer_search(self, results, db_model,
                             message, top_k):
-        """Run BM25 + TF-IDF cosine from the transformer."""
+        """Run BM25 + TF-IDF cosine from the transformer.
+
+        Each model gets its OWN top slice of the corpus scores.
+        Slicing the global top-k first and filtering by model
+        after (the old order) starved every model that doesn't
+        dominate the corpus — Notes is a large share of the
+        trained docs, so other models' bm25/tfidf almost never
+        survived the filter and the scores went unused.
+        """
         try:
             model_name = db_model.__name__
-            bm25_scores = self.transformer.bm25_search(
-                message, top_k=top_k * 2)
-            tfidf_scores = self.transformer.search(
-                message, top_k=top_k * 2)
+            by_model = self._scores_by_model(message)
             _merge_transformer_scores(
-                results, bm25_scores,
+                results, by_model['bm25'].get(model_name, [])[:top_k * 2],
                 self.transformer_dict, model_name,
                 weight=WEIGHT_BM25, score_key='bm25')
             _merge_transformer_scores(
-                results, tfidf_scores,
+                results, by_model['tfidf'].get(model_name, [])[:top_k * 2],
                 self.transformer_dict, model_name,
                 weight=WEIGHT_TFIDF, score_key='tfidf')
         except Exception as e:
             logger.warning(
                 'Transformer search failed: {}'.format(e))
+
+    def _full_scores(self, message):
+        """Full sorted BM25 + TF-IDF score lists for ``message``.
+
+        The scores don't depend on the model being searched, but
+        get_response searches every chat model with the same
+        message — so both corpus scans are memoized on the per-
+        request ``ali_chat`` and computed once per message instead
+        of once per model.
+        """
+        cache = getattr(self.ali_chat, 'transformer_score_cache', None)
+        if cache is None:
+            cache = {}
+            setattr(self.ali_chat, 'transformer_score_cache', cache)
+        if message not in cache:
+            n_docs = len(self.transformer_dict)
+            cache[message] = (
+                self.transformer.bm25_search(message, top_k=n_docs),
+                self.transformer.search(message, top_k=n_docs))
+        return cache[message]
+
+    def _scores_by_model(self, message):
+        """``{'bm25'|'tfidf': {model_name: [(idx, score), ...]}}``.
+
+        Groups the full sorted score lists by the doc's model,
+        keeping per-model rank order and dropping non-positive
+        scores — the full lists include every corpus doc, and
+        zero-score docs would otherwise surface as junk matches
+        on messages with no term overlap. Memoized per message
+        alongside the full lists.
+        """
+        bm25_full, tfidf_full = self._full_scores(message)
+        cache = getattr(self.ali_chat, 'transformer_score_cache')
+        cache_key = (message, 'by_model')
+        if cache_key not in cache:
+            grouped = {'bm25': {}, 'tfidf': {}}
+            for key, full in (('bm25', bm25_full),
+                              ('tfidf', tfidf_full)):
+                for doc_idx, score in full:
+                    if score <= 0:
+                        continue
+                    doc_info = self.transformer_dict.get(str(doc_idx))
+                    if not doc_info:
+                        continue
+                    model_name = doc_info.get('model')
+                    grouped[key].setdefault(
+                        model_name, []).append((doc_idx, score))
+            cache[cache_key] = grouped
+        return cache[cache_key]
 
 
 def _merge_transformer_scores(results, scores, text_dict,
