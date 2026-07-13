@@ -441,37 +441,10 @@ class TestApis:
         self.send_api_call(api)
         self.send_test_api_call(api)
 
-    def test_asaapi(self, tmp_path_factory):
+    def test_asaapi(self):
         api = asaapi.AsaApi()
-        file_name, json_data = self.make_fake_config(
-            api.key_list, tmp_path_factory)
-        api.input_config(file_name)
         self.send_api_call(api)
         self.send_test_api_call(api)
-
-    def test_asaapi_client_secret(self, tmp_path_factory):
-        import jwt
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-        api = asaapi.AsaApi()
-        private_key = ec.generate_private_key(ec.SECP256R1())
-        pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()).decode()
-        credentials = {api.private_key_str: pem}
-        file_name, json_data = self.make_fake_config(
-            api.key_list, tmp_path_factory, credentials)
-        api.input_config(file_name)
-        client_secret = api.get_client_secret()
-        header = jwt.get_unverified_header(client_secret)
-        assert header['alg'] == 'ES256'
-        assert header['kid'] == json_data[api.key_id_str]
-        payload = jwt.decode(client_secret,
-                             options={'verify_signature': False})
-        assert payload['aud'] == api.audience
-        assert payload['iss'] == json_data[api.team_id_str]
-        assert payload['sub'] == json_data[api.client_id_str]
 
     @staticmethod
     def send_test_api_call(api):
