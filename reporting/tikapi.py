@@ -391,22 +391,22 @@ class TikApi(object):
 
     def check_campaign_ids(self, results, camp_col, success_msg, failure_msg):
         self.get_ids(ad=False)
-        df = pd.DataFrame(data=self.campaign_id_list)
-        df = self.filter_df_on_campaign(df)
-        campaign_names = df['campaign_name'].to_list()
         if not self.campaign_id_list:
             msg = ' '.join([failure_msg, 'No Campaigns Under Advertiser. '
                                          'Check Active and Permissions.'])
             row = [camp_col, msg, False]
             results.append(row)
-        else:
-            msg = ' '.join(
-                [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
-            row = [camp_col, msg, True]
+            return results
+        df = pd.DataFrame(data=self.campaign_id_list)
+        df = self.filter_df_on_campaign(df)
+        campaign_names = df['campaign_name'].to_list()
+        msg = ' '.join(
+            [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
+        row = [camp_col, msg, True]
+        results.append(row)
+        for campaign in campaign_names:
+            row = [camp_col, campaign, True]
             results.append(row)
-            for campaign in campaign_names:
-                row = [camp_col, campaign, True]
-                results.append(row)
         return results
 
     def test_connection(self, acc_col, camp_col, acc_pre):
