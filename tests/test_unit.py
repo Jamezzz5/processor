@@ -39,6 +39,7 @@ import processor.reporting.yvapi as yvapi
 import processor.reporting.gsapi as gsapi
 import processor.reporting.simapi as simapi
 import processor.reporting.steapi as steapi
+import processor.reporting.asaapi as asaapi
 import processor.reporting.importhandler as ih
 
 # Dev machines carry gitignored credentials and data artifacts that
@@ -437,6 +438,11 @@ class TestApis:
 
     def test_afapi(self, tmp_path_factory):
         api = afapi.AfApi()
+        self.send_api_call(api)
+        self.send_test_api_call(api)
+
+    def test_asaapi(self):
+        api = asaapi.AsaApi()
         self.send_api_call(api)
         self.send_test_api_call(api)
 
