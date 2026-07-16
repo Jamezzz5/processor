@@ -982,7 +982,6 @@ class SeleniumWrapper(object):
         if went_to_url:
             if url:
                 self.accept_cookies()
-            self.accept_cookies()
             self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
 
