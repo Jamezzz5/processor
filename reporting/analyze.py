@@ -3581,7 +3581,7 @@ class AliChat(object):
     # proposes, tool-loop writes) call invalidate_word_index().
     # {(model_name, split_underscore): (word_idx, built_at, count)}
     _WORD_INDEX_CACHE = {}
-    word_index_ttl = 60
+    word_index_ttl = 600
 
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
@@ -3643,13 +3643,23 @@ class AliChat(object):
         return True
 
     @classmethod
-    def invalidate_word_index(cls):
-        """Drop the cached per-model word indexes.
+    def invalidate_word_index(cls, model_names=None):
+        """Drop cached per-model word indexes.
 
         Called after any in-process write ALI makes so its own
         creates/edits are immediately findable; external writers
-        are covered by the row-count check + TTL."""
-        cls._WORD_INDEX_CACHE = {}
+        are covered by the row-count check + TTL. ``model_names``
+        limits the drop to those models' entries (both
+        split-underscore variants); ``None`` drops everything —
+        most writes touch one known model, so targeted callers
+        keep every other model's index warm."""
+        if model_names is None:
+            cls._WORD_INDEX_CACHE = {}
+            return
+        names = set(model_names)
+        cls._WORD_INDEX_CACHE = {
+            k: v for k, v in cls._WORD_INDEX_CACHE.items()
+            if k[0] not in names}
 
     @staticmethod
     def load_config(config_name='openai.json', config_path='reporting'):
@@ -3915,9 +3925,13 @@ class AliChat(object):
                     f"Skipping unparseable LLM chunk:"
                     f" {raw_line[:200]}")
                 continue
-            choice = data.get("choices", [{}])[0]
+            choices = data.get("choices") or [{}]
+            choice = choices[0]
             delta = choice.get("delta", {})
             finish_reason = choice.get("finish_reason")
+            usage = data.get("usage")
+            if usage:
+                yield {"type": "usage", "delta": usage}
             if delta.get("reasoning_content"):
                 yield {"type": "thinking",
                        "delta": delta["reasoning_content"]}
@@ -3934,6 +3948,26 @@ class AliChat(object):
                     "delta": finish_reason,
                 }
 
+    @staticmethod
+    def _log_llm_timing(body, t0, t_first, delta_count,
+                        prompt_tokens, finish_reason):
+        """One info line per LLM call splitting time-to-first-delta
+        (server queueing + prompt prefill) from total stream time,
+        so slow turns can be attributed from the worker logs."""
+        t_end = time.time()
+        ttft = (t_first if t_first is not None else t_end) - t0
+        prompt_chars = sum(
+            len(m.get('content') or '')
+            for m in body.get('messages', []))
+        logging.info(
+            'LLM timing model=%s ttft=%.2fs total=%.2fs deltas=%d '
+            'tools=%s msgs=%d prompt_chars=%d prompt_tokens=%s '
+            'finish=%s' % (
+                body.get('model'), ttft, t_end - t0, delta_count,
+                bool(body.get('tools')),
+                len(body.get('messages', [])), prompt_chars,
+                prompt_tokens, finish_reason))
+
     def llm_request_generator(self, body, connect_timeout=5,
                               read_timeout=120, retries=1):
         """Stream parsed LLM deltas, never hanging or raising.
@@ -3946,9 +3980,18 @@ class AliChat(object):
         ``{'type': 'error', 'delta': <reason>}`` sentinel is
         yielded instead of raising — callers keep the partial
         response and surface the error to the user.
+
+        ``usage`` chunks (requested via ``stream_options``) are
+        consumed here for the timing log, never forwarded.
         """
+        body.setdefault('stream_options', {'include_usage': True})
         attempts = 0
         yielded = False
+        t0 = time.time()
+        t_first = None
+        delta_count = 0
+        prompt_tokens = None
+        finish_reason = None
         while True:
             try:
                 with requests.post(
@@ -3957,8 +4000,20 @@ class AliChat(object):
                     r.raise_for_status()
                     r.encoding = 'utf-8'
                     for delta in self._parse_llm_stream_lines(r):
+                        if delta.get('type') == 'usage':
+                            usage = delta.get('delta') or {}
+                            prompt_tokens = usage.get('prompt_tokens')
+                            continue
+                        if t_first is None:
+                            t_first = time.time()
+                        if delta.get('type') == 'finish':
+                            finish_reason = delta.get('delta')
+                        delta_count += 1
                         yielded = True
                         yield delta
+                self._log_llm_timing(
+                    body, t0, t_first, delta_count, prompt_tokens,
+                    finish_reason)
                 return
             except requests.exceptions.RequestException as exc:
                 retryable = isinstance(
@@ -3973,6 +4028,9 @@ class AliChat(object):
                 logging.warning(f"LLM stream failed: {exc}")
                 yield {"type": "error",
                        "delta": f"{type(exc).__name__}: {exc}"}
+                self._log_llm_timing(
+                    body, t0, t_first, delta_count, prompt_tokens,
+                    finish_reason or 'error')
                 return
 
     def get_llm_response(self, context, user_query, mode='answer',
@@ -4038,8 +4096,13 @@ class AliChat(object):
         if stream:
             return self.llm_request_generator(body)
         else:
+            t0 = time.time()
             r = requests.post(self.llm_url, json=body, timeout=timeout)
             data = r.json()
+            usage = data.get('usage') or {}
+            self._log_llm_timing(
+                body, t0, None, 0, usage.get('prompt_tokens'),
+                'nonstream')
             if 'choices' not in data:
                 msg = 'LLM response missing choices: {}'.format(data)
                 logging.warning(msg)
