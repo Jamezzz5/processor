@@ -37,8 +37,12 @@ import processor.reporting.ttdapi as ttdapi
 import processor.reporting.tikapi as tikapi
 import processor.reporting.yvapi as yvapi
 import processor.reporting.gsapi as gsapi
+import processor.reporting.gamesdb as gdb
+import processor.reporting.gamesmodels as gmdl
+import processor.reporting.gameswriter as gamesw
 import processor.reporting.simapi as simapi
 import processor.reporting.steapi as steapi
+import processor.reporting.asaapi as asaapi
 import processor.reporting.importhandler as ih
 
 # Dev machines carry gitignored credentials and data artifacts that
@@ -437,6 +441,11 @@ class TestApis:
 
     def test_afapi(self, tmp_path_factory):
         api = afapi.AfApi()
+        self.send_api_call(api)
+        self.send_test_api_call(api)
+
+    def test_asaapi(self):
+        api = asaapi.AsaApi()
         self.send_api_call(api)
         self.send_test_api_call(api)
 
@@ -2134,3 +2143,143 @@ class TestImportPlanData:
         start_date = vm.set_start_date(df)
         assert pd.notnull(start_date)
         assert isinstance(start_date, pd.Timestamp)
+
+
+class TestGamesDb:
+    """The games schema: models, natural-key upserts and the Steam
+    wide-df normalizing writer (sqlite-backed)."""
+
+    @staticmethod
+    def _session():
+        import sqlalchemy as sqa
+        from sqlalchemy.orm import sessionmaker
+        engine = sqa.create_engine('sqlite://').execution_options(
+            schema_translate_map={'games': None})
+        gmdl.metadata.create_all(engine)
+        return sessionmaker(bind=engine)()
+
+    @staticmethod
+    def _wide_row():
+        return pd.Series({
+            'appid': 292030, 'app_detail_name': 'The Witcher 3',
+            'publishers': ['CD PROJEKT RED'],
+            'developers': ['CD PROJEKT RED'],
+            'genres': [{'id': '3', 'description': 'RPG'}],
+            'release_date': {'coming_soon': False,
+                             'date': 'May 18, 2015'},
+            'price_overview': {'final': 3999}, 'player_count': 25000,
+            'owners_in_sample': 12, 'wishlists_in_sample': 3,
+            'avg_achievement_pct': 14.2, 'review_score': 9,
+            'review_score_desc': 'Overwhelmingly Positive',
+            'total_positive': 700000, 'total_negative': 14000,
+            'total_reviews': 714000,
+            'gameeventdate': dt.datetime(2026, 7, 7, 5, 0)})
+
+    def test_upsert_game_and_fact_idempotent(self):
+        s = self._session()
+        row = self._wide_row()
+        game = gdb.upsert_game(s, 'The Witcher 3',
+                               **gamesw.game_fields(row))
+        assert game.gameid and game.steam_appid == 292030
+        assert game.primary_genre == 'RPG'
+        assert game.release_date == 'May 18, 2015'
+        key = {'gameid': game.gameid,
+               'eventdate': row['gameeventdate']}
+        assert gdb.upsert_fact(s, gmdl.GameEvent, key,
+                               gamesw.event_fields(row)) == 1
+        s.commit()
+        event = s.query(gmdl.GameEvent).one()
+        assert float(event.player_count) == 25000
+        assert float(event.price) == 39.99
+        assert event.review_score_desc == 'Overwhelmingly Positive'
+        # Rerun matches by appid + natural key: update, not insert.
+        again = gdb.upsert_game(s, 'The Witcher 3',
+                                **gamesw.game_fields(row))
+        assert again.gameid == game.gameid
+        assert gdb.upsert_fact(s, gmdl.GameEvent, key,
+                               gamesw.event_fields(row)) == 0
+        s.commit()
+        assert s.query(gmdl.Game).count() == 1
+        assert s.query(gmdl.GameEvent).count() == 1
+
+    def test_upsert_game_fills_without_clobbering(self):
+        s = self._session()
+        seeded = gdb.upsert_game(s, 'Halo Infinite',
+                                 registry_slug='halo-infinite',
+                                 publisher='Xbox')
+        merged = gdb.upsert_game(s, 'Halo Infinite',
+                                 registry_slug='halo-infinite',
+                                 opencritic_id=42, developer='343')
+        assert merged.gameid == seeded.gameid
+        assert merged.publisher == 'Xbox'  # filled value kept
+        assert merged.opencritic_id == 42 and merged.developer == '343'
+        assert s.query(gmdl.Game).count() == 1
+
+    def test_writer_field_helpers(self):
+        row = self._wide_row()
+        fields = gamesw.game_fields(row)
+        assert fields['steam_appid'] == 292030
+        assert fields['publisher'] == 'CD PROJEKT RED'
+        assert fields['primary_genre'] == 'RPG'
+        events = gamesw.event_fields(row)
+        assert events['price'] == 39.99
+        assert events['total_reviews'] == 714000
+        # NaN/absent cells land as None, never NaN.
+        sparse = pd.Series({'appid': 1, 'player_count': float('nan')})
+        assert gamesw.event_fields(sparse)['player_count'] is None
+        assert gamesw.game_fields(sparse)['publisher'] is None
+
+    def test_writer_skips_without_config(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(utl, 'config_path', str(tmp_path) + '/')
+        monkeypatch.setattr(gamesw, 'games_db_available',
+                            lambda config='x': False)
+        df = pd.DataFrame([self._wide_row()])
+        assert gamesw.write_steam_events(df) == 0
+        assert gamesw.write_steam_events(pd.DataFrame()) == 0
+
+    def test_name_fallback_knits_sources_onto_one_row(self):
+        s = self._session()
+        # Registry seeds first; the Steam writer's name match lands on
+        # the same dim row and adds its identity.
+        reg = gdb.upsert_game(s, 'Halo Infinite',
+                              registry_slug='halo-infinite')
+        steam = gdb.upsert_game(s, 'Halo Infinite', match_name=True,
+                                steam_appid=1240440)
+        assert steam.gameid == reg.gameid
+        assert steam.registry_slug == 'halo-infinite'
+        assert steam.steam_appid == 1240440
+        # The reverse order knits too (case-insensitive).
+        first = gdb.upsert_game(s, 'ELDEN RING', match_name=True,
+                                steam_appid=1245620)
+        second = gdb.upsert_game(s, 'Elden Ring', match_name=True,
+                                 registry_slug='elden-ring')
+        assert second.gameid == first.gameid
+        assert s.query(gmdl.Game).count() == 2
+        # A name collision carrying a conflicting identity is a
+        # different game (remake/re-release): new row, no clobber.
+        clash = gdb.upsert_game(s, 'Elden Ring', match_name=True,
+                                steam_appid=999)
+        assert clash.gameid != first.gameid
+        assert first.steam_appid == 1245620
+        # Without match_name, a bare name never matches (old behavior).
+        other = gdb.upsert_game(s, 'Halo Infinite', opencritic_id=7)
+        assert other.gameid != reg.gameid
+
+    def test_upsert_game_stamps_provenance(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'The Witcher 3', steam_appid=292030)
+        assert game.first_seen_at is not None
+        first_seen = game.first_seen_at
+        again = gdb.upsert_game(s, 'The Witcher 3', steam_appid=292030)
+        assert again.first_seen_at == first_seen
+        assert again.updated_at is not None
+
+    def test_opencritic_id_unique_constraint(self):
+        # opencritic_id is an identity column (find_game trusts it), so
+        # the schema must refuse a second row with the same id — a bad
+        # fuzzy match aborts the batch instead of corrupting identity.
+        s = self._session()
+        gdb.upsert_game(s, 'Game A', opencritic_id=42)
+        s.commit()
+        s.add(gmdl.Game(canonical_name='Game B', opencritic_id=42))
+        assert gdb.safe_commit(s, 'test') is False

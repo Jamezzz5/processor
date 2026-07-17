@@ -80,8 +80,8 @@ class AjApi(object):
 
     def create_url(self, sd, ed, fields):
         full_url = '{}csv_report'.format(self.base_url)
+        metrics = self.def_fields.copy()
         params = {'app_token__in': self.app_token,
-                  'metrics': ','.join(self.def_fields),
                   'date_period': '{}:{}'.format(sd, ed),
                   'dimensions': ','.join(self.def_groupings)}
         if self.tracker_token:
@@ -96,6 +96,9 @@ class AjApi(object):
                     else:
                         val = 'click'
                     params['attribution_type'] = val
+                else:
+                    metrics.append(field)
+        params['metrics'] = ','.join(metrics)
         return full_url, params
 
     def get_data(self, sd=None, ed=None, fields=None):

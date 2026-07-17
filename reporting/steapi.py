@@ -8,6 +8,10 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+try:
+    import reporting.gameswriter as gamesw
+except ImportError:
+    gamesw = None
 
 
 class SteApi(object):
@@ -313,4 +317,9 @@ class SteApi(object):
         df['gameeventname'] = (str(int(run_time.timestamp()))
                                + df['appid'].astype(str))
         self.df = df
+        if gamesw is not None:
+            try:
+                gamesw.write_steam_events(df)
+            except Exception as e:
+                logging.warning('Games DB write failed: {}'.format(e))
         return df
