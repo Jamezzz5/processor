@@ -399,6 +399,12 @@ class TikApi(object):
             return results
         df = pd.DataFrame(data=self.campaign_id_list)
         df = self.filter_df_on_campaign(df)
+        if 'campaign_name' not in df.columns:
+            msg = ' '.join([failure_msg, 'No Campaigns Under Advertiser. '
+                                         'Check Active and Permissions.'])
+            row = [camp_col, msg, False]
+            results.append(row)
+            return results
         campaign_names = df['campaign_name'].to_list()
         msg = ' '.join(
             [success_msg, 'CAMPAIGNS INCLUDED IF DATA PAST START DATE:'])
