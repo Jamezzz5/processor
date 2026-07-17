@@ -1460,6 +1460,32 @@ class SeleniumWrapper(object):
         self.xpath_from_id_and_click(elem_id, load_elem_id=load_elem_id)
         return self.run_worker(worker, attempts=worker_attempts)
 
+    def wait_for_elem_with_worker(self, worker, elem_id, rounds=20,
+                                  attempts=20, sleep_time=.05, **kwargs):
+        """
+        Wait for an element, re-draining ``worker`` between checks.
+
+        ``run_worker`` returns once any single task completes, which may
+        be a leftover from a prior action rather than the task this
+        element waits on -- and a task the page enqueues after that
+        return is then never picked up. Re-draining covers both.
+
+        :param worker: Worker exposing ``.work(burst=True)``
+        :param elem_id: Identifier of the element to wait for
+        :param rounds: Max drain/check cycles before the final wait
+        :param attempts: Element polling attempts per cycle
+        :param sleep_time: Time in seconds to sleep between polls
+        :param kwargs: Passed through to ``wait_for_elem_load``
+        :return: Whether the element loaded
+        """
+        for _ in range(rounds):
+            if self.wait_for_elem_load(elem_id, attempts=attempts,
+                                       sleep_time=sleep_time,
+                                       raise_exception=False, **kwargs):
+                return True
+            worker.work(burst=True)
+        return self.wait_for_elem_load(elem_id, **kwargs)
+
     def navigate_and_submit(self, url, form_names=None,
                             select_form_names=None,
                             submit_id='loadContinue', worker=None,
