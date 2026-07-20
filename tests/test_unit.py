@@ -2265,6 +2265,36 @@ class TestGamesDb:
         other = gdb.upsert_game(s, 'Halo Infinite', opencritic_id=7)
         assert other.gameid != reg.gameid
 
+    def test_title_score_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        day = dt.date(2026, 7, 17)
+        key = {'score_date': day, 'title': 'Halo Infinite'}
+        fields = {'gameid': game.gameid, 'influence': 1.2,
+                  'engagement': -0.4, 'momentum': 0.3, 'composite': 1.1,
+                  'headline_metric': 'Player Share', 'current': 0.5,
+                  'prior': 0.4, 'share': 0.62, 'share_delta': 0.02,
+                  'movement': 'Rising', 'primary_period': '2026-07',
+                  'comparison_period': '2026-06'}
+        assert gdb.upsert_fact(s, gmdl.TitleScore, key, fields) == 1
+        # Unmatched titles land too, with a NULL gameid.
+        assert gdb.upsert_fact(
+            s, gmdl.TitleScore,
+            {'score_date': day, 'title': 'Mystery Title'},
+            {'gameid': None, 'composite': -0.2}) == 1
+        s.commit()
+        # Same-day rerun updates in place — no duplicate snapshots.
+        fields['share'] = 0.64
+        assert gdb.upsert_fact(s, gmdl.TitleScore, key, fields) == 0
+        s.commit()
+        assert s.query(gmdl.TitleScore).count() == 2
+        row = s.query(gmdl.TitleScore).filter_by(
+            title='Halo Infinite').one()
+        assert float(row.share) == 0.64
+        assert row.gameid == game.gameid
+        assert row.movement == 'Rising'
+
     def test_upsert_game_stamps_provenance(self):
         s = self._session()
         game = gdb.upsert_game(s, 'The Witcher 3', steam_appid=292030)
@@ -2283,3 +2313,21 @@ class TestGamesDb:
         s.commit()
         s.add(gmdl.Game(canonical_name='Game B', opencritic_id=42))
         assert gdb.safe_commit(s, 'test') is False
+
+    def test_db_config_file_first_then_ssm_then_none(self, tmp_path,
+                                                     monkeypatch):
+        cfg = {'USER': 'u ser', 'PASS': 'p@ss:w/rd', 'HOST': 'h',
+               'PORT': '5432', 'DATABASE': 'd'}
+        path = tmp_path / 'steamdbconfig.json'
+        path.write_text(json.dumps(cfg))
+        # A local file wins without touching SSM.
+        monkeypatch.setattr(gdb, '_ssm_config', lambda name: 1 / 0)
+        assert gdb.load_db_config(paths=[str(path)]) == cfg
+        # Special characters in USER/PASS survive URL building.
+        db = gdb.GamesDB(cfg)
+        assert 'u+ser:p%40ss%3Aw%2Frd@h:5432/d' in db.conn_string
+        # No file -> SSM parameter; neither -> None (fail-soft).
+        monkeypatch.setattr(gdb, '_ssm_config', lambda name: cfg)
+        assert gdb.load_db_config(paths=[str(tmp_path / 'no.json')]) == cfg
+        monkeypatch.setattr(gdb, '_ssm_config', lambda name: None)
+        assert gdb.load_db_config(paths=[str(tmp_path / 'no.json')]) is None

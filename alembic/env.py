@@ -1,11 +1,10 @@
 """Alembic env for the games schema — targets only
 ``reporting.gamesmodels`` metadata; creds come from
-``config/steamdbconfig.json`` (the dedicated steam/games DB —
-never ``dbconfig.json``, so alembic can't touch the reporting DB)."""
+``config/steamdbconfig.json`` or its SSM parameter (the dedicated
+steam/games DB — never ``dbconfig.json``, so alembic can't touch the
+reporting DB)."""
 import os
 import sys
-import json
-import urllib.parse
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -18,27 +17,24 @@ fileConfig(config.config_file_name)
 
 sys.path.insert(0, os.getcwd())
 from reporting.gamesmodels import Base  # noqa: E402
+from reporting.gamesdb import GamesDB, load_db_config  # noqa: E402
 target_metadata = Base.metadata
 
 VERSION_TABLE_SCHEMA = 'games'
 
 
 def set_url_from_dbconfig():
-    """Override the placeholder sqlalchemy.url with steamdbconfig.json."""
-    path = os.path.join('config', 'steamdbconfig.json')
-    if not os.path.isfile(path):
+    """Override the placeholder sqlalchemy.url from the steam/games DB
+    config (local file first, then SSM — same resolution the writers
+    use)."""
+    cfg = load_db_config()
+    if cfg is None:
         raise SystemExit(
-            '{} not found - alembic only runs against the steam/games DB '
-            'and refuses to fall back to dbconfig.json (the reporting '
-            'DB).'.format(path))
-    with open(path, 'r') as f:
-        cfg = json.load(f)
-    url = 'postgresql://{}:{}@{}:{}/{}'.format(
-        urllib.parse.quote_plus(str(cfg['USER'])),
-        urllib.parse.quote_plus(str(cfg['PASS'])),
-        cfg['HOST'], cfg['PORT'], cfg['DATABASE'])
-    # set_main_option runs configparser interpolation; %xx escapes from
-    # quote_plus must be doubled to survive it.
+            'config/steamdbconfig.json not found and the SSM parameter '
+            '/processor/config/steamdbconfig.json is unavailable - '
+            'alembic only runs against the steam/games DB and refuses '
+            'to fall back to dbconfig.json (the reporting DB).')
+    url = GamesDB(cfg).conn_string
     config.set_main_option('sqlalchemy.url', url.replace('%', '%%'))
 
 

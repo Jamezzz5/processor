@@ -182,6 +182,45 @@ class CriticScore(Base):
     url = Column(Text)
 
 
+class TitleScore(Base):
+    """Daily competitive-score snapshot — one row per tracked title per
+    day, persisting the brandtracker weighted z-scores and the
+    competitive league so trend history exists without a human opening
+    the tab."""
+    __tablename__ = 'title_score'
+    __table_args__ = (
+        UniqueConstraint('score_date', 'title',
+                         name='uq_title_score_day'),
+        Index('ix_title_score_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Daily competitive snapshot; brandtracker weighted '
+                    'z-scores + share-of-voice league per tracked '
+                    'title. Z-scores are relative to the tracked set '
+                    'on that day, not the whole market.'},
+    )
+
+    titlescoreid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = title not yet matched to the game '
+                            'dim; the raw title is retained.')
+    score_date = Column(Date, nullable=False, comment='UTC snapshot date.')
+    title = Column(Text, nullable=False,
+                   comment='Raw tracked title (Newzoo productname).')
+    primary_period = Column(Text, comment='Scored month, YYYY-MM.')
+    comparison_period = Column(Text, comment='Comparison month, YYYY-MM.')
+    influence = Column(Numeric)
+    engagement = Column(Numeric)
+    momentum = Column(Numeric)
+    composite = Column(Numeric, comment='Sum of the dimension z-scores.')
+    headline_metric = Column(
+        Text, comment='Metric the current/prior/share columns read on.')
+    current = Column(Numeric)
+    prior = Column(Numeric)
+    share = Column(Numeric, comment='Share of voice across tracked set.')
+    share_delta = Column(Numeric)
+    movement = Column(Text, comment='Label Surging..Falling.')
+
+
 class GwiAffinity(Base):
     """GWI over-indexing fact — audience-keyed, not game-keyed; mirrors
     ``extract_affinities`` output per (market, gender, base) crosstab."""

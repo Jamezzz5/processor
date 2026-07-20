@@ -3,11 +3,21 @@ Alembic environment for the games schema on the steam/games DB.
 Scope: ONLY the `games` schema (models in reporting/gamesmodels.py).
 The env's include_object filter keeps autogenerate blind to any other
 schemas, and the alembic version table lives in the games schema
-itself. Connection creds come from config/steamdbconfig.json — a
-separate file from dbconfig.json (the reporting DB) precisely so
-alembic can never write to the reporting instance; env.py refuses to
-run when steamdbconfig.json is missing rather than falling back. The
-sqlalchemy.url in alembic.ini is a placeholder that env.py overrides.
+itself. Connection creds resolve via reporting.gamesdb.load_db_config:
+a local config/steamdbconfig.json wins (dev), else the SecureString
+SSM parameter /processor/config/steamdbconfig.json (prod — set the
+secret once, every box with the task role can migrate); env.py refuses
+to run when neither exists rather than falling back to dbconfig.json
+(the reporting DB). The sqlalchemy.url in alembic.ini is a placeholder
+that env.py overrides.
+
+One-time prod setup (JSON shaped like dbconfig.json):
+
+    aws ssm put-parameter --type SecureString \
+        --name /processor/config/steamdbconfig.json \
+        --value '{"USER":"...","PASS":"...","HOST":"...","PORT":"5432","DATABASE":"..."}'
+
+plus ssm:GetParameter (+ kms:Decrypt) on that path for the task role.
 
 Workflow (run from the processor repo root):
 

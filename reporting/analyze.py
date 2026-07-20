@@ -291,8 +291,10 @@ class Analyze(object):
             self.add_to_analysis_dict(key_col=self.unknown_col,
                                       message=plan_error_msg)
             return True
-        if dctc.PFPN not in df.columns:
-            logging.warning('Df does not have column: {}'.format(dctc.PFPN))
+        miss_cols = [x for x in [dctc.PFPN, vmc.vendorkey] + plan_names
+                     if x not in df.columns]
+        if miss_cols:
+            logging.warning('Df does not have cols: {}'.format(miss_cols))
             return False
         df = df[df[dctc.PFPN].isin(edf[vmc.fullplacename].values)][
             plan_names + [vmc.vendorkey]].drop_duplicates()

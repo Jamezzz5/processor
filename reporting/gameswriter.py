@@ -7,10 +7,8 @@ details, keyed by appid). This module upserts the ``game`` dimension by
 Fail-soft by design: any games-DB problem logs and returns 0 so the
 raw-CSV pull output is never endangered.
 """
-import os
 import math
 import logging
-import reporting.utils as utl
 import reporting.gamesdb as gdb
 import reporting.gamesmodels as gmdl
 
@@ -21,7 +19,8 @@ EVENT_MEASURES = (
 
 
 def games_db_available(config='steamdbconfig.json'):
-    return os.path.isfile(os.path.join(utl.config_path, config))
+    """True when the games DB is configured (local file or SSM)."""
+    return gdb.load_db_config(config) is not None
 
 
 def clean_val(value):

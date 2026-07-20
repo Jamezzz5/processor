@@ -1,36 +1,87 @@
 """Session access + natural-key upserts for the ``games`` schema.
 
-``GamesDB`` reuses :class:`reporting.export.DB`'s config plumbing but
-reads ``steamdbconfig.json`` — the dedicated steam/games instance, kept
-in a separate config file from ``dbconfig.json`` (the reporting DB) so
-games writes and alembic can never land there — and adds an ORM
-session over :mod:`reporting.gamesmodels`. Writers upsert the
-``game`` dimension by an identity column and facts by their natural key,
-so every ingest is idempotent — re-running a day/month replaces that
-slice instead of duplicating it.
+``GamesDB`` targets ``steamdbconfig.json`` — the dedicated steam/games
+instance, kept in a separate config from ``dbconfig.json`` (the
+reporting DB) so games writes and alembic can never land there — and
+adds an ORM session over :mod:`reporting.gamesmodels`.
+:func:`load_db_config` resolves the config once per process: a local
+config file wins (dev boxes), else the SSM parameter
+``/processor/config/steamdbconfig.json`` (prod — configure the secret
+once, every deploy picks it up), else None and callers skip quietly.
+Writers upsert the ``game`` dimension by an identity column and facts
+by their natural key, so every ingest is idempotent — re-running a
+day/month replaces that slice instead of duplicating it.
 """
+import os
+import json
 import logging
 import datetime as dt
 import urllib.parse
 import sqlalchemy as sqa
 from sqlalchemy.orm import sessionmaker
+import reporting.utils as utl
 import reporting.export as exp
 import reporting.gamesmodels as gmdl
 
 GAME_IDENTITY_COLS = ('registry_slug', 'steam_appid')
+# SecureString parameters named after the config file they replace.
+SSM_PREFIX = '/processor/config/'
+_ssm_cache = {}
+
+
+def _ssm_config(name):
+    """Config dict from the ``SSM_PREFIX + name`` parameter, or None
+    (no boto3 creds / parameter absent). Cached per process either way
+    — a box without AWS access pays the lookup once, not per run."""
+    if name in _ssm_cache:
+        return _ssm_cache[name]
+    value = None
+    try:
+        import boto3
+        response = boto3.client('ssm').get_parameter(
+            Name=SSM_PREFIX + name, WithDecryption=True)
+        value = json.loads(response['Parameter']['Value'])
+        logging.info('Loaded %s from SSM.', SSM_PREFIX + name)
+    except Exception as e:
+        logging.info('SSM config %s%s unavailable: %s',
+                     SSM_PREFIX, name, e)
+    _ssm_cache[name] = value
+    return value
+
+
+def load_db_config(config='steamdbconfig.json', paths=None):
+    """The steam/games DB config dict — the first config file found
+    (dev), else the SSM parameter (prod), else None. ``paths``
+    overrides the file search (the lqapp bridge passes its own)."""
+    if paths is None:
+        paths = [os.path.join(utl.config_path, config)]
+    for path in paths:
+        if os.path.isfile(path):
+            with open(path, 'r') as f:
+                return json.load(f)
+    return _ssm_config(config)
 
 
 class GamesDB(exp.DB):
     def __init__(self, config='steamdbconfig.json'):
-        super().__init__(config)
-        if self.config:
-            # exp.DB builds the URL unquoted; rebuild so special chars
-            # in USER/PASS survive.
-            self.conn_string = 'postgresql://{}:{}@{}:{}/{}'.format(
-                urllib.parse.quote_plus(str(self.user)),
-                urllib.parse.quote_plus(str(self.pw)),
-                self.host, self.port, self.db)
+        super().__init__(None)
         self.session_maker = None
+        cfg = load_db_config(config) if isinstance(config, str) else config
+        if cfg:
+            self.input_config_dict(cfg)
+
+    def input_config_dict(self, cfg):
+        """exp.DB fields + conn string from a config dict (file or SSM
+        — exp.DB's own loader is file-only and leaves USER/PASS
+        unquoted)."""
+        self.config = cfg
+        self.user, self.pw = cfg['USER'], cfg['PASS']
+        self.host, self.port = cfg['HOST'], cfg['PORT']
+        self.db = cfg['DATABASE']
+        self.conn_string = 'postgresql://{}:{}@{}:{}/{}'.format(
+            urllib.parse.quote_plus(str(self.user)),
+            urllib.parse.quote_plus(str(self.pw)),
+            self.host, self.port, self.db)
 
     def get_session(self):
         if self.engine is None:
