@@ -588,10 +588,11 @@ class GsApi(object):
         return reqs
 
     def add_table_slide(self, presentation_id, slide_id, title, header,
-                        body_rows, brand=None):
+                        body_rows, brand=None, caption=None):
         """A slide with a native Slides table (styled header) — the KPI
         scorecard and any tabular/appendix panel, built native rather than
-        screenshotted."""
+        screenshotted. ``caption`` reads under the table like a chart
+        slide's, so a panel's takeaway stays on the slide."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
@@ -600,9 +601,14 @@ class GsApi(object):
                 slide_id, slide_id + 't', title, cx, 228600, cw, 520000,
                 font_pt=20, bold=True, align='START')
         ty = 900000
-        th = self.PAGE_H_EMU - ty - self.MARGIN_EMU
+        th = self.PAGE_H_EMU - ty - (700000 if caption else self.MARGIN_EMU)
         reqs += self._table_reqs(slide_id, slide_id + 'tbl', cx, ty, cw, th,
                                  header, body_rows, colors)
+        if caption:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'c', caption, cx,
+                self.PAGE_H_EMU - 640000, cw, 520000, font_pt=11,
+                align='START', color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 

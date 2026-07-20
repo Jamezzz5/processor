@@ -980,7 +980,8 @@ class SeleniumWrapper(object):
         if url:
             went_to_url = self.go_to_url(url)
         if went_to_url:
-            self.accept_cookies()
+            if url:
+                self.accept_cookies()
             self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
 
@@ -1131,14 +1132,12 @@ class SeleniumWrapper(object):
                                  elem=None):
         attempts = 2
         for x in range(attempts):
-            try:
-                self.wait_for_elem_load(item[1], new_value=item[0],
-                                        attempts=25)
+            if self.wait_for_elem_load(item[1], new_value=item[0],
+                                       attempts=25, raise_exception=False):
                 break
-            except:
-                logging.warning('{} could not load.'.format(item))
-                elem = self.send_key_from_list(item, get_xpath_from_id,
-                                               clear_existing, send_escape)
+            logging.warning('{} could not load.'.format(item))
+            elem = self.send_key_from_list(item, get_xpath_from_id,
+                                           clear_existing, send_escape)
         return elem
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
@@ -1147,12 +1146,12 @@ class SeleniumWrapper(object):
         for item in elem_input_list:
             elem = self.send_key_from_list(
                 item, get_xpath_from_id, clear_existing, send_escape)
-            if not self._is_liquid_xpath(item[1], get_xpath_from_id):
-                continue
             if new_value:
                 elem = self.send_key_new_value_check(
                     item, get_xpath_from_id, clear_existing, send_escape,
                     elem=elem)
+            if not self._is_liquid_xpath(item[1], get_xpath_from_id):
+                continue
             for _ in range(3):
                 try:
                     elem.send_keys(Keys.ENTER)
@@ -1311,16 +1310,20 @@ class SeleniumWrapper(object):
         ``trHiddenN`` form row, so the Hidden ones must be filtered.
         Returns 0 when no tbody exists yet (empty tables haven't had
         ``addRowToTable`` lazily create one).
+
+        Counted in a single script so the walk is atomic: callers poll
+        this while the table re-renders, and a per-row round trip goes
+        stale the moment a row is replaced mid-count.
         """
-        elem = self.browser.find_element
-        if elem_id:
-            elem = elem(By.ID, elem_id)
-        tbodies = elem.find_elements(By.CSS_SELECTOR, "table > tbody")
-        if not tbodies:
-            return 0
-        rows = tbodies[0].find_elements(By.TAG_NAME, "tr")
-        return sum(1 for r in rows
-                   if 'Hidden' not in (r.get_attribute('id') or ''))
+        return self.browser.execute_script(
+            "const root = arguments[0] "
+            "  ? document.getElementById(arguments[0]) : document;"
+            "if (!root) return 0;"
+            "const tbody = root.querySelector('table > tbody');"
+            "if (!tbody) return 0;"
+            "return Array.from(tbody.querySelectorAll('tr')).filter("
+            "  r => !(r.id || '').includes('Hidden')).length;",
+            elem_id or None)
 
     def resolve_select_id(self, base_id):
         """Return the LiquidSelect wrapper input id for a select element.
@@ -1456,6 +1459,32 @@ class SeleniumWrapper(object):
         """Click an element by id then drain ``worker``."""
         self.xpath_from_id_and_click(elem_id, load_elem_id=load_elem_id)
         return self.run_worker(worker, attempts=worker_attempts)
+
+    def wait_for_elem_with_worker(self, worker, elem_id, rounds=20,
+                                  attempts=20, sleep_time=.05, **kwargs):
+        """
+        Wait for an element, re-draining ``worker`` between checks.
+
+        ``run_worker`` returns once any single task completes, which may
+        be a leftover from a prior action rather than the task this
+        element waits on -- and a task the page enqueues after that
+        return is then never picked up. Re-draining covers both.
+
+        :param worker: Worker exposing ``.work(burst=True)``
+        :param elem_id: Identifier of the element to wait for
+        :param rounds: Max drain/check cycles before the final wait
+        :param attempts: Element polling attempts per cycle
+        :param sleep_time: Time in seconds to sleep between polls
+        :param kwargs: Passed through to ``wait_for_elem_load``
+        :return: Whether the element loaded
+        """
+        for _ in range(rounds):
+            if self.wait_for_elem_load(elem_id, attempts=attempts,
+                                       sleep_time=sleep_time,
+                                       raise_exception=False, **kwargs):
+                return True
+            worker.work(burst=True)
+        return self.wait_for_elem_load(elem_id, **kwargs)
 
     def navigate_and_submit(self, url, form_names=None,
                             select_form_names=None,
