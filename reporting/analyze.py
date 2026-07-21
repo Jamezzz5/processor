@@ -1349,6 +1349,7 @@ class CheckAutoDictOrder(AnalyzeBase):
             msg = 'contains NaN, suggest choosing different placement column'
             logging.warning('{} {}]'.format(auto_place, msg))
             tdf[auto_place] = tdf[auto_place].astype(str)
+        tdf = utl.data_to_type(tdf, str_col=[auto_place])
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
         ven_raw_idx = self.get_raw_data_vendor_idx(tdf, camp_shift, ven_list,
                                                    cou_list, camp_list)
