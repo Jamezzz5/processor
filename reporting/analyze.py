@@ -3585,6 +3585,12 @@ class AliChat(object):
     _WORD_INDEX_CACHE = {}
     word_index_ttl = 600
 
+    # Optional callable(dict) the app layer attaches per call-site
+    # to persist LLM timing/usage (the AliRun/AliStep envelope).
+    # Fed the same numbers as the timing log line; a hook failure
+    # is swallowed — telemetry never breaks the call it observes.
+    telemetry_hook = None
+
     def __init__(self, config_name='openai.json', config_path='reporting',
                  llm_url='', llm_model='', llm_instructions='',
                  previous_messages=None, transformer=None,
@@ -3731,10 +3737,11 @@ class AliChat(object):
         for idx, obj in enumerate(db_all):
             if model_is_list:
                 obj = FakeDbModel(name=obj, object_id=idx)
-            if obj.name:
-                used_words = []
+            obj_name = obj.name  # evaluate the (heavy) name property once
+            if obj_name:
+                used_words = set()
                 words = utl.lower_words_from_str(
-                    obj.name, split_underscore=split_underscore)
+                    obj_name, split_underscore=split_underscore)
                 for word in words:
                     if word in used_words:
                         continue
@@ -3742,7 +3749,7 @@ class AliChat(object):
                         word_idx[word].append(obj.id)
                     else:
                         word_idx[word] = [obj.id]
-                    used_words.append(word)
+                    used_words.add(word)
         if cache_key:
             AliChat._WORD_INDEX_CACHE[cache_key] = (
                 word_idx, time.time(), row_count)
@@ -3950,13 +3957,16 @@ class AliChat(object):
                     "delta": finish_reason,
                 }
 
-    @staticmethod
-    def _log_llm_timing(body, t0, t_first, delta_count,
-                        prompt_tokens, finish_reason):
+    def _log_llm_timing(self, body, t0, t_first, delta_count,
+                        usage, finish_reason, stream=True):
         """One info line per LLM call splitting time-to-first-delta
         (server queueing + prompt prefill) from total stream time,
-        so slow turns can be attributed from the worker logs."""
+        so slow turns can be attributed from the worker logs. The
+        same numbers feed ``telemetry_hook`` when the app layer
+        attached one; hook failures are swallowed."""
         t_end = time.time()
+        usage = usage or {}
+        prompt_tokens = usage.get('prompt_tokens')
         ttft = (t_first if t_first is not None else t_end) - t0
         prompt_chars = sum(
             len(m.get('content') or '')
@@ -3969,6 +3979,25 @@ class AliChat(object):
                 bool(body.get('tools')),
                 len(body.get('messages', [])), prompt_chars,
                 prompt_tokens, finish_reason))
+        hook = self.telemetry_hook
+        if not hook:
+            return
+        try:
+            hook({
+                'model': body.get('model'),
+                'stream': stream,
+                'ttft_ms': int(ttft * 1000),
+                'duration_ms': int((t_end - t0) * 1000),
+                'delta_count': delta_count,
+                'had_tools': bool(body.get('tools')),
+                'message_count': len(body.get('messages', [])),
+                'prompt_chars': prompt_chars,
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': usage.get('completion_tokens'),
+                'finish_reason': finish_reason,
+            })
+        except Exception as exc:
+            logging.warning(f'LLM telemetry hook failed: {exc}')
 
     def llm_request_generator(self, body, connect_timeout=5,
                               read_timeout=120, retries=1):
@@ -3992,7 +4021,7 @@ class AliChat(object):
         t0 = time.time()
         t_first = None
         delta_count = 0
-        prompt_tokens = None
+        usage_info = None
         finish_reason = None
         while True:
             try:
@@ -4003,8 +4032,7 @@ class AliChat(object):
                     r.encoding = 'utf-8'
                     for delta in self._parse_llm_stream_lines(r):
                         if delta.get('type') == 'usage':
-                            usage = delta.get('delta') or {}
-                            prompt_tokens = usage.get('prompt_tokens')
+                            usage_info = delta.get('delta') or {}
                             continue
                         if t_first is None:
                             t_first = time.time()
@@ -4014,7 +4042,7 @@ class AliChat(object):
                         yielded = True
                         yield delta
                 self._log_llm_timing(
-                    body, t0, t_first, delta_count, prompt_tokens,
+                    body, t0, t_first, delta_count, usage_info,
                     finish_reason)
                 return
             except requests.exceptions.RequestException as exc:
@@ -4031,7 +4059,7 @@ class AliChat(object):
                 yield {"type": "error",
                        "delta": f"{type(exc).__name__}: {exc}"}
                 self._log_llm_timing(
-                    body, t0, t_first, delta_count, prompt_tokens,
+                    body, t0, t_first, delta_count, usage_info,
                     finish_reason or 'error')
                 return
 
@@ -4091,6 +4119,7 @@ class AliChat(object):
             "messages": messages,
             "stream": stream,
             "temperature": temperature,
+            "cache_prompt": True,
         }
         if tools:
             body['tools'] = tools
@@ -4103,8 +4132,8 @@ class AliChat(object):
             data = r.json()
             usage = data.get('usage') or {}
             self._log_llm_timing(
-                body, t0, None, 0, usage.get('prompt_tokens'),
-                'nonstream')
+                body, t0, None, 0, usage,
+                'nonstream', stream=False)
             if 'choices' not in data:
                 msg = 'LLM response missing choices: {}'.format(data)
                 logging.warning(msg)

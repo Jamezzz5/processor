@@ -42,14 +42,16 @@ def generate_code(system_prompt, task_description, code_context,
 def parse_code_response(response_text):
     """Parse an LLM response into structured files.
 
-    Extracts ``FILE:`` blocks, ``IMPLEMENTATION_NOTES:``, and
-    ``ENGINEER_PROMPT:`` sections.
+    Extracts ``FILE:`` blocks (full contents), ``PATCH:`` blocks
+    (anchored function replacements), ``IMPLEMENTATION_NOTES:``,
+    and ``ENGINEER_PROMPT:`` sections.
 
     :param response_text: Raw LLM output.
-    :returns: Dict with ``files``, ``explanation``,
+    :returns: Dict with ``files``, ``patches``, ``explanation``,
         ``implementation_prompt``.
     """
     files = _extract_file_blocks(response_text)
+    patches = _extract_patch_blocks(response_text)
     explanation = _extract_section(
         response_text, 'IMPLEMENTATION_NOTES:')
     engineer_prompt = _extract_section(
@@ -57,6 +59,7 @@ def parse_code_response(response_text):
 
     return {
         'files': files,
+        'patches': patches,
         'explanation': explanation,
         'implementation_prompt': engineer_prompt,
     }
@@ -207,6 +210,36 @@ def _extract_file_blocks(text):
     return blocks
 
 
+def _extract_patch_blocks(text):
+    """Extract ``PATCH: path`` / ``FUNCTION: name`` blocks.
+
+    A patch block is an anchored function-level replacement — the
+    apply layer splices it into the target file by function name,
+    so the model never has to reproduce (and risk truncating) the
+    rest of the file.
+
+    :param text: Raw LLM response.
+    :returns: List of dicts with ``path``, ``function``,
+        ``description``, ``content``.
+    """
+    blocks = []
+    pattern = re.compile(
+        r'PATCH:\s*(.+?)\s*\n'
+        r'FUNCTION:\s*(\w+)\s*\n'
+        r'(?:DESCRIPTION:\s*(.+?)\s*\n)?'
+        r'```\w*\n(.*?)```',
+        re.DOTALL,
+    )
+    for match in pattern.finditer(text):
+        blocks.append({
+            'path': match.group(1).strip(),
+            'function': match.group(2).strip(),
+            'description': (match.group(3) or '').strip(),
+            'content': match.group(4).strip(),
+        })
+    return blocks
+
+
 def _extract_section(text, header):
     """Extract a named section from LLM output.
 
@@ -219,7 +252,8 @@ def _extract_section(text, header):
 
     start = text.index(header) + len(header)
     boundaries = [
-        'FILE:', 'IMPLEMENTATION_NOTES:', 'ENGINEER_PROMPT:',
+        'FILE:', 'PATCH:', 'IMPLEMENTATION_NOTES:',
+        'ENGINEER_PROMPT:',
     ]
     end = len(text)
     for boundary in boundaries:
