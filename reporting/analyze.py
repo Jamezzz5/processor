@@ -948,7 +948,7 @@ class Analyze(object):
         :param ds: Data source object for the provided vk
         :return: None
         """
-        tds = ds
+        tds = self.matrix.get_data_source(vk)
         file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
         tmp_file = ds.p[vmc.filename_true].replace(
             file_type, '{}{}'.format(utl.tmp_file_suffix, file_type))
