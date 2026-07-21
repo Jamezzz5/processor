@@ -2295,6 +2295,49 @@ class TestGamesDb:
         assert row.gameid == game.gameid
         assert row.movement == 'Rising'
 
+    def test_game_release_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite', igdb_id=1105,
+                               registry_slug='halo-infinite')
+        assert game.igdb_id == 1105
+        key = {'igdb_id': 1105}
+        fields = {'gameid': game.gameid, 'title': 'Halo Infinite',
+                  'slug': 'halo-infinite',
+                  'release_date': dt.date(2026, 11, 15), 'hypes': 320,
+                  'genres': 'Shooter', 'platforms': 'PC, Xbox'}
+        assert gdb.upsert_fact(s, gmdl.GameRelease, key, fields) == 1
+        # Unmatched titles land too, with a NULL gameid.
+        assert gdb.upsert_fact(
+            s, gmdl.GameRelease, {'igdb_id': 2201},
+            {'gameid': None, 'title': 'Mystery Title',
+             'release_date': dt.date(2026, 9, 1)}) == 1
+        s.commit()
+        # A rerun after a slip updates the expected date in place.
+        fields['release_date'] = dt.date(2027, 2, 2)
+        assert gdb.upsert_fact(s, gmdl.GameRelease, key, fields) == 0
+        s.commit()
+        assert s.query(gmdl.GameRelease).count() == 2
+        row = s.query(gmdl.GameRelease).filter_by(igdb_id=1105).one()
+        assert row.release_date == dt.date(2027, 2, 2)
+        assert row.gameid == game.gameid
+
+    def test_igdb_identity_matching(self):
+        s = self._session()
+        # igdb_id is an identity: matches find the row, name fallback
+        # knits it onto an existing dim row and adds the identity.
+        reg = gdb.upsert_game(s, 'Halo Infinite',
+                              registry_slug='halo-infinite')
+        knit = gdb.upsert_game(s, 'Halo Infinite', match_name=True,
+                               igdb_id=1105)
+        assert knit.gameid == reg.gameid and knit.igdb_id == 1105
+        assert gdb.find_game(s, igdb_id=1105).gameid == reg.gameid
+        # A name collision carrying a different igdb_id is a new row.
+        clash = gdb.upsert_game(s, 'Halo Infinite', match_name=True,
+                                igdb_id=9999)
+        assert clash.gameid != reg.gameid
+        assert reg.igdb_id == 1105
+        assert s.query(gmdl.Game).count() == 2
+
     def test_upsert_game_stamps_provenance(self):
         s = self._session()
         game = gdb.upsert_game(s, 'The Witcher 3', steam_appid=292030)

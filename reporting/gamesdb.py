@@ -93,15 +93,16 @@ class GamesDB(exp.DB):
 
 
 def find_game(session, registry_slug=None, steam_appid=None,
-              opencritic_id=None, canonical_name=None):
+              opencritic_id=None, igdb_id=None, canonical_name=None):
     """The ``game`` row matching the strongest provided identity, or
     None. Identity precedence mirrors trust: registry slug (curated) >
-    steam appid > opencritic id. ``canonical_name`` is a last resort —
-    an exact lowercased name match — used to knit sources together
-    before they share an identity column."""
+    steam appid > opencritic id > igdb id. ``canonical_name`` is a last
+    resort — an exact lowercased name match — used to knit sources
+    together before they share an identity column."""
     filters = (('registry_slug', registry_slug),
                ('steam_appid', steam_appid),
-               ('opencritic_id', opencritic_id))
+               ('opencritic_id', opencritic_id),
+               ('igdb_id', igdb_id))
     for col, val in filters:
         if val in (None, ''):
             continue
@@ -120,7 +121,7 @@ def identity_conflict(game, fields):
     """True when ``game`` already carries a *different* value for an
     identity column about to be written — a name collision (remake,
     reboot, re-release), not the same game."""
-    for col in GAME_IDENTITY_COLS + ('opencritic_id',):
+    for col in GAME_IDENTITY_COLS + ('opencritic_id', 'igdb_id'):
         val = fields.get(col)
         if val in (None, ''):
             continue
@@ -146,7 +147,8 @@ def upsert_game(session, canonical_name, match_name=False, **fields):
     game = find_game(
         session, registry_slug=fields.get('registry_slug'),
         steam_appid=fields.get('steam_appid'),
-        opencritic_id=fields.get('opencritic_id'))
+        opencritic_id=fields.get('opencritic_id'),
+        igdb_id=fields.get('igdb_id'))
     if game is None and match_name and canonical_name:
         game = find_game(session, canonical_name=canonical_name)
         if game is not None and identity_conflict(game, fields):

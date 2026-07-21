@@ -2,9 +2,9 @@
 """Games-database models — the ``games`` schema on the steam/games DB.
 
 A canonical ``game`` dimension carrying one identity column per source
-(Steam appid, community-registry slug, OpenCritic id, Newzoo title)
-plus per-source fact tables, so the entire audience/gaming landscape
-joins relationally. Facts keep raw source titles alongside the nullable
+(Steam appid, community-registry slug, OpenCritic id, IGDB id, Newzoo
+title) plus per-source fact tables, so the entire audience/gaming
+landscape joins relationally. Facts keep raw source titles alongside the nullable
 ``gameid`` FK — unmatched rows are stored, never dropped, and matching
 improves over time. All ``DateTime``/``Date`` stamps are naive UTC —
 writers strip tzinfo from aware UTC datetimes. Schema changes go through
@@ -31,6 +31,7 @@ class Game(Base):
         UniqueConstraint('registry_slug', name='uq_game_registry_slug'),
         UniqueConstraint('steam_appid', name='uq_game_steam_appid'),
         UniqueConstraint('opencritic_id', name='uq_game_opencritic_id'),
+        UniqueConstraint('igdb_id', name='uq_game_igdb_id'),
         {'schema': 'games',
          'comment': 'Canonical game dimension; one identity column per '
                     'source, filled in as sources are matched.'},
@@ -48,6 +49,7 @@ class Game(Base):
     steam_appid = Column(BigInteger)
     registry_slug = Column(Text)
     opencritic_id = Column(BigInteger)
+    igdb_id = Column(BigInteger)
     newzoo_title = Column(
         Text, comment='Raw Newzoo Top-500 title this game matched; a '
                       'match hint, not an identity.')
@@ -180,6 +182,44 @@ class CriticScore(Base):
     percentile = Column(Numeric)
     tier = Column(Text)
     url = Column(Text)
+
+
+class GameRelease(Base):
+    """IGDB release-calendar row — one per title from the nightly
+    windowed sweep of upcoming/recent releases; the natural key is the
+    IGDB id, so a rerun updates the expected date in place (slips
+    self-correct; no date history is kept)."""
+    __tablename__ = 'game_release'
+    __table_args__ = (
+        UniqueConstraint('igdb_id', name='uq_game_release_igdb'),
+        Index('ix_game_release_gameid', 'gameid'),
+        Index('ix_game_release_date', 'release_date'),
+        {'schema': 'games',
+         'comment': 'IGDB release calendar; one row per title from the '
+                    'nightly windowed sweep, release_date is the '
+                    'current expectation and self-corrects on rerun.'},
+    )
+
+    gamereleaseid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = title not yet matched to the game '
+                            'dim; the raw title is retained.')
+    igdb_id = Column(BigInteger, nullable=False)
+    title = Column(Text, nullable=False)
+    slug = Column(Text)
+    release_date = Column(Date,
+                          comment='Current expected date parsed from '
+                                  'IGDB first_release_date.')
+    hypes = Column(Numeric,
+                   comment='IGDB hype count (pre-release follows).')
+    genres = Column(Text, comment='Comma-joined IGDB genre names.')
+    platforms = Column(Text,
+                       comment='Comma-joined IGDB platform names.')
+    url = Column(Text)
+    first_seen_at = Column(DateTime,
+                           comment='Naive UTC; when the row was created.')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last sweep that saw it.')
 
 
 class TitleScore(Base):
