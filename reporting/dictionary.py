@@ -64,6 +64,7 @@ class Dict(object):
         error = err.get()
         error.columns = [dctc.FPN, dctc.PN]
         if include_full_name:
+            error = utl.data_to_type(error, str_col=[placement])
             max_placement_name_length = max(
                 map(len, error[placement].str.split('_')))
             if len(autodicord) < max_placement_name_length:
