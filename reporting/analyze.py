@@ -943,8 +943,13 @@ class Analyze(object):
                 missing_sheets.append(sheet_name)
         return missing_sheets
 
-    def compare_raw_files(self, vk):
-        ds = self.matrix.get_data_source(vk)
+    def compare_raw_files(self, vk, ds):
+        """
+        Compare key values for the old and new raw files for a given vendor key
+        :param vk: Vendor key to compare raw files for
+        :param ds: Data source object for the provided vk
+        :return: None
+        """
         tds = self.matrix.get_data_source(vk)
         file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
         tmp_file = ds.p[vmc.filename_true].replace(
