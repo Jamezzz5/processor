@@ -50,7 +50,19 @@ class TikApi(object):
                'checkout': 'checkout',
                'view_content': 'view_content',
                'engagements': 'Clicks (all)',
-               'offline_shopping_events': 'offline_shopping_events'}
+               'offline_add_to_cart_events': 'Adds to cart (offline)',
+               'offline_add_to_wishlist_events': 'Adds to wishlist (offline)',
+               'offline_initiate_checkout_events': 'Checkouts initiated (offline)',
+               'offline_contact_events': 'Contacts (offline)',
+               'offline_view_content_events': 'Content views (offline)',
+               'offline_download_events': 'Downloads (offline)',
+               'offline_form_events': 'Form submissions (offline)',
+               'offline_place_order_events': 'Orders placed (offline)',
+               'offline_add_payment_info_events': 'Payment info adds (offline)',
+               'offline_shopping_events': 'Purchases (offline)',
+               'offline_complete_registration_events': 'Registrations (offline)',
+               'offline_total_schedule': 'Schedules (offline)',
+               'offline_subscribe_events': 'Subscriptions (offline)'}
     default_config_file_name = 'tikapi.json'
 
     def __init__(self):
