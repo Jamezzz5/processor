@@ -609,11 +609,23 @@ class RedApi(object):
                   'CONVERSION_VIEW_CONTENT_VIEWS']
         extra_fields = self.custom_events_dict()
         fields += extra_fields
+        action_sources = ['WEBSITE', 'APP', 'PHYSICAL_STORE', 'OTHER']
+        conversion_metrics = [
+            {'conversion_field': 'CONVERSION_PURCHASE_CLICKS',
+            'action_sources': action_sources},
+            {'conversion_field': 'CONVERSION_PURCHASE_VIEWS',
+             'action_sources': action_sources},
+            {'conversion_field': 'CONVERSION_SIGN_UP_CLICKS',
+             'action_sources': action_sources},
+            {'conversion_field': 'CONVERSION_SIGN_UP_VIEWS',
+             'action_sources': action_sources}
+        ]
         data = {'starts_at': starts_at,
                 'ends_at': ends_at,
                 'breakdowns': breakdowns,
                 'fields': fields,
-                'time_zone_id': self.time_zone_id}
+                'time_zone_id': self.time_zone_id,
+                'conversion_metrics': conversion_metrics}
         data = {'data': data}
         params = {'page.size': 1000}
         for attempt in range(1000):
