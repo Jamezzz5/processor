@@ -160,7 +160,7 @@ class SamApi(object):
             except json.decoder.JSONDecodeError as e:
                 logging.warning('No JSON in response retrying: {}'.format(e))
                 time.sleep(60)
-            if response.get('urls') and response['urls']:
+            if response and response.get('urls') and response['urls']:
                 break
             else:
                 time.sleep(0.5)
