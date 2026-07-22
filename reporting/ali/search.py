@@ -56,24 +56,33 @@ class AliSearch:
         self.transformer = transformer
         self.transformer_dict = transformer_dict or {}
 
-    def search(self, db_model, message, top_k=5):
+    def search(self, db_model, message, top_k=5, components=None):
         """Combined search returning {model_id: scores} dict.
 
-        Runs live keyword search (always) and transformer search
-        (when transformer is provided). Merges and re-ranks.
+        Runs live keyword search and transformer search (when the
+        transformer is provided). Merges and re-ranks.
 
         :param db_model: SQLAlchemy model class to search
         :param message: User query string
         :param top_k: Max results to return
+        :param components: Optional iterable subset of
+            ``{'live', 'bm25', 'tfidf'}`` restricting which score
+            sources run. ``None`` (default) runs everything — the
+            app layer's runtime toggles pass an explicit subset.
         :returns: Dict of {model_id: score_dict} where score_dict
             has keys combined, live, bm25, tfidf
         """
+        enabled = (set(components) if components is not None
+                   else {'live', 'bm25', 'tfidf'})
         results = {}
-        self._live_search(results, db_model, message)
+        if 'live' in enabled:
+            self._live_search(results, db_model, message)
         if (self.transformer is not None
-                and self.transformer_dict):
+                and self.transformer_dict
+                and enabled & {'bm25', 'tfidf'}):
             self._transformer_search(
-                results, db_model, message, top_k)
+                results, db_model, message, top_k,
+                enabled=enabled)
         if len(results) > top_k:
             sorted_items = sorted(
                 results.items(),
@@ -103,7 +112,7 @@ class AliSearch:
                     db_model.__name__, e))
 
     def _transformer_search(self, results, db_model,
-                            message, top_k):
+                            message, top_k, enabled=None):
         """Run BM25 + TF-IDF cosine from the transformer.
 
         Each model gets its OWN top slice of the corpus scores.
@@ -112,18 +121,26 @@ class AliSearch:
         dominate the corpus — Notes is a large share of the
         trained docs, so other models' bm25/tfidf almost never
         survived the filter and the scores went unused.
+
+        :param enabled: Optional set restricting which of the two
+            transformer scores merge (``'bm25'`` / ``'tfidf'``).
         """
         try:
+            enabled = enabled or {'bm25', 'tfidf'}
             model_name = db_model.__name__
             by_model = self._scores_by_model(message)
-            _merge_transformer_scores(
-                results, by_model['bm25'].get(model_name, [])[:top_k * 2],
-                self.transformer_dict, model_name,
-                weight=WEIGHT_BM25, score_key='bm25')
-            _merge_transformer_scores(
-                results, by_model['tfidf'].get(model_name, [])[:top_k * 2],
-                self.transformer_dict, model_name,
-                weight=WEIGHT_TFIDF, score_key='tfidf')
+            if 'bm25' in enabled:
+                _merge_transformer_scores(
+                    results,
+                    by_model['bm25'].get(model_name, [])[:top_k * 2],
+                    self.transformer_dict, model_name,
+                    weight=WEIGHT_BM25, score_key='bm25')
+            if 'tfidf' in enabled:
+                _merge_transformer_scores(
+                    results,
+                    by_model['tfidf'].get(model_name, [])[:top_k * 2],
+                    self.transformer_dict, model_name,
+                    weight=WEIGHT_TFIDF, score_key='tfidf')
         except Exception as e:
             logger.warning(
                 'Transformer search failed: {}'.format(e))
