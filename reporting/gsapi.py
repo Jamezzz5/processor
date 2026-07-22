@@ -321,6 +321,10 @@ class GsApi(object):
     DECK_ACCENT = {'red': 0.231, 'green': 0.510, 'blue': 0.965}
     DECK_CARD = {'red': 0.957, 'green': 0.969, 'blue': 0.980}
     DECK_WHITE = {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+    # Hairline for image frames (E0E7EE — the app BRAND_RULE).
+    DECK_RULE = {'red': 0.878, 'green': 0.906, 'blue': 0.933}
+    # Where content starts on a chrome'd slide (below title + accent rule).
+    CONTENT_TOP_EMU = 980000
 
     def _brand_colors(self, brand):
         """Resolve a deck color set from an optional ``brand`` dict (rgbColor
@@ -399,7 +403,13 @@ class GsApi(object):
 
     def create_title_slide(self, presentation_id, meta, slide_id='rbtitle'):
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        colors = self._brand_colors(meta.get('deck_brand'))
         reqs = [self._blank_slide_req(slide_id)]
+        # Brand-accent band anchoring the foot of the cover.
+        band_h = 137160
+        reqs += self._rect_reqs(slide_id, slide_id + 'band', 0,
+                                self.PAGE_H_EMU - band_h, self.PAGE_W_EMU,
+                                band_h, colors['accent'])
         logo_url = meta.get('logo_url')
         if logo_url:
             lw, lh = 1524000, 508000  # 3:1 brand mark, centered near the top
@@ -440,42 +450,53 @@ class GsApi(object):
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
-    def add_narrative_slide(self, presentation_id, slide_id, title, text):
+    def add_narrative_slide(self, presentation_id, slide_id, title, text,
+                            brand=None, footer=None, page=None):
         """A text slide — bold title + narrative body — for the executive
         summary and any analysis not paired with a chart, so the ALI story
         carries on the deck rather than only in speaker notes."""
+        colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._content_chrome_reqs(slide_id, title or '', colors,
+                                          footer=footer, page=page)
         reqs += self._text_box_reqs(
-            slide_id, slide_id + 't', title or '', cx, 300000, cw, 560000,
-            font_pt=22, bold=True, align='START')
-        reqs += self._text_box_reqs(
-            slide_id, slide_id + 'b', text or '', cx, 980000, cw,
-            self.PAGE_H_EMU - 980000 - 300000, font_pt=13, align='START')
+            slide_id, slide_id + 'b', text or '', cx, self.CONTENT_TOP_EMU,
+            cw, self.PAGE_H_EMU - self.CONTENT_TOP_EMU - 420000, font_pt=13,
+            align='START', color=colors['ink'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def add_chart_slide(self, presentation_id, slide_id, title=None,
                         image_url=None, caption=None, notes=None,
-                        img_w=None, img_h=None):
+                        img_w=None, img_h=None, brand=None, footer=None,
+                        page=None):
+        colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
-        if title:
-            reqs += self._text_box_reqs(
-                slide_id, slide_id + 't', title, cx, 228600, cw, 560000,
-                font_pt=18, bold=True, align='START')
+        reqs += self._content_chrome_reqs(slide_id, title, colors,
+                                          footer=footer, page=page)
         if image_url:
-            box_y = 900000
-            box_h = self.PAGE_H_EMU - box_y - (700000 if caption else 300000)
+            box_y = self.CONTENT_TOP_EMU if title else 300000
+            box_h = self.PAGE_H_EMU - box_y - (800000 if caption else 420000)
             x, y, w, h = self._fit_box(img_w, img_h, cx, box_y, cw, box_h)
             reqs.append({'createImage': {
                 'objectId': slide_id + 'i', 'url': image_url,
                 'elementProperties': self._elem_props(slide_id, w, h, x, y)}})
+            # Hairline frame so a white-background chart PNG doesn't float
+            # edgeless on the white slide.
+            reqs.append({'updateImageProperties': {
+                'objectId': slide_id + 'i',
+                'imageProperties': {'outline': {
+                    'outlineFill': {'solidFill': {
+                        'color': {'rgbColor': self.DECK_RULE}}},
+                    'weight': {'magnitude': 1, 'unit': 'PT'}}},
+                'fields': 'outline'}})
         if caption:
             reqs += self._text_box_reqs(
                 slide_id, slide_id + 'c', caption, cx,
-                self.PAGE_H_EMU - 640000, cw, 520000, font_pt=11,
-                align='START', color=self.DECK_MUTED)
+                self.PAGE_H_EMU - 720000, cw, 340000, font_pt=11,
+                align='START', color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         if notes:
             self.add_speaker_notes(presentation_id, slide_id, notes)
@@ -498,8 +519,35 @@ class GsApi(object):
                            'outline.propertyState')}},
         ]
 
+    def _content_chrome_reqs(self, slide_id, title, colors, footer=None,
+                             page=None):
+        """Shared chrome for content slides — bold title over a thin
+        brand-accent rule, plus a muted footer line and slide number — so
+        every slide reads as part of one branded deck rather than floating
+        text on white. Content starts at ``CONTENT_TOP_EMU``."""
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = []
+        if title:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 't', title, cx, 228600, cw, 520000,
+                font_pt=20, bold=True, align='START', color=colors['ink'])
+            reqs += self._rect_reqs(slide_id, slide_id + 'rule', cx, 800100,
+                                    cw, 22860, colors['accent'])
+        if footer:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'f', footer, cx,
+                self.PAGE_H_EMU - 320000, cw - 700000, 260000, font_pt=9,
+                align='START', color=colors['muted'])
+        if page:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'pg', str(page),
+                self.PAGE_W_EMU - self.MARGIN_EMU - 600000,
+                self.PAGE_H_EMU - 320000, 600000, 260000, font_pt=9,
+                align='END', color=colors['muted'])
+        return reqs
+
     def add_stat_tile_slide(self, presentation_id, slide_id, title, tiles,
-                            brand=None):
+                            brand=None, footer=None, page=None):
         """A slide of native stat tiles — each a card with a hero number, a
         label, and a one-line comparison caption — built from Slides shapes so
         the export never screenshots a KPI chart. ``tiles`` = list of
@@ -507,17 +555,15 @@ class GsApi(object):
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
-        if title:
-            reqs += self._text_box_reqs(
-                slide_id, slide_id + 't', title, cx, 228600, cw, 520000,
-                font_pt=20, bold=True, align='START')
+        reqs += self._content_chrome_reqs(slide_id, title, colors,
+                                          footer=footer, page=page)
         tiles = list(tiles or [])[:8]
         if tiles:
             cols = 4 if len(tiles) > 3 else len(tiles)
             n_rows = (len(tiles) + cols - 1) // cols
             gap = 137160  # 0.15"
-            grid_y = 900000
-            grid_h = self.PAGE_H_EMU - grid_y - self.MARGIN_EMU
+            grid_y = self.CONTENT_TOP_EMU
+            grid_h = self.PAGE_H_EMU - grid_y - 420000
             cell_w = (cw - gap * (cols - 1)) // cols
             cell_h = (grid_h - gap * (n_rows - 1)) // n_rows
             pad = 100000
@@ -588,7 +634,8 @@ class GsApi(object):
         return reqs
 
     def add_table_slide(self, presentation_id, slide_id, title, header,
-                        body_rows, brand=None, caption=None):
+                        body_rows, brand=None, caption=None, footer=None,
+                        page=None):
         """A slide with a native Slides table (styled header) — the KPI
         scorecard and any tabular/appendix panel, built native rather than
         screenshotted. ``caption`` reads under the table like a chart
@@ -596,37 +643,35 @@ class GsApi(object):
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
-        if title:
-            reqs += self._text_box_reqs(
-                slide_id, slide_id + 't', title, cx, 228600, cw, 520000,
-                font_pt=20, bold=True, align='START')
-        ty = 900000
-        th = self.PAGE_H_EMU - ty - (700000 if caption else self.MARGIN_EMU)
+        reqs += self._content_chrome_reqs(slide_id, title, colors,
+                                          footer=footer, page=page)
+        ty = self.CONTENT_TOP_EMU
+        th = self.PAGE_H_EMU - ty - (800000 if caption else 420000)
         reqs += self._table_reqs(slide_id, slide_id + 'tbl', cx, ty, cw, th,
                                  header, body_rows, colors)
         if caption:
             reqs += self._text_box_reqs(
                 slide_id, slide_id + 'c', caption, cx,
-                self.PAGE_H_EMU - 640000, cw, 520000, font_pt=11,
+                self.PAGE_H_EMU - 720000, cw, 340000, font_pt=11,
                 align='START', color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
-    def add_toc_slide(self, presentation_id, slide_id, entries, brand=None):
+    def add_toc_slide(self, presentation_id, slide_id, entries, brand=None,
+                      footer=None, page=None):
         """A table-of-contents slide: numbered section labels (gold-deck
         convention). ``entries`` is a list of section-label strings."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
-        reqs += self._text_box_reqs(
-            slide_id, slide_id + 't', 'Contents', cx, 300000, cw, 560000,
-            font_pt=22, bold=True, align='START')
+        reqs += self._content_chrome_reqs(slide_id, 'Contents', colors,
+                                          footer=footer, page=page)
         body = '\n'.join('{}.  {}'.format(i + 1, e)
                          for i, e in enumerate(entries or []))
         reqs += self._text_box_reqs(
-            slide_id, slide_id + 'b', body, cx, 980000, cw,
-            self.PAGE_H_EMU - 980000 - 300000, font_pt=14, align='START',
-            color=colors['ink'])
+            slide_id, slide_id + 'b', body, cx, self.CONTENT_TOP_EMU, cw,
+            self.PAGE_H_EMU - self.CONTENT_TOP_EMU - 420000, font_pt=14,
+            align='START', color=colors['ink'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
