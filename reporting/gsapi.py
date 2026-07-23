@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import logging
@@ -323,6 +324,11 @@ class GsApi(object):
     DECK_WHITE = {'red': 1.0, 'green': 1.0, 'blue': 1.0}
     # Hairline for image frames (E0E7EE — the app BRAND_RULE).
     DECK_RULE = {'red': 0.878, 'green': 0.906, 'blue': 0.933}
+    # Muted text that stays legible on the dark ink cover/dividers.
+    DECK_MUTED_LIGHT = {'red': 0.722, 'green': 0.780, 'blue': 0.839}
+    # Comparator tones (15803D / DC2626 — match the app success/danger).
+    DECK_GOOD = {'red': 0.082, 'green': 0.502, 'blue': 0.239}
+    DECK_BAD = {'red': 0.863, 'green': 0.149, 'blue': 0.149}
     # Where content starts on a chrome'd slide (below title + accent rule).
     CONTENT_TOP_EMU = 980000
 
@@ -402,9 +408,15 @@ class GsApi(object):
         ]
 
     def create_title_slide(self, presentation_id, meta, slide_id='rbtitle'):
+        """The dark hero cover (gold-deck convention): full-bleed ink field,
+        white title, one date line, brand-accent foot band, and the brand
+        mark on a white plate so any logo colorway reads on the dark field."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         colors = self._brand_colors(meta.get('deck_brand'))
         reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._rect_reqs(slide_id, slide_id + 'bg', 0, 0,
+                                self.PAGE_W_EMU, self.PAGE_H_EMU,
+                                colors['ink'])
         # Brand-accent band anchoring the foot of the cover.
         band_h = 137160
         reqs += self._rect_reqs(slide_id, slide_id + 'band', 0,
@@ -413,57 +425,97 @@ class GsApi(object):
         logo_url = meta.get('logo_url')
         if logo_url:
             lw, lh = 1524000, 508000  # 3:1 brand mark, centered near the top
+            pad = 91440  # 0.1" plate padding
+            px = (self.PAGE_W_EMU - lw) // 2 - pad
+            reqs += self._rect_reqs(
+                slide_id, slide_id + 'plate', px, 520000 - pad,
+                lw + 2 * pad, lh + 2 * pad, self.DECK_WHITE,
+                shape_type='ROUND_RECTANGLE')
             reqs.append({'createImage': {
                 'objectId': slide_id + 'logo', 'url': logo_url,
                 'elementProperties': self._elem_props(
                     slide_id, lw, lh, (self.PAGE_W_EMU - lw) // 2, 520000)}})
         reqs += self._text_box_reqs(
             slide_id, slide_id + 't', meta.get('title', ''),
-            cx, 1600200, cw, 900000, font_pt=30, bold=True, align='CENTER')
+            cx, 1600200, cw, 900000, font_pt=30, bold=True, align='CENTER',
+            color=self.DECK_WHITE)
         reqs += self._text_box_reqs(
             slide_id, slide_id + 's', meta.get('subtitle', ''),
             cx, 2600000, cw, 600000, font_pt=16, align='CENTER',
-            color=self.DECK_MUTED)
+            color=self.DECK_MUTED_LIGHT)
         reqs += self._text_box_reqs(
             slide_id, slide_id + 'b', meta.get('brand', ''),
             cx, self.PAGE_H_EMU - 700000, cw, 400000, font_pt=12,
-            align='CENTER', color=self.DECK_MUTED)
+            align='CENTER', color=self.DECK_MUTED_LIGHT)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def add_section_slide(self, presentation_id, slide_id, heading,
                           brand=None):
-        """A divider slide: a full-width brand-accent band with the section
-        heading in white centered on it (the gold-deck convention), instead of
-        plain centered text on white."""
+        """A divider slide, gold-deck style: a full-bleed dark ink field with
+        the section heading in white and a short brand-accent underline —
+        richer than a colored band floating on white."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
-        band_h = 1200000
-        band_y = (self.PAGE_H_EMU - band_h) // 2
         reqs = [self._blank_slide_req(slide_id)]
-        reqs += self._rect_reqs(slide_id, slide_id + 'band', 0, band_y,
-                                self.PAGE_W_EMU, band_h, colors['accent'])
+        reqs += self._rect_reqs(slide_id, slide_id + 'bg', 0, 0,
+                                self.PAGE_W_EMU, self.PAGE_H_EMU,
+                                colors['ink'])
+        head_h = 700000
+        head_y = (self.PAGE_H_EMU - head_h) // 2 - 137160
         reqs += self._text_box_reqs(
             slide_id, slide_id + 't', heading or '',
-            cx, band_y + (band_h - 700000) // 2, cw, 700000,
-            font_pt=26, bold=True, align='CENTER', color=self.DECK_WHITE)
+            cx, head_y, cw, head_h,
+            font_pt=28, bold=True, align='CENTER', color=self.DECK_WHITE)
+        rule_w = 2057400  # 2.25" accent underline centered below the heading
+        reqs += self._rect_reqs(
+            slide_id, slide_id + 'rule', (self.PAGE_W_EMU - rule_w) // 2,
+            head_y + head_h + 91440, rule_w, 45720, colors['accent'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def add_narrative_slide(self, presentation_id, slide_id, title, text,
-                            brand=None, footer=None, page=None):
+                            brand=None, footer=None, page=None, rich=None):
         """A text slide — bold title + narrative body — for the executive
         summary and any analysis not paired with a chart, so the ALI story
-        carries on the deck rather than only in speaker notes."""
+        carries on the deck rather than only in speaker notes.
+
+        ``rich`` (optional) renders the body Slides-native instead of verbatim:
+        ``{'text', 'bold_ranges', 'bullet_ranges'}`` with UTF-16 ``(start,
+        end)`` pairs — markdown bold becomes real bold runs, glyph bullets
+        become native bulleted paragraphs."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        body_id = slide_id + 'b'
+        body_text = (rich or {}).get('text') or text or ''
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title or '', colors,
                                           footer=footer, page=page)
         reqs += self._text_box_reqs(
-            slide_id, slide_id + 'b', text or '', cx, self.CONTENT_TOP_EMU,
+            slide_id, body_id, body_text, cx, self.CONTENT_TOP_EMU,
             cw, self.PAGE_H_EMU - self.CONTENT_TOP_EMU - 420000, font_pt=13,
             align='START', color=colors['ink'])
+        if body_text:
+            reqs.append({'updateParagraphStyle': {
+                'objectId': body_id,
+                'style': {'lineSpacing': 115,
+                          'spaceBelow': {'magnitude': 4, 'unit': 'PT'}},
+                'textRange': {'type': 'ALL'},
+                'fields': 'lineSpacing,spaceBelow'}})
+        for start, end in (rich or {}).get('bold_ranges') or []:
+            if end > start:
+                reqs.append({'updateTextStyle': {
+                    'objectId': body_id, 'style': {'bold': True},
+                    'textRange': {'type': 'FIXED_RANGE',
+                                  'startIndex': start, 'endIndex': end},
+                    'fields': 'bold'}})
+        for start, end in (rich or {}).get('bullet_ranges') or []:
+            if end > start:
+                reqs.append({'createParagraphBullets': {
+                    'objectId': body_id,
+                    'textRange': {'type': 'FIXED_RANGE',
+                                  'startIndex': start, 'endIndex': end},
+                    'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'}})
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -502,12 +554,67 @@ class GsApi(object):
             self.add_speaker_notes(presentation_id, slide_id, notes)
         return slide_id
 
-    def _rect_reqs(self, slide_id, shape_id, x, y, w, h, fill_color):
-        """A filled rectangle (no outline) — the card behind a stat tile and
-        the band behind a section heading."""
+    def add_sheets_chart_slide(self, presentation_id, slide_id, title=None,
+                               spreadsheet_id=None, chart_id=None,
+                               caption=None, notes=None, brand=None,
+                               footer=None, page=None,
+                               linking_mode='NOT_LINKED_IMAGE'):
+        """A content slide embedding a native Google Sheets chart.
+
+        Mirrors :meth:`add_chart_slide`'s chrome (title over the accent
+        rule, footer, page number, caption band) but the body is a
+        ``createSheetsChart`` element instead of an image, so the deck
+        needs no rasterized pixels at all. Slides renders the chart into
+        the element box, so the box fills the content area directly (no
+        aspect-fit math).
+
+        :param presentation_id: the deck to add the slide to.
+        :param slide_id: the new slide's object id.
+        :param title: slide title for the content chrome.
+        :param spreadsheet_id: the spreadsheet holding the chart.
+        :param chart_id: the chart's id from the ``addChart`` reply.
+        :param caption: one-line takeaway under the chart.
+        :param notes: speaker-notes text.
+        :param brand: optional per-client deck colors (rgbColor dict).
+        :param footer: muted running footer text.
+        :param page: slide number for the footer chrome.
+        :param linking_mode: ``NOT_LINKED_IMAGE`` (default) renders a
+            static Google-rendered chart image so the source spreadsheet
+            can stay private; ``LINKED`` keeps a live link and requires
+            viewers to have access to the spreadsheet.
+        :returns: ``slide_id``.
+        """
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._content_chrome_reqs(slide_id, title, colors,
+                                          footer=footer, page=page)
+        box_y = self.CONTENT_TOP_EMU if title else 300000
+        box_h = self.PAGE_H_EMU - box_y - (800000 if caption else 420000)
+        reqs.append({'createSheetsChart': {
+            'objectId': slide_id + 'i',
+            'spreadsheetId': spreadsheet_id,
+            'chartId': chart_id,
+            'linkingMode': linking_mode,
+            'elementProperties': self._elem_props(
+                slide_id, cw, box_h, cx, box_y)}})
+        if caption:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'c', caption, cx,
+                self.PAGE_H_EMU - 720000, cw, 340000, font_pt=11,
+                align='START', color=colors['muted'])
+        self.slides_batch_update(presentation_id, reqs)
+        if notes:
+            self.add_speaker_notes(presentation_id, slide_id, notes)
+        return slide_id
+
+    def _rect_reqs(self, slide_id, shape_id, x, y, w, h, fill_color,
+                   shape_type='RECTANGLE'):
+        """A filled shape (no outline) — the card behind a stat tile, the
+        band behind a section heading, the ink field behind a cover."""
         return [
             {'createShape': {
-                'objectId': shape_id, 'shapeType': 'RECTANGLE',
+                'objectId': shape_id, 'shapeType': shape_type,
                 'elementProperties': self._elem_props(slide_id, w, h, x, y)}},
             {'updateShapeProperties': {
                 'objectId': shape_id,
@@ -566,12 +673,16 @@ class GsApi(object):
             grid_h = self.PAGE_H_EMU - grid_y - 420000
             cell_w = (cw - gap * (cols - 1)) // cols
             cell_h = (grid_h - gap * (n_rows - 1)) // n_rows
+            cell_h = min(cell_h, 1370000)  # ~1.5"
             pad = 100000
             for i, tile in enumerate(tiles):
                 r, c = divmod(i, cols)
                 x = cx + c * (cell_w + gap)
                 y = grid_y + r * (cell_h + gap)
                 base = '{}c{}'.format(slide_id, i)
+                cap_color = {'good': self.DECK_GOOD,
+                             'bad': self.DECK_BAD}.get(
+                    tile.get('tone'), colors['muted'])
                 reqs += self._rect_reqs(slide_id, base + 'r', x, y,
                                         cell_w, cell_h, colors['card'])
                 reqs += self._text_box_reqs(
@@ -589,15 +700,22 @@ class GsApi(object):
                         slide_id, base + 'p', str(tile['caption']),
                         x + pad, y + cell_h * 71 // 100, cell_w - 2 * pad,
                         cell_h * 26 // 100, font_pt=9, align='START',
-                        color=colors['muted'])
+                        color=cap_color)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
+
+    # A display value that reads as a number/rate — right-aligned in native
+    # tables ("$1,234.50", "1.2B", "0.15%", "3.4x", "120% of plan").
+    _NUMERIC_CELL_RE = re.compile(
+        r'^[-+(]?[$€£]?\s?\d[\d,.]*\s*(?:[KMB%]|x)?\)?'
+        r'(?:\s+of plan)?$', re.IGNORECASE)
 
     def _table_reqs(self, slide_id, table_id, x, y, w, h, header, body_rows,
                     colors):
         """Requests for a native table with a filled, white-on-accent header
-        row. Empty cells are left unstyled (Slides rejects an ALL text range on
-        an empty cell)."""
+        row, zebra-banded body rows, and right-aligned numeric cells. Empty
+        cells are left unstyled (Slides rejects an ALL text range on an empty
+        cell)."""
         all_rows = [list(header)] + [list(r) for r in body_rows]
         n_cols = len(header)
         reqs = [{'createTable': {
@@ -624,6 +742,12 @@ class GsApi(object):
                             self.DECK_WHITE if is_header else colors['ink'])}}},
                     'textRange': {'type': 'ALL'},
                     'fields': 'fontSize,bold,fontFamily,foregroundColor'}})
+                if not is_header and self._NUMERIC_CELL_RE.match(val):
+                    reqs.append({'updateParagraphStyle': {
+                        'objectId': table_id, 'cellLocation': loc,
+                        'style': {'alignment': 'END'},
+                        'textRange': {'type': 'ALL'},
+                        'fields': 'alignment'}})
         reqs.append({'updateTableCellProperties': {
             'objectId': table_id,
             'tableRange': {'location': {'rowIndex': 0, 'columnIndex': 0},
@@ -631,6 +755,16 @@ class GsApi(object):
             'tableCellProperties': {'tableCellBackgroundFill': {
                 'solidFill': {'color': {'rgbColor': colors['accent']}}}},
             'fields': 'tableCellBackgroundFill.solidFill.color'}})
+        # Zebra banding on alternating body rows keeps a 12-row scorecard
+        # scannable without heavy gridlines.
+        for r in range(2, len(all_rows), 2):
+            reqs.append({'updateTableCellProperties': {
+                'objectId': table_id,
+                'tableRange': {'location': {'rowIndex': r, 'columnIndex': 0},
+                               'rowSpan': 1, 'columnSpan': n_cols},
+                'tableCellProperties': {'tableCellBackgroundFill': {
+                    'solidFill': {'color': {'rgbColor': colors['card']}}}},
+                'fields': 'tableCellBackgroundFill.solidFill.color'}})
         return reqs
 
     def add_table_slide(self, presentation_id, slide_id, title, header,
