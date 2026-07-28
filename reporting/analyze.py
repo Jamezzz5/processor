@@ -4073,7 +4073,8 @@ class AliChat(object):
                          instructions='', previous_messages=None,
                          stream=False, timeout=120, temperature=0.4,
                          source_context=None, tools=None,
-                         tool_choice='auto', extra_messages=None):
+                         tool_choice='auto', extra_messages=None,
+                         chat_template_kwargs=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -4086,6 +4087,10 @@ class AliChat(object):
         :param timeout: Timeout to wait for response when not streaming
         :param temperature: Temperature passed to the model
         :param source_context: Context based on the codebase
+        :param chat_template_kwargs: Optional dict passed straight to the
+            server's chat template, e.g. ``{'enable_thinking': False}`` to
+            suppress a reasoning model's thinking block. Omitted from the
+            body when falsy, so the model's own default stands.
         :return: response from the llm as string
         """
         if not instructions:
@@ -4130,6 +4135,8 @@ class AliChat(object):
         if tools:
             body['tools'] = tools
             body['tool_choice'] = tool_choice
+        if chat_template_kwargs:
+            body['chat_template_kwargs'] = chat_template_kwargs
         if stream:
             return self.llm_request_generator(body)
         else:
