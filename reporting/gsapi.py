@@ -172,15 +172,52 @@ class GsApi(object):
             self.sheet_id = spreadsheet_id
         return spreadsheet_id
 
+    blank_write_msg = ('Google rejected the {} contents, so the sheet would '
+                       'have been empty. Nothing was exported.')
+
+    @staticmethod
+    def request_applied(response, context=''):
+        """Whether a Google write actually applied, logging any rejection.
+
+        Google applies a batch atomically, so one bad request can leave
+        the artifact completely empty while the call still returns a
+        usable file id. **Never treat a returned response as success** —
+        that is how a blank Doc shipped with a working URL.
+
+        :param response: the requests response; ``None`` counts as a
+            no-op success so empty batches and test doubles stay valid.
+        :param context: file id / range, for the log line.
+        :returns: whether the write applied.
+        """
+        if response is None:
+            return True
+        status = getattr(response, 'status_code', 200)
+        if status in (200, 204):
+            return True
+        logging.error('Google write rejected ({}) for {}: {}'.format(
+            status, context, str(getattr(response, 'text', ''))[:500]))
+        return False
+
     def write_values(self, spreadsheet_id, range_, values):
         """Write a 2D list of values into the given A1 range. Uses
-        USER_ENTERED so formula-like cells render naturally."""
+        USER_ENTERED so formula-like cells render naturally. Returns the
+        response; a rejection is logged here."""
         url = '{}/{}/values/{}'.format(
             self.sheets_url, spreadsheet_id, range_)
         params = {'valueInputOption': 'USER_ENTERED'}
         body = {'values': values}
         response = self.client.put(url=url, params=params, json=body)
+        self.request_applied(response,
+                             '{}!{}'.format(spreadsheet_id, range_))
         return response
+
+    def write_values_applied(self, spreadsheet_id, range_, values):
+        """:meth:`write_values`, reporting whether Google applied it.
+        Callers that would otherwise hand back a URL to an empty sheet
+        pair this with :attr:`blank_write_msg`."""
+        return self.request_applied(
+            self.write_values(spreadsheet_id, range_, values),
+            spreadsheet_id)
 
     def batch_update(self, spreadsheet_id, requests):
         """POST a list of Sheets requests (repeatCell, mergeCells,
@@ -937,33 +974,62 @@ class GsApi(object):
         }
         return format_req
 
+    null_cell_text = ('none', 'nan', 'nat', 'null')
+
+    @staticmethod
+    def cell_text(cell):
+        """One table cell as document text — missing values read blank
+        rather than as the literal 'None'/'nan' a client must never see
+        in a report."""
+        try:
+            blank = cell is None or bool(pd.isna(cell))
+        except (TypeError, ValueError):  # arrays/lists aren't null-testable
+            blank = False
+        if blank:
+            return ''
+        text = str(cell).strip()
+        return '' if text.lower() in GsApi.null_cell_text else text
+
     @staticmethod
     def fill_row(row, index):
+        """Insert requests for one table row's cells, walking the index
+        forward cell by cell.
+
+        A blank cell inserts nothing — the Docs API rejects empty text —
+        but still advances the index by its structural width (cell start
+        + paragraph newline), so the walk stays aligned with the table.
+        """
         row_requests = []
         for cell in row:
-            if not str(cell).strip():
-                cell = '0'
-            row_requests.append({
-                "insertText":
-                    {
-                        "text": str(cell).strip(),
-                        "location":
-                            {
-                                "index": index
-                            }
-                    }
-            })
-            index += len(str(cell).strip()) + 2
+            text = GsApi.cell_text(cell)
+            if text:
+                row_requests.append({
+                    "insertText":
+                        {
+                            "text": text,
+                            "location":
+                                {
+                                    "index": index
+                                }
+                        }
+                })
+            index += len(text) + 2
         index += 1
         return row_requests, index
 
     def add_table(self, data, index):
-        """
+        """Requests rendering ``data`` (a list of row dicts) as a native
+        Docs table, plus the index one past it.
+
+        Returns ``([], index)`` for an empty table — a columned frame with
+        no rows is common in a generated report and must not abort the
+        whole document.
+
         See for indexing: (https://stackoverflow.com/questions/75689738/
         how-can-i-dynamically-populate-a-table-in-google-doc-using-their-api)
         """
         if not data:
-            return index
+            return [], index
         start_ind = index
         table_requests = [{'insertTable': {
             'rows': len(data) + 1,
@@ -974,7 +1040,7 @@ class GsApi(object):
         }}]
         index += 4
         column_req, index = self.fill_row(data[0].keys(), index)
-        table_requests.append(column_req)
+        table_requests += column_req
         for row in data:
             row_request, index = self.fill_row(row.values(), index)
             table_requests += row_request
@@ -1022,16 +1088,85 @@ class GsApi(object):
         url = self.files_url + '/{}'.format(file_id)
         self.client.delete(url)
 
-    def add_text(self, doc_id, text_json=None, index=1, newline=True):
+    @staticmethod
+    def image_size_pt(item):
+        """``(width_pt, height_pt)`` for an item's inline chart image —
+        the item's explicit size when it carries one, else page width
+        scaled to the captured PNG's aspect ratio."""
+        w_pt, h_pt = item.get('img_pt_w'), item.get('img_pt_h')
+        if w_pt and h_pt:
+            return w_pt, h_pt
+        img_w, img_h = item.get('img_w'), item.get('img_h')
+        if not (img_w and img_h):
+            return 320, 200
+        w_pt = 468  # US-Letter content width (8.5" - 1" of margins)
+        return w_pt, max(120, min(600, int(round(w_pt * img_h / img_w))))
+
+    def add_media_requests(self, item, index):
+        """``(requests, index)`` for an item's trailing media — an inline
+        chart image or a native table.
+
+        Every key here is optional: report payloads arrive from several
+        eras and generators, and a missing url / cols / rows must cost
+        that one item its media, never the whole document. ``cols``
+        carries plain column names from a client capture and column
+        dicts from a server-built table, so only the former can name an
+        image.
+        """
+        data = item.get('data') or {}
+        cols = data.get('cols') or []
+        if not cols:
+            return [], index
+        if 'imgURI' in cols:
+            w_pt, h_pt = self.image_size_pt(item)
+            return self.add_image_doc(item.get('url'), index, w_pt, h_pt)
+        return self.add_table(data.get('data'), index=index)
+
+    def get_document(self, doc_id):
+        """The Docs document resource, for read-back verification."""
+        return self.client.get('{}/{}'.format(self.docs_url, doc_id)).json()
+
+    def document_is_empty(self, doc_id):
+        """Whether the document has no content at all — the state a
+        rejected batchUpdate leaves behind.
+
+        A newly created doc holds one empty paragraph, so any real text,
+        table or inline image proves the body landed. Read-back is the
+        one check that catches a blank export regardless of *which*
+        request Google refused.
+        """
+        doc = self.get_document(doc_id)
+        if doc.get('inlineObjects'):
+            return False
+        for el in doc.get(self.body_str, {}).get(self.cont_str, []):
+            if el.get('table'):
+                return False
+            for run in el.get(self.para_str, {}).get('elements', []):
+                if run.get('textRun', {}).get(self.cont_str, '').strip():
+                    return False
+        return True
+
+    def add_text(self, doc_id, text_json=None, index=1, newline=True,
+                 text_only=False):
+        """Write a report body into a Google Doc in one batchUpdate.
+
+        :param doc_id: the target document.
+        :param text_json: the report items (headings, text, tables,
+            chart images).
+        :param index: document index to start writing at.
+        :param newline: end every item's text with a newline.
+        :param text_only: skip images and tables — the degraded retry
+            used when the full body is rejected, so a client still gets
+            the narrative rather than a blank document.
+        :returns: ``(response, body)``.
+        """
         logging.info('Adding text to doc.')
         url = self.docs_url + "/" + doc_id + ":batchUpdate"
         headers = {"Content-Type": "application/json"}
         request = []
         format_request = []
         for item in text_json:
-            if item['selected'] == 'false':
-                continue
-            if 'message' not in item:
+            if item.get('selected') == 'false' or 'message' not in item:
                 continue
             text = item['message']
             if newline:
@@ -1044,28 +1179,13 @@ class GsApi(object):
                     'text': text
                 }
             })
-            style = item['format'] if 'format' in item else self.text_format
+            style = item.get('format') or self.text_format
             end_ind = index + len(text) - 1
             format_request.append(self.get_format_req(index, end_ind, style))
             index += len(text)
-            if 'data' in item:
-                table_req = []
-                if 'imgURI' in item['data']['cols']:
-                    presigned_url = item['url']
-                    w_pt, h_pt = item.get('img_pt_w'), item.get('img_pt_h')
-                    if not (w_pt and h_pt):
-                        w_pt, h_pt = 320, 200
-                        iw, ih = item.get('img_w'), item.get('img_h')
-                        if iw and ih:  # size charts to page width by aspect
-                            w_pt = 468  # US-Letter content width (8.5"-1")
-                            h_pt = max(120, min(600,
-                                                int(round(w_pt * ih / iw))))
-                    table_req, index = self.add_image_doc(
-                        presigned_url, index, w_pt, h_pt)
-                elif item['data']['cols']:
-                    table_req, index = self.add_table(item['data']['data'],
-                                                      index=index)
-                request += table_req
+            if not text_only:
+                media_req, index = self.add_media_requests(item, index)
+                request += media_req
         request += format_request
         body = {"requests": request}
         response = self.client.post(url=url, json=body, headers=headers)
