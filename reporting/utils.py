@@ -4,7 +4,6 @@ import re
 import gzip
 import json
 import time
-import signal
 import shutil
 import random
 import base64
@@ -14,6 +13,7 @@ import requests
 import pandas as pd
 import numpy as np
 import datetime as dt
+import urllib3.exceptions as url_ex
 import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
@@ -23,8 +23,7 @@ import http.client as http_client
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.remote.remote_connection import RemoteConnection
 
 
 
@@ -566,12 +565,8 @@ def write_df_to_buffer(df, file_name='raw', default_format=True,
     return buffer, zip_file
 
 
-class SignalTimeoutException(Exception):
-    pass
-
-
-def signal_handler(signum, frame):
-    raise SignalTimeoutException("Function timed out")
+class ClickFailedException(Exception):
+    """An element could not be clicked in the allotted attempts."""
 
 
 def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
@@ -618,10 +613,20 @@ class SeleniumWrapper(object):
     driver_path = 'drivers'
     selectize_xpath = 'selectized'
     liquid_xpath = 'liquid'
+    command_timeout = 60
+    browser_errors = (ex.WebDriverException, url_ex.HTTPError,
+                      http_client.HTTPException)
+    accept_exact = ['ok', 'continue', 'proceed', 'i agree', 'accetto',
+                    'accetta', 'zustimmen', "j'accepte"]
+    accept_contains = ['accept cookies', 'accept all cookies',
+                       'akzeptieren und weiter']
+    cookie_wait = 2
+    cookie_timeout = 15
 
-    def __init__(self, mobile=False, headless=True):
+    def __init__(self, mobile=False, headless=True, page_load_strategy=''):
         self.mobile = mobile
         self.headless = headless
+        self.page_load_strategy = page_load_strategy
         self.browser, self.co = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
         self.select_id = By.ID
@@ -715,8 +720,11 @@ class SeleniumWrapper(object):
         return wd.Chrome(options=co)
 
     def init_browser(self, headless):
+        RemoteConnection.set_timeout(self.command_timeout)
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = wd.chrome.options.Options()
+        if self.page_load_strategy:
+            co.page_load_strategy = self.page_load_strategy
         if headless:
             co.add_argument('--headless=new')
             # --headless=new spawns a real (black) window on Windows;
@@ -725,7 +733,6 @@ class SeleniumWrapper(object):
             co.add_argument('--window-position=-32000,-32000')
         random_user_agent = self.get_random_user_agent()
         co.add_argument('user-agent={}'.format(random_user_agent))
-        co.add_argument('--disable-features=VizDisplayCompositor')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
         co.add_argument('--no-sandbox')
@@ -758,7 +765,6 @@ class SeleniumWrapper(object):
             Object.defineProperty(navigator, 'languages', 
             { get: () => ['en-US', 'en'] });
         """)
-        co.page_load_strategy = 'none'
         if headless:
             # maximize_window with no screen shrinks the viewport
             # below the requested --window-size; pin it instead.
@@ -784,31 +790,63 @@ class SeleniumWrapper(object):
     def random_delay(min_time=0.5, max_time=2.5):
         time.sleep(random.uniform(min_time, max_time))
 
-    def go_to_url(self, url, sleep=5, elem_id=''):
+    def restart_browser(self):
+        """Replace a wedged driver with a fresh one.
+
+        A command that times out at the socket leaves the session in an
+        unknown state, so the only safe recovery is a new browser.
+        ``browser.quit`` stops the driver process even when the session
+        is already unreachable, so no close is attempted first.
+        """
+        logging.warning('Restarting browser.')
+        try:
+            self.browser.quit()
+        except Exception as e:
+            logging.warning('Error during browser quit: {}'.format(e))
+        self.browser, self.co = self.init_browser(self.headless)
+        self.base_window = self.browser.window_handles[0]
+
+    def restart_and_get(self, url):
+        """Rebuild the browser and retry ``url`` once.
+
+        :param url: the url to load on the new browser
+        :return: whether the reload succeeded
+        """
+        try:
+            self.restart_browser()
+            self.browser.get(url)
+        except Exception as e:
+            logging.error('Restart and reload failed: {}'.format(e))
+            return False
+        return True
+
+    def go_to_url(self, url, sleep=5, elem_id='', max_attempts=10):
+        """Navigate to a url, rebuilding the browser if it stops
+        answering.
+
+        :param url: the url to load
+        :param sleep: seconds to settle when no elem_id is given
+        :param elem_id: element to wait on instead of sleeping
+        :param max_attempts: navigation attempts before the browser is
+            rebuilt. A socket-level timeout skips straight to the
+            rebuild -- the session is already gone, so further attempts
+            would each burn another full command_timeout.
+        :return: whether the url was reached
+        """
         logging.info('Going to url {}.'.format(url))
-        max_attempts = 10
         for x in range(max_attempts):
             try:
                 self.browser.get(url)
                 break
-            except (ex.TimeoutException, ex.WebDriverException) as e:
+            except self.browser_errors as e:
                 msg = 'Exception attempt: {}, retrying: \n {}'.format(x + 1, e)
                 logging.warning(msg)
-                if x > (max_attempts - 2):
-                    logging.warning(
-                        'Reached max attempts. Restarting browser...')
-                    try:
-                        self.quit()
-                    except Exception as e:
-                        logging.warning(f'Error during browser quit: {e}')
-                    try:
-                        self.browser, self.co = self.init_browser(
-                            self.headless)
-                        self.base_window = self.browser.window_handles[0]
-                        self.browser.get(url)
-                    except Exception as e:
-                        logging.error(f'Restart and reload failed: {e}')
-                        return False
+                dead_session = isinstance(e, url_ex.HTTPError)
+                if not (dead_session or x >= max_attempts - 1):
+                    continue
+                if not self.restart_and_get(url):
+                    return False
+                break
         if elem_id:
             self.wait_for_elem_load(elem_id)
         else:
@@ -880,13 +918,13 @@ class SeleniumWrapper(object):
         if not elem_click:
             tt = attempts * sleep
             msg = 'Xpath: {} not clicked in {}s'.format(xpath, tt)
-            raise Exception(msg)
+            raise ClickFailedException(msg)
         return elem_click
 
     def quit(self):
         try:
             self.browser.close()
-        except ex.WebDriverException as e:
+        except self.browser_errors as e:
             logging.warning('Error closing: {}'.format(e))
         self.browser.quit()
 
@@ -923,63 +961,115 @@ class SeleniumWrapper(object):
         ads = self.get_all_iframe_ads()
         return ads
 
-    def click_accept_buttons(self, btn_xpath, timeout=3, poll_frequency=0.2):
-        use_alarm = hasattr(signal, "SIGALRM")
-        if use_alarm:
-            signal.signal(signal.SIGALRM, signal_handler)
-            signal.alarm(timeout + 1)
-        wait = WebDriverWait(self.browser, timeout,
-                             poll_frequency=poll_frequency)
+    @classmethod
+    def get_accept_xpath(cls):
+        """Xpath matching a cookie-consent accept control.
+
+        Scoped to clickable nodes and matched on lowercased text. An
+        unscoped ``//*`` walk matches the banner's own body copy as
+        readily as its button, so the first hit is regularly a
+        paragraph rather than something worth clicking.
+
+        :return: an xpath string
+        """
+        upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        lower = 'abcdefghijklmnopqrstuvwxyz'
+        conds = []
+        for prop in ['normalize-space(.)', 'normalize-space(@value)']:
+            text = 'translate({},"{}","{}")'.format(prop, upper, lower)
+            conds += ['{}="{}"'.format(text, x) for x in cls.accept_exact]
+            conds += ['contains({},"{}")'.format(text, x)
+                      for x in cls.accept_contains]
+        cond = ' or '.join(conds)
+        tags = ['button', 'a', 'input', '*[@role="button"]']
+        return ' | '.join('//{}[{}]'.format(x, cond) for x in tags)
+
+    def find_accept_buttons(self, btn_xpath):
+        """Visible consent controls in the current frame.
+
+        :param btn_xpath: xpath from ``get_accept_xpath``
+        :return: list of visible WebElements
+        """
+        elems = self.browser.find_elements(By.XPATH, btn_xpath)
+        return [x for x in elems if self.elem_visible(x)]
+
+    def click_accept_buttons(self, btn_xpath, wait=0):
+        """Click the first visible consent control in the current frame.
+
+        :param btn_xpath: xpath from ``get_accept_xpath``
+        :param wait: seconds to poll for a control before giving up.
+            Worth spending on the page itself, where a banner script
+            may still be injecting, and not on an ad iframe that will
+            never hold one.
+        :return: whether a control was clicked
+        """
+        deadline = time.time() + wait
+        buttons = self.find_accept_buttons(btn_xpath)
+        while not buttons and time.time() < deadline:
+            time.sleep(.25)
+            buttons = self.find_accept_buttons(btn_xpath)
+        if not buttons:
+            return False
         try:
-            accept_buttons = wait.until(
-                EC.visibility_of_all_elements_located((By.XPATH, btn_xpath)))
-        except (ex.TimeoutException, SignalTimeoutException) as e:
-            accept_buttons = None
-        finally:
-            if use_alarm:
-                signal.alarm(0)
-        if accept_buttons:
-            self.click_on_xpath(sleep=3, elem=accept_buttons[0])
+            self.click_on_xpath(sleep=1, elem=buttons[0])
+        except (ex.WebDriverException, ClickFailedException) as e:
+            logging.warning('Could not accept cookies: {}'.format(e))
+            return False
+        return True
+
+    def switch_to_frame(self, iframe=None):
+        """Switch into a frame, or back out to the page.
+
+        :param iframe: frame WebElement, or None for default content
+        :return: whether the switch succeeded
+        """
+        try:
+            if iframe is None:
+                self.browser.switch_to.default_content()
+            else:
+                self.browser.switch_to.frame(iframe)
+        except ex.WebDriverException as e:
+            logging.warning('Could not switch frame: {}'.format(e))
+            return False
+        return True
 
     def accept_cookies(self):
-        btn = ['AKZEPTIEREN UND WEITER', 'Accept Cookies', 'OK',
-               'Accept All Cookies', 'Zustimmen', 'Accetto', "J'ACCEPTE",
-               'Accetta', 'I agree', 'Continue', 'Proceed']
-        btn_xpath = [
-            """//*[contains(normalize-space(text()), "{}")]""".format(x)
-            for x in btn]
-        btn_xpath = ' | '.join(btn_xpath)
-        self.click_accept_buttons(btn_xpath)
-        try:
-            iframes = self.browser.find_elements(By.TAG_NAME, "iframe")
-        except http_client.CannotSendRequest as e:
-            logging.warning(e)
-            iframes = []
-        for iframe in iframes:
-            try:
-                is_displayed = iframe.is_displayed()
-            except ex.StaleElementReferenceException as e:
-                logging.warning(e)
-                is_displayed = False
-            if is_displayed:
-                try:
-                    self.browser.switch_to.frame(iframe)
-                except ex.WebDriverException as e:
-                    logging.warning(e)
-                    continue
-                self.click_accept_buttons(btn_xpath)
-                try:
-                    self.browser.switch_to.default_content()
-                except http_client.CannotSendRequest as e:
-                    logging.warning(e)
-                    continue
+        """Dismiss a cookie banner on the page or in one of its frames.
 
-    def take_screenshot(self, url=None, file_name=None):
+        Stops at the first banner accepted: a page has one, and every
+        further frame on an ad-heavy page is a driver round trip that
+        buys nothing.
+        """
+        btn_xpath = self.get_accept_xpath()
+        if self.click_accept_buttons(btn_xpath, wait=self.cookie_wait):
+            return
+        deadline = time.time() + self.cookie_timeout
+        for iframe in self.browser.find_elements(By.TAG_NAME, 'iframe'):
+            if time.time() > deadline:
+                logging.warning('Timed out looking for a cookie banner.')
+                return
+            if not self.elem_visible(iframe):
+                continue
+            if not self.switch_to_frame(iframe):
+                continue
+            accepted = self.click_accept_buttons(btn_xpath)
+            if not self.switch_to_frame() or accepted:
+                return
+
+    def take_screenshot(self, url=None, file_name=None, max_attempts=2):
+        """Save a screenshot of ``url``, or of the current page.
+
+        :param url: page to load first; omit to shoot what is loaded
+        :param file_name: path the png is written to
+        :param max_attempts: navigation attempts, kept low because a
+            screenshot run walks a whole site list and one unreachable
+            site should not hold up the rest
+        """
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
         went_to_url = True
         if url:
-            went_to_url = self.go_to_url(url)
+            went_to_url = self.go_to_url(url, max_attempts=max_attempts)
         if went_to_url:
             if url:
                 self.accept_cookies()
@@ -1389,6 +1479,22 @@ class SeleniumWrapper(object):
             raw_id in select_form_names
             or 'cur' in raw_id or 'Select' in raw_id
             or '-selectized' in raw_id or '-liquid' in raw_id)
+
+    @staticmethod
+    def elem_visible(elem):
+        """True when an element already in hand is still displayed.
+
+        ``elem_displayed`` takes an id and re-queries for it; this
+        takes the WebElement the caller is already holding, which the
+        frame and consent-button scans both are.
+
+        :param elem: a WebElement
+        :return: whether it is displayed
+        """
+        try:
+            return elem.is_displayed()
+        except ex.StaleElementReferenceException:
+            return False
 
     def elem_displayed(self, elem_id, selector=None):
         """True when an element with this id exists and is visible.

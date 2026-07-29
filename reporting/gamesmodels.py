@@ -157,6 +157,51 @@ class CommunitySnapshot(Base):
     reddit_members = Column(Numeric)
     youtube_subscribers = Column(Numeric)
     open_critic_score = Column(Numeric)
+    twitch_viewers = Column(
+        Numeric, comment='Concurrent viewers on the title\'s Twitch '
+                         'category (Helix Get Streams, top pages '
+                         'summed) — a point-in-time sample at the '
+                         'nightly run hour, not a peak.')
+    reddit_active_users = Column(
+        Numeric, comment='Subreddit active_user_count at snapshot time '
+                         '(about.json) — concurrent-scale, unlike the '
+                         'cumulative reddit_members.')
+
+
+class CommunityLink(Base):
+    """Per-platform community handle for a game — where the live
+    lanes look. ``source`` is the provenance rule: ``curated`` rows
+    (registry sheet) always win; ``derived`` rows (auto-search) may
+    never overwrite them."""
+    __tablename__ = 'community_link'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'platform',
+                         name='uq_community_link_game_platform'),
+        {'schema': 'games',
+         'comment': 'Per-platform community handle per game; curated '
+                    'rows always beat derived ones.'},
+    )
+
+    communitylinkid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    platform = Column(Text, nullable=False,
+                      comment="'twitch' | 'reddit' | 'youtube'.")
+    handle = Column(
+        Text, comment='Twitch category name / subreddit without the '
+                      'r/ prefix / YouTube channel title.')
+    external_id = Column(
+        Text, comment='Twitch category id / YouTube channel id; NULL '
+                      'for Reddit (the handle is the id).')
+    source = Column(
+        Text, nullable=False,
+        comment="'curated' (registry sheet) or 'derived' "
+                '(auto-search); derived never overwrites curated.')
+    derived_at = Column(DateTime,
+                        comment='Naive UTC; when auto-derivation last '
+                                'confirmed this handle.')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last touch by any writer.')
 
 
 class CriticScore(Base):

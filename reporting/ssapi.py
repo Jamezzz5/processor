@@ -4,7 +4,7 @@ import pandas as pd
 import datetime as dt
 import reporting.utils as utl
 import reporting.awss3 as awss3
-import selenium.common.exceptions as ex
+
 
 class SsApi(object):
     url = 'url'
@@ -63,21 +63,38 @@ class SsApi(object):
             self.config[new_index] = self.config[index].copy()
             self.config[new_index][self.device] = self.device_mobile
 
+    @staticmethod
+    def screenshot_site(browser, site, attempts=2):
+        """Screenshot one site, rebuilding the browser between tries.
+
+        A command that timed out leaves the driver session unusable, so
+        retrying on the same browser only times out again.
+
+        :param browser: SeleniumWrapper to shoot with
+        :param site: Site providing the url and output file name
+        :param attempts: tries before the site is given up on
+        """
+        for attempt in range(attempts):
+            try:
+                browser.take_screenshot(site.url, site.file_name)
+                return
+            except browser.browser_errors as e:
+                logging.warning(
+                    'Failed to screenshot {} on attempt {}. {}'.format(
+                        site.url, attempt + 1, e))
+                if attempt < attempts - 1:
+                    browser.restart_browser()
+        logging.error('Could not screenshot {}.'.format(site.url))
+
     def get_data(self, sd, ed, fields):
-        browser = utl.SeleniumWrapper()
+        browser = utl.SeleniumWrapper(page_load_strategy='eager')
         for index in self.config:
             site = self.get_site(index)
             if site.device == self.device_mobile and not browser.mobile:
                 browser.quit()
-                browser = utl.SeleniumWrapper(mobile=True)
-            try:
-                browser.take_screenshot(site.url, site.file_name)
-            except (ex.TimeoutException, ex.WebDriverException) as e:
-                logging.warning('Failed to take a screenshot. {}'.format(e))
-                try:
-                    browser.take_screenshot(site.url, site.file_name)
-                except (ex.TimeoutException, ex.WebDriverException) as e:
-                    logging.error('Failed to take a screenshot again. {}'.format(e))
+                browser = utl.SeleniumWrapper(
+                    mobile=True, page_load_strategy='eager')
+            self.screenshot_site(browser, site)
             self.config[index][self.file_name] = site.file_name
         browser.quit()
         self.write_config_to_df()

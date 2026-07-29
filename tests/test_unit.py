@@ -7,6 +7,8 @@ import logging
 import numpy as np
 import pandas as pd
 import datetime as dt
+import urllib3.exceptions as url_ex
+from selenium.webdriver.common.by import By
 from processor.main import main
 import processor.reporting.utils as utl
 import processor.reporting.vendormatrix as vm
@@ -57,6 +59,38 @@ requires_base_config = pytest.mark.skipif(
 requires_local_browser = pytest.mark.skipif(
     os.environ.get('CI', '').lower() == 'true',
     reason='headed browser unavailable on CI')
+
+
+def _raise_read_timeout(*args, **kwargs):
+    """Stand in for a driver that stopped answering its socket."""
+    raise url_ex.ReadTimeoutError(None, 'url', 'Read timed out.')
+
+
+# Body copy holding 'OK' inside 'COOKIES' and a settings control that
+# must not be mistaken for consent -- the two things a substring match
+# on every node in the document gets wrong.
+COOKIE_DECOYS = (
+    '<p>We use COOKIES. Continue reading our policy.</p>'
+    '<button onclick="window.picked=\'settings\'">Cookie settings</button>')
+COOKIE_BANNER = (
+    '<html><body>' + COOKIE_DECOYS +
+    '<button onclick="window.picked=\'accept\';'
+    'this.parentNode.removeChild(this)">Accept All Cookies</button>'
+    '</body></html>')
+COOKIE_FRAME_PAGE = (
+    '<html><body>' + COOKIE_DECOYS +
+    '<iframe src="frame.html" width="400" height="200"></iframe>'
+    '</body></html>')
+COOKIE_FRAME = (
+    '<html><body><button onclick="document.body.setAttribute('
+    '\'data-picked\', \'accept\')">I agree</button></body></html>')
+
+
+def _write_page(tmp_path, name, html):
+    """Write an html fixture and return it as a file:// url."""
+    page = tmp_path / name
+    page.write_text(html, encoding='utf-8')
+    return page.as_uri()
 
 
 def func(x):
@@ -180,6 +214,79 @@ class TestUtils:
         assert os.path.isfile(file_name)
         os.remove(file_name)
         sw.quit()
+
+    def test_command_timeout(self):
+        """Driver commands must be capped on the client side.
+
+        Selenium builds its connection pool with no timeout, so a
+        driver that stops answering blocks the caller forever instead
+        of raising. The pool is built when the driver is constructed,
+        so the cap only takes if it is set before that.
+        """
+        sw = utl.SeleniumWrapper()
+        pool_kw = sw.browser.command_executor._conn.connection_pool_kw
+        try:
+            assert pool_kw['timeout'] == sw.command_timeout
+        finally:
+            sw.quit()
+
+    def test_go_to_url_restarts_dead_session(self, monkeypatch):
+        """A hung driver is replaced, not retried into another hang."""
+        sw = utl.SeleniumWrapper()
+        first_browser = sw.browser
+        monkeypatch.setattr(sw.browser, 'get', _raise_read_timeout)
+        try:
+            assert sw.go_to_url('https://www.google.com/', sleep=1)
+            assert sw.browser is not first_browser
+        finally:
+            sw.quit()
+
+    def test_accept_cookies_on_page(self, tmp_path):
+        """The consent button is clicked, the decoys are not."""
+        url = _write_page(tmp_path, 'banner.html', COOKIE_BANNER)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            found = sw.find_accept_buttons(sw.get_accept_xpath())
+            assert [x.text for x in found] == ['Accept All Cookies']
+            sw.accept_cookies()
+            assert sw.browser.execute_script('return window.picked;') == (
+                'accept')
+        finally:
+            sw.quit()
+
+    def test_accept_cookies_in_iframe(self, tmp_path):
+        """A banner living in a frame is still reached."""
+        _write_page(tmp_path, 'frame.html', COOKIE_FRAME)
+        url = _write_page(tmp_path, 'framed.html', COOKIE_FRAME_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            sw.accept_cookies()
+            sw.switch_to_frame(sw.browser.find_element(By.TAG_NAME, 'iframe'))
+            picked = sw.browser.find_element(
+                By.TAG_NAME, 'body').get_attribute('data-picked')
+            assert picked == 'accept'
+        finally:
+            sw.quit()
+
+    def test_accept_cookies_ignores_decoys(self, tmp_path):
+        """Body copy and a settings control are not consent buttons.
+
+        'OK' is a substring of 'COOKIES' and 'Continue' of 'Continue
+        reading', so a page with no accept button at all used to offer
+        several matches.
+        """
+        html = '<html><body>{}</body></html>'.format(COOKIE_DECOYS)
+        url = _write_page(tmp_path, 'decoys.html', html)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            assert sw.find_accept_buttons(sw.get_accept_xpath()) == []
+            sw.accept_cookies()
+            assert sw.browser.execute_script('return window.picked;') is None
+        finally:
+            sw.quit()
 
     @pytest.mark.parametrize(
         'sd, ed, expected_output', [
@@ -469,6 +576,177 @@ class TestApis:
         # assert df['Success'].all()
         assert hasattr(api, "test_connection") and callable(
             getattr(api, "test_connection"))
+
+
+class _FakeResponse(object):
+    """Minimal stand in for requests.Response."""
+
+    def __init__(self, status_code, text='', json_data=None):
+        self.status_code = status_code
+        self.text = text
+        self.json_data = json_data or {}
+
+    def json(self):
+        return self.json_data
+
+
+class _FakeRequests(object):
+    """Record urls hit and replay canned responses in order.
+
+    The last response repeats once the list is exhausted.
+    """
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def __call__(self, url, *args, **kwargs):
+        self.calls.append(url)
+        if len(self.responses) > 1:
+            return self.responses.pop(0)
+        return self.responses[0]
+
+
+def _return_none(*args, **kwargs):
+    """Stand in for a report request that failed."""
+    return None
+
+
+def _return_true(*args, **kwargs):
+    """Stand in for a validate pre-flight that passed."""
+    return True
+
+
+def _return_invalid(*args, **kwargs):
+    """Stand in for a validate pre-flight that failed."""
+    return {'is_valid': False, 'warnings': ['bad domain']}
+
+
+def _return_expired_status(*args, **kwargs):
+    """Stand in for a status check on a purged report."""
+    return _FakeResponse(404, 'report expired')
+
+
+def _raise_connection_error(*args, **kwargs):
+    """Stand in for an http call whose socket dropped."""
+    raise simapi.requests.exceptions.ConnectionError('boom')
+
+
+def _download_stub(download_url):
+    """Stand in for a completed report download."""
+    return pd.DataFrame({'domain': ['a.com'], 'all_traffic_visits': [1]})
+
+
+def _no_sleep(*args, **kwargs):
+    """Keep polling loops instant under test."""
+
+
+class TestSimApi:
+    """Failure paths must degrade or recover, never raise."""
+
+    @staticmethod
+    def make_api():
+        api = simapi.SimApi()
+        api.api_key = 'key'
+        api.domains = 'a.com'
+        api.countries = 'us'
+        api.config = {}
+        return api
+
+    def test_check_empty_df_handles_none(self):
+        api = simapi.SimApi()
+        api.df = None
+        api.check_empty_df()
+        assert api.df.empty
+
+    def test_get_data_without_report_id(self, monkeypatch):
+        """A failed report request short circuits to an empty df."""
+        api = simapi.SimApi()
+        monkeypatch.setattr(api, 'check_request_valid', _return_true)
+        monkeypatch.setattr(api, 'make_request', _return_none)
+        df = api.get_data()
+        assert df.empty
+
+    def test_check_report_status_invalid_id(self, monkeypatch):
+        """A non-200 status check signals an unusable id via None."""
+        api = self.make_api()
+        monkeypatch.setattr(simapi.requests, 'get', _return_expired_status)
+        assert api.check_report_status('stale-report-id') is None
+
+    def test_get_data_stale_report_id_rebuilds(self, monkeypatch):
+        """A dead stored report id is discarded and rebuilt, not fatal."""
+        api = self.make_api()
+        api.config = {'report_id': 'stale'}
+        gets = _FakeRequests([
+            _FakeResponse(404, 'unknown report'),
+            _FakeResponse(200, json_data={
+                'status': 'completed', 'download_url': 'http://d'})])
+        posts = _FakeRequests([
+            _FakeResponse(200, json_data={'report_id': 'fresh'})])
+        monkeypatch.setattr(simapi.requests, 'get', gets)
+        monkeypatch.setattr(simapi.requests, 'post', posts)
+        monkeypatch.setattr(api, 'check_request_valid', _return_true)
+        monkeypatch.setattr(api, 'download_report', _download_stub)
+        monkeypatch.setattr(simapi.time, 'sleep', _no_sleep)
+        df = api.get_data()
+        assert api.config['report_id'] == 'fresh'
+        assert not df.empty
+
+    def test_v3_endpoint_gone_falls_back_to_v4(self, monkeypatch):
+        """A sunset v3 report endpoint falls back to the v4 surface."""
+        api = self.make_api()
+        posts = _FakeRequests([
+            _FakeResponse(404, 'gone'),
+            _FakeResponse(200, json_data={'report_id': 'abc'})])
+        monkeypatch.setattr(simapi.requests, 'post', posts)
+        monkeypatch.setattr(simapi.time, 'sleep', _no_sleep)
+        sd = ed = dt.datetime.today()
+        assert api.make_request(sd, ed) == 'abc'
+        assert api.use_v4 is True
+        assert api.website_url in posts.calls[0]
+        assert api.batch_v4_url in posts.calls[1]
+
+    def test_internal_error_uses_free_retry(self, monkeypatch):
+        """internal_error hits the free retry endpoint, then resumes."""
+        api = self.make_api()
+        gets = _FakeRequests([
+            _FakeResponse(200, json_data={'status': 'internal_error'}),
+            _FakeResponse(200, json_data={
+                'status': 'completed', 'download_url': 'http://d'})])
+        posts = _FakeRequests([_FakeResponse(200)])
+        monkeypatch.setattr(simapi.requests, 'get', gets)
+        monkeypatch.setattr(simapi.requests, 'post', posts)
+        monkeypatch.setattr(api, 'download_report', _download_stub)
+        monkeypatch.setattr(simapi.time, 'sleep', _no_sleep)
+        df = api.check_report_status('rid')
+        assert not df.empty
+        assert api.retry_url in posts.calls[0]
+        assert 'rid' in posts.calls[0]
+
+    def test_invalid_request_aborts_before_charging(self, monkeypatch):
+        """An is_valid false pre-flight stops before spending credits."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'make_validate_request', _return_invalid)
+        monkeypatch.setattr(api, 'make_request', _raise_connection_error)
+        df = api.get_data()
+        assert df.empty
+
+    def test_connection_error_returns_none(self, monkeypatch):
+        """Transport failures exhaust their retries and return None."""
+        api = self.make_api()
+        monkeypatch.setattr(simapi.requests, 'get', _raise_connection_error)
+        monkeypatch.setattr(simapi.time, 'sleep', _no_sleep)
+        assert api.request_with_retry('http://x') is None
+
+    def test_config_metrics_override(self):
+        """A metrics list in config replaces the default agency set."""
+        api = self.make_api()
+        assert api.get_metrics() == simapi.SimApi.default_metrics
+        api.config = {'metrics': 'all_traffic_visits,desktop_visits'}
+        payload = api.construct_payload(dt.datetime.today(),
+                                        dt.datetime.today())
+        assert payload['metrics'] == ['all_traffic_visits',
+                                      'desktop_visits']
 
 
 class TestVendormatrix:

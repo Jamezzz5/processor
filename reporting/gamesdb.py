@@ -185,6 +185,27 @@ def upsert_fact(session, model, keys, fields):
     return inserted
 
 
+def upsert_facts(session, model, date_col, date_val, rows):
+    """Batched :func:`upsert_fact` over one day's ``(gameid,
+    date_col)``-keyed rows: one preload SELECT instead of one per row.
+
+    ``rows`` is ``[(gameid, fields_dict)]``. Returns inserts."""
+    stored = {row.gameid: row for row in session.query(model).filter(
+        getattr(model, date_col) == date_val,
+        model.gameid.in_({gameid for gameid, _ in rows}))}
+    inserted = 0
+    for gameid, fields in rows:
+        row = stored.get(gameid)
+        if row is None:
+            row = model(**{'gameid': gameid, date_col: date_val})
+            session.add(row)
+            stored[gameid] = row
+            inserted += 1
+        for col, val in fields.items():
+            setattr(row, col, val)
+    return inserted
+
+
 def safe_commit(session, label):
     """Commit; on failure roll back + log and return False. Games-DB
     writes are fail-soft everywhere — the Notes ingests stay the
