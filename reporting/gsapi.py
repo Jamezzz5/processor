@@ -977,6 +977,13 @@ class GsApi(object):
     null_cell_text = ('none', 'nan', 'nat', 'null')
 
     @staticmethod
+    def utf16_len(text):
+        """Length of ``text`` in UTF-16 code units — the unit every Docs
+        API index counts. Python ``len`` undercounts astral chars
+        (emoji), shifting every later range in the batch."""
+        return len(text.encode('utf-16-le')) // 2
+
+    @staticmethod
     def cell_text(cell):
         """One table cell as document text — missing values read blank
         rather than as the literal 'None'/'nan' a client must never see
@@ -993,13 +1000,15 @@ class GsApi(object):
     @staticmethod
     def fill_row(row, index):
         """Insert requests for one table row's cells, walking the index
-        forward cell by cell.
+        forward cell by cell; returns ``(requests, index, ranges)`` where
+        ``ranges`` are the non-empty cells' text spans (for styling).
 
         A blank cell inserts nothing — the Docs API rejects empty text —
         but still advances the index by its structural width (cell start
         + paragraph newline), so the walk stays aligned with the table.
         """
         row_requests = []
+        ranges = []
         for cell in row:
             text = GsApi.cell_text(cell)
             if text:
@@ -1013,11 +1022,41 @@ class GsApi(object):
                                 }
                         }
                 })
-            index += len(text) + 2
+                ranges.append((index, index + GsApi.utf16_len(text)))
+            index += GsApi.utf16_len(text) + 2
         index += 1
-        return row_requests, index
+        return row_requests, index, ranges
 
-    def add_table(self, data, index):
+    @staticmethod
+    def _table_header_style_reqs(table_start, ncols, header_ranges, style):
+        """Style requests for a Docs table's header row — a brand fill
+        behind row 0 plus bold contrast text — so an exported table reads
+        as a designed artifact rather than a raw grid.
+
+        :param table_start: the table element's start index.
+        :param ncols: header cell count.
+        :param header_ranges: the header cells' text ranges.
+        :param style: ``{'header_bg': rgb01, 'header_fg': rgb01}``.
+        :returns: the style request list.
+        """
+        reqs = [{'updateTableCellStyle': {
+            'tableCellStyle': {'backgroundColor': {'color': {
+                'rgbColor': style['header_bg']}}},
+            'fields': 'backgroundColor',
+            'tableRange': {
+                'tableCellLocation': {
+                    'tableStartLocation': {'index': table_start},
+                    'rowIndex': 0, 'columnIndex': 0},
+                'rowSpan': 1, 'columnSpan': ncols}}}]
+        for start, end in header_ranges:
+            reqs.append({'updateTextStyle': {
+                'range': {'startIndex': start, 'endIndex': end},
+                'textStyle': {'bold': True, 'foregroundColor': {'color': {
+                    'rgbColor': style['header_fg']}}},
+                'fields': 'bold,foregroundColor'}})
+        return reqs
+
+    def add_table(self, data, index, style=None):
         """Requests rendering ``data`` (a list of row dicts) as a native
         Docs table, plus the index one past it.
 
@@ -1025,27 +1064,38 @@ class GsApi(object):
         no rows is common in a generated report and must not abort the
         whole document.
 
+        :param style: optional ``{'header_bg', 'header_fg'}`` rgb01 pair;
+            when given the header row gets a brand fill + bold contrast
+            text.
+
         See for indexing: (https://stackoverflow.com/questions/75689738/
         how-can-i-dynamically-populate-a-table-in-google-doc-using-their-api)
         """
         if not data:
             return [], index
         start_ind = index
+        ncols = len(data[0])
         table_requests = [{'insertTable': {
             'rows': len(data) + 1,
-            'columns': len(data[0]),
+            'columns': ncols,
             'endOfSegmentLocation': {
                 'segmentId': ''
             }
         }}]
         index += 4
-        column_req, index = self.fill_row(data[0].keys(), index)
+        column_req, index, header_ranges = self.fill_row(data[0].keys(),
+                                                         index)
         table_requests += column_req
         for row in data:
-            row_request, index = self.fill_row(row.values(), index)
+            row_request, index, _ = self.fill_row(row.values(), index)
             table_requests += row_request
         table_requests.append(self.get_format_req(start_ind, index - 1,
                                                   self.text_format))
+        if style:
+            # The table element itself starts one past the insertion
+            # point (the API inserts a leading newline first).
+            table_requests += self._table_header_style_reqs(
+                start_ind + 1, ncols, header_ranges, style)
         return table_requests, index - 1
 
     def add_image_doc(self, presigned_url, index, width_pt=250,
@@ -1102,7 +1152,7 @@ class GsApi(object):
         w_pt = 468  # US-Letter content width (8.5" - 1" of margins)
         return w_pt, max(120, min(600, int(round(w_pt * img_h / img_w))))
 
-    def add_media_requests(self, item, index):
+    def add_media_requests(self, item, index, table_style=None):
         """``(requests, index)`` for an item's trailing media — an inline
         chart image or a native table.
 
@@ -1112,6 +1162,9 @@ class GsApi(object):
         carries plain column names from a client capture and column
         dicts from a server-built table, so only the former can name an
         image.
+
+        :param table_style: brand header colors threaded to
+            :meth:`add_table`, if any.
         """
         data = item.get('data') or {}
         cols = data.get('cols') or []
@@ -1120,7 +1173,8 @@ class GsApi(object):
         if 'imgURI' in cols:
             w_pt, h_pt = self.image_size_pt(item)
             return self.add_image_doc(item.get('url'), index, w_pt, h_pt)
-        return self.add_table(data.get('data'), index=index)
+        return self.add_table(data.get('data'), index=index,
+                              style=table_style)
 
     def get_document(self, doc_id):
         """The Docs document resource, for read-back verification."""
@@ -1146,29 +1200,80 @@ class GsApi(object):
                     return False
         return True
 
-    def add_text(self, doc_id, text_json=None, index=1, newline=True,
-                 text_only=False):
-        """Write a report body into a Google Doc in one batchUpdate.
+    @staticmethod
+    def _item_text_style_reqs(item, start, end):
+        """Style requests for one item's inserted text — paragraph
+        alignment, a text color, italics — from the optional item keys
+        the report exporter stamps (``alignment`` / ``text_color`` /
+        ``italic``). Empty when the item carries none."""
+        reqs = []
+        if item.get('alignment'):
+            reqs.append({'updateParagraphStyle': {
+                'range': {'startIndex': start, 'endIndex': end},
+                'paragraphStyle': {'alignment': item['alignment']},
+                'fields': 'alignment'}})
+        style, fields = {}, []
+        if item.get('text_color'):
+            style['foregroundColor'] = {'color': {
+                'rgbColor': item['text_color']}}
+            fields.append('foregroundColor')
+        if item.get('italic'):
+            style['italic'] = True
+            fields.append('italic')
+        if style and end > start:
+            reqs.append({'updateTextStyle': {
+                'range': {'startIndex': start, 'endIndex': end},
+                'textStyle': style, 'fields': ','.join(fields)}})
+        return reqs
 
-        :param doc_id: the target document.
-        :param text_json: the report items (headings, text, tables,
-            chart images).
+    @staticmethod
+    def _rich_text_reqs(rich, start):
+        """Style requests realizing a ``narrative_rich`` payload at its
+        inserted position: markdown bold becomes real bold runs, glyph
+        bullets become native Docs bulleted paragraphs. Ranges are
+        UTF-16 offsets into the rich text, matching Docs indexing."""
+        reqs = []
+        for s, e in rich.get('bold_ranges') or []:
+            reqs.append({'updateTextStyle': {
+                'range': {'startIndex': start + s, 'endIndex': start + e},
+                'textStyle': {'bold': True}, 'fields': 'bold'}})
+        for s, e in rich.get('bullet_ranges') or []:
+            reqs.append({'createParagraphBullets': {
+                'range': {'startIndex': start + s, 'endIndex': start + e},
+                'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'}})
+        return reqs
+
+    def doc_body_requests(self, text_json, index=1, newline=True,
+                          text_only=False, table_style=None):
+        """Build the batchUpdate requests for a report body.
+
+        The pure half of :meth:`add_text` (kept separate so tests can
+        assert request shapes without a network). Items may carry, on
+        top of ``message``/``format``/``data``: ``page_break`` (start a
+        new page before the item), ``rich`` (a ``narrative_rich``
+        payload — real bold + native bullets), ``alignment``,
+        ``text_color`` and ``italic``. All styling degrades away under
+        ``text_only`` — the salvage retry stays maximally plain.
+
+        :param text_json: the report items.
         :param index: document index to start writing at.
         :param newline: end every item's text with a newline.
-        :param text_only: skip images and tables — the degraded retry
-            used when the full body is rejected, so a client still gets
-            the narrative rather than a blank document.
-        :returns: ``(response, body)``.
+        :param text_only: plain text only — no media, no styling.
+        :param table_style: brand header colors for native tables.
+        :returns: the request list.
         """
-        logging.info('Adding text to doc.')
-        url = self.docs_url + "/" + doc_id + ":batchUpdate"
-        headers = {"Content-Type": "application/json"}
         request = []
         format_request = []
         for item in text_json:
             if item.get('selected') == 'false' or 'message' not in item:
                 continue
-            text = item['message']
+            rich = None if text_only else item.get('rich')
+            if item.get('page_break') and not text_only:
+                request.append({'insertPageBreak': {
+                    'location': {'index': index}}})
+                index += 2
+            text = rich['text'] if rich and rich.get('text') \
+                else item['message']
             if newline:
                 text += '\n'
             request.append({
@@ -1180,13 +1285,42 @@ class GsApi(object):
                 }
             })
             style = item.get('format') or self.text_format
-            end_ind = index + len(text) - 1
+            end_ind = index + self.utf16_len(text) - 1
             format_request.append(self.get_format_req(index, end_ind, style))
-            index += len(text)
             if not text_only:
-                media_req, index = self.add_media_requests(item, index)
+                format_request += self._item_text_style_reqs(
+                    item, index, end_ind)
+                if rich:
+                    format_request += self._rich_text_reqs(rich, index)
+            index += self.utf16_len(text)
+            if not text_only:
+                media_req, index = self.add_media_requests(
+                    item, index, table_style=table_style)
                 request += media_req
-        request += format_request
+        return request + format_request
+
+    def add_text(self, doc_id, text_json=None, index=1, newline=True,
+                 text_only=False, table_style=None):
+        """Write a report body into a Google Doc in one batchUpdate.
+
+        :param doc_id: the target document.
+        :param text_json: the report items (headings, text, tables,
+            chart images), plus the optional styling keys
+            :meth:`doc_body_requests` reads.
+        :param index: document index to start writing at.
+        :param newline: end every item's text with a newline.
+        :param text_only: skip images, tables and styling — the degraded
+            retry used when the full body is rejected, so a client still
+            gets the narrative rather than a blank document.
+        :param table_style: brand header colors for native tables.
+        :returns: ``(response, body)``.
+        """
+        logging.info('Adding text to doc.')
+        url = self.docs_url + "/" + doc_id + ":batchUpdate"
+        headers = {"Content-Type": "application/json"}
+        request = self.doc_body_requests(
+            text_json, index=index, newline=newline, text_only=text_only,
+            table_style=table_style)
         body = {"requests": request}
         response = self.client.post(url=url, json=body, headers=headers)
         return response, body
