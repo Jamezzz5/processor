@@ -1335,7 +1335,9 @@ class SeleniumWrapper(object):
                 if new_value:
                     try:
                         cur_value = e[0].get_attribute(attribute)
-                    except ex.StaleElementReferenceException:
+                    except ex.WebDriverException:
+                        # Handle caught mid-reload: stale, or a node the
+                        # new document does not own. Re-find next poll.
                         cur_value = ''
                     if new_value not in cur_value:
                         elem_visible = False
