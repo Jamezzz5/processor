@@ -50,6 +50,9 @@ class Game(Base):
     registry_slug = Column(Text)
     opencritic_id = Column(BigInteger)
     igdb_id = Column(BigInteger)
+    cover_image_id = Column(
+        Text, comment='IGDB cover image id; render via images.igdb.com'
+                      '/igdb/image/upload/t_cover_big/{id}.jpg.')
     newzoo_title = Column(
         Text, comment='Raw Newzoo Top-500 title this game matched; a '
                       'match hint, not an identity.')
@@ -261,6 +264,9 @@ class GameRelease(Base):
     platforms = Column(Text,
                        comment='Comma-joined IGDB platform names.')
     url = Column(Text)
+    cover_image_id = Column(
+        Text, comment='IGDB cover image id; render via images.igdb.com'
+                      '/igdb/image/upload/t_cover_big/{id}.jpg.')
     first_seen_at = Column(DateTime,
                            comment='Naive UTC; when the row was created.')
     updated_at = Column(DateTime,
