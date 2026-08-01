@@ -71,16 +71,18 @@ class IasApi(object):
             logging.warning('No username or password.')
             return df
         self.sw = utl.SeleniumWrapper(headless=self.headless)
-        self.sw.use_js_click = True
-        self.browser = self.sw.browser
-        self.sw.go_to_url(self.login_url)
-        self.sign_in()
-        self.change_advertiser()
-        report_name = self.create_report(sd, ed)
-        report_downloaded = self.export_to_csv(report_name)
-        if report_downloaded:
-            df = self.sw.get_file_as_df(self.temp_path)
-        self.browser.quit()
+        try:
+            self.sw.use_js_click = True
+            self.browser = self.sw.browser
+            self.sw.go_to_url(self.login_url)
+            self.sign_in()
+            self.change_advertiser()
+            report_name = self.create_report(sd, ed)
+            report_downloaded = self.export_to_csv(report_name)
+            if report_downloaded:
+                df = self.sw.get_file_as_df(self.temp_path)
+        finally:
+            self.sw.quit()
         return df
 
     def sign_in(self, attempt=0):

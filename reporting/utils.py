@@ -874,8 +874,8 @@ class SeleniumWrapper(object):
                 return True
             except (ex.ElementNotInteractableException,
                     ex.ElementClickInterceptedException,
-                    ex.StaleElementReferenceException) as e:
-                logging.warning('Could not click JS: {}'.format(e))
+                    ex.StaleElementReferenceException) as js_error:
+                logging.warning('Could not click JS: {}'.format(js_error))
         elem_id = ''
         try:
             elem_id = elem.get_attribute('id')
@@ -891,8 +891,8 @@ class SeleniumWrapper(object):
             scroll_script = "window.scrollTo(0, 0)"
         try:
             self.scroll_to_elem(elem, scroll_script)
-        except ex.StaleElementReferenceException as e:
-            logging.warning(e)
+        except ex.StaleElementReferenceException as scroll_error:
+            logging.warning(scroll_error)
         time.sleep(.1)
         return False
 
@@ -922,11 +922,20 @@ class SeleniumWrapper(object):
         return elem_click
 
     def quit(self):
+        """Tear down the browser, swallowing driver errors.
+
+        Callers run this from a ``finally``, so it must never raise. A
+        wedged or already-dead session would otherwise mask the real
+        exception and strand the chrome process this is meant to reap.
+        """
         try:
             self.browser.close()
-        except self.browser_errors as e:
+        except Exception as e:
             logging.warning('Error closing: {}'.format(e))
-        self.browser.quit()
+        try:
+            self.browser.quit()
+        except Exception as e:
+            logging.warning('Error during browser quit: {}'.format(e))
 
     @staticmethod
     def get_file_as_df(temp_path=None):

@@ -139,39 +139,43 @@ class RedApi(object):
         self.username = username
         self.password = password
         self.sw = utl.SeleniumWrapper(headless=self.headless)
-        self.browser = self.sw.browser
-        self.sw.go_to_url(self.base_url)
-        sign_in_result = self.sign_in()
-        if sign_in_result:
-            ham_xpath = '//*[@id="app"]/div/div/div[1]/div/div[1]/button[1]'
-            users_xpath = ('/html/body/div[12]/div/div[2]/div/nav/div/'
-                           'div[2]/div/div[1]/a/div/span')
-            invite_xpath = ('//*[@id="app"]/div/div/div[2]/div[2]/div/'
-                            'div/div[1]/div/button/div')
-            admin_xpath = ('/html/body/div[5]/div/div/div/div/div[2]'
-                           '/div[2]/div/div/div[2]/div')
-            xpaths = [ham_xpath, users_xpath, invite_xpath, admin_xpath]
-            for xpath in xpaths:
-                self.sw.click_on_xpath(xpath)
-            email_xpath = """//*[@id="react-select-9-input"]"""
-            elem = self.browser.find_element_by_xpath(email_xpath)
-            elem.send_keys(new_email)
-            next_xpath = ('/html/body/div[5]/div/div/div/div/'
-                          'span[2]/button[2]/div')
-            account_xpath = ('/html/body/div[5]/div/div/div/div/div[1]/div[1]/'
-                             'div[2]/div[2]/div[1]/div[2]/div/div/label/input')
-            new_admin_xpath = ('/html/body/div[5]/div/div/div/div/div[1]/'
-                               'div[2]/div[2]/div/div/div[3]')
-            confirm_xpath = ('/html/body/div[5]/div/div/div/div/span[2]/'
-                             'button[3]/div')
-            xpaths = [admin_xpath, next_xpath, account_xpath, new_admin_xpath,
-                      confirm_xpath]
-            for xpath in xpaths:
-                self.sw.click_on_xpath(xpath)
-            logging.info('Successfully invited for {}'.format(username))
-        else:
-            logging.warning('Sign in failed for {}'.format(username))
-        self.sw.quit()
+        try:
+            self.browser = self.sw.browser
+            self.sw.go_to_url(self.base_url)
+            sign_in_result = self.sign_in()
+            if sign_in_result:
+                ham_xpath = ('//*[@id="app"]/div/div/div[1]/div/div[1]/'
+                             'button[1]')
+                users_xpath = ('/html/body/div[12]/div/div[2]/div/nav/div/'
+                               'div[2]/div/div[1]/a/div/span')
+                invite_xpath = ('//*[@id="app"]/div/div/div[2]/div[2]/div/'
+                                'div/div[1]/div/button/div')
+                admin_xpath = ('/html/body/div[5]/div/div/div/div/div[2]'
+                               '/div[2]/div/div/div[2]/div')
+                xpaths = [ham_xpath, users_xpath, invite_xpath, admin_xpath]
+                for xpath in xpaths:
+                    self.sw.click_on_xpath(xpath)
+                email_xpath = """//*[@id="react-select-9-input"]"""
+                elem = self.browser.find_element_by_xpath(email_xpath)
+                elem.send_keys(new_email)
+                next_xpath = ('/html/body/div[5]/div/div/div/div/'
+                              'span[2]/button[2]/div')
+                account_xpath = ('/html/body/div[5]/div/div/div/div/div[1]/'
+                                 'div[1]/div[2]/div[2]/div[1]/div[2]/div/div/'
+                                 'label/input')
+                new_admin_xpath = ('/html/body/div[5]/div/div/div/div/div[1]/'
+                                   'div[2]/div[2]/div/div/div[3]')
+                confirm_xpath = ('/html/body/div[5]/div/div/div/div/span[2]/'
+                                 'button[3]/div')
+                xpaths = [admin_xpath, next_xpath, account_xpath,
+                          new_admin_xpath, confirm_xpath]
+                for xpath in xpaths:
+                    self.sw.click_on_xpath(xpath)
+                logging.info('Successfully invited for {}'.format(username))
+            else:
+                logging.warning('Sign in failed for {}'.format(username))
+        finally:
+            self.sw.quit()
 
     def sign_in(self, attempt=0):
         logging.info('Signing in.: Attempt {}'.format(attempt))
@@ -787,21 +791,22 @@ class RedApi(object):
 
     def get_data_selenium(self, sd, ed):
         self.sw = utl.SeleniumWrapper(headless=self.headless)
-        self.browser = self.sw.browser
-        sign_in_result = False
-        for x in range(3):
-            self.sw.go_to_url(self.base_url)
-            sign_in_result = self.sign_in(attempt=x + 1)
-            if sign_in_result:
-                break
-        if not sign_in_result:
+        try:
+            self.browser = self.sw.browser
+            sign_in_result = False
+            for x in range(3):
+                self.sw.go_to_url(self.base_url)
+                sign_in_result = self.sign_in(attempt=x + 1)
+                if sign_in_result:
+                    break
+            if not sign_in_result:
+                return pd.DataFrame()
+            if self.account:
+                self.change_account()
+            self.create_report(sd, ed)
+            df = self.sw.get_file_as_df(self.temp_path)
+        finally:
             self.sw.quit()
-            return pd.DataFrame()
-        if self.account:
-            self.change_account()
-        self.create_report(sd, ed)
-        df = self.sw.get_file_as_df(self.temp_path)
-        self.sw.quit()
         return df
 
     def test_for_account(self, results, acc_col, success_msg, failure_msg):

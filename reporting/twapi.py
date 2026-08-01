@@ -734,46 +734,50 @@ class TwApi(object):
         if not username or not password:
             return self.configfile
         sw = utl.SeleniumWrapper(headless=True)
-        browser = sw.browser
-        tw_url = 'https://x.com/i/flow/login'
-        sw.go_to_url(tw_url)
-        user_xpath = '//label[normalize-space(.)="Phone, email, or username"]'
-        next_button_xpath = '//button[normalize-space(.)="Next"]'
-        password_xpath = '//label[normalize-space(.)="Password"]'
-        login_xpath = '//button[normalize-space(.)="Log in"]'
-        sw.wait_for_elem_load(user_xpath, selector=By.XPATH)
-        sw.click_on_xpath(user_xpath)
-        elem = browser.find_element_by_xpath(user_xpath)
-        elem.send_keys(username)
-        sw.click_on_xpath(next_button_xpath)
-        sw.click_on_xpath(password_xpath)
-        elem = browser.find_element_by_xpath(password_xpath)
-        elem.send_keys(password)
-        sw.click_on_xpath(login_xpath)
-        url = "https://api.twitter.com/oauth/request_token"
-        oauth = OAuth1Session(client_key=self.consumer_key,
-                              client_secret=self.consumer_secret)
-        fetch_response = oauth.fetch_request_token(url)
-        token = fetch_response.get('oauth_token')
-        url = 'https://api.twitter.com/oauth/authorize?oauth_token={}'.format(
-            token)
-        sw.go_to_url(url)
-        sw.xpath_from_id_and_click(elem_id='allow')
-        lqa_url = sw.browser.current_url
-        oauth_verifier = lqa_url.split("oauth_verifier=", 1)[1]
-        access_token_url = (
-            'https://api.twitter.com/oauth/access_token?oauth_consumer_key={}'
-            '&oauth_token={}&oauth_verifier={}'.format(self.consumer_key,
-                                                       token, oauth_verifier))
-        token_request = requests.get(access_token_url)
-        strings = token_request.text.split('&')
-        new_token = strings[0].split('=')[1]
-        new_secret = strings[1].split('=')[1]
-        self.config['ACCESS_TOKEN'] = new_token
-        self.config['ACCESS_TOKEN_SECRET'] = new_secret
-        with open(self.configfile, 'w') as f:
-            json.dump(self.config, f)
-        sw.quit()
+        try:
+            browser = sw.browser
+            tw_url = 'https://x.com/i/flow/login'
+            sw.go_to_url(tw_url)
+            user_xpath = (
+                '//label[normalize-space(.)="Phone, email, or username"]')
+            next_button_xpath = '//button[normalize-space(.)="Next"]'
+            password_xpath = '//label[normalize-space(.)="Password"]'
+            login_xpath = '//button[normalize-space(.)="Log in"]'
+            sw.wait_for_elem_load(user_xpath, selector=By.XPATH)
+            sw.click_on_xpath(user_xpath)
+            elem = browser.find_element_by_xpath(user_xpath)
+            elem.send_keys(username)
+            sw.click_on_xpath(next_button_xpath)
+            sw.click_on_xpath(password_xpath)
+            elem = browser.find_element_by_xpath(password_xpath)
+            elem.send_keys(password)
+            sw.click_on_xpath(login_xpath)
+            url = "https://api.twitter.com/oauth/request_token"
+            oauth = OAuth1Session(client_key=self.consumer_key,
+                                  client_secret=self.consumer_secret)
+            fetch_response = oauth.fetch_request_token(url)
+            token = fetch_response.get('oauth_token')
+            url = ('https://api.twitter.com/oauth/authorize?'
+                   'oauth_token={}'.format(token))
+            sw.go_to_url(url)
+            sw.xpath_from_id_and_click(elem_id='allow')
+            lqa_url = sw.browser.current_url
+            oauth_verifier = lqa_url.split("oauth_verifier=", 1)[1]
+            access_token_url = (
+                'https://api.twitter.com/oauth/access_token?'
+                'oauth_consumer_key={}&oauth_token={}'
+                '&oauth_verifier={}'.format(
+                    self.consumer_key, token, oauth_verifier))
+            token_request = requests.get(access_token_url)
+            strings = token_request.text.split('&')
+            new_token = strings[0].split('=')[1]
+            new_secret = strings[1].split('=')[1]
+            self.config['ACCESS_TOKEN'] = new_token
+            self.config['ACCESS_TOKEN_SECRET'] = new_secret
+            with open(self.configfile, 'w') as f:
+                json.dump(self.config, f)
+        finally:
+            sw.quit()
         return self.configfile
 
     def get_account_timezone(self):

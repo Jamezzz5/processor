@@ -464,16 +464,18 @@ class DvApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         self.sw = utl.SeleniumWrapper()
-        self.browser = self.sw.browser
-        self.base_window = self.browser.window_handles[0]
-        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
-        self.sw.go_to_url(self.base_url)
-        self.sign_in()
-        self.sw.go_to_url(self.report_url)
-        self.reject_cookies()
-        report_created = self.create_report(sd, ed)
-        if not report_created:
-            return pd.DataFrame()
-        df = self.get_file_as_df(self.temp_path)
-        self.browser.quit()
+        try:
+            self.browser = self.sw.browser
+            self.base_window = self.browser.window_handles[0]
+            sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+            self.sw.go_to_url(self.base_url)
+            self.sign_in()
+            self.sw.go_to_url(self.report_url)
+            self.reject_cookies()
+            report_created = self.create_report(sd, ed)
+            if not report_created:
+                return pd.DataFrame()
+            df = self.get_file_as_df(self.temp_path)
+        finally:
+            self.sw.quit()
         return df

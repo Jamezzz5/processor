@@ -1,6 +1,8 @@
 import os
+import sys
 import json
 import yaml
+import types
 import string
 import pytest
 import logging
@@ -91,6 +93,38 @@ def _write_page(tmp_path, name, html):
     page = tmp_path / name
     page.write_text(html, encoding='utf-8')
     return page.as_uri()
+
+
+class _DeadBrowser(object):
+    """Driver whose session is already gone -- every command raises."""
+
+    def close(self):
+        _raise_read_timeout()
+
+    def quit(self):
+        _raise_read_timeout()
+
+
+class _FakeSeleniumWrapper(object):
+    """Browser stand-in that records its own teardown.
+
+    ``instances`` collects every wrapper a scrape builds so a test can
+    prove each one was quit. Reset it before use -- it is class level so
+    the wrapper can be swapped in for ``utl.SeleniumWrapper`` directly.
+    """
+
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.quit_calls = 0
+        self.mobile = False
+        _FakeSeleniumWrapper.instances.append(self)
+
+    def take_elem_screenshot(self, *args, **kwargs):
+        raise ValueError('Screenshot failed.')
+
+    def quit(self):
+        self.quit_calls += 1
 
 
 def func(x):
@@ -240,6 +274,33 @@ class TestUtils:
             assert sw.browser is not first_browser
         finally:
             sw.quit()
+
+    def test_quit_survives_dead_session(self):
+        """Callers quit from a ``finally``, so quit must never raise.
+
+        A driver that stopped answering would otherwise mask the real
+        exception and strand the chrome process it meant to reap.
+        """
+        sw = types.SimpleNamespace(browser=_DeadBrowser())
+        assert utl.SeleniumWrapper.quit(sw) is None
+
+    def test_scrape_quits_browser_on_error(self, monkeypatch):
+        """A scrape that raises mid-run still reaps its browser.
+
+        Cleanup used to be the last statement of the happy path, so any
+        timeout or login failure leaked a whole chrome process tree.
+        """
+        _FakeSeleniumWrapper.instances = []
+        # Patch the utils module fbapi itself holds: it imports
+        # 'reporting.utils' while the tests import
+        # 'processor.reporting.utils', and those are two module objects.
+        monkeypatch.setattr(fbapi.utl, 'SeleniumWrapper',
+                            _FakeSeleniumWrapper)
+        with pytest.raises(ValueError):
+            fbapi.FacebookScreenshots.take_screenshots(
+                {'ad_id': 'https://www.google.com/'})
+        assert len(_FakeSeleniumWrapper.instances) == 1
+        assert _FakeSeleniumWrapper.instances[0].quit_calls == 1
 
     def test_accept_cookies_on_page(self, tmp_path):
         """The consent button is clicked, the decoys are not."""
@@ -2652,3 +2713,29 @@ class TestGamesDb:
         assert gdb.load_db_config(paths=[str(tmp_path / 'no.json')]) == cfg
         monkeypatch.setattr(gdb, '_ssm_config', lambda name: None)
         assert gdb.load_db_config(paths=[str(tmp_path / 'no.json')]) is None
+
+    def test_ssm_failure_is_remembered_but_not_forever(self, monkeypatch):
+        """A failed lookup used to be cached for the life of the
+        process, so a repaired IAM role or a newly written parameter
+        took effect only after every worker and web container had
+        been restarted — with nothing anywhere saying why."""
+        monkeypatch.setattr(gdb, '_ssm_cache', {})
+        monkeypatch.setattr(gdb, '_ssm_errors', {})
+        calls = []
+
+        def deny(*args, **kwargs):
+            calls.append(1)
+            raise PermissionError('AccessDenied')
+
+        fake_boto3 = types.ModuleType('boto3')
+        fake_boto3.client = deny
+        monkeypatch.setitem(sys.modules, 'boto3', fake_boto3)
+        assert gdb._ssm_config('steamdbconfig.json', now=0) is None
+        assert 'AccessDenied' in gdb.ssm_error('steamdbconfig.json')
+        # Inside the window the remembered failure answers.
+        assert gdb._ssm_config('steamdbconfig.json', now=10) is None
+        assert len(calls) == 1
+        # Past it, the fix gets a chance to take.
+        assert gdb._ssm_config(
+            'steamdbconfig.json', now=gdb.SSM_RETRY_SECONDS + 1) is None
+        assert len(calls) == 2

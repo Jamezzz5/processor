@@ -323,24 +323,26 @@ class PmApi(object):
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed, fields)
         self.sw = utl.SeleniumWrapper(headless=self.headless)
-        self.browser = self.sw.browser
-        self.base_window = self.browser.window_handles[0]
-        self.sw.go_to_url(self.base_url)
-        self.sign_in()
-        self.close_pop_up()
-        df = pd.DataFrame()
-        title_list = self.pm_title.split(',')
-        for title in title_list:
-            resp_title = self.create_report(sd, ed, title)
-            export_success = self.export_to_csv()
-            if not export_success:
-                continue
-            if self.brand_tracker:
-                creative_df = pd.DataFrame()
-            else:
-                creative_df = self.create_creatives_df()
-            tdf = self.get_file_as_df(self.temp_path, creative_df, ed)
-            tdf['Title'] = resp_title
-            df = pd.concat([df, tdf], ignore_index=True)
-        self.sw.quit()
+        try:
+            self.browser = self.sw.browser
+            self.base_window = self.browser.window_handles[0]
+            self.sw.go_to_url(self.base_url)
+            self.sign_in()
+            self.close_pop_up()
+            df = pd.DataFrame()
+            title_list = self.pm_title.split(',')
+            for title in title_list:
+                resp_title = self.create_report(sd, ed, title)
+                export_success = self.export_to_csv()
+                if not export_success:
+                    continue
+                if self.brand_tracker:
+                    creative_df = pd.DataFrame()
+                else:
+                    creative_df = self.create_creatives_df()
+                tdf = self.get_file_as_df(self.temp_path, creative_df, ed)
+                tdf['Title'] = resp_title
+                df = pd.concat([df, tdf], ignore_index=True)
+        finally:
+            self.sw.quit()
         return df

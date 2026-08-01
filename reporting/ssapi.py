@@ -37,9 +37,25 @@ class SsApi(object):
         self.s3.input_config(api_file)
 
     def import_config(self):
-        df = pd.read_csv(self.file_name)
-        config = df.to_dict(orient='index')
-        return config
+        """Site list from the config csv, or empty when it is absent.
+
+        The class is constructed for every processor that carries an
+        ss source, before any vendor-key filtering, so raising here
+        would take down the whole import loop on a box that has not
+        been given a site list yet.
+        """
+        if not os.path.isfile(self.file_name):
+            logging.warning(
+                'No site list at {}, skipping screenshots.'.format(
+                    self.file_name))
+            return {}
+        try:
+            df = pd.read_csv(self.file_name)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+            logging.warning('Could not read site list {}: {}'.format(
+                self.file_name, e))
+            return {}
+        return df.to_dict(orient='index')
 
     def set_site(self, index):
         site_dict = self.config[index]
@@ -56,6 +72,8 @@ class SsApi(object):
             self.config[index][self.site] = site
 
     def add_device_to_config(self):
+        if not self.config:
+            return
         total_indices = max(self.config) + 1
         for index in range(total_indices):
             new_index = index + total_indices
@@ -87,28 +105,35 @@ class SsApi(object):
         logging.error('Could not screenshot {}.'.format(site.url))
 
     def get_data(self, sd, ed, fields):
+        if not self.config:
+            logging.warning('No sites to screenshot.')
+            return pd.DataFrame()
         browser = utl.SeleniumWrapper(page_load_strategy='eager')
-        for index in self.config:
-            site = self.get_site(index)
-            if site.device == self.device_mobile and not browser.mobile:
-                browser.quit()
-                browser = utl.SeleniumWrapper(
-                    mobile=True, page_load_strategy='eager')
-            self.screenshot_site(browser, site)
-            self.config[index][self.file_name] = site.file_name
-        browser.quit()
+        try:
+            for index in self.config:
+                site = self.get_site(index)
+                if site.device == self.device_mobile and not browser.mobile:
+                    browser.quit()
+                    browser = utl.SeleniumWrapper(
+                        mobile=True, page_load_strategy='eager')
+                self.screenshot_site(browser, site)
+                self.config[index][self.file_name] = site.file_name
+        finally:
+            browser.quit()
         self.write_config_to_df()
         df = self.upload_screenshots()
         return df
 
     def take_screenshots_get_ads(self):
         browser = utl.SeleniumWrapper()
-        for index in self.config:
-            site = self.get_site(index)
-            browser.take_screenshot(site.url, site.file_name)
-            ads = browser.get_all_iframe_ads()
-            self.config[index][self.ads] = ads
-        browser.quit()
+        try:
+            for index in self.config:
+                site = self.get_site(index)
+                browser.take_screenshot(site.url, site.file_name)
+                ads = browser.get_all_iframe_ads()
+                self.config[index][self.ads] = ads
+        finally:
+            browser.quit()
         self.write_config_to_df()
 
     def upload_screenshots(self):

@@ -690,10 +690,13 @@ class FacebookScreenshots(object):
     def take_screenshots(urls):
         xpath = "//*[@id='fb-ad-preview']"
         sw = utl.SeleniumWrapper()
-        for ad, url in urls.items():
-            filename = utl.preview_path + str(ad) + ".png"
-            sw.take_elem_screenshot(url, xpath, filename)
-            urls[ad] = filename
+        try:
+            for ad, url in urls.items():
+                filename = utl.preview_path + str(ad) + ".png"
+                sw.take_elem_screenshot(url, xpath, filename)
+                urls[ad] = filename
+        finally:
+            sw.quit()
         return urls
 
     def get_ad_name_dict(self):

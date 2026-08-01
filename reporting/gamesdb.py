@@ -14,6 +14,7 @@ day/month replaces that slice instead of duplicating it.
 """
 import os
 import json
+import time
 import logging
 import datetime as dt
 import urllib.parse
@@ -26,27 +27,57 @@ import reporting.gamesmodels as gmdl
 GAME_IDENTITY_COLS = ('registry_slug', 'steam_appid')
 # SecureString parameters named after the config file they replace.
 SSM_PREFIX = '/processor/config/'
+# How long a failed lookup is remembered before it is retried. A
+# success is cached for the life of the process; a FAILURE used to be
+# too, which meant a repaired IAM role or a newly written parameter
+# took effect only after every worker and container had been
+# restarted — and no page could say that was why.
+SSM_RETRY_SECONDS = 300
+# Seconds to wait for the connection itself. Without it a host behind
+# a closed security group drops the packets and the caller blocks for
+# the OS TCP timeout — minutes, inside the web request that renders
+# /games. Generous for a same-VPC connect, and a host that has not
+# answered in five seconds will not answer in fifty.
+CONNECT_TIMEOUT = 5
 _ssm_cache = {}
+# name -> (when it failed, why) — kept so callers can report the
+# reason instead of an unexplained "not configured".
+_ssm_errors = {}
 
 
-def _ssm_config(name):
+def _ssm_config(name, now=None):
     """Config dict from the ``SSM_PREFIX + name`` parameter, or None
-    (no boto3 creds / parameter absent). Cached per process either way
-    — a box without AWS access pays the lookup once, not per run."""
+    (no boto3 creds / parameter absent). A success is cached per
+    process; a failure is cached for :data:`SSM_RETRY_SECONDS` along
+    with its reason, so a box without AWS access still pays the
+    lookup once per window rather than once per run."""
     if name in _ssm_cache:
         return _ssm_cache[name]
-    value = None
+    now = time.monotonic() if now is None else now
+    failed_at = (_ssm_errors.get(name) or (None, None))[0]
+    if failed_at is not None and now - failed_at < SSM_RETRY_SECONDS:
+        return None
     try:
         import boto3
         response = boto3.client('ssm').get_parameter(
             Name=SSM_PREFIX + name, WithDecryption=True)
         value = json.loads(response['Parameter']['Value'])
-        logging.info('Loaded %s from SSM.', SSM_PREFIX + name)
     except Exception as e:
         logging.info('SSM config %s%s unavailable: %s',
                      SSM_PREFIX, name, e)
+        _ssm_errors[name] = (now, '{}: {}'.format(type(e).__name__, e))
+        return None
+    logging.info('Loaded %s from SSM.', SSM_PREFIX + name)
     _ssm_cache[name] = value
+    _ssm_errors.pop(name, None)
     return value
+
+
+def ssm_error(name='steamdbconfig.json'):
+    """Why this process's last SSM lookup for ``name`` failed, or None
+    — an AccessDenied and an absent parameter send an operator to
+    different consoles."""
+    return (_ssm_errors.get(name) or (None, None))[1]
 
 
 def load_db_config(config='steamdbconfig.json', paths=None):
@@ -86,7 +117,9 @@ class GamesDB(exp.DB):
     def get_session(self):
         if self.engine is None:
             self.engine = sqa.create_engine(
-                self.conn_string, connect_args={'sslmode': 'prefer'})
+                self.conn_string, pool_pre_ping=True,
+                connect_args={'sslmode': 'prefer',
+                              'connect_timeout': CONNECT_TIMEOUT})
         if self.session_maker is None:
             self.session_maker = sessionmaker(bind=self.engine)
         return self.session_maker()
