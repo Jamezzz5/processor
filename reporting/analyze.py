@@ -4074,7 +4074,7 @@ class AliChat(object):
                          stream=False, timeout=120, temperature=0.4,
                          source_context=None, tools=None,
                          tool_choice='auto', extra_messages=None,
-                         chat_template_kwargs=None):
+                         chat_template_kwargs=None, read_timeout=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -4084,13 +4084,23 @@ class AliChat(object):
         :param instructions: General instructions to include with prompt
         :param previous_messages: List of previous messages
         :param stream: Boolean to stream response or return all at once
-        :param timeout: Timeout to wait for response when not streaming
+        :param timeout: Timeout to wait for response when not streaming.
+            Governs the WHOLE call: the non-streaming branch has one
+            response to wait for, so this is a ceiling on total
+            completion, not on time to first token.
         :param temperature: Temperature passed to the model
         :param source_context: Context based on the codebase
         :param chat_template_kwargs: Optional dict passed straight to the
             server's chat template, e.g. ``{'enable_thinking': False}`` to
             suppress a reasoning model's thinking block. Omitted from the
             body when falsy, so the model's own default stands.
+        :param read_timeout: Socket read timeout for the streaming
+            branch, in seconds. A different knob from ``timeout``: a
+            stream resets its read clock on every chunk, so this bounds
+            time to FIRST token (and any later inter-chunk gap) rather
+            than the whole call. ``None`` keeps
+            ``llm_request_generator``'s own default, so existing callers
+            are unaffected. Ignored when ``stream`` is False.
         :return: response from the llm as string
         """
         if not instructions:
@@ -4138,7 +4148,10 @@ class AliChat(object):
         if chat_template_kwargs:
             body['chat_template_kwargs'] = chat_template_kwargs
         if stream:
-            return self.llm_request_generator(body)
+            if read_timeout is None:
+                return self.llm_request_generator(body)
+            return self.llm_request_generator(
+                body, read_timeout=read_timeout)
         else:
             t0 = time.time()
             r = requests.post(self.llm_url, json=body, timeout=timeout)
