@@ -16,6 +16,7 @@ class NzApi(object):
     engagement_url = '/engagement'
     games_url = '/games/data'
     viewership_url = '/viewership'
+    fatal_errors = ('deprecated_endpoint',)
 
     def __init__(self):
         self.config = None
@@ -79,7 +80,14 @@ class NzApi(object):
         translation_dict = {}
         data = response.json()
         if 'message' in data:
-            logging.error('Unexpected Error {}'.format(data))
+            if data.get('error') in NzApi.fatal_errors:
+                logging.error(
+                    'Newzoo endpoint RETIRED - this lane cannot return '
+                    'data until it is migrated, and every run until then '
+                    'will report success while writing nothing: '
+                    '{}'.format(data))
+            else:
+                logging.error('Unexpected Error {}'.format(data))
             return df
         if name == 'viewership':
             data = response.json()['data']

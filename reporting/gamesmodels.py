@@ -69,6 +69,7 @@ class GameEvent(Base):
     __tablename__ = 'game_event'
     __table_args__ = (
         UniqueConstraint('gameid', 'eventdate', name='uq_game_event_obs'),
+        Index('ix_game_event_eventdate', 'eventdate'),
         {'schema': 'games',
          'comment': 'Steam time-series fact; one observation per game '
                     'per steapi run. Sample measures come from a random '
@@ -135,6 +136,7 @@ class CommunitySnapshot(Base):
     __table_args__ = (
         UniqueConstraint('gameid', 'snapshot_date',
                          name='uq_community_snapshot_day'),
+        Index('ix_community_snapshot_date', 'snapshot_date'),
         {'schema': 'games'},
     )
 
