@@ -3721,6 +3721,16 @@ class AliChat(object):
             other_db_model=other_db_model, unigrams_and_bigrams=True)
         return tokens
 
+    @staticmethod
+    def scoped_index_query(db_model):
+        """The query the word index and transformer corpus draw rows
+        from. Models expose ``ali_index_query`` to keep bulk corpora
+        (e.g. Notes' ingested data lake) out of the object-name lane;
+        every other model indexes its full table as before."""
+        if hasattr(db_model, 'ali_index_query'):
+            return db_model.ali_index_query()
+        return db_model.query
+
     def index_db_model_by_word(self, db_model, model_is_list=False,
                                split_underscore=False):
         cache_key = None
@@ -3728,7 +3738,7 @@ class AliChat(object):
         if not model_is_list and hasattr(db_model, '__name__'):
             cache_key = (db_model.__name__, split_underscore)
             try:
-                row_count = db_model.query.count()
+                row_count = self.scoped_index_query(db_model).count()
             except Exception:
                 cache_key = None
             cached = (AliChat._WORD_INDEX_CACHE.get(cache_key)
@@ -3739,7 +3749,7 @@ class AliChat(object):
         word_idx = {}
         db_all = db_model
         if not model_is_list:
-            db_all = db_all.query.all()
+            db_all = self.scoped_index_query(db_model).all()
         for idx, obj in enumerate(db_all):
             if model_is_list:
                 obj = FakeDbModel(name=obj, object_id=idx)
