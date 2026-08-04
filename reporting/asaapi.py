@@ -1,9 +1,11 @@
 import os
+import re
 import sys
 import jwt
 import time
 import json
 import logging
+import textwrap
 import requests
 import pandas as pd
 import datetime as dt
@@ -84,18 +86,46 @@ class AsaApi(object):
         self.config = config
         self.set_config_values(config)
 
+    @staticmethod
+    def normalize_private_key(key):
+        """Repair a PEM key that lost its newlines in JSON transit.
+
+        A key pasted into a JSON config or the credential vault
+        arrives with literal ``\\n`` sequences, spaces where line
+        breaks were, or one unbroken line; any of those makes
+        ``jwt.encode`` reject it as malformed.  A key with real
+        newlines passes through unchanged.
+
+        :param key: the raw private key string, or None.
+        :return: the key as parseable PEM.
+        """
+        if not key:
+            return key
+        key = key.replace('\\n', '\n').strip()
+        if '\n' not in key:
+            match = re.match(
+                r'^(-----BEGIN [A-Z ]+-----)\s*(.*?)'
+                r'\s*(-----END [A-Z ]+-----)$', key)
+            if match:
+                header, body, footer = match.groups()
+                body = re.sub(r'\s+', '', body)
+                key = '\n'.join(
+                    [header] + textwrap.wrap(body, 64) + [footer])
+        return key + '\n'
+
     def set_config_values(self, config):
         self.client_id = config.get(self.client_id_str)
         self.team_id = config.get(self.team_id_str)
         self.key_id = config.get(self.key_id_str)
         self.org_id = config.get(self.org_id_str)
-        self.private_key = config.get(self.private_key_str)
+        self.private_key = self.normalize_private_key(
+            config.get(self.private_key_str))
         private_key_file = config.get(self.private_key_file_str)
         if not self.private_key and private_key_file:
             key_file = os.path.join(self.config_path, private_key_file)
             try:
                 with open(key_file, 'r') as f:
-                    self.private_key = f.read()
+                    self.private_key = self.normalize_private_key(f.read())
             except IOError:
                 logging.error('{} not found.  Aborting.'.format(key_file))
                 sys.exit(0)
