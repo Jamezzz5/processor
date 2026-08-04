@@ -2636,6 +2636,26 @@ class TestGamesDb:
         assert row.movement == 'Rising'
         assert row.genre == 'Shooter'
 
+    def test_new_games_facts_use_full_natural_keys(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        spend = {'spend_date': dt.date(2025, 9, 10),
+                 'brand': 'Borderlands 4', 'channel': 'ALL',
+                 'country': 'US', 'buy_type': 'Direct'}
+        for channel in ('ALL', 'YouTube'):
+            gdb.upsert_fact(s, gmdl.AdSpend,
+                            dict(spend, channel=channel), {'spend': 1})
+        for month in (5, 6):
+            gdb.upsert_fact(
+                s, gmdl.ReviewRollup,
+                {'gameid': game.gameid,
+                 'month_start': dt.date(2026, month, 1)},
+                {'positive': 0, 'negative': 0})
+        s.commit()
+        assert s.query(gmdl.AdSpend).count() == 2
+        assert s.query(gmdl.ReviewRollup).count() == 2
+
     def test_game_release_upsert_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite', igdb_id=1105,

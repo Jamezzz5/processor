@@ -93,6 +93,37 @@ class GameEvent(Base):
     price = Column(Numeric)
 
 
+class ReviewRollup(Base):
+    """Steam monthly positive/negative review volumes."""
+    __tablename__ = 'review_rollup'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'month_start',
+                         name='uq_review_rollup_month'),
+        Index('ix_review_rollup_month', 'month_start'),
+        {'schema': 'games',
+         'comment': 'Steam monthly review rollup; positive/negative '
+                    'review counts per game per month from the store '
+                    'appreviewhistogram endpoint.'},
+    )
+
+    reviewrollupid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    month_start = Column(Date, nullable=False,
+                         comment='UTC month start of the rollup.')
+    positive = Column(Numeric,
+                      comment='Reviews recommending the title that '
+                              'month (recommendations_up).')
+    negative = Column(Numeric,
+                      comment='Reviews not recommending the title that '
+                              'month (recommendations_down).')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last sweep that refreshed '
+                                'this row - the lane recency column, '
+                                'since month_start ages by '
+                                'construction.')
+
+
 class NewzooEngagement(Base):
     """Newzoo Top-500 fact — one row per title per (family, market,
     month) drop; raw title columns survive unmatched joins."""
@@ -379,3 +410,47 @@ class GwiAffinity(Base):
         Numeric, comment="Cohort population from the crosstab's Totals "
                          'row — the audience-size denominator.')
     waves = Column(Text)
+
+
+class AdSpend(Base):
+    """Pathmatics daily brand spend by export cut."""
+    __tablename__ = 'ad_spend'
+    __table_args__ = (
+        UniqueConstraint('spend_date', 'brand', 'channel', 'country',
+                         'buy_type', name='uq_ad_spend_cell'),
+        Index('ix_ad_spend_date', 'spend_date'),
+        Index('ix_ad_spend_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Pathmatics daily ad spend; one row per brand per '
+                    'day per export cut (channel/country/buy type). '
+                    'ALL marks a dimension the export was not cut by '
+                    '- never sum ALL rows with cut rows.'},
+    )
+
+    adspendid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = brand not yet matched to the game '
+                            'dim; the raw brand columns are retained.')
+    spend_date = Column(Date, nullable=False,
+                        comment='Spend day as exported.')
+    brand = Column(Text, nullable=False,
+                   comment='Pathmatics Brand (Leaf) - the title-level '
+                           'brand.')
+    advertiser = Column(Text)
+    brand_root = Column(Text,
+                        comment='Pathmatics Brand Root (publisher '
+                                'label / franchise).')
+    channel = Column(Text, nullable=False, server_default='ALL',
+                     comment='Export channel cut (Facebook, YouTube, '
+                             '...); ALL = not cut by channel.')
+    country = Column(Text, nullable=False, server_default='ALL',
+                     comment='Export country cut (US, ...); ALL = not '
+                             'cut by country.')
+    buy_type = Column(Text, nullable=False, server_default='ALL',
+                      comment='Direct | Indirect | House Ads; ALL when '
+                              'the export lacked the column.')
+    spend = Column(Numeric, comment='USD.')
+    impressions = Column(Numeric)
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last export sweep that '
+                                'refreshed this row.')
