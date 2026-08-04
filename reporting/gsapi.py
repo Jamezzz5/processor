@@ -227,6 +227,14 @@ class GsApi(object):
         url = f'{self.sheets_url}/{spreadsheet_id}:batchUpdate'
         return self.client.post(url=url, json={'requests': requests})
 
+    def clear_values(self, spreadsheet_id, range_='A:ZZ'):
+        """Clear an A1 range's values (formatting stays). Returns the
+        response; a rejection is logged via `request_applied`."""
+        url = f'{self.sheets_url}/{spreadsheet_id}/values/{range_}:clear'
+        response = self.client.post(url=url, json={})
+        self.request_applied(response, f'{spreadsheet_id} clear {range_}')
+        return response
+
     @staticmethod
     def spreadsheet_url(spreadsheet_id):
         return 'https://docs.google.com/spreadsheets/d/{}/edit'.format(
@@ -259,10 +267,10 @@ class GsApi(object):
         return response
 
     def add_permissions(self, presentation_id,
-                        domain="liquidadvertising.com"):
+                        domain="liquidadvertising.com", role="writer"):
         """Share a Drive file with an entire Workspace domain."""
         return self._create_permission(presentation_id, {
-            "role": "writer",
+            "role": role,
             "type": "domain",
             "domain": domain,
             "allowFileDiscovery": True,
