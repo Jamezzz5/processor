@@ -171,6 +171,11 @@ class CommunitySnapshot(Base):
         Numeric, comment='Subreddit active_user_count at snapshot time '
                          '(about.json) — concurrent-scale, unlike the '
                          'cumulative reddit_members.')
+    steam_total_reviews = Column(
+        Numeric, comment='Lifetime Steam review count (appreviews '
+                         'summary) — the review-stats lane\'s own '
+                         'liveness column; steam_positive_pct is '
+                         'shared with the curated registry sheet.')
 
 
 class CommunityLink(Base):
@@ -301,6 +306,13 @@ class TitleScore(Base):
                    comment='Raw tracked title (Newzoo productname).')
     primary_period = Column(Text, comment='Scored month, YYYY-MM.')
     comparison_period = Column(Text, comment='Comparison month, YYYY-MM.')
+    genre = Column(Text, comment='Genre of the tracked title, '
+                                 'denormalised at snapshot time: '
+                                 'latest Newzoo drop (best rank wins) '
+                                 'else the game dim. NULL = no genre '
+                                 'known. Pre-column history is '
+                                 'backfilled fill-only from the '
+                                 'then-current taxonomy.')
     influence = Column(Numeric)
     engagement = Column(Numeric)
     momentum = Column(Numeric)

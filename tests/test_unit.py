@@ -34,6 +34,7 @@ import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
 import processor.reporting.afapi as afapi
 import processor.reporting.twapi as twapi
+import processor.reporting.nzapi as nzapi
 import processor.reporting.scapi as scapi
 import processor.reporting.awss3 as awss3
 import processor.reporting.iasapi as iasapi
@@ -2615,7 +2616,7 @@ class TestGamesDb:
                   'headline_metric': 'Player Share', 'current': 0.5,
                   'prior': 0.4, 'share': 0.62, 'share_delta': 0.02,
                   'movement': 'Rising', 'primary_period': '2026-07',
-                  'comparison_period': '2026-06'}
+                  'comparison_period': '2026-06', 'genre': 'Shooter'}
         assert gdb.upsert_fact(s, gmdl.TitleScore, key, fields) == 1
         # Unmatched titles land too, with a NULL gameid.
         assert gdb.upsert_fact(
@@ -2633,6 +2634,7 @@ class TestGamesDb:
         assert float(row.share) == 0.64
         assert row.gameid == game.gameid
         assert row.movement == 'Rising'
+        assert row.genre == 'Shooter'
 
     def test_game_release_upsert_idempotent(self):
         s = self._session()
@@ -2739,3 +2741,52 @@ class TestGamesDb:
         assert gdb._ssm_config(
             'steamdbconfig.json', now=gdb.SSM_RETRY_SECONDS + 1) is None
         assert len(calls) == 2
+
+
+class TestNzApi:
+    """Bulk-exports client logic that needs no network or parquet
+    (the REST engagement endpoint was retired with a 410)."""
+
+    @staticmethod
+    def _api(titles='Fortnite', country_filter=None):
+        api = nzapi.NzApi()
+        api.game_title = titles
+        api.api_key = 'k'
+        api.country_filter = country_filter
+        return api
+
+    def test_month_span_and_slugify(self):
+        months = nzapi.NzApi.month_span(dt.datetime(2026, 5, 15),
+                                        dt.datetime(2026, 7, 2))
+        assert months == {'2026-05', '2026-06', '2026-07'}
+        assert nzapi.NzApi.slugify("Tom Clancy's Rainbow Six") == \
+            'tom-clancy-s-rainbow-six'
+
+    def test_select_files_window(self):
+        api = self._api()
+        names = ['mau_2026-06.parquet', 'mau_2026_07.parquet',
+                 'mau_2026-01.parquet']
+        assert api.select_files(names, {'2026-06', '2026-07'}) == \
+            names[:2]
+        opaque = ['shard-a.parquet', 'part-2093.parquet']
+        assert api.select_files(opaque, {'2026-06'}) == opaque
+
+    def test_market_codes_accepts_names_and_codes(self):
+        api = self._api(country_filter='United States, jp, Atlantis')
+        assert api.market_codes() == ['US', 'JP']
+        assert self._api().market_codes() == []
+
+    def test_shape_df_titles_aliases_and_markets(self):
+        api = self._api(titles='Fortnite,Roblox')
+        df = pd.DataFrame({
+            'title': ['Fortnite', 'Minecraft', 'Roblox'],
+            'date': [dt.date(2026, 6, 1)] * 3,
+            'country_code': ['ZZ', 'ZZ', 'US'],
+            'mau': [1, 2, 3],
+            'source': [['b', 'a'], None, ['c']]})
+        out = api.shape_df(df)
+        assert list(out['title']) == ['Fortnite', 'Roblox']
+        assert list(out['game']) == list(out['game_title']) == \
+            list(out['title'])
+        assert list(out['market']) == ['Worldwide', 'United States']
+        assert list(out['source']) == [('a', 'b'), ('c',)]
