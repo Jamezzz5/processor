@@ -1,6 +1,6 @@
 numpy==2.2.2
 pandas==2.2.3
-pyarrow==23.0.1
+pyarrow==20.0.0
 facebook_business==24.0.1
 psycopg2-binary==2.9.10
 pyyaml==6.0.2
@@ -20,4 +20,4 @@ filelock==3.20.3
 pytest==9.0.3
 openai==0.8.0
 openpyxl==3.1.2
-nltk==3.9.4
+nltk==3.10.0
