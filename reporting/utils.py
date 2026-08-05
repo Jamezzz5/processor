@@ -636,6 +636,27 @@ class SeleniumWrapper(object):
         self.use_js_click = False
         self.default_elem_sleep = 2
 
+    def __enter__(self):
+        """Support ``with SeleniumWrapper() as sw`` — teardown by
+        construction instead of by every caller remembering a
+        ``finally``.
+
+        :return: the wrapper itself
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        """Quit the browser on scope exit, never swallowing the
+        body's exception.
+
+        :param exc_type: exception class raised in the body, if any
+        :param exc_value: the exception instance
+        :param exc_tb: its traceback
+        :return: False, so any exception propagates
+        """
+        self.quit()
+        return False
+
     @staticmethod
     def get_chrome_version():
         """
@@ -756,13 +777,37 @@ class SeleniumWrapper(object):
             driver_version = self.get_chromedriver_version(chrome_version)
             self.download_chromedriver(driver_version)
             browser = self.create_browser(co)
+        try:
+            self.configure_browser(browser, headless, download_path)
+        except Exception:
+            try:
+                browser.quit()
+            except Exception as quit_error:
+                logging.warning(
+                    'Error quitting mid-init: {}'.format(quit_error))
+            raise
+        return browser, co
+
+    def configure_browser(self, browser, headless, download_path):
+        """Post-spawn setup: stealth shims, window size, timeouts and
+        the headless download directory.
+
+        Runs under :func:`init_browser`'s guard: every statement here
+        talks to a chrome that already exists, so a raise would
+        otherwise strand that process where nothing can quit it.
+
+        :param browser: the freshly created driver
+        :param headless: whether the browser was launched headless
+        :param download_path: directory downloads land in
+        :return: None
+        """
         browser.execute_script("""
-            Object.defineProperty(navigator, 'webdriver', 
+            Object.defineProperty(navigator, 'webdriver',
             { get: () => undefined });
             window.navigator.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins', 
+            Object.defineProperty(navigator, 'plugins',
             { get: () => [1, 2, 3, 4, 5] });
-            Object.defineProperty(navigator, 'languages', 
+            Object.defineProperty(navigator, 'languages',
             { get: () => ['en-US', 'en'] });
         """)
         if headless:
@@ -774,7 +819,6 @@ class SeleniumWrapper(object):
         browser.set_script_timeout(10)
         browser.set_page_load_timeout(10)
         self.enable_download_in_headless_chrome(browser, download_path)
-        return browser, co
 
 
     @staticmethod

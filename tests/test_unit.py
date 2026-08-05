@@ -128,6 +128,24 @@ class _FakeSeleniumWrapper(object):
         self.quit_calls += 1
 
 
+class _HalfBuiltBrowser(object):
+    """Driver whose post-spawn configure fails, recording teardown.
+
+    Stands in for the window between chrome existing and the handle
+    being returned -- a raise there used to strand the process where
+    no caller's ``finally`` could reach it.
+    """
+
+    def __init__(self):
+        self.quit_calls = 0
+
+    def execute_script(self, *args, **kwargs):
+        raise ValueError('Configure failed.')
+
+    def quit(self):
+        self.quit_calls += 1
+
+
 def func(x):
     return x + 1
 
@@ -302,6 +320,37 @@ class TestUtils:
                 {'ad_id': 'https://www.google.com/'})
         assert len(_FakeSeleniumWrapper.instances) == 1
         assert _FakeSeleniumWrapper.instances[0].quit_calls == 1
+
+    def test_init_browser_quits_on_configure_failure(self, monkeypatch):
+        """A browser that fails mid-configure is quit before the raise.
+
+        ``init_browser`` spawns chrome and then runs several fallible
+        statements before returning the handle; a raise in that window
+        used to orphan the process beyond any caller's ``finally``.
+        """
+        fake = _HalfBuiltBrowser()
+        monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser',
+                            lambda self, co: fake)
+        with pytest.raises(ValueError):
+            utl.SeleniumWrapper()
+        assert fake.quit_calls == 1
+
+    def test_wrapper_is_a_context_manager(self, monkeypatch):
+        """``with`` tears the browser down, raise or return alike."""
+        quits = []
+        monkeypatch.setattr(
+            utl.SeleniumWrapper, 'init_browser',
+            lambda self, headless: (types.SimpleNamespace(
+                window_handles=['w0']), None))
+        monkeypatch.setattr(utl.SeleniumWrapper, 'quit',
+                            lambda self: quits.append(1))
+        with utl.SeleniumWrapper():
+            pass
+        assert len(quits) == 1
+        with pytest.raises(ValueError):
+            with utl.SeleniumWrapper():
+                raise ValueError('scrape failed')
+        assert len(quits) == 2
 
     def test_accept_cookies_on_page(self, tmp_path):
         """The consent button is clicked, the decoys are not."""
