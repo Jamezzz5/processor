@@ -204,7 +204,7 @@ class CommunitySnapshot(Base):
                          'cumulative reddit_members.')
     steam_total_reviews = Column(
         Numeric, comment='Lifetime Steam review count (appreviews '
-                         'summary) — the review-stats lane\'s own '
+                         'summary) - the review-stats lane\'s own '
                          'liveness column; steam_positive_pct is '
                          'shared with the curated registry sheet.')
 
@@ -311,6 +311,67 @@ class GameRelease(Base):
                         comment='Naive UTC; last sweep that saw it.')
 
 
+class TitleRank(Base):
+    """One source's global ranking of a title on one day — the fact the
+    automated title universe is built from.
+
+    Every ranking source lands here in its own units (``value`` /
+    ``value_label``) beside the ordinal ``rank`` that makes sources
+    comparable. Rows keep the raw source title next to a nullable
+    ``gameid`` so a title can be ranked *before* it exists in the dim —
+    which is the point: promotion reads this table to decide what to
+    create.
+    """
+    __tablename__ = 'title_rank'
+    __table_args__ = (
+        UniqueConstraint('source', 'rank_date', 'title',
+                         name='uq_title_rank_obs'),
+        Index('ix_title_rank_date', 'rank_date'),
+        Index('ix_title_rank_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Per-source daily global title ranking — the input '
+                    'the automated title universe is promoted from. '
+                    'rank is ordinal within (source, rank_date); value '
+                    'is that source\'s own magnitude and value_label '
+                    'names its unit.'},
+    )
+
+    titlerankid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = title not yet promoted into the game '
+                            'dim; the raw title is retained.')
+    source = Column(
+        Text, nullable=False,
+        comment="Ranking source. The IGDB popularity types "
+                "('igdb:visits', 'igdb:want-to-play', 'igdb:playing', "
+                "'igdb:played') are derived from /v4/popularity_types at "
+                "runtime, so a type IGDB adds later arrives without a "
+                "code change. Also 'league' (our own derived title "
+                "league), 'igdb-release', 'brandtracker', 'registry' and "
+                "'newzoo'.")
+    rank_date = Column(Date, nullable=False,
+                       comment='UTC date the reading was taken.')
+    title = Column(Text, nullable=False,
+                   comment='Raw title as this source spells it.')
+    slug = Column(Text)
+    rank = Column(Numeric, nullable=False,
+                  comment='1-based ordinal within (source, rank_date).')
+    value = Column(Numeric,
+                   comment="The source's own magnitude behind the rank "
+                           '(IGDB popularity value, league score, MAU). '
+                           'NULL when the source publishes an order '
+                           'only.')
+    value_label = Column(Text,
+                         comment="Unit of value — 'igdb_popularity', "
+                                 "'league_score', 'mau'.")
+    igdb_id = Column(BigInteger,
+                     comment='Identity the promoter prefers over a name '
+                             'match, when the source carries one.')
+    steam_appid = Column(BigInteger)
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last run that saw this row.')
+
+
 class TitleScore(Base):
     """Daily competitive-score snapshot — one row per tracked title per
     day, persisting the brandtracker weighted z-scores and the
@@ -355,6 +416,13 @@ class TitleScore(Base):
     share = Column(Numeric, comment='Share of voice across tracked set.')
     share_delta = Column(Numeric)
     movement = Column(Text, comment='Label Surging..Falling.')
+    set_size = Column(
+        Integer, comment='How many titles that day\'s z-scores were '
+                         'taken against. The composite is a position '
+                         'within that field, not an absolute rating, so '
+                         'rows carrying different set_size values are '
+                         'not directly comparable — the field widened '
+                         'when the automated title universe landed.')
 
 
 class GwiAffinity(Base):
