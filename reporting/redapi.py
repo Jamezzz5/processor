@@ -30,6 +30,7 @@ class RedApi(object):
         'videoWatches3Secs', 'videoWatches10Secs']
     username_str = 'username'
     password_str = 'password'
+    campaign_filter_str = 'campaign_filter'
     code_str = 'code'
     client_id_str = 'client_id'
     client_secret_str = 'client_secret'
@@ -61,6 +62,8 @@ class RedApi(object):
         'ad_group': 'Ad Group Name',
         'campaign': 'Campaign Name'
     }
+    campaign_col = cols['campaign']
+    password_symbols = set('!@#$%^&*()={}[]<>?~`"\\;,')
 
     def __init__(self, headless=True):
         self.headless = headless
@@ -69,6 +72,7 @@ class RedApi(object):
         self.config_file = None
         self.username = None
         self.password = None
+        self.campaign_filter = None
         self.account = None
         self.config_list = None
         self.config = None
@@ -103,6 +107,7 @@ class RedApi(object):
         self.code = self.config.get(self.code_str)
         self.access_token = self.config.get(self.access_token_str)
         self.refresh_token = self.config.get(self.refresh_token_str)
+        self.resolve_campaign_filter()
         self.config_list = [ self.username, self.password]
 
     def load_config_dict(self, config):
@@ -117,7 +122,93 @@ class RedApi(object):
         self.redirect_uri = config.get(self.redirect_uri_str)
         self.access_token = config.get(self.access_token_str)
         self.refresh_token = config.get(self.refresh_token_str)
+        self.resolve_campaign_filter()
         self.config_list = [self.username, self.password]
+
+    @staticmethod
+    def looks_like_password(value):
+        """
+        Decides whether a Filter value is a credential and not a campaign.
+
+        The Reddit row of import_config.csv maps the processor's generic
+        Filter box onto this api's password, so the same value has
+        historically held an account password.  Anything that looks like
+        one is left as the password and never used to filter data.
+
+        :param value: The raw Filter value from the config
+        :return: True when the value looks like a password
+        """
+        if not value:
+            return False
+        value = str(value).strip()
+        if not value or value.isdigit():
+            return False
+        if len(value) < 8 or any(x.isspace() for x in value):
+            return False
+        if set(value) & RedApi.password_symbols:
+            return True
+        separators = set('_-.')
+        if len(value) < 12 or set(value) & separators:
+            return False
+        classes = [any(x.islower() for x in value),
+                   any(x.isupper() for x in value),
+                   any(x.isdigit() for x in value)]
+        return sum(classes) >= 3
+
+    def resolve_campaign_filter(self):
+        """
+        Splits the single Filter value into a password or a campaign filter.
+
+        Prefers an explicit campaign_filter key when one is present, else
+        falls back to the password key that import_config.csv writes.  The
+        raw value is never logged since it may be a credential.
+
+        :return: The resolved campaign filter, or None
+        """
+        raw = self.config.get(self.campaign_filter_str)
+        from_password = False
+        if not raw:
+            raw = self.config.get(self.password_str)
+            from_password = True
+        if not raw or self.looks_like_password(raw):
+            self.campaign_filter = None
+            return self.campaign_filter
+        self.campaign_filter = str(raw).strip()
+        if from_password:
+            logging.info('Filter value does not look like a password, '
+                         'using it to filter on {}.'.format(
+                            self.campaign_col))
+        return self.campaign_filter
+
+    def filter_df_on_campaign(self, df):
+        """
+        Filters the df down to the campaigns matching the campaign filter.
+
+        Matching is a literal (non regex) substring check.  When the filter
+        matches nothing the unfiltered df is returned instead, so a stale or
+        mistyped value surfaces as a warning rather than as empty data.
+
+        :param df: The dataframe of reporting data to filter
+        :return: The filtered dataframe
+        """
+        if not self.campaign_filter or df.empty:
+            return df
+        if self.campaign_col not in df.columns:
+            logging.warning('{} not in df, not filtering on campaign.'.format(
+                self.campaign_col))
+            return df
+        campaigns = df[self.campaign_col].astype('U')
+        tdf = df[campaigns.str.contains(self.campaign_filter, regex=False)]
+        if tdf.empty:
+            logging.warning(
+                'Campaign filter did not match any of the {} campaigns '
+                'pulled, returning unfiltered data.  Campaigns: {}'.format(
+                    df[self.campaign_col].nunique(),
+                    sorted(df[self.campaign_col].dropna().unique().tolist())))
+            return df
+        logging.info('Filtered to {} of {} rows on campaign filter.'.format(
+            len(tdf), len(df)))
+        return tdf.reset_index(drop=True)
 
     def check_config(self):
         for item in self.config_list:
@@ -787,6 +878,7 @@ class RedApi(object):
             df = self.get_data_api(sd, ed)
         else:
             df = self.get_data_selenium(sd, ed)
+        df = self.filter_df_on_campaign(df)
         return df
 
     def get_data_selenium(self, sd, ed):

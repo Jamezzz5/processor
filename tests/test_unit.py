@@ -32,6 +32,7 @@ import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
 import processor.reporting.dcapi as dcapi
+import processor.reporting.dbapi as dbapi
 import processor.reporting.afapi as afapi
 import processor.reporting.twapi as twapi
 import processor.reporting.nzapi as nzapi
@@ -2859,3 +2860,180 @@ class TestNzApi:
             list(out['title'])
         assert list(out['market']) == ['Worldwide', 'United States']
         assert list(out['source']) == [('a', 'b'), ('c',)]
+
+
+class TestRedditCampaignFilter:
+    """Reddit's Filter box historically held the account password, so the
+    api has to tell a campaign filter from a credential before filtering."""
+
+    @pytest.mark.parametrize('value', [
+        'Xk7$mQ2wp', 'P@ssw0rd123', 'Redd1tLoginSecret', 'aB3dEf9hK2mN'])
+    def test_looks_like_password_true(self, value):
+        assert redapi.RedApi.looks_like_password(value)
+
+    @pytest.mark.parametrize('value', [
+        '32357452', 'GameA', 'GameA2026', 'GameA_Launch_2026',
+        'GameA Launch 2026', 'correcthorsebattery', '', None])
+    def test_looks_like_password_false(self, value):
+        assert not redapi.RedApi.looks_like_password(value)
+
+    def test_resolve_campaign_filter_from_password_key(self):
+        api = redapi.RedApi()
+        api.config = {'username': 'u', 'password': '32357452'}
+        assert api.resolve_campaign_filter() == '32357452'
+        assert api.campaign_filter == '32357452'
+
+    def test_resolve_campaign_filter_keeps_password(self):
+        api = redapi.RedApi()
+        api.config = {'username': 'u', 'password': 'P@ssw0rd123'}
+        assert api.resolve_campaign_filter() is None
+        assert api.campaign_filter is None
+
+    def test_resolve_campaign_filter_prefers_explicit_key(self):
+        api = redapi.RedApi()
+        api.config = {'username': 'u', 'password': 'P@ssw0rd123',
+                      'campaign_filter': 'GameA'}
+        assert api.resolve_campaign_filter() == 'GameA'
+
+    def test_load_config_dict_sets_filter(self):
+        api = redapi.RedApi()
+        api.load_config_dict({'username': 'u', 'password': '32357452'})
+        assert api.campaign_filter == '32357452'
+
+    @staticmethod
+    def get_df():
+        return pd.DataFrame({
+            redapi.RedApi.campaign_col: [
+                '32357452_GameA_US', '32357452_GameA_UK', '99999999_GameB_US'],
+            'Impressions': [1, 2, 3]})
+
+    def test_filter_df_on_campaign(self):
+        api = redapi.RedApi()
+        api.campaign_filter = '32357452'
+        df = api.filter_df_on_campaign(self.get_df())
+        assert len(df) == 2
+        assert '99999999_GameB_US' not in list(df[api.campaign_col])
+
+    def test_filter_df_no_match_returns_unfiltered(self):
+        """A filter matching nothing must not silently empty the source."""
+        api = redapi.RedApi()
+        api.campaign_filter = 'NoSuchCampaign'
+        assert len(api.filter_df_on_campaign(self.get_df())) == 3
+
+    def test_filter_df_missing_column(self):
+        api = redapi.RedApi()
+        api.campaign_filter = 'GameA'
+        df = pd.DataFrame({'Impressions': [1]})
+        assert len(api.filter_df_on_campaign(df)) == 1
+
+    def test_filter_df_no_filter(self):
+        api = redapi.RedApi()
+        assert len(api.filter_df_on_campaign(self.get_df())) == 3
+
+    def test_filter_is_literal_not_regex(self):
+        api = redapi.RedApi()
+        api.campaign_filter = 'GameA (US)'
+        df = pd.DataFrame({api.campaign_col: ['GameA (US)', 'GameA (UK)']})
+        assert len(api.filter_df_on_campaign(df)) == 1
+
+
+class TestDbApiCampaignFilter:
+    """DV360 only filters on campaign ids server side, so a campaign name
+    has to be matched against the report after it downloads."""
+
+    @staticmethod
+    def get_api(campaign_id=None):
+        api = dbapi.DbApi()
+        api.advertiser_id = '123'
+        api.campaign_id = campaign_id
+        api.parse_campaign_filter()
+        return api
+
+    def test_numeric_filter_is_server_side(self):
+        api = self.get_api('32357452,99999999')
+        assert api.campaign_ids == ['32357452', '99999999']
+        assert api.campaign_name_filter == []
+        params = api.create_report_params()
+        vals = [x['value'] for x in params['filters']
+                if x['type'] == 'FILTER_MEDIA_PLAN']
+        assert vals == ['32357452', '99999999']
+
+    def test_name_filter_is_client_side(self):
+        api = self.get_api('GameA')
+        assert api.campaign_ids == []
+        assert api.campaign_name_filter == ['GameA']
+        params = api.create_report_params()
+        assert not [x for x in params['filters']
+                    if x['type'] == 'FILTER_MEDIA_PLAN']
+
+    def test_mixed_filter_is_client_side(self):
+        """A mix must not send an id filter and a name filter at once, or
+        the two would intersect to nothing."""
+        api = self.get_api('32357452, GameA')
+        assert api.campaign_ids == []
+        assert api.campaign_name_filter == ['32357452', 'GameA']
+
+    def test_empty_filter(self):
+        api = self.get_api(None)
+        assert api.campaign_ids == []
+        assert api.campaign_name_filter == []
+
+    def test_youtube_fields_add_campaign_groups(self):
+        api = dbapi.DbApi()
+        sd = ed = dt.datetime(2026, 8, 1)
+        api.parse_fields(sd, ed, ['YOUTUBE'])
+        assert api.query_type == 'YOUTUBE'
+        for group in dbapi.DbApi.campaign_groups:
+            assert group in api.default_groups
+        assert 'FILTER_TRUEVIEW_AD_GROUP' in api.default_groups
+
+    def test_parse_fields_does_not_mutate_class_lists(self):
+        """default_metrics used to be extended in place, so every api
+        object in a process inherited the last one's metrics."""
+        sd = ed = dt.datetime(2026, 8, 1)
+        lengths = []
+        for _ in range(3):
+            api = dbapi.DbApi()
+            api.parse_fields(sd, ed, ['Actions'])
+            lengths.append(len(api.default_metrics))
+        assert len(set(lengths)) == 1
+        assert not [x for x in dbapi.DbApi.base_metrics
+                    if x in dbapi.DbApi.view_metrics]
+
+    def test_remove_campaign_groups(self):
+        api = dbapi.DbApi()
+        sd = ed = dt.datetime(2026, 8, 1)
+        api.parse_fields(sd, ed, ['YOUTUBE'])
+        assert api.remove_campaign_groups()
+        assert not [x for x in api.default_groups
+                    if x in dbapi.DbApi.campaign_groups]
+        assert not api.remove_campaign_groups()
+
+    @staticmethod
+    def get_df():
+        return pd.DataFrame({
+            dbapi.DbApi.campaign_col: [
+                'GameA Launch', 'GameB Teaser', 'GameA Beta'],
+            'Impressions': [1, 2, 3]})
+
+    def test_filter_df_on_campaign(self):
+        api = self.get_api('GameA')
+        api.df = self.get_df()
+        assert len(api.filter_df_on_campaign()) == 2
+
+    def test_filter_df_multiple_names(self):
+        api = self.get_api('GameA, GameB')
+        api.df = self.get_df()
+        assert len(api.filter_df_on_campaign()) == 3
+
+    def test_filter_df_no_match_returns_unfiltered(self):
+        api = self.get_api('NoSuchCampaign')
+        api.df = self.get_df()
+        assert len(api.filter_df_on_campaign()) == 3
+
+    def test_filter_df_missing_column(self):
+        """A report type that rejected the campaign grouping has no
+        campaign column, and must not come back empty."""
+        api = self.get_api('GameA')
+        api.df = pd.DataFrame({'Impressions': [1]})
+        assert len(api.filter_df_on_campaign()) == 1

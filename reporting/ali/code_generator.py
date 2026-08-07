@@ -24,7 +24,10 @@ def generate_code(system_prompt, task_description, code_context,
     :param review_notes: Optional review feedback to incorporate.
     :param additional_instructions: Optional extra guidance.
     :returns: Dict with ``files``, ``explanation``,
-        ``implementation_prompt``, or None on failure.
+        ``implementation_prompt`` and the raw answer under ``raw``,
+        or None on failure. ``raw`` rides along because the app layer
+        discards an unusable generation and would otherwise have
+        nothing left to say what the model sent.
     """
     user_prompt = _build_user_prompt(
         task_description, code_context,
@@ -36,7 +39,9 @@ def generate_code(system_prompt, task_description, code_context,
     if not response:
         return None
 
-    return parse_code_response(response)
+    parsed = parse_code_response(response)
+    parsed['raw'] = response
+    return parsed
 
 
 def parse_code_response(response_text):
@@ -46,23 +51,63 @@ def parse_code_response(response_text):
     (anchored function replacements), ``IMPLEMENTATION_NOTES:``,
     and ``ENGINEER_PROMPT:`` sections.
 
-    :param response_text: Raw LLM output.
-    :returns: Dict with ``files``, ``patches``, ``explanation``,
-        ``implementation_prompt``.
-    """
-    files = _extract_file_blocks(response_text)
-    patches = _extract_patch_blocks(response_text)
-    explanation = _extract_section(
-        response_text, 'IMPLEMENTATION_NOTES:')
-    engineer_prompt = _extract_section(
-        response_text, 'ENGINEER_PROMPT:')
+    ``dropped`` names every block header found but not turned into a
+    file, which is how the caller tells a model that never used the
+    format from one that tried and hit something specific — two
+    outcomes calling for opposite responses. See :func:`describe_parse`.
 
+    :param response_text: Raw LLM output.
+    :returns: Dict with ``files``, ``patches``, ``dropped``,
+        ``explanation``, ``implementation_prompt``.
+    """
+    files, patches, dropped = [], [], []
+    for block in _scan_blocks(response_text):
+        if block['problem']:
+            dropped.append({'kind': block['kind'],
+                            'path': block['path'],
+                            'problem': block['problem']})
+        elif block['kind'] == 'PATCH':
+            patches.append(block)
+        else:
+            files.append(block)
     return {
         'files': files,
         'patches': patches,
-        'explanation': explanation,
-        'implementation_prompt': engineer_prompt,
+        'dropped': dropped,
+        'explanation': _extract_section(
+            response_text, 'IMPLEMENTATION_NOTES'),
+        'implementation_prompt': _extract_section(
+            response_text, 'ENGINEER_PROMPT'),
     }
+
+
+def describe_parse(result, response_text=''):
+    """One plain sentence saying what the model's answer amounted to.
+
+    The generation lane discards an unparseable answer, so this is
+    the whole record of a night's work that produced nothing. It
+    distinguishes the three outcomes needing different fixes: the
+    format was ignored, it was used but the block was unusable, or
+    the answer was cut off mid-block.
+
+    :param result: a :func:`parse_code_response` dict.
+    :param response_text: the raw answer, for the length note.
+    :returns: a short human-readable diagnosis.
+    """
+    kept = len(result.get('files') or []) + len(
+        result.get('patches') or [])
+    dropped = result.get('dropped') or []
+    if kept:
+        return '{} usable block(s), {} dropped'.format(kept,
+                                                       len(dropped))
+    if dropped:
+        causes = sorted({'{} {}'.format(entry['path'] or '(no path)',
+                                        entry['problem'])
+                         for entry in dropped})
+        return 'the model emitted {} block header(s), none usable: {}'.format(
+            len(dropped), '; '.join(causes))
+    return ('the model produced no PATCH: or FILE: block at all '
+            '({} chars of prose)'.format(len(response_text or '')))
 
 
 def _build_user_prompt(task_description, code_context,
@@ -185,82 +230,191 @@ def _parse_patch_response(response_text, function_name):
     }
 
 
-def _extract_file_blocks(text):
-    """Extract ``FILE: path`` / code blocks from LLM output.
+_HEADER_RE = re.compile(
+    r'^[\s>#*_-]*'
+    r'(PATCH|FILE|FUNCTION|DESCRIPTION|IMPLEMENTATION_NOTES'
+    r'|ENGINEER_PROMPT)'
+    r'[\s*_`]*:[ \t]*(.*?)\s*$')
 
-    :param text: Raw LLM response.
-    :returns: List of dicts with ``path``, ``content``,
-        ``description``.
+_FENCE_RE = re.compile(r'^\s*(`{3,}|~{3,})[ \t]*[\w.+#-]*[ \t]*$')
+
+_PATH_HEADERS = ('PATCH', 'FILE')
+
+
+def _clean_value(raw):
+    """Strip markdown decoration from a header's value."""
+    return (raw or '').strip().strip('*`_ ').strip()
+
+
+def _clean_function(raw):
+    """The bare ``def`` name a patch anchors on.
+
+    ``extract_function`` searches for ``def <name>(``, so a qualified
+    or signature-bearing answer — ``PlanView.get_topline``,
+    ``get_topline(self, plan)``, ``def get_topline`` — is reduced to
+    the name itself. Unreduced they were dropped outright: the pattern
+    this replaced required ``\\w+`` alone, and a dot is not in it, so
+    every method on a class produced nothing.
+
+    :param raw: the ``FUNCTION:`` value as written.
+    :returns: the identifier, or '' when there isn't one.
     """
-    blocks = []
-    pattern = re.compile(
-        r'FILE:\s*(.+?)\s*\n'
-        r'(?:DESCRIPTION:\s*(.+?)\s*\n)?'
-        r'```\w*\n(.*?)```',
-        re.DOTALL,
-    )
-
-    for match in pattern.finditer(text):
-        blocks.append({
-            'path': match.group(1).strip(),
-            'description': (match.group(2) or '').strip(),
-            'content': match.group(3).strip(),
-        })
-
-    return blocks
+    name = _clean_value(raw).split('(')[0].strip().rstrip(':')
+    if name.startswith('def '):
+        name = name[4:].strip()
+    if '.' in name:
+        name = name.rsplit('.', 1)[-1].strip()
+    return name if name.isidentifier() else ''
 
 
-def _extract_patch_blocks(text):
-    """Extract ``PATCH: path`` / ``FUNCTION: name`` blocks.
+def _read_fenced(lines, start, marker):
+    """Consume a fenced body, closing only on an equal-or-longer run.
 
-    A patch block is an anchored function-level replacement — the
-    apply layer splices it into the target file by function name,
-    so the model never has to reproduce (and risk truncating) the
-    rest of the file.
-
-    :param text: Raw LLM response.
-    :returns: List of dicts with ``path``, ``function``,
-        ``description``, ``content``.
+    :param lines: the whole response, split.
+    :param start: index of the first body line.
+    :param marker: the opening fence run.
+    :returns: ``(body, index_after)``; body is None when the fence
+        was never closed, which is what a truncated answer looks
+        like from here.
     """
-    blocks = []
-    pattern = re.compile(
-        r'PATCH:\s*(.+?)\s*\n'
-        r'FUNCTION:\s*(\w+)\s*\n'
-        r'(?:DESCRIPTION:\s*(.+?)\s*\n)?'
-        r'```\w*\n(.*?)```',
-        re.DOTALL,
-    )
-    for match in pattern.finditer(text):
-        blocks.append({
-            'path': match.group(1).strip(),
-            'function': match.group(2).strip(),
-            'description': (match.group(3) or '').strip(),
-            'content': match.group(4).strip(),
-        })
+    char, need = marker[0], len(marker)
+    body = []
+    index = start
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if stripped and set(stripped) == {char} and len(
+                stripped) >= need:
+            return '\n'.join(body), index + 1
+        body.append(lines[index])
+        index += 1
+    return None, index
+
+
+def _trim_blank_edges(body):
+    """Drop leading/trailing blank lines, keeping indentation.
+
+    Deliberately not ``strip()``: that also eats the first line's
+    indentation, which silently dedents a class method's ``def`` and
+    hands the splice layer code that cannot compile.
+    """
+    lines = body.split('\n')
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return '\n'.join(lines)
+
+
+def _finish_block(pending, body):
+    """Turn accumulated headers plus a body into one block.
+
+    ``problem`` is set instead of raising, so a malformed block is
+    reported rather than vanishing — the caller counts both.
+
+    :param pending: headers gathered since the last block.
+    :param body: the fenced content, None when there was none.
+    :returns: the block dict.
+    """
+    block = {
+        'kind': pending.get('kind'),
+        'path': pending.get('path') or '',
+        'function': pending.get('function') or '',
+        'description': pending.get('description') or '',
+        'content': _trim_blank_edges(body) if body else '',
+        'problem': '',
+    }
+    if body is None:
+        block['problem'] = (
+            'was not followed by a closed code block'
+            if pending.get('fenced')
+            else 'had no code block after it')
+    elif not block['path']:
+        block['problem'] = 'named no file path'
+    elif block['kind'] == 'PATCH' and not block['function']:
+        block['problem'] = 'gave no usable FUNCTION: name'
+    elif not block['content'].strip():
+        block['problem'] = 'had an empty code block'
+    return block
+
+
+def _scan_blocks(text):
+    """Walk the response once, pairing block headers with fences.
+
+    Line-oriented rather than one regex over the whole answer for
+    two reasons a real answer runs into: header order and decoration
+    vary, and a header must never be recognised *inside* a code
+    block — a generated file containing the literal ``FILE:`` would
+    otherwise open a second, phantom block. Fences are therefore
+    consumed whole, headers only read outside them, and a
+    ``FUNCTION:`` survives the ``PATCH:`` that may follow it.
+
+    :data:`_HEADER_RE` tolerates the decoration a chat-tuned model
+    adds — ``**PATCH: x.py**``, a bullet, a markdown heading, a
+    backticked value — every one of which the exact-prefix match this
+    replaced dropped silently. Case stays significant: the tokens are
+    shouted in the prompt, and matching ``file:`` mid-sentence would
+    invent blocks out of prose.
+
+    :param text: raw LLM response.
+    :returns: list of block dicts, malformed ones included with a
+        ``problem`` set.
+    """
+    lines = (text or '').splitlines()
+    blocks, pending = [], {}
+    index = 0
+    while index < len(lines):
+        fence = _FENCE_RE.match(lines[index])
+        if fence:
+            body, index = _read_fenced(
+                lines, index + 1, fence.group(1))
+            if pending.get('kind'):
+                pending['fenced'] = True
+                blocks.append(_finish_block(pending, body))
+                pending = {}
+            continue
+        header = _HEADER_RE.match(lines[index])
+        index += 1
+        if not header:
+            continue
+        key, value = header.group(1), header.group(2)
+        if key in _PATH_HEADERS:
+            if pending.get('kind'):
+                blocks.append(_finish_block(pending, None))
+                pending = {}
+            pending['kind'] = key
+            pending['path'] = _clean_value(value)
+        elif key == 'FUNCTION':
+            pending['function'] = _clean_function(value)
+        elif key == 'DESCRIPTION':
+            pending['description'] = _clean_value(value)
+        elif pending.get('kind'):
+            blocks.append(_finish_block(pending, None))
+            pending = {}
+    if pending.get('kind'):
+        blocks.append(_finish_block(pending, None))
     return blocks
 
 
 def _extract_section(text, header):
-    """Extract a named section from LLM output.
+    """Extract a named trailing section from LLM output.
+
+    Shares :data:`_HEADER_RE` with the block scanner so a decorated
+    ``**IMPLEMENTATION_NOTES:**`` is found here too, and so the
+    section stops at whatever header comes next rather than running
+    to the end of the answer.
 
     :param text: Raw LLM response.
-    :param header: Section header to find.
+    :param header: Section name, without the colon.
     :returns: Section content string, or empty string.
     """
-    if header not in text:
-        return ''
-
-    start = text.index(header) + len(header)
-    boundaries = [
-        'FILE:', 'PATCH:', 'IMPLEMENTATION_NOTES:',
-        'ENGINEER_PROMPT:',
-    ]
-    end = len(text)
-    for boundary in boundaries:
-        if boundary == header:
+    collected, capturing = [], False
+    for line in (text or '').splitlines():
+        match = _HEADER_RE.match(line)
+        if match:
+            capturing = match.group(1) == header
+            if capturing and match.group(2):
+                collected.append(match.group(2))
             continue
-        idx = text.find(boundary, start)
-        if idx != -1 and idx < end:
-            end = idx
-
-    return text[start:end].strip()
+        if capturing:
+            collected.append(line)
+    return '\n'.join(collected).strip()

@@ -14,7 +14,9 @@ base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 
 
 class DbApi(object):
-    default_groups = [
+    campaign_groups = ['FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME']
+    campaign_col = 'Campaign'
+    base_groups = [
         'FILTER_ADVERTISER', 'FILTER_ADVERTISER_NAME',
         'FILTER_ADVERTISER_CURRENCY',
         'FILTER_INSERTION_ORDER', 'FILTER_INSERTION_ORDER_NAME',
@@ -23,7 +25,12 @@ class DbApi(object):
         'FILTER_LINE_ITEM_TYPE',
         'FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME',
         'FILTER_CREATIVE_ID', 'FILTER_CREATIVE']
-    default_metrics = [
+    youtube_groups = [
+        'FILTER_DATE',
+        'FILTER_TRUEVIEW_AD_GROUP',
+        'FILTER_TRUEVIEW_AD',
+        'FILTER_TRUEVIEW_AD_GROUP_ID']
+    base_metrics = [
         'METRIC_IMPRESSIONS', 'METRIC_BILLABLE_IMPRESSIONS', 'METRIC_CLICKS',
         'METRIC_CTR', 'METRIC_TOTAL_CONVERSIONS', 'METRIC_LAST_CLICKS',
         'METRIC_LAST_IMPRESSIONS', 'METRIC_REVENUE_ADVERTISER',
@@ -33,6 +40,21 @@ class DbApi(object):
         'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
         'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
         'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS', 'METRIC_RICH_MEDIA_VIDEO_PLAYS']
+    youtube_metrics = [
+        'METRIC_TRUEVIEW_VIEWS',
+        'METRIC_CLICKS',
+        'METRIC_IMPRESSIONS',
+        'METRIC_REVENUE_USD',
+        'METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES',
+        'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
+        'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
+        'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS']
+    view_metrics = [
+        'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
+        'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
+        'METRIC_ACTIVE_VIEW_UNVIEWABLE_IMPRESSIONS']
+    default_groups = base_groups
+    default_metrics = base_metrics
 
     def __init__(self):
         self.config = None
@@ -44,6 +66,8 @@ class DbApi(object):
         self.refresh_url = None
         self.advertiser_id = None
         self.campaign_id = None
+        self.campaign_ids = []
+        self.campaign_name_filter = []
         self.query_id = None
         self.report_id = None
         self.config_list = None
@@ -102,32 +126,95 @@ class DbApi(object):
         return sd, ed, fields
 
     def parse_fields(self, sd, ed, fields):
+        """
+        Sets the report window, groupings and metrics from the api fields.
+
+        The lists are rebuilt from the class level templates on each call so
+        a second api object does not inherit the last one's groupings.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :param fields: The API_FIELDS values from the vendor matrix
+        :return:
+        """
         self.start_time = round((sd - dt.datetime.utcfromtimestamp(0))
                                 .total_seconds() * 1000)
         self.end_time = round((ed - dt.datetime.utcfromtimestamp(0))
                               .total_seconds() * 1000)
+        groups = list(self.base_groups)
+        metrics = list(self.base_metrics)
         if fields and 'YOUTUBE' in fields:
-            self.default_groups = [
-                'FILTER_DATE',
-                'FILTER_TRUEVIEW_AD_GROUP',
-                'FILTER_TRUEVIEW_AD',
-                'FILTER_TRUEVIEW_AD_GROUP_ID']
-            self.default_metrics = [
-                'METRIC_TRUEVIEW_VIEWS',
-                'METRIC_CLICKS',
-                'METRIC_IMPRESSIONS',
-                'METRIC_REVENUE_USD',
-                'METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES',
-                'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
-                'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
-                'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS']
+            groups = list(self.youtube_groups) + list(self.campaign_groups)
+            metrics = list(self.youtube_metrics)
             self.query_type = 'YOUTUBE'
         if fields and fields != ['nan']:
-            self.default_metrics += [
-                'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
-                'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
-                'METRIC_ACTIVE_VIEW_UNVIEWABLE_IMPRESSIONS'
-            ]
+            metrics += list(self.view_metrics)
+        self.default_groups = groups
+        self.default_metrics = metrics
+
+    def parse_campaign_filter(self):
+        """
+        Splits the campaign filter into ids to send and names to match.
+
+        FILTER_MEDIA_PLAN only accepts campaign ids, so an all numeric
+        filter is sent to the api.  Anything else is a campaign name and is
+        matched against the report once it has been downloaded.
+
+        :return: The list of campaign ids for the api
+        """
+        self.campaign_ids = []
+        self.campaign_name_filter = []
+        if not self.campaign_id:
+            return self.campaign_ids
+        values = [x.strip() for x in str(self.campaign_id).split(',')]
+        values = [x for x in values if x]
+        if not values:
+            return self.campaign_ids
+        if all(x.isdigit() for x in values):
+            self.campaign_ids = values
+        else:
+            self.campaign_name_filter = values
+            logging.info(
+                'Campaign filter {} is not all ids, matching it on the {} '
+                'column after download.'.format(values, self.campaign_col))
+        return self.campaign_ids
+
+    def filter_df_on_campaign(self):
+        """
+        Filters the downloaded report down to the named campaigns.
+
+        Matching is a literal (non regex) substring check.  When the filter
+        matches nothing the unfiltered df is kept, so a stale or mistyped
+        value surfaces as a warning rather than as empty data.
+
+        :return: The filtered dataframe
+        """
+        if not self.campaign_name_filter or self.df.empty:
+            return self.df
+        if self.campaign_col not in self.df.columns:
+            logging.warning(
+                '{} not in report, not filtering on campaign name.  The '
+                'report type may not support the campaign grouping.'.format(
+                    self.campaign_col))
+            return self.df
+        campaigns = self.df[self.campaign_col].astype('U')
+        mask = campaigns.str.contains(self.campaign_name_filter[0],
+                                      regex=False)
+        for value in self.campaign_name_filter[1:]:
+            mask = mask | campaigns.str.contains(value, regex=False)
+        tdf = self.df[mask]
+        if tdf.empty:
+            logging.warning(
+                'Campaign filter did not match any of the {} campaigns '
+                'pulled, returning unfiltered data.  Campaigns: {}'.format(
+                    self.df[self.campaign_col].nunique(),
+                    sorted(self.df[self.campaign_col].dropna()
+                           .unique().tolist())))
+            return self.df
+        logging.info('Filtered to {} of {} rows on campaign filter.'.format(
+            len(tdf), len(self.df)))
+        self.df = tdf.reset_index(drop=True)
+        return self.df
 
     def refresh_client_token(self, extra):
         token = None
@@ -169,6 +256,7 @@ class DbApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
+        self.parse_campaign_filter()
         report_created = self.create_report(sd, ed, fields)
         if not report_created:
             logging.warning('Report was not created, check for errors.')
@@ -177,6 +265,7 @@ class DbApi(object):
         self.get_raw_data()
         self.check_empty_df()
         self.remove_footer()
+        self.filter_df_on_campaign()
         return self.df
 
     def check_empty_df(self):
@@ -188,14 +277,54 @@ class DbApi(object):
         self.df = self.df[~self.df.isnull().any(axis=1)]
 
     def create_report(self, sd, ed, fields):
+        """
+        Creates the query for the report, retrying without the campaign
+        grouping when the report type rejects it.
+
+        DV360 does not document which groupings each report type accepts, so
+        a rejected query is retried without the campaign columns rather than
+        failing the pull outright.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :param fields: The API_FIELDS values from the vendor matrix
+        :return: Boolean of whether the query was created
+        """
         if self.report_id:
             return True
         logging.info('No report specified, creating.')
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         self.parse_fields(sd, ed, fields)
+        metadata = self.create_report_metadata(sd, ed)
+        created = self.request_query(metadata)
+        if not created and self.remove_campaign_groups():
+            logging.warning('Retrying query creation without the campaign '
+                            'grouping, campaign name will not be available.')
+            created = self.request_query(metadata)
+        return created
+
+    def remove_campaign_groups(self):
+        """
+        Drops the campaign groupings from the query.
+
+        :return: Boolean of whether any grouping was removed
+        """
+        groups = [x for x in self.default_groups
+                  if x not in self.campaign_groups]
+        if len(groups) == len(self.default_groups):
+            return False
+        self.default_groups = groups
+        return True
+
+    def request_query(self, metadata):
+        """
+        Posts the query to the api and stores the resulting query id.
+
+        :param metadata: The report metadata as a dict
+        :return: Boolean of whether the query was created
+        """
         query_url = self.create_query_url()
         params = self.create_report_params()
-        metadata = self.create_report_metadata(sd, ed)
         body = {
             'metadata': metadata,
             'params': params,
@@ -270,10 +399,10 @@ class DbApi(object):
             'groupBys': self.default_groups,
             'metrics': self.default_metrics,
             'type': self.query_type}
-        if self.campaign_id:
+        if self.campaign_ids:
             campaign_filters = [
                 {'type': 'FILTER_MEDIA_PLAN',
-                 'value': x} for x in str(self.campaign_id).split(',')]
+                 'value': x} for x in self.campaign_ids]
             params['filters'].extend(campaign_filters)
         return params
 
