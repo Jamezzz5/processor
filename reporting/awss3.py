@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import logging
 import boto3
@@ -38,8 +37,9 @@ class S3(object):
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
         except IOError:
-            logging.error('{} not found.  Aborting.'.format(self.config_file))
-            sys.exit(0)
+            msg = '{} not found.  Aborting.'.format(self.config_file)
+            logging.error(msg)
+            raise FileNotFoundError(msg)
         self.bucket = self.config['bucket']
         self.prefix = self.config['prefix']
         self.access_key = self.config['access_key']
@@ -50,8 +50,9 @@ class S3(object):
     def check_config(self):
         for item in self.config_list:
             if item == '':
-                logging.warning('{} not in config file. Aborting.'.format(item))
-                sys.exit(0)
+                msg = '{} not in config file. Aborting.'.format(item)
+                logging.warning(msg)
+                raise ValueError(msg)
 
     @staticmethod
     def get_data_default_check(sd, ed):

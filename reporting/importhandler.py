@@ -190,7 +190,7 @@ class ImportHandler(object):
             params = self.matrix.vendor_set(vk)
             try:
                 api_class.input_config(params[vmc.apifile])
-            except (FileNotFoundError, SystemExit) as e:
+            except (FileNotFoundError, ValueError, SystemExit) as e:
                 logging.warning(e)
                 continue
             start_check = self.date_check(params[vmc.startdate])
