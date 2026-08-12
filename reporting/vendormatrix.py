@@ -196,6 +196,7 @@ class VendorMatrix(object):
                     col = 'RULE_{}_{}'.format(i, key)
                     default = col.split(i)
                     post_def = 'POST::{}'.format(default[0])
+                    val = str(val)
                     if val.startswith(default[0]) or val.startswith(post_def):
                         if val.endswith(default[1]):
                             continue
