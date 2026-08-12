@@ -64,6 +64,8 @@ class DcApi(object):
     ad_path = 'advertisers/'
     camp_path = 'campaigns/'
     default_config_file_name = 'dcapi.json'
+    campaign_col = 'Campaign'
+    campaign_id_col = 'Campaign ID'
 
     def __init__(self):
         self.config = None
@@ -76,6 +78,8 @@ class DcApi(object):
         self.usr_id = None
         self.advertiser_id = None
         self.campaign_id = None
+        self.campaign_ids = []
+        self.campaign_name_filter = []
         self.original_report_id = None
         self.report_ids = []
         self.config_list = None
@@ -193,9 +197,24 @@ class DcApi(object):
                 elif field == '30':
                     self.date_range['relativeDateRange'] = 'LAST_30_DAYS'
 
+    def parse_campaign_filter(self):
+        """
+        Splits the campaign filter into ids to send and values to match.
+
+        A campaign dimension filter only accepts ids, so an all numeric
+        filter is sent to the api.  Anything else is a campaign name and is
+        matched against the report once it has been downloaded.
+
+        :return: The list of campaign ids for the api
+        """
+        self.campaign_ids, self.campaign_name_filter = (
+            utl.parse_campaign_filter(self.campaign_id))
+        return self.campaign_ids
+
     def get_data(self, sd=None, ed=None, fields=None):
         df = pd.DataFrame()
         self.parse_fields(sd, ed, fields)
+        self.parse_campaign_filter()
         report_created = False
         report_types = [(False, False, False, False),
                         (True, False, False, False),
@@ -240,6 +259,9 @@ class DcApi(object):
                 last_row = 2
             tdf = utl.first_last_adj(tdf, first_row=1, last_row=last_row)
             tdf = self.rename_cols(tdf, report_param)
+            tdf = utl.filter_df_on_campaign(
+                tdf, self.campaign_name_filter, self.campaign_col,
+                self.campaign_id_col)
             if 'reach_report' in report_param:
                 if not report_param['reach_report']:
                     self.check_for_campaign_vendor_dicts(tdf)
@@ -511,12 +533,12 @@ class DcApi(object):
             else:
                 logging.warning('No floodlight conversions found.')
                 criteria.pop('activities')
-        if self.campaign_id:
+        if self.campaign_ids:
             campaign_filters = [
                 {'dimensionName': 'campaign',
                  'id': x,
                  'kind': 'dfareporting#dimensionValue'}
-                for x in self.campaign_id.split(',')]
+                for x in self.campaign_ids]
             criteria['dimensionFilters'].extend(campaign_filters)
         return criteria
 
@@ -537,9 +559,7 @@ class DcApi(object):
         success_msg = 'SUCCESS -- ID:'
         failure_msg = 'FAILURE:'
         self.get_client()
-        if self.campaign_id is None:
-            self.campaign_id = ''
-        campaign_ids = self.campaign_id.split(',')
+        self.parse_campaign_filter()
         results = []
         query_url = self.create_url(self.advertiser_id, self.ad_path)
         r = self.client.get(url=query_url)
@@ -553,7 +573,12 @@ class DcApi(object):
                    False]
             results.append(row)
             return pd.DataFrame(data=results, columns=vmc.r_cols)
-        for campaign in campaign_ids:
+        if self.campaign_name_filter and not self.campaign_ids:
+            row = [camp_col, ' '.join(
+                [success_msg, str(self.campaign_name_filter),
+                 '-- matched on the campaign name after download']), True]
+            results.append(row)
+        for campaign in self.campaign_ids:
             query_url = self.create_url(campaign, self.camp_path)
             r = self.client.get(url=query_url)
             if r.status_code == 200:

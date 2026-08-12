@@ -16,6 +16,7 @@ base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 class DbApi(object):
     campaign_groups = ['FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME']
     campaign_col = 'Campaign'
+    campaign_id_col = 'Campaign ID'
     base_groups = [
         'FILTER_ADVERTISER', 'FILTER_ADVERTISER_NAME',
         'FILTER_ADVERTISER_CURRENCY',
@@ -154,66 +155,31 @@ class DbApi(object):
 
     def parse_campaign_filter(self):
         """
-        Splits the campaign filter into ids to send and names to match.
+        Splits the campaign filter into ids to send and values to match.
 
-        FILTER_MEDIA_PLAN only accepts campaign ids, so an all numeric
-        filter is sent to the api.  Anything else is a campaign name and is
-        matched against the report once it has been downloaded.
+        FILTER_MEDIA_PLAN only accepts DV360 campaign ids, so an all numeric
+        filter is also sent to the api to keep the report small.  It is kept
+        for the post download match as well, since a numeric filter is as
+        often the DCM campaign id the DV360 campaign is named for as it is
+        the DV360 campaign's own id.
 
         :return: The list of campaign ids for the api
         """
-        self.campaign_ids = []
-        self.campaign_name_filter = []
-        if not self.campaign_id:
-            return self.campaign_ids
-        values = [x.strip() for x in str(self.campaign_id).split(',')]
-        values = [x for x in values if x]
-        if not values:
-            return self.campaign_ids
-        if all(x.isdigit() for x in values):
-            self.campaign_ids = values
-        else:
-            self.campaign_name_filter = values
-            logging.info(
-                'Campaign filter {} is not all ids, matching it on the {} '
-                'column after download.'.format(values, self.campaign_col))
+        self.campaign_ids, self.campaign_name_filter = (
+            utl.parse_campaign_filter(self.campaign_id))
         return self.campaign_ids
 
-    def filter_df_on_campaign(self):
+    def filter_df_on_campaign(self, keep_on_no_match=True):
         """
-        Filters the downloaded report down to the named campaigns.
+        Filters the downloaded report down to the campaigns filtered on.
 
-        Matching is a literal (non regex) substring check.  When the filter
-        matches nothing the unfiltered df is kept, so a stale or mistyped
-        value surfaces as a warning rather than as empty data.
-
+        :param keep_on_no_match: Whether a filter that matches nothing keeps
+            the unfiltered df
         :return: The filtered dataframe
         """
-        if not self.campaign_name_filter or self.df.empty:
-            return self.df
-        if self.campaign_col not in self.df.columns:
-            logging.warning(
-                '{} not in report, not filtering on campaign name.  The '
-                'report type may not support the campaign grouping.'.format(
-                    self.campaign_col))
-            return self.df
-        campaigns = self.df[self.campaign_col].astype('U')
-        mask = campaigns.str.contains(self.campaign_name_filter[0],
-                                      regex=False)
-        for value in self.campaign_name_filter[1:]:
-            mask = mask | campaigns.str.contains(value, regex=False)
-        tdf = self.df[mask]
-        if tdf.empty:
-            logging.warning(
-                'Campaign filter did not match any of the {} campaigns '
-                'pulled, returning unfiltered data.  Campaigns: {}'.format(
-                    self.df[self.campaign_col].nunique(),
-                    sorted(self.df[self.campaign_col].dropna()
-                           .unique().tolist())))
-            return self.df
-        logging.info('Filtered to {} of {} rows on campaign filter.'.format(
-            len(tdf), len(self.df)))
-        self.df = tdf.reset_index(drop=True)
+        self.df = utl.filter_df_on_campaign(
+            self.df, self.campaign_name_filter, self.campaign_col,
+            self.campaign_id_col, keep_on_no_match=keep_on_no_match)
         return self.df
 
     def refresh_client_token(self, extra):
@@ -256,19 +222,52 @@ class DbApi(object):
         return full_url
 
     def get_data(self, sd=None, ed=None, fields=None):
+        """
+        Pulls the report, retrying once when a campaign id filter empties it.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :param fields: The API_FIELDS values from the vendor matrix
+        :return: The report as a dataframe
+        """
         self.parse_campaign_filter()
+        self.get_report_df(sd, ed, fields)
+        retried = bool(self.df.empty and self.campaign_ids and self.query_id)
+        if retried:
+            logging.warning(
+                'No data for campaign ids {}, which may name the campaigns '
+                'rather than identify them.  Retrying without the api '
+                'filter.'.format(self.campaign_ids))
+            self.campaign_ids = []
+            self.query_id = None
+            self.report_id = None
+            self.get_report_df(sd, ed, fields)
+        self.filter_df_on_campaign(keep_on_no_match=not retried)
+        return self.df
+
+    def get_report_df(self, sd, ed, fields):
+        """
+        Creates, runs and downloads a single report.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :param fields: The API_FIELDS values from the vendor matrix
+        :return: The downloaded dataframe, empty when the report failed
+        """
+        self.df = pd.DataFrame()
         report_created = self.create_report(sd, ed, fields)
         if not report_created:
             logging.warning('Report was not created, check for errors.')
-            return pd.DataFrame()
+            return self.df
         self.run_report()
         self.get_raw_data()
         self.check_empty_df()
         self.remove_footer()
-        self.filter_df_on_campaign()
         return self.df
 
     def check_empty_df(self):
+        if self.df.empty:
+            return
         if self.df.iloc[0, 0] == 'No data returned by the reporting service.':
             logging.warning('No data in response, returning empty df.')
             self.df = pd.DataFrame()

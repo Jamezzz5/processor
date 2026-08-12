@@ -2950,9 +2950,11 @@ class TestDbApiCampaignFilter:
         return api
 
     def test_numeric_filter_is_server_side(self):
+        """A numeric filter still goes to the api, but is kept for the
+        post download match too since it may be a name and not an id."""
         api = self.get_api('32357452,99999999')
         assert api.campaign_ids == ['32357452', '99999999']
-        assert api.campaign_name_filter == []
+        assert api.campaign_name_filter == ['32357452', '99999999']
         params = api.create_report_params()
         vals = [x['value'] for x in params['filters']
                 if x['type'] == 'FILTER_MEDIA_PLAN']
@@ -3013,13 +3015,75 @@ class TestDbApiCampaignFilter:
     def get_df():
         return pd.DataFrame({
             dbapi.DbApi.campaign_col: [
-                'GameA Launch', 'GameB Teaser', 'GameA Beta'],
+                'GameA Launch 36314869', 'GameB Teaser', 'GameA Beta'],
+            dbapi.DbApi.campaign_id_col: ['111', '222', '333'],
             'Impressions': [1, 2, 3]})
 
     def test_filter_df_on_campaign(self):
         api = self.get_api('GameA')
         api.df = self.get_df()
         assert len(api.filter_df_on_campaign()) == 2
+
+    def test_filter_df_on_campaign_id(self):
+        api = self.get_api('222')
+        api.df = self.get_df()
+        assert len(api.filter_df_on_campaign()) == 1
+
+    def test_numeric_filter_matches_campaign_name(self):
+        """The dcm campaign id the plan holds is not a dv360 campaign id,
+        but the dv360 campaign is named for it."""
+        api = self.get_api('36314869')
+        api.df = self.get_df()
+        tdf = api.filter_df_on_campaign()
+        assert tdf[dbapi.DbApi.campaign_id_col].tolist() == ['111']
+
+    def test_get_data_retries_without_id_filter(self, monkeypatch):
+        """An id the api cannot match empties the report, so the retry has
+        to drop the api filter and reach the campaign name instead."""
+        api = self.get_api('36314869')
+        pulls = []
+
+        def fake_get_report_df(sd, ed, fields):
+            pulls.append(list(api.campaign_ids))
+            api.query_id = 'q1'
+            api.df = (pd.DataFrame() if api.campaign_ids
+                      else TestDbApiCampaignFilter.get_df())
+            return api.df
+
+        monkeypatch.setattr(api, 'get_report_df', fake_get_report_df)
+        df = api.get_data()
+        assert pulls == [['36314869'], []]
+        assert df[dbapi.DbApi.campaign_id_col].tolist() == ['111']
+
+    def test_get_data_retry_no_match_returns_empty(self, monkeypatch):
+        """The retry holds every campaign the advertiser ran, so a filter
+        that still matches nothing must not report all of them."""
+        api = self.get_api('99999999')
+
+        def fake_get_report_df(sd, ed, fields):
+            api.query_id = 'q1'
+            api.df = (pd.DataFrame() if api.campaign_ids
+                      else TestDbApiCampaignFilter.get_df())
+            return api.df
+
+        monkeypatch.setattr(api, 'get_report_df', fake_get_report_df)
+        assert api.get_data().empty
+
+    def test_get_data_no_retry_on_config_report(self, monkeypatch):
+        """A report id from the config never carried the filter, so an
+        empty report is real and must not cost a second pull."""
+        api = self.get_api('36314869')
+        api.report_id = 'r1'
+        pulls = []
+
+        def fake_get_report_df(sd, ed, fields):
+            pulls.append(list(api.campaign_ids))
+            api.df = pd.DataFrame()
+            return api.df
+
+        monkeypatch.setattr(api, 'get_report_df', fake_get_report_df)
+        api.get_data()
+        assert len(pulls) == 1
 
     def test_filter_df_multiple_names(self):
         api = self.get_api('GameA, GameB')
@@ -3037,3 +3101,47 @@ class TestDbApiCampaignFilter:
         api = self.get_api('GameA')
         api.df = pd.DataFrame({'Impressions': [1]})
         assert len(api.filter_df_on_campaign()) == 1
+
+
+class TestDcApiCampaignFilter:
+    """A campaign dimension filter only accepts ids, so a campaign name
+    has to be matched against the report after it downloads."""
+
+    @staticmethod
+    def get_api(campaign_id=None):
+        api = dcapi.DcApi()
+        api.advertiser_id = '123'
+        api.campaign_id = campaign_id
+        api.date_range = {}
+        api.parse_campaign_filter()
+        return api
+
+    @staticmethod
+    def get_criteria_ids(api):
+        criteria = api.create_report_criteria(reach_report=True)
+        return [x['id'] for x in criteria['dimensionFilters']
+                if x['dimensionName'] == 'campaign']
+
+    def test_numeric_filter_is_server_side(self):
+        api = self.get_api('32446667,32357452')
+        assert api.campaign_ids == ['32446667', '32357452']
+        assert self.get_criteria_ids(api) == ['32446667', '32357452']
+
+    def test_name_filter_is_client_side(self):
+        """A name sent as an id filter matches nothing, so it must stay
+        off the criteria and be matched on the report instead."""
+        api = self.get_api('GameA')
+        assert api.campaign_ids == []
+        assert api.campaign_name_filter == ['GameA']
+        assert self.get_criteria_ids(api) == []
+
+    def test_filter_df_on_campaign_name(self):
+        api = self.get_api('GameA')
+        df = pd.DataFrame({
+            dcapi.DcApi.campaign_col: ['GameA Launch', 'GameB Teaser'],
+            dcapi.DcApi.campaign_id_col: ['111', '222'],
+            'Impressions': [1, 2]})
+        tdf = utl.filter_df_on_campaign(
+            df, api.campaign_name_filter, dcapi.DcApi.campaign_col,
+            dcapi.DcApi.campaign_id_col)
+        assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']

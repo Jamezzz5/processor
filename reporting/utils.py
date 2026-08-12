@@ -524,6 +524,79 @@ def filter_df_on_col(df, col_name, col_val, exclude=False):
     return df
 
 
+def parse_campaign_filter(campaign_filter):
+    """
+    Splits a campaign filter into ids to send to an api and values to match
+    against the report once it downloads.
+
+    An api that filters campaigns server side only accepts ids, so an all
+    numeric filter can be sent.  A mix is never sent, since an id filter and
+    a name filter intersect to nothing.  Every value is returned for the
+    post download match either way, because a numeric value is as likely to
+    be an id the campaign is named for as it is to be the campaign's own id.
+
+    :param campaign_filter: The raw comma separated filter
+    :return: A tuple of the ids for the api and the values to match
+    """
+    values = [x.strip() for x in str(campaign_filter or '').split(',')]
+    values = [x for x in values if x and x.lower() != 'nan']
+    ids = values if values and all(x.isdigit() for x in values) else []
+    return ids, values
+
+
+def filter_df_on_campaign(df, values, name_col, id_col='',
+                          keep_on_no_match=True):
+    """
+    Narrows a report to the campaigns a filter names.
+
+    Matching is exact on the id column and a literal (non regex) substring
+    on the name column, so a value only has to be right about the campaign
+    and not about which of the two it is.  When the filter matches nothing
+    the unfiltered df is kept, so a stale or mistyped value surfaces as a
+    warning rather than as empty data.
+
+    :param df: The downloaded report
+    :param values: The filter values to match
+    :param name_col: The name of the campaign name column
+    :param id_col: The name of the campaign id column, when the report has one
+    :param keep_on_no_match: Whether a filter that matches nothing keeps the
+        unfiltered df.  False where the caller already knows the filter names
+        a campaign in the report, so a non match means the campaign did not
+        deliver rather than that the filter is wrong
+    :return: The filtered dataframe
+    """
+    if not values or df.empty:
+        return df
+    cols = [x for x in [name_col, id_col] if x and x in df.columns]
+    if not cols:
+        logging.warning(
+            'Neither {} nor {} in report, not filtering on the campaign '
+            'filter.  The report type may not support the campaign '
+            'grouping.'.format(name_col, id_col))
+        return df
+    mask = pd.Series(False, index=df.index)
+    if name_col in cols:
+        names = df[name_col].astype('U')
+        for value in values:
+            mask |= names.str.contains(value, regex=False)
+    if id_col in cols:
+        ids = df[id_col].astype('U').str.strip().str.replace(
+            r'\.0$', '', regex=True)
+        mask |= ids.isin(values)
+    tdf = df[mask]
+    if tdf.empty:
+        logging.warning(
+            'Campaign filter {} did not match any of the {} campaigns '
+            'pulled, returning {} data.  Campaigns: {}'.format(
+                values, df[cols[0]].nunique(),
+                'unfiltered' if keep_on_no_match else 'empty',
+                sorted(df[cols[0]].dropna().unique().tolist())))
+        return df if keep_on_no_match else tdf
+    logging.info('Filtered to {} of {} rows on campaign filter.'.format(
+        len(tdf), len(df)))
+    return tdf.reset_index(drop=True)
+
+
 def image_to_binary(file_name, as_bytes_io=False):
     if os.path.isfile(file_name):
         with open(file_name, 'rb') as image_file:
