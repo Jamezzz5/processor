@@ -207,6 +207,16 @@ class CommunitySnapshot(Base):
                          'summary) - the review-stats lane\'s own '
                          'liveness column; steam_positive_pct is '
                          'shared with the curated registry sheet.')
+    youtube_recent_views = Column(
+        Numeric, comment='Total views on the linked official '
+                         'channel\'s uploads published in the '
+                         'trailing 90 days - a level, not a rate. '
+                         'Week-over-week deltas are the view '
+                         'velocity; videos aging out of the window '
+                         'can dip the level, so deltas clip at zero.')
+    youtube_video_count = Column(
+        Numeric, comment='Uploads on the linked official channel in '
+                         'the trailing 90 days.')
 
 
 class CommunityLink(Base):
@@ -522,3 +532,115 @@ class AdSpend(Base):
     updated_at = Column(DateTime,
                         comment='Naive UTC; last export sweep that '
                                 'refreshed this row.')
+
+
+class SearchInterest(Base):
+    """Google Trends weekly search-interest fact — one row per title
+    per ISO week per geo. Trends readings are indexed 0-100 within one
+    request, so each batch shares an anchor term and ``interest`` is
+    the anchor-rescaled value; only ``interest`` is comparable across
+    rows."""
+    __tablename__ = 'search_interest'
+    __table_args__ = (
+        UniqueConstraint('title', 'week_start', 'geo',
+                         name='uq_search_interest_obs'),
+        Index('ix_search_interest_week', 'week_start'),
+        Index('ix_search_interest_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Google Trends weekly search interest per title. '
+                    'Readings are indexed 0-100 within one request, so '
+                    'interest is rescaled by the shared anchor term; '
+                    'compare interest across rows, never raw_interest.'},
+    )
+
+    searchinterestid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = title not yet matched to the game '
+                            'dim; the raw title is retained.')
+    title = Column(Text, nullable=False,
+                   comment='Tracked title as queried.')
+    week_start = Column(Date, nullable=False,
+                        comment='ISO week Monday (Trends weekly '
+                                'grain).')
+    geo = Column(Text, nullable=False, server_default='GLOBAL',
+                 comment="Trends geo cut; 'GLOBAL' = worldwide.")
+    interest = Column(
+        Numeric, comment='Anchor-rescaled reading (raw_interest x 100 '
+                         '/ anchor_value) - the only column comparable '
+                         'across batches. NULL when the anchor read '
+                         'too low to scale by. The rolling 12-month '
+                         'request window re-normalises history, so '
+                         'values shift slightly between runs; the '
+                         'upsert overwrite is intended.')
+    raw_interest = Column(Numeric,
+                          comment="The batch's own 0-100 reading, "
+                                  'kept for audit; never compare '
+                                  'across batches.')
+    anchor = Column(Text,
+                    comment='Anchor title the batch was scaled by.')
+    anchor_value = Column(Numeric,
+                          comment="The anchor's raw reading in this "
+                                  'batch.')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last sweep that refreshed '
+                                'this row - the lane recency column, '
+                                'since week_start ages by '
+                                'construction.')
+
+
+class AttentionShare(Base):
+    """Weekly attention-share snapshot — one row per tracked title per
+    ISO week; the volume-share companion to the z-scored
+    ``TitleScore``. Each signal's share of the tracked set's weekly
+    volume is combined on fixed weights that renormalise over the
+    signals live that week."""
+    __tablename__ = 'attention_share'
+    __table_args__ = (
+        UniqueConstraint('week_start', 'title',
+                         name='uq_attention_share_week'),
+        Index('ix_attention_share_week', 'week_start'),
+        Index('ix_attention_share_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Weekly attention share per tracked title: each '
+                    "signal's share of the tracked set's weekly "
+                    'volume, combined on fixed weights that '
+                    'renormalise over the signals live that week. A '
+                    "share is a position within that week's field "
+                    '(see set_size), not an absolute rating.'},
+    )
+
+    attentionshareid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = title not yet matched to the game '
+                            'dim; the raw title is retained.')
+    title = Column(Text, nullable=False, comment='Raw tracked title.')
+    week_start = Column(Date, nullable=False,
+                        comment='ISO week Monday.')
+    search_interest = Column(
+        Numeric, comment='Anchor-rescaled weekly Trends reading.')
+    youtube_views = Column(
+        Numeric, comment='Week-over-week delta of trailing-90d '
+                         'official-channel video views, clipped at '
+                         'zero.')
+    twitch_viewers = Column(
+        Numeric, comment='Weekly mean of the nightly '
+                         'concurrent-viewer samples.')
+    reddit_active_users = Column(
+        Numeric, comment='Weekly mean of the nightly samples.')
+    steam_ccu = Column(
+        Numeric, comment='Weekly mean of daily concurrent players.')
+    attention_share = Column(
+        Numeric, comment="0-1 fraction of the tracked set's combined "
+                         'weekly attention.')
+    signals_present = Column(
+        Integer, comment='How many of the five signals carried data '
+                         'for this title this week.')
+    set_size = Column(
+        Integer, comment='Titles scored that week. Shares are only '
+                         'comparable at equal set_size - re-base '
+                         'within a chosen cohort to compare across '
+                         'weeks.')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last derive that refreshed '
+                                'this row - the recency column, since '
+                                'week_start ages by construction.')

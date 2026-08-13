@@ -2706,6 +2706,45 @@ class TestGamesDb:
         assert s.query(gmdl.AdSpend).count() == 2
         assert s.query(gmdl.ReviewRollup).count() == 2
 
+    def test_attention_facts_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        week = dt.date(2026, 8, 10)
+        si_key = {'title': 'Halo Infinite', 'week_start': week,
+                  'geo': 'GLOBAL'}
+        assert gdb.upsert_fact(
+            s, gmdl.SearchInterest, si_key,
+            {'gameid': game.gameid, 'interest': 40, 'raw_interest': 20,
+             'anchor': 'Stardew Valley', 'anchor_value': 50}) == 1
+        share_key = {'week_start': week, 'title': 'Halo Infinite'}
+        assert gdb.upsert_fact(
+            s, gmdl.AttentionShare, share_key,
+            {'gameid': game.gameid, 'attention_share': 0.4,
+             'twitch_viewers': 1200, 'signals_present': 3,
+             'set_size': 2}) == 1
+        # Unmatched titles land too, with a NULL gameid.
+        assert gdb.upsert_fact(
+            s, gmdl.AttentionShare,
+            {'week_start': week, 'title': 'Mystery Title'},
+            {'gameid': None, 'attention_share': 0.6}) == 1
+        s.commit()
+        # Reruns update in place — the Trends rolling window and the
+        # weekly derive both overwrite by design.
+        assert gdb.upsert_fact(s, gmdl.SearchInterest, si_key,
+                               {'interest': 44}) == 0
+        assert gdb.upsert_fact(s, gmdl.AttentionShare, share_key,
+                               {'attention_share': 0.38}) == 0
+        s.commit()
+        assert s.query(gmdl.SearchInterest).count() == 1
+        assert s.query(gmdl.AttentionShare).count() == 2
+        row = s.query(gmdl.SearchInterest).one()
+        assert float(row.interest) == 44
+        assert row.gameid == game.gameid
+        share = s.query(gmdl.AttentionShare).filter_by(
+            title='Halo Infinite').one()
+        assert float(share.attention_share) == 0.38
+
     def test_game_release_upsert_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite', igdb_id=1105,
