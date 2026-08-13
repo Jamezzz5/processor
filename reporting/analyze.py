@@ -4178,8 +4178,12 @@ class AliChat(object):
             return response
 
     def search_db_models(self, db_model, message,
-                         response, html_response):
-        """Search for matching objects of db_model type."""
+                         response, html_response, components=None):
+        """Search for matching objects of db_model type.
+
+        ``components`` narrows the AliSearch score sources (``None``
+        keeps the full live/bm25/tfidf set).
+        """
         response = ''
         html_response = ''
         min_floor = getattr(db_model, 'llm_min_results', 0)
@@ -4189,7 +4193,8 @@ class AliChat(object):
                 self, transformer=self.transformer,
                 transformer_dict=self.transformer_dict)
             model_ids = ali_search.search(
-                db_model, message, top_k=top_k)
+                db_model, message, top_k=top_k,
+                components=components)
         except Exception:
             model_ids, _words = self.find_db_model(
                 db_model, message)
@@ -4666,7 +4671,7 @@ class AliChat(object):
                      current_user=None, is_question=False,
                      file_map=None, base_path=None,
                      doc_files=None, area_keywords=None,
-                     page_context=None):
+                     page_context=None, retrieval_components=None):
         self.db = db
         self.current_user = current_user
         self.models_to_search = models_to_search
@@ -4720,7 +4725,8 @@ class AliChat(object):
         if not response:
             for db_model in models_to_search:
                 r, hr = self.search_db_models(
-                    db_model, message, response, html_response)
+                    db_model, message, response, html_response,
+                    components=retrieval_components)
                 if r:
                     response = r
                     matched_models.append(db_model)
