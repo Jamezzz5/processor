@@ -4084,7 +4084,8 @@ class AliChat(object):
                          stream=False, timeout=120, temperature=0.4,
                          source_context=None, tools=None,
                          tool_choice='auto', extra_messages=None,
-                         chat_template_kwargs=None, read_timeout=None):
+                         chat_template_kwargs=None, read_timeout=None,
+                         max_tokens=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -4111,6 +4112,11 @@ class AliChat(object):
             than the whole call. ``None`` keeps
             ``llm_request_generator``'s own default, so existing callers
             are unaffected. Ignored when ``stream`` is False.
+        :param max_tokens: Hard output budget forwarded to the server.
+            When the budget cuts generation the server reports
+            ``finish_reason='length'`` — callers that must never parse
+            a truncated answer watch for that. ``None`` (the default)
+            leaves generation unbounded, as before.
         :return: response from the llm as string
         """
         if not instructions:
@@ -4157,6 +4163,8 @@ class AliChat(object):
             body['tool_choice'] = tool_choice
         if chat_template_kwargs:
             body['chat_template_kwargs'] = chat_template_kwargs
+        if max_tokens:
+            body['max_tokens'] = max_tokens
         if stream:
             if read_timeout is None:
                 return self.llm_request_generator(body)

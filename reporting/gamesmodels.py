@@ -644,3 +644,125 @@ class AttentionShare(Base):
                         comment='Naive UTC; last derive that refreshed '
                                 'this row - the recency column, since '
                                 'week_start ages by construction.')
+
+
+class ReviewText(Base):
+    """Capped per-title corpus of recent Steam review bodies — the
+    reclassifiable input behind ``ReviewTheme``. The writer enforces a
+    most-recent-N cap per title (N is lqapp's STEAM_REVIEW_TEXT_CAP),
+    so the table is a rolling sample, never a complete history. The
+    classification columns start NULL and lapse back into the eligible
+    pool whenever the taxonomy version moves."""
+    __tablename__ = 'review_text'
+    __table_args__ = (
+        UniqueConstraint('recommendationid', name='uq_review_text_rec'),
+        Index('ix_review_text_game_created', 'gameid', 'created_at'),
+        {'schema': 'games',
+         'comment': 'Most recent N English Steam review bodies per '
+                    'title (N = STEAM_REVIEW_TEXT_CAP, '
+                    'writer-enforced) - the reclassifiable corpus '
+                    'behind review_theme, not a complete history.'},
+    )
+
+    reviewtextid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    recommendationid = Column(
+        BigInteger, nullable=False,
+        comment="Steam's own review id - the idempotency key.")
+    language = Column(Text, nullable=False, server_default='english')
+    review_text = Column(Text, comment='The review body as fetched.')
+    voted_up = Column(Integer,
+                      comment='1 = recommends the title, 0 = does not.')
+    playtime_at_review = Column(
+        Numeric, comment='Author minutes played when the review was '
+                         'written.')
+    votes_up = Column(Numeric,
+                      comment='Helpful votes from other users.')
+    weighted_vote_score = Column(
+        Numeric, comment="Steam's 0-1 helpfulness weighting; how "
+                         'exemplar reviews are picked.')
+    created_at = Column(
+        DateTime, nullable=False,
+        comment='Naive UTC review creation time - the cap-trim order '
+                'column.')
+    updated_review_at = Column(
+        DateTime, comment='Naive UTC; last edit by the author.')
+    fetched_at = Column(
+        DateTime, comment='Naive UTC; last sweep that touched this '
+                          'row - the lane recency column, since '
+                          'created_at ages by construction.')
+    themes = Column(
+        Text, comment='JSON array of taxonomy keys the classifier '
+                      'assigned; [] means classified with none '
+                      'applying, NULL means not yet classified.')
+    classified_at = Column(
+        DateTime, comment='Naive UTC; when the classifier stamped '
+                          'themes.')
+    taxonomy_version = Column(
+        Integer, comment='Taxonomy the themes were assigned under; '
+                         'rows re-enter the eligible pool when the '
+                         'current version moves past it.')
+
+
+class ReviewTheme(Base):
+    """Per-title theme aggregates over the classified ``ReviewText``
+    sample — derived arithmetic only, no model call. The writer
+    replaces a title's whole row set in one transaction, so stale
+    themes and stale taxonomy versions never linger."""
+    __tablename__ = 'review_theme'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'theme', name='uq_review_theme_cell'),
+        Index('ix_review_theme_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Per-title review-theme aggregates over the '
+                    'classified sample. Speaks only to theme '
+                    'composition; positive share comes from the pull '
+                    'totals on community_snapshot '
+                    '(steam_total_reviews / steam_positive_pct), '
+                    'never from this sample.'},
+    )
+
+    reviewthemeid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    theme = Column(Text, nullable=False, comment='Taxonomy key.')
+    mentions = Column(Numeric,
+                      comment='Classified reviews carrying the theme.')
+    positive_mentions = Column(
+        Numeric, comment='Of mentions, reviews whose author '
+                         "recommends the title (Steam's own voted_up "
+                         'flag, not model-judged sentiment).')
+    negative_mentions = Column(
+        Numeric, comment='Of mentions, reviews whose author does not '
+                         'recommend the title.')
+    share = Column(
+        Numeric, comment='mentions / sample_size (0-1) - a '
+                         'composition of the classified sample, not '
+                         'of all reviews.')
+    sample_size = Column(
+        Numeric, comment='Classified reviews behind every row for '
+                         'this title.')
+    corpus_size = Column(
+        Numeric, comment='All stored review_text rows for the title '
+                         'at derive time.')
+    classified_share = Column(
+        Numeric, comment='sample_size / corpus_size (0-1).')
+    window_start = Column(
+        Date, comment='Earliest review creation date in the '
+                      'classified sample.')
+    window_end = Column(
+        Date, comment='Latest review creation date in the classified '
+                      'sample.')
+    example_ids = Column(
+        Text, comment='Comma-joined recommendationids of the '
+                      'top-voted examples; best-effort audit - ids '
+                      'may age past the stored cap.')
+    taxonomy_version = Column(
+        Integer, nullable=False,
+        comment='Taxonomy the aggregates were derived under.')
+    model = Column(Text,
+                   comment='Classifier model id, for provenance.')
+    computed_at = Column(
+        DateTime, comment='Naive UTC; when derive wrote this row - '
+                          'the recency column.')

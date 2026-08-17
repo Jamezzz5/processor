@@ -2745,6 +2745,46 @@ class TestGamesDb:
             title='Halo Infinite').one()
         assert float(share.attention_share) == 0.38
 
+    def test_review_text_and_theme_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        text_key = {'recommendationid': 900001}
+        assert gdb.upsert_fact(
+            s, gmdl.ReviewText, text_key,
+            {'gameid': game.gameid, 'language': 'english',
+             'review_text': 'Great campaign, rough netcode.',
+             'voted_up': 1, 'votes_up': 12,
+             'created_at': dt.datetime(2026, 8, 1, 5)}) == 1
+        assert gdb.upsert_fact(
+            s, gmdl.ReviewText, {'recommendationid': 900002},
+            {'gameid': game.gameid, 'voted_up': 0,
+             'created_at': dt.datetime(2026, 8, 2, 5)}) == 1
+        s.commit()
+        # A refetch updates in place; fields it does not send (the
+        # classification columns) keep their values.
+        assert gdb.upsert_fact(s, gmdl.ReviewText, text_key,
+                               {'votes_up': 15}) == 0
+        s.commit()
+        assert s.query(gmdl.ReviewText).count() == 2
+        row = s.query(gmdl.ReviewText).filter_by(
+            recommendationid=900001).one()
+        assert float(row.votes_up) == 15
+        assert row.review_text == 'Great campaign, rough netcode.'
+        theme_key = {'gameid': game.gameid, 'theme': 'performance_bugs'}
+        assert gdb.upsert_fact(
+            s, gmdl.ReviewTheme, theme_key,
+            {'mentions': 5, 'share': 0.25, 'sample_size': 20,
+             'taxonomy_version': 1}) == 1
+        assert gdb.upsert_fact(
+            s, gmdl.ReviewTheme, theme_key,
+            {'mentions': 6, 'taxonomy_version': 2}) == 0
+        s.commit()
+        assert s.query(gmdl.ReviewTheme).count() == 1
+        theme = s.query(gmdl.ReviewTheme).one()
+        assert float(theme.mentions) == 6
+        assert theme.taxonomy_version == 2
+
     def test_game_release_upsert_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite', igdb_id=1105,
