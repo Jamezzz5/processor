@@ -588,6 +588,46 @@ class SearchInterest(Base):
                                 'construction.')
 
 
+class WikipediaPageview(Base):
+    """Wikipedia weekly pageview fact — one row per tracked title per
+    ISO week, the sum of the linked article's daily user (non-bot)
+    pageviews. The Wikimedia API serves history back to July 2015, so
+    unlike every other signal lane this one can backfill years."""
+    __tablename__ = 'wikipedia_pageview'
+    __table_args__ = (
+        UniqueConstraint('week_start', 'title',
+                         name='uq_wikipedia_pageview_week'),
+        Index('ix_wikipedia_pageview_week', 'week_start'),
+        Index('ix_wikipedia_pageview_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Weekly Wikipedia article pageviews per tracked '
+                    'title, user agent only. The API serves history '
+                    'back to July 2015, so this is the one attention '
+                    'signal with a deep backfill.'},
+    )
+
+    wikipediapageviewid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    comment='NULL = title not yet matched to the game '
+                            'dim; the raw title is retained.')
+    title = Column(Text, nullable=False,
+                   comment='Tracked title as queried.')
+    week_start = Column(Date, nullable=False,
+                        comment='ISO week Monday.')
+    views = Column(
+        Numeric, comment="Sum of the ISO week's daily user (non-bot) "
+                         'pageviews for the linked article.')
+    article = Column(Text,
+                     comment='Wikipedia article title fetched, kept '
+                             'for audit as the community_link mapping '
+                             'evolves.')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last sweep that refreshed '
+                                'this row - the lane recency column, '
+                                'since week_start ages by '
+                                'construction.')
+
+
 class AttentionShare(Base):
     """Weekly attention-share snapshot — one row per tracked title per
     ISO week; the volume-share companion to the z-scored
@@ -629,11 +669,14 @@ class AttentionShare(Base):
         Numeric, comment='Weekly mean of the nightly samples.')
     steam_ccu = Column(
         Numeric, comment='Weekly mean of daily concurrent players.')
+    wikipedia_views = Column(
+        Numeric, comment='Weekly sum of daily Wikipedia article '
+                         'pageviews, user agent only.')
     attention_share = Column(
         Numeric, comment="0-1 fraction of the tracked set's combined "
                          'weekly attention.')
     signals_present = Column(
-        Integer, comment='How many of the five signals carried data '
+        Integer, comment='How many of the signals carried data '
                          'for this title this week.')
     set_size = Column(
         Integer, comment='Titles scored that week. Shares are only '
