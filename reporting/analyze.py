@@ -965,11 +965,13 @@ class Analyze(object):
         vm_dict = vm.VendorMatrix.get_col_translation()
         missing_cols = []
         new_mappings = {}
+        lookup_cols = [vmc.placement, vmc.fullplacename, vmc.autodicord,
+                       vmc.autodicord]
         for col in cols_to_check:
             clean_col = col.replace('::', '')
             if clean_col in ds_cols:
                 continue
-            if exp_col != vmc.placement:
+            if exp_col not in lookup_cols:
                 found_col = ''
                 if exp_col in ds_cols:
                     found_col = exp_col
