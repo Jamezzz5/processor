@@ -917,7 +917,8 @@ class Analyze(object):
               vmc.placement: {},
               vmc.date: {},
               'empty': {},
-              vmc.startdate: {}}
+              vmc.startdate: {},
+              'active_metrics': {}}
         c_cols = [x for x in vmc.datafloatcol if ds.p[x] != ['nan']]
         clean_functions = {
             'get and merge dictionary': ds.get_and_merge_dictionary,
@@ -942,6 +943,48 @@ class Analyze(object):
             if sheet_name not in sheet_lists:
                 missing_sheets.append(sheet_name)
         return missing_sheets
+
+    @staticmethod
+    def get_missing_ds_cols_for_vm_col(ds, ds_cols, exp_col):
+        """
+        Ensure the expected column name, or names if the expected column name is
+        a combination of other columns indicated in the vendormatrix, appears in
+        the datasource. Returns a list of expected column names that were not
+        found nor successfully mapped to different column names and a dictionary
+        of the recommended column mappings.
+
+        :param ds: Data source object being analyzed
+        :param ds_cols: List of the column names for the data source's dataframe
+        :param exp_col: Name of the column being looked for
+        :return: List of missing column names associated with the expected col
+            name provided and dictionary of the recommended column mappings
+        """
+        cols_to_check = ds.p[exp_col] if ds.p[exp_col] != ['nan'] else [exp_col]
+        if exp_col == vmc.placement:
+            cols_to_check = [ds.p[exp_col]]
+        vm_dict = vm.VendorMatrix.get_col_translation()
+        missing_cols = []
+        new_mappings = {}
+        for col in cols_to_check:
+            clean_col = col.replace('::', '')
+            if clean_col in ds_cols:
+                continue
+            if exp_col != vmc.placement:
+                found_col = ''
+                if exp_col in ds_cols:
+                    found_col = exp_col
+                elif clean_col in vm_dict:
+                    found_vals = list(set(vm_dict[clean_col]) & set(ds_cols))
+                    found_col = found_vals[0] if found_vals else ''
+                elif exp_col in vm_dict:
+                    found_vals = list(set(vm_dict[exp_col]) & set(ds_cols))
+                    found_col = found_vals[0] if found_vals else ''
+                if found_col:
+                    new_mappings[found_col] = exp_col
+                    continue
+            missing_cols.append(col)
+        return missing_cols, new_mappings
+
 
     def compare_raw_files(self, vk, ds):
         """
@@ -1003,12 +1046,11 @@ class Analyze(object):
                     '{} file could not be loaded.  {}'.format(cds_name, msg))
                 continue
             cd['file_load'][cds_name] = (True, 'File was successfully read.')
+            suggested_col_mappings = {}
             for col in [vmc.fullplacename, vmc.placement, vmc.date] + c_cols:
-                cols_to_check = ds.p[col]
-                if col == vmc.placement:
-                    cols_to_check = [ds.p[col]]
-                missing_cols = [x for x in cols_to_check
-                                if x.replace('::', '') not in df.columns]
+                missing_cols, col_maps = self.get_missing_ds_cols_for_vm_col(
+                    ds, df.columns, col)
+                suggested_col_mappings.update(col_maps)
                 if missing_cols:
                     msg = (False,
                            'Columns specified in the {} are not in the'
@@ -1017,6 +1059,19 @@ class Analyze(object):
                 else:
                     msg = (True, '{} columns are in the raw file.'.format(col))
                 cd[col][cds_name] = msg
+            msg = 'No active metric changes detected.'
+            if suggested_col_mappings:
+                map_str = [f'{key} -> {val}'
+                           for key, val in suggested_col_mappings.items()]
+                map_str = ', '.join(map_str)
+                msg = ('Active metric changes detected. The file\'s following'
+                       ' column names will be mapped as: {}').format(map_str)
+                col_map = {}
+                for key, val in suggested_col_mappings.items():
+                    new_name = cds.p[val][0] if cds.p[val] != ['nan'] else val
+                    col_map[key] = new_name
+                df = df.rename(columns=col_map)
+            cd['active_metrics'][cds_name] = (True, msg)
             if df is None or df.empty:
                 msg = '{} file is empty skipping checks.'.format(cds_name)
                 cd['empty'][cds_name] = (False, msg)

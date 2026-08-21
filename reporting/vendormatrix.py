@@ -293,6 +293,88 @@ class VendorMatrix(object):
         self.write_output_data(df, output_file)
         return df
 
+    @staticmethod
+    def get_col_translation():
+        """
+        Gets a dictionary of column names in the vendormatrix and the commonly
+        used ulterior names that correspond to them. Allows for some variation
+        in column names to be detected in raw files.
+
+        :return:Dictionary of vendormatrix column names
+        """
+        data_dict = {
+            vmc.date: [vmc.date.lower(), 'Day', 'Reporting Start', 'Start Date',
+                       'Flight Start', 'clicked_at_date', 'yearmonth',
+                       'start_time', 'start_datetime'],
+            vmc.impressions: [vmc.impressions.lower(), 'Planned Impressions',
+                              'Delivered Impressions', 'Ad Impressions',
+                              'Display Impressions', 'Impressions (Net)',
+                              '* Served Impressions', 'show_cnt'],
+            vmc.clicks: [vmc.clicks.lower(), 'Link Clicks', 'Ad CLicks',
+                         'Display Clicks', 'Clicks (Net)', '* Clicks', 'swipes',
+                         'click_cnt', 'Link clicks'],
+            vmc.cost: ['Spend', 'spend', 'Cost', 'cost', 'totalCost',
+                       'Revenue (Adv Currency)', 'Amount Spent (USD)',
+                       'Planned Net Cost', 'Budget Delivered', 'Buyer Spend',
+                       'stat_cost', 'Advertiser Cost (Adv Currency)',
+                       'Billable', 'Advertiser Spending'],
+            vmc.views: ['Views', 'TrueView Views', '10-Second Video Views',
+                        'Video Starts', 'Video Started', 'video_views',
+                        'total_play', 'Video views'],
+            vmc.views25: ['Video played to 25%', 'Video Watches at 25%',
+                          'Video First Quartile Completions', 'Video View 25%',
+                          'Watches at 25%', 'Video Played 25%', 'quartile_1',
+                          'play_first_quartile', 'Video played 25%', '25%'],
+            vmc.views50: ['Video played to 50%', 'Video Watches at 50%',
+                          'Video Midpoints', 'Video View 50%', 'Watches at 50%',
+                          'Video Played 50%', 'quartile_2', 'play_midpoint',
+                          'Video played 50%', '50%'],
+            vmc.views75: ['Video played to 75%', 'Video Watches at 75%',
+                          'Video Third Quartile Completions', 'Video View 75%',
+                          'Watches at 75%', 'Video Played 75%', 'quartile_3',
+                          'play_third_quartile', 'Video played 75%', '75%'],
+            vmc.views100: ['Video played to 100%', 'Video Watches at 100%',
+                           'Video Completions', 'Video View 100%', 'play_over',
+                           'Watches at 100%', 'Video Fully Played', '100%',
+                           'view_completion', 'Video played 100%'],
+            vmc.video_plays: ['video_play_actions'],
+            vmc.engagements: ['post_engagement'],
+            vmc.likes: ['like'],
+            vmc.comments: ['comment'],
+            vmc.shares: ['post'],
+            vmc.reactions: ['post_reaction'],
+            vmc.revenue: ['Total Revenue', 'sales14d', 'totalSales14d'],
+            vmc.purchase: ['purchases14d', 'totalPurchases14d'],
+            vmc.newuser: ['Installs', 'newUsers'],
+            vmc.totaluser: ['users'],
+            vmc.download: ['Installs'],
+            vmc.ga_sessions: ['sessions'],
+            vmc.ga_goal1: ['goal1Completions'],
+            vmc.ga_goal2: ['goal2Completions'],
+            vmc.ga_pageviews: ['pageviews'],
+            vmc.ga_bounces: ['bounces'],
+            vmc.ga_timeonpage: ['timeOnPage'],
+            vmc.ad_recall: ['estimated_ad_recallers'],
+            vmc.purchasepi: ['View Based Conversions'],
+            vmc.purchasepc: ['Click Based Conversions'],
+            vmc.sm_totalbuzzpost: ['Total Spend ($)'],
+            vmc.view_imps: ['Video Viewable Impressions',
+                            'Display Viewable Impressions'],
+            vmc.view_total_imps: ['Video Measured Impressions',
+                                  'Display Measured Impressions'],
+            vmc.view_fraud: ['Fraud/SIVT Incidents'],
+            vmc.conv2: ['all_traffic_visits'],
+            vmc.conv3: ['all_traffic_bounce_rate'],
+            vmc.conv4: ['all_traffic_pages_per_visit'],
+            vmc.conv5: ['all_traffic_average_visit_duration'],
+            vmc.conv6: ['desktop_unique_visitors|mobile_unique_visitors'],
+            vmc.conv7: ['deduplicated_audience']
+        }
+        for x in vmc.datacol:
+            if x not in data_dict.keys():
+                data_dict[x] = []
+        return data_dict
+
 
 class ImportConfig(object):
     key = 'Key'
