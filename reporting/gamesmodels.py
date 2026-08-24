@@ -159,6 +159,15 @@ class NewzooEngagement(Base):
     avg_monthly_playtime = Column(Numeric)
     churn_pct = Column(Numeric)
     acquisition_pct = Column(Numeric)
+    steam_wishlists = Column(
+        Numeric,
+        comment='Steam wishlist count carried through the Newzoo MAU '
+                'export - the only automated wishlist source.')
+    steam_followers = Column(
+        Numeric,
+        comment='Steam follower count carried through the Newzoo MAU '
+                'export; the daily sheet-fed count lives on '
+                'community_snapshot.')
 
 
 class CommunitySnapshot(Base):

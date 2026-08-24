@@ -170,6 +170,29 @@ class TestUtils:
         assert pd.testing.assert_frame_equal(df, ndf) is None
         os.remove(file_name)
 
+    def test_import_read_csv_title_rows(self):
+        file_name = 'test_utf16.csv'
+        cols = ['a', 'b', 'c']
+        rows = [['Report Title'], ['All Time'], cols, ['1', '2', '3']]
+        lines = [','.join(x) for x in rows]
+        with open(file_name, 'w', encoding='utf-16', newline='') as f:
+            f.write('\n'.join(lines))
+        ndf = utl.import_read_csv(file_name)
+        assert len(ndf) == len(rows) - 1
+        ndf = utl.first_last_adj(ndf, 2, 0)
+        assert list(ndf.columns) == cols
+        assert len(ndf) == 1
+        os.remove(file_name)
+
+    def test_import_read_csv_bad_line(self):
+        file_name = 'test_bad_line.csv'
+        with open(file_name, 'w', newline='') as f:
+            f.write('a,b\n1,2\n3,4,5\n6,7\n')
+        ndf = utl.import_read_csv(file_name)
+        assert list(ndf.columns) == ['a', 'b']
+        assert len(ndf) == 2
+        os.remove(file_name)
+
     def test_import_read_xlsx_with_sheet_split(self):
         file_name = 'test.xlsx'
         df1 = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})
@@ -2524,6 +2547,30 @@ class TestImportPlanData:
         assert all(col in result.columns for col in expected_columns)
         assert len(dic.data_dict) == len(result)
         assert result[dctc.PNC].sum() == dic.data_dict[dctc.PNC].sum()
+
+    @requires_base_config
+    def test_import_plan_data_missing_col(self):
+        df = pd.DataFrame({
+            vmc.vendorkey: ['API_Test1', 'API_Test2'],
+            dctc.CAM: ['Camp1', 'Camp2'],
+            dctc.VEN: ['Ven1', 'Ven2'],
+            vmc.date: pd.to_datetime(['2025-01-01', '2025-01-02']),
+        })
+        cur_path = os.getcwd()
+        key = vm.plan_key
+        kwargs = {
+            vmc.fullplacename: [dctc.CAM, 'mpPackacge Description',
+                                dctc.VEN],
+            vmc.vendorkey: [key],
+            vmc.filenamedict: os.path.join(cur_path, utl.dict_path,
+                                           dctc.PFN),
+            vmc.filenameerror: os.path.join(
+                cur_path, utl.error_path, 'PLANNET_ERROR_REPORT.csv')
+        }
+        result = vm.import_plan_data(key, df, [], **kwargs)
+        assert isinstance(result, pd.DataFrame)
+        assert 'mpPackacge Description' not in result.columns
+        assert dctc.CAM in result.columns
 
     def test_set_start_date(self):
         test_data = {

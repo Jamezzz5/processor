@@ -1,9 +1,11 @@
 import os
 import io
 import re
+import csv
 import gzip
 import json
 import time
+import codecs
 import shutil
 import random
 import base64
@@ -56,6 +58,71 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
+def get_file_encoding(filename):
+    """Determines a file's encoding from its byte order mark, if any.
+
+    :param filename: the name of the file to check on disk
+    :returns: the name of the encoding the file was written with
+    """
+    boms = [(codecs.BOM_UTF8, 'utf-8-sig'), (codecs.BOM_UTF32_LE, 'utf-32'),
+            (codecs.BOM_UTF32_BE, 'utf-32'), (codecs.BOM_UTF16_LE, 'utf-16'),
+            (codecs.BOM_UTF16_BE, 'utf-16')]
+    with open(filename, 'rb') as f:
+        bom = f.read(4)
+    encoding = [x[1] for x in boms if bom.startswith(x[0])]
+    return encoding[0] if encoding else 'iso-8859-1'
+
+
+def read_ragged_csv(filename, kwargs):
+    """Reads a csv with rows holding more fields than its first row.
+
+    Sniffs the delimiter and row widths from the head of the file.  When the
+    first row is narrower than the rest, as with a title above the header, a
+    column is named for each field so no rows are lost.  Rows wider than any
+    in the sample are skipped.
+
+    :param filename: the name of the file to read from disk
+    :param kwargs: the keyword arguments of the read attempt that failed
+    :returns: a dataframe of the file
+    """
+    encoding = kwargs.get('encoding', 'utf-8')
+    with open(filename, encoding=encoding, errors='replace') as f:
+        sample = f.read(1024 * 1024)
+    try:
+        delimiter = csv.Sniffer().sniff(sample, delimiters=',\t;|').delimiter
+    except csv.Error:
+        delimiter = ','
+    rows = csv.reader(sample.splitlines(), delimiter=delimiter)
+    widths = [len(x) for x in rows] or [1]
+    common_width = max(set(widths), key=lambda x: (widths.count(x), x))
+    kwargs = dict(kwargs, sep=delimiter, on_bad_lines='skip')
+    if widths[0] < common_width:
+        names = [str(x) for x in range(max(widths))]
+        kwargs = dict(kwargs, names=names, header=None, skiprows=1)
+    return pd.read_csv(filename, **kwargs)
+
+
+def read_csv_fallback(read_func, filename, kwargs):
+    """Retries a read so an unparsable file does not stop the run.
+
+    :param read_func: the pandas function used by the failed read attempt
+    :param filename: the name of the file to read from disk
+    :param kwargs: the keyword arguments of the read attempt that failed
+    :returns: a dataframe of the file, empty when it could not be read
+    """
+    try:
+        try:
+            return read_func(filename, **kwargs)
+        except pd.errors.ParserError as e:
+            msg = 'Ragged rows in {}, widening columns. {}'
+            logging.warning(msg.format(filename, e))
+            return read_ragged_csv(filename, kwargs)
+    except Exception as e:
+        msg = 'Could not read {}.  Continuing. {}'
+        logging.warning(msg.format(filename, e))
+        return pd.DataFrame()
+
+
 def import_read_csv(filename, path=None, file_check=True, error_bad='error',
                     empty_df=False, nrows=None, file_type=None):
     sheet_names = []
@@ -89,8 +156,8 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         df = read_func(filename, **kwargs)
     except UnicodeDecodeError:
         if 'encoding' in kwargs:
-            kwargs['encoding'] = 'iso-8859-1'
-        df = read_func(filename, **kwargs)
+            kwargs['encoding'] = get_file_encoding(filename)
+        df = read_csv_fallback(read_func, filename, kwargs)
     except pd.errors.EmptyDataError as e:
         msg = 'Data {} empty.  Continuing. {}'.format(filename, e)
         logging.warning(msg)
@@ -101,9 +168,8 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
             return df
     except ValueError as e:
         logging.warning(e)
-        read_func = pd.read_csv
-        df = read_func(filename, **kwargs)
-    if sheet_names:
+        df = read_csv_fallback(pd.read_csv, filename, kwargs)
+    if sheet_names and isinstance(df, dict):
         df = pd.concat(df, ignore_index=True, sort=True)
     df = df.rename(columns=lambda x: x.strip())
     return df

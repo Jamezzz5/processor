@@ -974,7 +974,13 @@ def import_plan_data(key, df, plan_omit_list, **kwargs):
         df = pd.DataFrame(columns=kwargs[vmc.fullplacename] + [vmc.vendorkey])
     start_date = set_start_date(df)
     df = df.loc[~df[vmc.vendorkey].isin(plan_omit_list)]
-    df = df.loc[:, kwargs[vmc.fullplacename]]
+    plan_cols = [x for x in kwargs[vmc.fullplacename] if x in df.columns]
+    missing_cols = [x for x in kwargs[vmc.fullplacename]
+                    if x not in df.columns]
+    if missing_cols:
+        msg = 'Plan data for {} missing columns, continuing without: {}'
+        logging.warning(msg.format(key, missing_cols))
+    df = df.loc[:, plan_cols]
     df = full_placement_creation(df, key, dctc.FPN, kwargs[vmc.fullplacename])
     df = df.drop_duplicates()
     dic = dct.Dict(kwargs[vmc.filenamedict])
