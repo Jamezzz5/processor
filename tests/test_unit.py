@@ -207,6 +207,16 @@ class TestUtils:
         assert pd.testing.assert_frame_equal(expected, ndf) is None
         os.remove(file_name)
 
+    def test_remove_date_suffix(self):
+        base = 'API_Tiktok_Client'
+        assert utl.remove_date_suffix(base) == base
+        assert utl.remove_date_suffix(
+            '{}_2026-01-29'.format(base)) == base
+        stacked = '{}_2026-01-29_2026-02-26_2026-03-26'.format(base)
+        assert utl.remove_date_suffix(stacked) == base
+        keep = 'API_Amazon_2026'
+        assert utl.remove_date_suffix(keep) == keep
+
     def test_filter_df_on_col(self):
         col_name = 'a'
         col_val = 'x'
@@ -1712,6 +1722,35 @@ class TestAnalyze:
         f_df[vmc.enddate] = pd.to_datetime(f_df[vmc.enddate])
         assert f_df.loc[0, vmc.enddate] == f_df.loc[
             1, vmc.startdate] - pd.Timedelta(days=1)
+
+    @requires_base_config
+    def test_max_date_repeat_split(self):
+        """APIs with short windows split on every run.  Each new vendor key
+        must carry only its own start date, otherwise the stamps stack and
+        the name grows past the file name length limit."""
+        base_vk = 'API_Amazon_Repeat'
+        start_date = (dt.datetime.today() - dt.timedelta(
+            days=120)).strftime('%Y-%m-%d')
+        end_date = dt.datetime.today().strftime('%Y-%m-%d')
+        vm_dict = pd.DataFrame({vmc.vendorkey: [base_vk],
+                                vmc.startdate: [start_date],
+                                vmc.enddate: [end_date],
+                                vmc.filename: ['raw_data/amazon_repeat.csv'],
+                                vmc.date: [vmc.date]})
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_dict)
+        adl = az.CheckApiDateLength(az.Analyze(matrix=matrix))
+        vk = base_vk
+        for _ in range(3):
+            aly_dict = pd.DataFrame({vmc.vendorkey: [vk],
+                                     adl.highest_date: [None],
+                                     adl.name: [31]})
+            f_df = adl.fix_analysis(aly_dict=aly_dict, write=False)
+            vk = [x for x in f_df[vmc.vendorkey] if 'API_' in x][0]
+            assert vk.count('_20') == 1
+            assert utl.remove_date_suffix(vk) == base_vk
+        new_fn = f_df[f_df[vmc.vendorkey] == vk][vmc.filename].iloc[0]
+        assert new_fn == '{}.csv'.format(vk.replace('API_', '').lower())
 
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
