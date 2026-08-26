@@ -357,7 +357,6 @@ class VendorMatrix(object):
             vmc.ad_recall: ['estimated_ad_recallers'],
             vmc.purchasepi: ['View Based Conversions'],
             vmc.purchasepc: ['Click Based Conversions'],
-            vmc.sm_totalbuzzpost: ['Total Spend ($)'],
             vmc.view_imps: ['Video Viewable Impressions',
                             'Display Viewable Impressions'],
             vmc.view_total_imps: ['Video Measured Impressions',
