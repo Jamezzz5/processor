@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import zlib
 import zipfile
 
 import yaml
@@ -935,7 +936,7 @@ class Analyze(object):
         try:
             xl = pd.read_excel(tds.p[vmc.filename], None)
         except (ValueError, et.ParseError, FileNotFoundError,
-                zipfile.BadZipfile) as e:
+                zipfile.BadZipfile, zlib.error) as e:
             logging.warning(e)
             return missing_sheets
         sheet_lists = list(xl.keys())

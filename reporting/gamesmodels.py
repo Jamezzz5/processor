@@ -15,7 +15,8 @@ information schema actually sees, so they carry the non-obvious
 semantics.
 """
 from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey,\
-    Index, Integer, Numeric, Text, UniqueConstraint
+    Index, Integer, JSON, Numeric, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -442,6 +443,19 @@ class TitleScore(Base):
                          'rows carrying different set_size values are '
                          'not directly comparable — the field widened '
                          'when the automated title universe landed.')
+    satisfaction = Column(
+        Numeric, comment='Weighted z-score of the reception signals '
+                         '(Steam positive review share). Reported '
+                         'beside the composite, never summed into it. '
+                         'NULL on rows scored before the column.')
+    inputs = Column(
+        JSON().with_variant(JSONB, 'postgresql'),
+        comment='Every metric behind the row\'s scores: {metric: '
+                '{value, prior, z, weight, dimension}} — the month '
+                'mean, the comparison month\'s mean, its z-score '
+                'against that day\'s field, the weight it carried and '
+                'the dimension it rode. Roughly 19 metrics per title '
+                'per day. NULL on rows scored before the column.')
 
 
 class GwiAffinity(Base):
