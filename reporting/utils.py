@@ -566,6 +566,16 @@ def rename_duplicates(old):
             yield x
 
 
+def remove_date_suffix(name):
+    """
+    Strips any trailing _YYYY-MM-DD stamps from a name.
+
+    :param name: a string of the name to strip the date stamps from
+    :returns: a string of the name without any trailing date stamps
+    """
+    return re.sub(r'(_\d{4}-\d{2}-\d{2})+$', '', name)
+
+
 def date_check(sd, ed):
     sd = sd.date()
     ed = ed.date()

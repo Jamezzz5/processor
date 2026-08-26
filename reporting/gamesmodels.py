@@ -699,21 +699,24 @@ class AttentionShare(Base):
 
 
 class ReviewText(Base):
-    """Capped per-title corpus of recent Steam review bodies — the
+    """Capped per-title corpus of recent Steam review bodies in every
+    language — the review-mix sample, and in its English slice the
     reclassifiable input behind ``ReviewTheme``. The writer enforces a
     most-recent-N cap per title (N is lqapp's STEAM_REVIEW_TEXT_CAP),
     so the table is a rolling sample, never a complete history. The
     classification columns start NULL and lapse back into the eligible
-    pool whenever the taxonomy version moves."""
+    pool whenever the taxonomy version moves; a non-English row never
+    enters that pool at all."""
     __tablename__ = 'review_text'
     __table_args__ = (
         UniqueConstraint('recommendationid', name='uq_review_text_rec'),
         Index('ix_review_text_game_created', 'gameid', 'created_at'),
         {'schema': 'games',
-         'comment': 'Most recent N English Steam review bodies per '
-                    'title (N = STEAM_REVIEW_TEXT_CAP, '
-                    'writer-enforced) - the reclassifiable corpus '
-                    'behind review_theme, not a complete history.'},
+         'comment': 'Most recent N Steam review bodies per title, in '
+                    'every language (N = STEAM_REVIEW_TEXT_CAP, '
+                    'writer-enforced) - the review-mix sample, and in '
+                    'its English slice the reclassifiable corpus '
+                    'behind review_theme. Not a complete history.'},
     )
 
     reviewtextid = Column(BigIntPk, primary_key=True)
