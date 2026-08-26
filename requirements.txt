@@ -1,6 +1,6 @@
 numpy==2.2.2
 pandas==2.2.3
-pyarrow==20.0.0
+pyarrow==23.0.1
 facebook_business==24.0.1
 psycopg2-binary==2.9.10
 pyyaml==6.0.2
