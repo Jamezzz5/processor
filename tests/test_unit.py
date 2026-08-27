@@ -2831,6 +2831,34 @@ class TestGamesDb:
             title='Halo Infinite').one()
         assert float(share.attention_share) == 0.38
 
+    def test_youtube_video_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        video = gmdl.YoutubeVideo(
+            video_id='abc123', gameid=game.gameid, kind='official',
+            source='igdb', label='Launch Trailer')
+        s.add(video)
+        s.flush()
+        for day, views in ((dt.date(2026, 8, 20), 1000),
+                           (dt.date(2026, 8, 21), 1500)):
+            assert gdb.upsert_fact(
+                s, gmdl.YoutubeVideoStat,
+                {'youtubevideoid': video.youtubevideoid,
+                 'stat_date': day}, {'views': views}) == 1
+        s.commit()
+        # A rerun on the same day updates in place.
+        assert gdb.upsert_fact(
+            s, gmdl.YoutubeVideoStat,
+            {'youtubevideoid': video.youtubevideoid,
+             'stat_date': dt.date(2026, 8, 21)}, {'views': 1600}) == 0
+        s.commit()
+        assert s.query(gmdl.YoutubeVideoStat).count() == 2
+        latest = s.query(gmdl.YoutubeVideoStat).filter_by(
+            stat_date=dt.date(2026, 8, 21)).one()
+        assert float(latest.views) == 1600
+        assert latest.youtubevideoid == video.youtubevideoid
+
     def test_review_text_and_theme_upsert_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite',

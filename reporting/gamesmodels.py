@@ -14,8 +14,8 @@ the dedicated alembic environment at the repo root (``alembic.ini`` /
 information schema actually sees, so they carry the non-obvious
 semantics.
 """
-from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey,\
-    Index, Integer, JSON, Numeric, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime,\
+    ForeignKey, Index, Integer, JSON, Numeric, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -649,6 +649,78 @@ class WikipediaPageview(Base):
                                 'this row - the lane recency column, '
                                 'since week_start ages by '
                                 'construction.')
+
+
+class YoutubeVideo(Base):
+    """One YouTube video about a game — a trailer or official upload
+    (``kind='official'``: IGDB-listed, or posted by the title's linked
+    channel) or a creator's video (``'creator'``). ``gameid`` is NOT
+    NULL on purpose: every discovery path starts from a dim row, so
+    an unmatched video has nowhere to come from. ``updated_at`` is the
+    last stats *request*, not the last answer, so a deleted video ages
+    out of the refresh rotation instead of heading it forever."""
+    __tablename__ = 'youtube_video'
+    __table_args__ = (
+        UniqueConstraint('video_id', name='uq_youtube_video_id'),
+        Index('ix_youtube_video_gameid', 'gameid'),
+        Index('ix_youtube_video_published', 'published_at'),
+        {'schema': 'games',
+         'comment': 'YouTube videos per game: official trailers and '
+                    'uploads plus creator coverage; daily view counts '
+                    'live in youtube_video_stat.'},
+    )
+
+    youtubevideoid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    video_id = Column(Text, nullable=False, comment='YouTube video id.')
+    channel_id = Column(Text)
+    channel_title = Column(Text)
+    channel_subscribers = Column(
+        Numeric, comment='Latest subscriber count of the channel, '
+                         'refreshed with the stats; NULL when hidden. '
+                         'A size, not a history.')
+    title = Column(Text)
+    published_at = Column(DateTime, comment='Naive UTC upload time.')
+    kind = Column(Text, nullable=False,
+                  comment="'official' (IGDB-listed trailer or the "
+                          "linked channel's upload) | 'creator'.")
+    label = Column(Text, comment='IGDB video name, e.g. "Launch '
+                                 'Trailer"; NULL when not catalogued.')
+    sponsored = Column(
+        Boolean, comment='True when the title/description says '
+                         '"sponsored" without "not sponsored" - the '
+                         'old influencer tool\'s rule; NULL until the '
+                         'snippet has been read.')
+    source = Column(Text, nullable=False,
+                    comment="'igdb' | 'search' | 'import'.")
+    first_seen_at = Column(DateTime, comment='Naive UTC.')
+    updated_at = Column(DateTime,
+                        comment='Naive UTC; last stats request.')
+
+
+class YoutubeVideoStat(Base):
+    """Daily view/like/comment counts for one video — the fact behind
+    trailer view curves and creator rankings. A day with no row means
+    the API did not answer for the video (deleted, private, or outside
+    the nightly budget); the gap is the reading."""
+    __tablename__ = 'youtube_video_stat'
+    __table_args__ = (
+        UniqueConstraint('youtubevideoid', 'stat_date',
+                         name='uq_youtube_video_stat_day'),
+        Index('ix_youtube_video_stat_date', 'stat_date'),
+        {'schema': 'games',
+         'comment': 'Daily YouTube statistics per video.'},
+    )
+
+    youtubevideostatid = Column(BigIntPk, primary_key=True)
+    youtubevideoid = Column(
+        BigInteger, ForeignKey('games.youtube_video.youtubevideoid'),
+        nullable=False)
+    stat_date = Column(Date, nullable=False, comment='UTC ingest date.')
+    views = Column(Numeric)
+    likes = Column(Numeric)
+    comments = Column(Numeric)
 
 
 class AttentionShare(Base):
