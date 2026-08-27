@@ -1,3 +1,4 @@
+import gzip
 import html
 import io
 import os
@@ -240,8 +241,6 @@ class AmzApi(object):
                             self.refresh_token]
         if 'campaign_id' in self.config:
             self.campaign_id = self.config['campaign_id']
-        if 'use_v1' in self.config:
-            self.use_v1 = self.config['use_v1']
 
     def check_config(self):
         for item in self.config_list:
@@ -768,10 +767,13 @@ class AmzApi(object):
         """
         r = requests.get(url)
         content = r.content
-        compression = 'gzip' if content[:2] == b'\x1f\x8b' else None
+        if content[:2] == b'\x1f\x8b':
+            content = gzip.decompress(content)
         if 'CSV' in str(report_format).upper():
-            return pd.read_csv(io.BytesIO(content), compression=compression)
-        return pd.read_json(io.BytesIO(content), compression=compression)
+            return utl.import_read_csv(
+                io.BytesIO(content), file_check=False, file_type='.csv',
+                empty_df=True)
+        return pd.read_json(io.BytesIO(content))
 
     def check_v1_report_status(self, report_id, attempts=150, wait=30):
         """
