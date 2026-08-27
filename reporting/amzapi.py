@@ -54,9 +54,6 @@ class AmzApi(object):
         'keywordBid', 'keywordType', 'portfolioId']
     sb_keyword_columns = [
         'searchTerm', 'keywordId', 'matchType', 'keywordBid']
-    # Ads API v1 is one unified resource for sponsored ads and DSP, so
-    # there is no per-ad-product url or vendor media type any more.  Paths
-    # and field names below come from Amazon's published v1 collection.
     v1_report_path = '/adsApi/v1/create/reports'
     v1_retrieve_path = '/adsApi/v1/retrieve/reports'
     v1_delete_path = '/adsApi/v1/delete/reports'
@@ -67,6 +64,35 @@ class AmzApi(object):
         'campaign.id', 'campaign.name', 'budgetCurrency.value',
         'adProduct.value']
     v1_ad_group_fields = ['adGroup.id', 'adGroup.name']
+    v1_creative_fields = ['ad.id', 'ad.name']
+    v1_conversion_fields = [
+        'offAmazonConversionDefinition.value',
+        'offAmazonConversionType.value',
+        'conversionSourceEnvironment.value']
+    v1_conversion_report_metrics = [
+        'metric.offAmazonConversions',
+        'metric.offAmazonConversionsFromClicks',
+        'metric.offAmazonConversionsFromViews',
+        'metric.offAmazonConversionsValueSum',
+        'metric.offAmazonConversionsValueAverage',
+        'metric.offAmazonSales',
+        'metric.offAmazonSalesFromClicks',
+        'metric.offAmazonSalesFromViews',
+        'metric.offAmazonUnitsSold',
+        'metric.offAmazonUnitsSoldFromClicks',
+        'metric.offAmazonUnitsSoldFromViews']
+    v1_conversion_shared_metrics = [
+        'metric.offAmazonConversions', 'metric.offAmazonSales',
+        'metric.offAmazonUnitsSold']
+    v1_conversion_metric_fields = [
+        'metric.offAmazonPurchases', 'metric.offAmazonSales',
+        'metric.offAmazonUnitsSold', 'metric.offAmazonConversions',
+        'metric.offAmazonRoas', 'metric.offAmazonCostPerConversion',
+        'metric.offAmazonPurchaseRate', 'metric.offAmazonLeads',
+        'metric.combinedPurchases', 'metric.combinedSales',
+        'metric.combinedUnitsSold', 'metric.combinedRoas',
+        'metric.longTermSales', 'metric.longTermRoas',
+        'metric.subscribeAndSaveSubscriptions']
     v1_metric_fields = [
         'metric.impressions', 'metric.clicks', 'metric.ctr',
         'metric.totalCost', 'metric.purchases', 'metric.sales',
@@ -83,12 +109,6 @@ class AmzApi(object):
         'metric.unmutesVideoAd', 'metric.completeListensAudioAd',
         'metric.purchasesHalo', 'metric.salesHalo',
         'metric.unitsSoldHalo', 'metric.addToCart']
-    # v1 field names are dotted and product neutral, while every
-    # dictionary and vendor matrix downstream keys off the v2/v3 column
-    # names.  Renaming on the way out keeps that translation untouched.
-    # The conversion rows assume v1's unqualified purchases/sales carry
-    # the 14 day window the v3 columns named explicitly, and that
-    # 'Promoted' is v1's name for the old same-SKU split.
     v1_column_renames = {
         'date.value': 'date',
         'dateRange.value': 'dateRange',
@@ -102,6 +122,11 @@ class AmzApi(object):
         'campaign.name': 'campaignName',
         'adGroup.id': 'adGroupId',
         'adGroup.name': 'adGroupName',
+        'ad.id': 'adId',
+        'ad.name': 'adName',
+        'offAmazonConversionDefinition.value': 'conversionDefinition',
+        'offAmazonConversionType.value': 'conversionType',
+        'conversionSourceEnvironment.value': 'conversionSourceEnvironment',
         'metric.impressions': 'impressions',
         'metric.clicks': 'clicks',
         'metric.ctr': 'ctr',
@@ -109,34 +134,38 @@ class AmzApi(object):
         'metric.roas': 'roas',
         'metric.costPerPurchase': 'costPerPurchase',
         'metric.purchaseRate': 'purchaseRate',
-        'metric.purchases': 'purchases14d',
-        'metric.sales': 'sales14d',
-        'metric.unitsSold': 'unitsSoldClicks14d',
-        'metric.purchasesPromoted': 'purchasesSameSku14d',
-        'metric.salesPromoted': 'attributedSalesSameSku14d',
-        'metric.unitsSoldPromoted': 'unitsSoldSameSku14d',
+        'metric.purchases': 'purchases',
+        'metric.sales': 'sales',
+        'metric.unitsSold': 'unitsSoldClicks',
+        'metric.purchasesPromoted': 'purchasesSameSku',
+        'metric.salesPromoted': 'attributedSalesSameSku',
+        'metric.unitsSoldPromoted': 'unitsSoldSameSku',
         'metric.newToBrandPurchases': 'newToBrandPurchases',
         'metric.newToBrandSales': 'newToBrandSales',
         'metric.newToBrandUnitsSold': 'newToBrandUnitsSold',
         'metric.detailPageViews': 'detailPageViews',
-        'metric.brandedSearches': 'brandedSearches'}
-    # The DSP flow already spoke a different set of legacy names for the
-    # same numbers, so it overlays the shared map rather than forking it.
+        'metric.brandedSearches': 'brandedSearches',
+        'metric.unmutesVideoAd': 'videoUnmutes'}
     v1_dsp_column_renames = {
+        'campaign.id': 'orderId',
+        'campaign.name': 'orderName',
+        'adGroup.id': 'lineItemId',
+        'adGroup.name': 'lineItemName',
+        'ad.id': 'creativeId',
+        'ad.name': 'creativeName',
+        'metric.offAmazonPurchases': 'offAmazonPurchases',
+        'metric.subscribeAndSaveSubscriptions': 'subscribe',
         'metric.totalCost': 'totalCost',
         'metric.clicks': 'clickThroughs',
         'metric.completeViewsVideoAd': 'videoComplete',
         'metric.firstQuartileVideoAd': 'videoFirstQuartile',
         'metric.midpointVideoAd': 'videoMidpoint',
         'metric.thirdQuartileVideoAd': 'videoThirdQuartile',
-        'metric.purchases': 'totalPurchases14d',
-        'metric.sales': 'totalSales14d',
-        'metric.roas': 'totalROAS14d',
-        'metric.purchasesPromoted': 'purchases14d',
-        'metric.salesPromoted': 'sales14d'}
-    # Amazon's published examples carry completedReportParts as null, so
-    # the download key is not pinned down.  Presence of a url is the
-    # terminal signal and these statuses only short circuit the wait.
+        'metric.purchases': 'totalPurchases',
+        'metric.sales': 'totalSales',
+        'metric.roas': 'totalROAS',
+        'metric.purchasesPromoted': 'purchases',
+        'metric.salesPromoted': 'sales'}
     v1_url_keys = ['url', 'location', 'downloadUrl', 'presignedUrl']
     v1_complete_status = ['COMPLETED', 'COMPLETE', 'SUCCESS', 'SUCCEEDED']
     v1_failed_status = ['FAILED', 'FAILURE', 'CANCELLED', 'DELETED']
@@ -176,6 +205,8 @@ class AmzApi(object):
         self.fresh_pull = False
         self.product_report = False
         self.include_keywords = False
+        self.include_creative = False
+        self.include_conversions = False
         self.dsp_id = ''
         self.use_v1 = True
         self.v1_account_id = ''
@@ -369,6 +400,15 @@ class AmzApi(object):
                     self.fresh_pull = True
                 if field.lower() == 'product':
                     self.product_report = True
+                if field.lower() in ['creative', 'ad']:
+                    self.include_creative = True
+                    logging.info('Creative level data enabled via API '
+                                 'Fields')
+                if field.lower() in ['conversion', 'conversions',
+                                     'offline']:
+                    self.include_conversions = True
+                    logging.info('Conversion definition and off Amazon '
+                                 'conversion data enabled via API Fields')
                 if field.lower() == 'v1':
                     self.use_v1 = True
                 if field.lower() == 'v3':
@@ -393,17 +433,14 @@ class AmzApi(object):
         """
         Builds the header set the Ads API v1 requires.
 
-        v1 renamed the client id header and moved account selection off
-        the scope header for anything that is not sponsored ads, so the
-        v3 header set is not accepted as is.
-
         :returns: dict of headers for a v1 request
         """
         headers = {'Amazon-Ads-ClientId': self.client_id,
                    'Content-Type': 'application/json',
                    'Accept': 'application/json'}
         if self.amazon_dsp:
-            account_id = self.v1_account_id or self.dsp_id
+            account_id = (self.v1_account_id or self.profile_id or
+                          self.dsp_id)
             if account_id:
                 headers['Amazon-Ads-AccountId'] = str(account_id)
         elif self.profile_id:
@@ -434,86 +471,187 @@ class AmzApi(object):
             return False
         return True
 
+    def get_v1_default_account_id(self):
+        """
+        Falls back to the identifier the profile flow already resolved.
+
+        :returns: best known account id as a string
+        """
+        for candidate in [self.profile_id, self.advertiser_id,
+                          self.dsp_id]:
+            if candidate:
+                return str(candidate)
+        return ''
+
+    @staticmethod
+    def get_v1_account_ids(account):
+        """
+        Collects every identifier one v1 account row carries.
+
+        :param account: one advertiserAccounts row
+        :returns: list of id strings, the account id first
+        """
+        ids = [str(account.get('advertiserAccountId') or '')]
+        id_keys = ['dspAdvertiserId', 'entityId', 'profileId']
+        for key in id_keys:
+            if account.get(key):
+                ids.append(str(account[key]))
+        for alternate in account.get('alternateIds') or []:
+            for key in id_keys:
+                if alternate.get(key):
+                    ids.append(str(alternate[key]))
+        account_ids = [x for x in ids if x]
+        return account_ids
+
+    def match_v1_account(self, ids):
+        """
+        Says whether a v1 account row is the one already resolved.
+
+        :param ids: identifiers found on the account row
+        :returns: True when one of them lines up with this advertiser
+        """
+        wanted = [self.profile_id, self.dsp_id, self.advertiser_id]
+        wanted = [str(x) for x in wanted if x]
+        if self.advertiser_id:
+            wanted.append(str(self.advertiser_id)[1:])
+        for want in wanted:
+            for got in ids:
+                if want == got:
+                    return True
+                if (len(want) > 5 and len(got) > 5 and
+                        (want in got or got in want)):
+                    return True
+        return False
+
     def get_v1_account_id(self):
         """
         Resolves the advertiserAccountId a v1 report body is keyed on.
 
-        The profile flow this class already runs resolves a v3 profile
-        id.  The v1 accounts resource returns both identifiers on one
-        row, so the profile id is matched against alternateIds to bridge
-        the two rather than asking the user to supply a second id.
-
-        :returns: the advertiser account id, or '' when unresolved
+        :returns: the advertiser account id, never empty
         """
         url = '{}{}'.format(self.base_url, self.v1_accounts_path)
         r = self.make_request(url, method='POST', body={},
-                             headers=self.set_v1_headers(),
-                             json_response=False)
-        accounts = r.json().get('advertiserAccounts') or []
+                              headers=self.set_v1_headers(),
+                              json_response=False)
+        payload = self.v1_response_json(r)
+        accounts = payload.get('advertiserAccounts') or []
         if not accounts:
             logging.warning('No v1 advertiser accounts in response: {}'
-                            ''.format(r.json()))
-            return ''
-        wanted = [str(self.profile_id), str(self.dsp_id),
-                  str(self.advertiser_id)]
+                            ''.format(payload))
+            return self.get_v1_default_account_id()
+        seen = []
         for account in accounts:
-            ids = [str(account.get('advertiserAccountId'))]
-            for alternate in account.get('alternateIds') or []:
-                ids.append(str(alternate.get('profileId')))
-                ids.append(str(alternate.get('entityId')))
-            if [x for x in ids if x and x in wanted]:
+            ids = self.get_v1_account_ids(account)
+            if self.match_v1_account(ids):
                 account_id = str(account.get('advertiserAccountId'))
                 logging.info('Resolved v1 advertiser account {} for {}'
                              ''.format(account_id, self.advertiser_id))
                 return account_id
-        logging.warning('Could not match a v1 advertiser account to {}, '
-                        'requesting on the scope header alone.'
-                        ''.format(self.advertiser_id))
-        return ''
+            seen.extend(ids)
+        fallback = self.get_v1_default_account_id()
+        logging.warning(
+            'Could not match a v1 advertiser account to {}.  Ids '
+            'returned: {}.  Requesting with {} instead.'.format(
+                self.advertiser_id, seen[:10], fallback))
+        return fallback
 
-    def get_v1_fields(self):
+    def get_v1_grain_fields(self):
         """
-        Assembles the field list for a v1 report request.
+        Assembles the dimensions both v1 reports are broken out by.
 
-        :returns: list of v1 field names
+        :returns: list of v1 dimension field names
         """
         fields = list(self.v1_dimension_fields)
         fields += self.v1_ad_group_fields
+        if self.amazon_dsp or self.include_creative:
+            fields += self.v1_creative_fields
+        return fields
+
+    def get_v1_fields(self):
+        """
+        Assembles the field list for the performance report.
+
+        :returns: list of v1 field names
+        """
+        fields = self.get_v1_grain_fields()
+        if self.include_conversions:
+            fields += [x for x in self.v1_conversion_metric_fields
+                       if x not in self.v1_conversion_shared_metrics]
         fields += self.v1_metric_fields
         if self.amazon_dsp:
             fields += self.v1_dsp_metric_fields
         return fields
 
-    def get_v1_report_body(self, sd, ed):
+    def get_v1_event_fields(self):
         """
-        Builds the body for a v1 create report call.
+        Assembles the field list for the conversion definition report.
 
-        The campaign filter is deliberately left off: v1 exposes a
-        query filter but its shape is not published, and this class
-        already narrows on campaign name once the frame is in hand.
+        :returns: list of v1 field names
+        """
+        fields = self.get_v1_grain_fields()
+        fields += self.v1_conversion_fields
+        fields += self.v1_conversion_report_metrics
+        return fields
+
+    def get_v1_report(self, sd, ed, fields):
+        """
+        Wraps one field list as a v1 report request object.
 
         :param sd: start date as a yyyy-mm-dd string
         :param ed: end date as a yyyy-mm-dd string
-        :returns: request body dict
+        :param fields: the v1 field names this report asks for
+        :returns: one report dict for the reports list
         """
-        report = {'format': self.v1_format,
-                  'periods': [{'datePeriod': {'startDate': sd,
-                                              'endDate': ed}}],
-                  'query': {'fields': self.get_v1_fields()}}
-        body = {'reports': [report]}
-        if self.v1_account_id:
-            body['accessRequestedAccounts'] = [
-                {'advertiserAccountId': str(self.v1_account_id)}]
-        return body
+        return {'format': self.v1_format,
+                'periods': [{'datePeriod': {'startDate': sd,
+                                            'endDate': ed}}],
+                'query': {'fields': fields}}
+
+    def get_v1_report_bodies(self, sd, ed):
+        """
+        Builds one request body per report this pull needs.
+
+        :param sd: start date as a yyyy-mm-dd string
+        :param ed: end date as a yyyy-mm-dd string
+        :returns: list of dicts of request body and whether that body is
+            the conversion definition report
+        """
+        field_sets = [(self.get_v1_fields(), False)]
+        if self.include_conversions:
+            field_sets.append((self.get_v1_event_fields(), True))
+        bodies = []
+        for fields, is_event in field_sets:
+            bodies.append(
+                {'is_event': is_event,
+                 'body': {
+                     'reports': [self.get_v1_report(sd, ed, fields)],
+                     'accessRequestedAccounts': [
+                         {'advertiserAccountId':
+                          str(self.v1_account_id)}]}})
+        return bodies
+
+    @staticmethod
+    def v1_response_json(r):
+        """
+        Decodes a v1 response
+
+        :param r: the response object, or None
+        :returns: decoded dict, or {} when there is nothing to decode
+        """
+        if r is None:
+            logging.warning('No v1 response to decode.')
+            return {}
+        try:
+            return r.json()
+        except ValueError:
+            logging.warning('v1 response {} was not JSON: {}'.format(
+                r.status_code, str(r.text)[:200]))
+            return {}
 
     @staticmethod
     def parse_v1_reports(response_json):
         """
         Pulls the report objects out of a v1 multi status envelope.
-
-        v1 answers create and retrieve with a 207 and per index success
-        and error entries, so a caller cannot read a report id off the
-        top level the way v3 allowed.
 
         :param response_json: decoded body of a v1 report call
         :returns: list of report dicts and list of error entries
@@ -540,33 +678,57 @@ class AmzApi(object):
 
         :param sd: start date as a yyyy-mm-dd string
         :param ed: end date as a yyyy-mm-dd string
-        :returns: list of report ids
+        :returns: list of dicts of report_id and is_event
         """
         url = '{}{}'.format(self.base_url, self.v1_report_path)
         is_dsp = ' DSP ' if self.amazon_dsp else ' Sponsored '
-        logging.info('Requesting v1{}report for dates: {} to {}'
-                     ''.format(is_dsp, sd, ed))
-        r = self.make_request(url, method='POST',
-                              body=self.get_v1_report_body(sd, ed),
-                              headers=self.set_v1_headers(),
-                              json_response=False)
-        reports, errors = self.parse_v1_reports(r.json())
-        if errors:
-            logging.warning('v1 report request errors: {}'.format(errors))
-        report_ids = [x['reportId'] for x in reports if x.get('reportId')]
-        if not report_ids:
-            logging.warning('No v1 report id in response: {}'
-                            ''.format(r.json()))
-        return report_ids
+        bodies = self.get_v1_report_bodies(sd, ed)
+        logging.info('Requesting {} v1{}report(s) for dates: {} to {}'
+                     ''.format(len(bodies), is_dsp, sd, ed))
+        reports = []
+        for entry in bodies:
+            ids = self.request_one_v1_report(url, entry['body'])
+            for report_id in ids:
+                reports.append({'report_id': report_id,
+                                'is_event': entry['is_event']})
+        return reports
+
+    def request_one_v1_report(self, url, body, attempts=5, wait=30):
+        """
+        Requests a single v1 report, waiting out a rate limit.
+
+        :param url: the create reports url
+        :param body: one request body
+        :param attempts: how many times to try before giving up
+        :param wait: seconds to wait after a rate limited attempt
+        :returns: list of report ids, empty when none was created
+        """
+        for attempt in range(attempts):
+            r = self.make_request(url, method='POST', body=body,
+                                  headers=self.set_v1_headers(),
+                                  json_response=False)
+            payload = self.v1_response_json(r)
+            reports, errors = self.parse_v1_reports(payload)
+            ids = [x['reportId'] for x in reports if x.get('reportId')]
+            if ids:
+                return ids
+            if errors:
+                logging.warning('v1 report request errors: {}'
+                                ''.format(errors))
+            rate_limited = r is not None and r.status_code == 429
+            if not rate_limited:
+                logging.warning('No v1 report id in response: {}'
+                                ''.format(payload))
+                return []
+            logging.warning('v1 report request rate limited, waiting {}s.  '
+                            'Attempt {} of {}.'.format(wait, attempt + 1,
+                                                       attempts))
+            time.sleep(wait)
+        return []
 
     def get_v1_download_urls(self, report):
         """
         Finds the download locations on a completed v1 report.
-
-        Amazon's published examples carry completedReportParts as null,
-        so the key holding the url is not pinned down.  Every plausible
-        key is checked and the report object is logged when none match,
-        rather than quietly reporting no data.
 
         :param report: a v1 report dict
         :returns: list of download urls
@@ -595,10 +757,6 @@ class AmzApi(object):
         """
         Downloads one v1 report part into a dataframe.
 
-        The format is read off the report rather than assumed, and the
-        gzip magic number is checked because a CSV part may arrive
-        compressed and pandas cannot infer that from a buffer.
-
         :param url: the download url
         :param report_format: format reported by v1, e.g. CSV
         :returns: dataframe
@@ -614,10 +772,6 @@ class AmzApi(object):
         """
         Polls one v1 report and returns it as a dataframe.
 
-        A download url appearing is the terminal signal; the status
-        strings only short circuit the wait, because the published
-        status enum is not documented.
-
         :param report_id: the v1 report id to poll
         :param attempts: how many times to poll before giving up
         :param wait: seconds between polls
@@ -632,7 +786,8 @@ class AmzApi(object):
             r = self.make_request(url, method='POST', body=body,
                                   headers=self.set_v1_headers(),
                                   json_response=False)
-            reports, errors = self.parse_v1_reports(r.json())
+            reports, errors = self.parse_v1_reports(
+                self.v1_response_json(r))
             if errors:
                 logging.warning('v1 report {} error: {}'
                                 ''.format(report_id, errors))
@@ -667,9 +822,6 @@ class AmzApi(object):
         """
         Maps v1 field names onto the legacy report column names.
 
-        Only columns the frame actually has are renamed, so adding a
-        field to the request cannot rename a column that is not there.
-
         :param df: dataframe as downloaded from v1
         :returns: dataframe with legacy column names
         """
@@ -679,14 +831,29 @@ class AmzApi(object):
         if self.amazon_dsp:
             renames.update(self.v1_dsp_column_renames)
         renames = {k: v for k, v in renames.items() if k in df.columns}
+        return self.strip_v1_metric_prefix(df.rename(columns=renames))
+
+    @staticmethod
+    def strip_v1_metric_prefix(df):
+        """
+        Drops the metric. prefix from any column left unmapped.
+
+        :param df: dataframe after the explicit renames
+        :returns: dataframe with no metric prefixed columns left
+        """
+        prefix = 'metric.'
+        renames = {}
+        for col in df.columns:
+            if not str(col).startswith(prefix):
+                continue
+            target = str(col)[len(prefix):]
+            if target and target not in df.columns:
+                renames[col] = target
         return df.rename(columns=renames)
 
     def get_v1_data(self, sd, ed):
         """
         Runs the whole v1 report flow for one date range.
-
-        v1 accepts a date range on one report, so unlike the v3 flow
-        this does not fan out a request per day.
 
         :param sd: start date as a datetime
         :param ed: end date as a datetime
@@ -696,12 +863,75 @@ class AmzApi(object):
         ed_str = dt.datetime.strftime(ed, '%Y-%m-%d')
         if not self.v1_account_id:
             self.v1_account_id = self.get_v1_account_id()
-        report_ids = self.request_v1_report(sd_str, ed_str)
-        if not report_ids:
+        reports = self.request_v1_report(sd_str, ed_str)
+        if not reports:
             return pd.DataFrame()
-        df_list = [self.check_v1_report_status(x) for x in report_ids]
+        df_list = []
+        for report in reports:
+            report_df = self.rename_v1_columns(
+                self.check_v1_report_status(report['report_id']))
+            logging.info('v1 {} report {} returned {} rows.'.format(
+                'conversion' if report['is_event'] else 'performance',
+                report['report_id'], len(report_df)))
+            if self.keep_v1_report(report_df, report):
+                df_list.append(report_df)
         df = self.merge_dataframes(df_list)
-        return self.rename_v1_columns(df)
+        self.log_v1_event_coverage(df)
+        logging.info('v1 report returned {} rows.  Columns: {}'
+                     ''.format(len(df), list(df.columns)))
+        return df
+
+    @staticmethod
+    def count_v1_conversion_definitions(df):
+        """
+        Counts rows that carry a conversion definition name.
+        Used mainly for debugging
+
+        :param df: a frame, with or without the definition column
+        :returns: number of rows with a real event name
+        """
+        col = 'conversionDefinition'
+        if col not in df.columns or df.empty:
+            return 0
+        names = df[col].astype('U').str.strip().str.lower()
+        return int((~names.isin(['', 'nan', 'none'])).sum())
+
+    def keep_v1_report(self, df, report):
+        """
+        Says whether one downloaded report belongs in the merged frame.
+        Used mainly for debugging
+
+        :param df: one renamed report frame
+        :param report: the request record, with report_id and is_event
+        :returns: True when the frame is worth merging
+        """
+        if not report.get('is_event') or df.empty:
+            return True
+        if self.count_v1_conversion_definitions(df):
+            return True
+        logging.warning(
+            'v1 conversion report {} carries no conversion definitions: '
+            'every definition is blank.  Dropping its {} rows, which '
+            'would otherwise double the delivery metrics.  Check that '
+            'off Amazon conversion definitions exist on this '
+            'advertiser.'.format(report['report_id'], len(df)))
+        return False
+
+    def log_v1_event_coverage(self, df):
+        """
+        Says how many rows carry a conversion definition.
+        Used mainly for debugging
+
+        :param df: the merged, renamed frame
+        """
+        named = self.count_v1_conversion_definitions(df)
+        if not named:
+            return
+        logging.info(
+            '{} of {} rows carry a conversion definition; the other {} '
+            'are performance rows, which are blank in the event columns '
+            'because v1 will not combine the two.'.format(
+                named, len(df), len(df) - named))
 
     def create_url(self, report_type='sp', version=True, record_type='adGroups',
                    report_id=False):
@@ -737,10 +967,21 @@ class AmzApi(object):
         if self.use_v1 and self.check_v1_supported():
             self.df = self.get_v1_data(sd, ed)
             if not self.df.empty:
+                row_count = len(self.df)
                 self.df = self.filter_df_on_campaign(self.df)
+                if self.df.empty:
+                    logging.warning(
+                        'The campaign filter {} removed all {} rows the '
+                        'v1 report returned.'.format(
+                            self.campaign_id, row_count))
                 return self.df
             logging.warning('Ads API v1 returned no rows, falling back to '
                             'the v3 report flow.')
+            if self.include_conversions:
+                logging.warning(
+                    'The v3 flow has no conversion definition or off '
+                    'Amazon conversion fields, so that breakout will be '
+                    'missing from this pull.')
         date_list = self.list_dates(sd, ed)
         report_ids = []
         self.purge_expired_cache(fresh_pull=self.fresh_pull)
