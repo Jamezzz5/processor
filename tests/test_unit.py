@@ -207,6 +207,16 @@ class TestUtils:
         assert pd.testing.assert_frame_equal(expected, ndf) is None
         os.remove(file_name)
 
+    def test_remove_date_suffix(self):
+        base = 'API_Tiktok_Client'
+        assert utl.remove_date_suffix(base) == base
+        assert utl.remove_date_suffix(
+            '{}_2026-01-29'.format(base)) == base
+        stacked = '{}_2026-01-29_2026-02-26_2026-03-26'.format(base)
+        assert utl.remove_date_suffix(stacked) == base
+        keep = 'API_Amazon_2026'
+        assert utl.remove_date_suffix(keep) == keep
+
     def test_filter_df_on_col(self):
         col_name = 'a'
         col_val = 'x'
@@ -1713,6 +1723,35 @@ class TestAnalyze:
         assert f_df.loc[0, vmc.enddate] == f_df.loc[
             1, vmc.startdate] - pd.Timedelta(days=1)
 
+    @requires_base_config
+    def test_max_date_repeat_split(self):
+        """APIs with short windows split on every run.  Each new vendor key
+        must carry only its own start date, otherwise the stamps stack and
+        the name grows past the file name length limit."""
+        base_vk = 'API_Amazon_Repeat'
+        start_date = (dt.datetime.today() - dt.timedelta(
+            days=120)).strftime('%Y-%m-%d')
+        end_date = dt.datetime.today().strftime('%Y-%m-%d')
+        vm_dict = pd.DataFrame({vmc.vendorkey: [base_vk],
+                                vmc.startdate: [start_date],
+                                vmc.enddate: [end_date],
+                                vmc.filename: ['raw_data/amazon_repeat.csv'],
+                                vmc.date: [vmc.date]})
+        matrix = vm.VendorMatrix()
+        matrix.vm_parse(vm_dict)
+        adl = az.CheckApiDateLength(az.Analyze(matrix=matrix))
+        vk = base_vk
+        for _ in range(3):
+            aly_dict = pd.DataFrame({vmc.vendorkey: [vk],
+                                     adl.highest_date: [None],
+                                     adl.name: [31]})
+            f_df = adl.fix_analysis(aly_dict=aly_dict, write=False)
+            vk = [x for x in f_df[vmc.vendorkey] if 'API_' in x][0]
+            assert vk.count('_20') == 1
+            assert utl.remove_date_suffix(vk) == base_vk
+        new_fn = f_df[f_df[vmc.vendorkey] == vk][vmc.filename].iloc[0]
+        assert new_fn == '{}.csv'.format(vk.replace('API_', '').lower())
+
     def test_package_cap_over(self):
         df = {'mpVendor': ['Adwords', 'Facebook', 'Twitter'],
               'mpPackageDesc': ['Under', 'Full', 'Over'],
@@ -2791,6 +2830,34 @@ class TestGamesDb:
         share = s.query(gmdl.AttentionShare).filter_by(
             title='Halo Infinite').one()
         assert float(share.attention_share) == 0.38
+
+    def test_youtube_video_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        video = gmdl.YoutubeVideo(
+            video_id='abc123', gameid=game.gameid, kind='official',
+            source='igdb', label='Launch Trailer')
+        s.add(video)
+        s.flush()
+        for day, views in ((dt.date(2026, 8, 20), 1000),
+                           (dt.date(2026, 8, 21), 1500)):
+            assert gdb.upsert_fact(
+                s, gmdl.YoutubeVideoStat,
+                {'youtubevideoid': video.youtubevideoid,
+                 'stat_date': day}, {'views': views}) == 1
+        s.commit()
+        # A rerun on the same day updates in place.
+        assert gdb.upsert_fact(
+            s, gmdl.YoutubeVideoStat,
+            {'youtubevideoid': video.youtubevideoid,
+             'stat_date': dt.date(2026, 8, 21)}, {'views': 1600}) == 0
+        s.commit()
+        assert s.query(gmdl.YoutubeVideoStat).count() == 2
+        latest = s.query(gmdl.YoutubeVideoStat).filter_by(
+            stat_date=dt.date(2026, 8, 21)).one()
+        assert float(latest.views) == 1600
+        assert latest.youtubevideoid == video.youtubevideoid
 
     def test_review_text_and_theme_upsert_idempotent(self):
         s = self._session()

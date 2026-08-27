@@ -388,10 +388,19 @@ class GsApi(object):
                 'card': brand.get('card') or self.DECK_CARD}
 
     def slides_batch_update(self, presentation_id, requests):
+        """POST a Slides batchUpdate and record whether it applied."""
         if not requests:
             return None
         url = '{}/{}:batchUpdate'.format(self.slides_url, presentation_id)
-        return self.client.post(url=url, json={'requests': requests})
+        response = self.client.post(url=url, json={'requests': requests})
+        if not self.request_applied(response, presentation_id):
+            slide_id = next(
+                (r['createSlide'].get('objectId') for r in requests
+                 if isinstance(r, dict) and 'createSlide' in r), None)
+            reason = str(getattr(response, 'text', '') or '')[:300]
+            self.slides_rejections = getattr(self, 'slides_rejections', [])
+            self.slides_rejections.append((slide_id, reason))
+        return response
 
     def get_presentation(self, presentation_id):
         url = '{}/{}'.format(self.slides_url, presentation_id)

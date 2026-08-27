@@ -64,6 +64,11 @@ class TikApi(object):
                'offline_total_schedule': 'Schedules (offline)',
                'offline_subscribe_events': 'Subscriptions (offline)'}
     default_config_file_name = 'tikapi.json'
+    id_page_size = 100
+    campaign_fields = ['campaign_id', 'campaign_name',
+                       'campaign_automation_type']
+    buying_type_groups = [['AUCTION', 'RESERVATION_RF'],
+                          ['RESERVATION_TOP_VIEW']]
 
     def __init__(self):
         self.config = None
@@ -185,7 +190,7 @@ class TikApi(object):
         :param ad: boolean, if True will pull ad ids,
         if False will pull campaign ids
         :param ad_url: url endpoint for ad ids
-        :param campaign_id: list of campaign ids to filter on
+        :param campaign_id: campaign id to filter on, every campaign if unset
         :returns: list of lists of 100 ids each
         """
         logging.info('Getting ad ids for campaign_id: {}'.format(campaign_id))
@@ -197,25 +202,31 @@ class TikApi(object):
             url += self.campaign_url
         params = {'advertiser_id': self.advertiser_id,
                   'page': 1,
-                  'page_size': 100}
+                  'page_size': self.id_page_size}
         filters = {'primary_status': 'STATUS_ALL',
-                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL',
-                   'campaign_ids': [campaign_id]}
-        for buying_types in [['AUCTION', 'RESERVATION_RF'],
-                             ['RESERVATION_TOP_VIEW']]:
+                   'status': 'AD_STATUS_ALL' if ad else 'CAMPAIGN_STATUS_ALL'}
+        if campaign_id:
+            filters['campaign_ids'] = [campaign_id]
+        ids = []
+        for buying_types in self.buying_type_groups:
             filters['buying_types'] = buying_types
             params['filtering'] = json.dumps(filters)
-            ids, r = self.request_id(url, params, [], ad_ids=ad)
-            if r and ids:
-                total_pages = r.json()['data']['page_info']['total_page']
-                for x in range(total_pages - 1):
-                    page_num = x + 2
-                    params['page'] = page_num
-                    if page_num % 10 == 0:
-                        logging.info('Pulling ad_ids page #{} of {}'.format(
-                            page_num, total_pages))
-                    ids, r = self.request_id(url, params, ids, ad_ids=ad)
-        ids = [ids[x:x + 100] for x in range(0, len(ids), 100)]
+            params['page'] = 1
+            group_start = len(ids)
+            ids, r = self.request_id(url, params, ids, ad_ids=ad)
+            if not r or len(ids) == group_start:
+                continue
+            page_info = r.json()['data'].get('page_info', {})
+            total_pages = page_info.get('total_page', 1)
+            for x in range(total_pages - 1):
+                page_num = x + 2
+                params['page'] = page_num
+                if page_num % 10 == 0:
+                    logging.info('Pulling ad_ids page #{} of {}'.format(
+                        page_num, total_pages))
+                ids, r = self.request_id(url, params, ids, ad_ids=ad)
+        ids = [ids[x:x + self.id_page_size]
+               for x in range(0, len(ids), self.id_page_size)]
         logging.info('Returning all ad ids.')
         return ids
 
@@ -350,15 +361,58 @@ class TikApi(object):
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
 
-    def check_url(self):
-        self.set_headers()
+    def request_campaigns(self, buying_types):
+        """
+        Requests every campaign of one buying type group, all pages.
+
+        The endpoint returns ten rows a page by default, so an unpaginated
+        call silently reports only the first ten campaigns of an advertiser
+        that has more than that.
+
+        :param buying_types: buying types to filter the campaign list on
+        :returns: list of campaign dicts
+        """
         url = self.base_url + self.version + self.campaign_url
-        params = {'advertiser_id': self.advertiser_id,
-                  'fields': '["campaign_automation_type", "campaign_name"]'}
-        r = self.make_request(url=url, method='GET', headers=self.headers,
-                              params=params)
-        response = r.json()
-        campaign_list = response.get('data', {}).get('list', [])
+        campaigns = []
+        for page in range(1, 1000):
+            params = {'advertiser_id': self.advertiser_id,
+                      'page': page,
+                      'page_size': self.id_page_size,
+                      'fields': json.dumps(self.campaign_fields),
+                      'filtering': json.dumps(
+                          {'buying_types': buying_types})}
+            r = self.make_request(url=url, method='GET',
+                                  headers=self.headers, params=params)
+            if not r:
+                logging.warning('No response for campaign list, buying '
+                                'types {}.'.format(buying_types))
+                break
+            response_data = r.json().get('data', {})
+            if 'list' not in response_data:
+                logging.warning('No campaign list in response for buying '
+                                'types {}:\n {}'.format(buying_types,
+                                                        r.json()))
+                break
+            campaigns.extend(response_data['list'])
+            total_pages = response_data.get('page_info', {}).get(
+                'total_page', 1)
+            if page >= total_pages:
+                break
+        return campaigns
+
+    def check_url(self):
+        """
+        Pairs every campaign with the ad endpoint its ads live on.
+
+        Smart+ campaigns expose their ads on their own endpoint, so the
+        campaign list is walked first rather than pulling ad ids blind.
+
+        :returns: list of dicts of ad url and campaign id
+        """
+        self.set_headers()
+        campaign_list = []
+        for buying_types in self.buying_type_groups:
+            campaign_list.extend(self.request_campaigns(buying_types))
         if self.campaign_id:
             campaign_list = [
                 c for c in campaign_list
@@ -370,8 +424,9 @@ class TikApi(object):
                 'campaign_automation_type', '') else self.ad_url
             urls.append(
                 {'ad_url': ad_url, 'campaign_id': campaign.get('campaign_id')})
+        logging.info('Found {} campaigns to pull ad ids for.'.format(
+            len(urls)))
         return urls
-
 
     def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
         metrics = 'spend'

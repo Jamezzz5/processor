@@ -207,6 +207,8 @@ class AmzApi(object):
         self.include_keywords = False
         self.include_creative = False
         self.include_conversions = False
+        self.market_id = None
+        self.entity_id = None
         self.dsp_id = ''
         self.use_v1 = True
         self.v1_account_id = ''
@@ -281,7 +283,8 @@ class AmzApi(object):
         self.client = OAuth2Session(self.client_id, token=token)
 
     def set_headers(self, content_type=''):
-        self.headers = {'Amazon-Advertising-API-ClientId': self.client_id}
+        self.headers = {'Authorization': f'Bearer {self.access_token}',
+                        'Amazon-Advertising-API-ClientId': self.client_id}
         if self.profile_id:
             self.headers['Amazon-Advertising-API-Scope'] = str(self.profile_id)
         if content_type:
@@ -368,6 +371,8 @@ class AmzApi(object):
                 self.profile_id = profile[0]['profileId']
                 self.set_headers()
                 self.base_url = self.check_correct_endpoint(profile, endpoint)
+                self.market_id = profile[0]['accountInfo']['marketplaceStringId']
+                self.entity_id = profile[0]['accountInfo']['id']
                 return True
             dsp_profiles = [x for x in json_response if 'agency'
                             in x['accountInfo']['type']]
@@ -1605,8 +1610,7 @@ class AmzApi(object):
     def raw_request(self, url, method, body=None, params=None, headers=None):
         kwargs = {}
         for kwarg in [(body, 'json'), (params, 'params'), (headers, 'headers')]:
-            # An empty dict is a valid v1 query body and has to survive.
-            if kwarg[0] is not None:
+            if kwarg[0]:
                 kwargs[kwarg[1]] = kwarg[0]
         if method == 'POST':
             request_method = self.client.post
@@ -1715,3 +1719,114 @@ class AmzApi(object):
         results = self.check_campaign_ids(
             results, camp_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
+
+    def get_amc_instance(self):
+        """
+        Get the AMC instance ID for the advertiser based on what is in config
+        Headers must contain entity ID not advertiser account ID,
+        NOTE:
+            currently pulls instance ID for single country, need to find
+            endpoint that pulls for the multicountry instance ID if advertiser
+            has one.
+        """
+        self.headers = {
+            "Amazon-Advertising-API-ClientId": self.client_id,
+            "Amazon-Advertising-API-MarketplaceId": self.market_id,
+            "Amazon-Advertising-API-AdvertiserId": self.entity_id,
+            "Authorization": f"Bearer {self.client.access_token}",
+            "Content-Type": "application/json"
+        }
+        url = f"{self.base_url}/amc/instances"
+        r = requests.get(url, headers=self.headers)
+        data = r.json()
+        instance_id = data['instances'][0]['instanceId']
+        return instance_id
+
+    def make_amc_dataset(self, instance_id=''):
+        """
+        Create a dataset for the advertiser in AMC.  This is a prerequisite for
+        uploading data to AMC.  The dataset is a temporary test dataset.
+        NOTE:
+            Currently works for multi country instance ID not single country
+        """
+        url = f'{self.base_url}/amc/advertiserData/{instance_id}/dataSets'
+        data_set = {
+            "dataSet": {
+                "period": "P1D",
+                "dataSetId": "my_first_dataset",
+                "description": "Example dataset upload",
+                "countryCode": "US",
+                "columns": [
+                    {
+                        "name": "email",
+                        "columnType": "DIMENSION",
+                        "dataType": "STRING",
+                        "externalUserIdType": {
+                            "hashedPii": "EMAIL"
+                        }
+                    },
+                    {
+                        "name": "record_date",
+                        "columnType": "DIMENSION",
+                        "dataType": "DATE",
+                        "isMainEventTime": True
+                    },
+                    {
+                        "name": "purchase_value",
+                        "columnType": "METRIC",
+                        "dataType": "LONG"
+                    }
+                ]
+            }
+        }
+        r = requests.post(url, headers=self.headers, json=data_set)
+        return r
+
+    def upload_data_amc(self, instance_id=''):
+        """
+        Upload data to the AMC dataset created for the advertiser
+        Uploads from s3 bucket
+
+        NOTE:
+            request fails with the error: "User is not Data Upload Eligible"
+            unsure of solution, look into accepting Terms&Conditions in UI?
+        """
+        body = {
+            'compressionFormat': 'GZIP',
+            'dataSource': {
+                "sourceS3Bucket": "amz-s3-test-bucket-gdaudlin",
+            },
+            'fileFormat': {
+                'jsonDataFormat': 'LINES'
+            },
+            'updateStrategy': 'OVERLAP_REPLACE'
+        }
+        data_set_id = 'my_first_dataset'
+        url = (f"{self.base_url}/amc/advertiserData/"
+               f"{instance_id}/uploads/{data_set_id}")
+        r = requests.post(
+            url,
+            headers=self.headers,
+            json=body
+        )
+        return r
+
+    def upload_data(self):
+        """
+        Runs the upload data process for AMC.
+        Headers must contain advertiser account ID not entity ID
+        NOTE:
+            Need to find way to get advertiser account ID from an endpoint
+        """
+        self.input_config('amzapi.json')
+        self.get_client()
+        profile = self.get_profiles()
+        instance_id = self.get_amc_instance()
+        self.headers = {
+            "Amazon-Advertising-API-ClientId": self.client_id,
+            "Amazon-Advertising-API-MarketplaceId": self.market_id,
+            "Amazon-Advertising-API-AdvertiserId": '',
+            "Authorization": f"Bearer {self.client.access_token}"
+        }
+        data = self.make_amc_dataset(instance_id=instance_id)
+        self.upload_data_amc(instance_id=instance_id)

@@ -782,6 +782,9 @@ class TwApi(object):
             self.config['ACCESS_TOKEN_SECRET'] = new_secret
             with open(self.configfile, 'w') as f:
                 json.dump(self.config, f)
+        except Exception as e:
+            logging.warning('Could not authenticate account, '
+                            'returning current config: {}'.format(e))
         finally:
             sw.quit()
         return self.configfile
