@@ -4,6 +4,7 @@ import sys
 import json
 import logging
 import time
+import collections
 import pandas as pd
 import reporting.awss3 as awss3
 import reporting.utils as utl
@@ -12,6 +13,9 @@ from requests_oauthlib import OAuth2Session
 import requests
 
 config_path = utl.config_path
+
+TableCell = collections.namedtuple(
+    'TableCell', 'start end para_ranges paragraphs')
 
 
 class GsApi(object):
@@ -965,7 +969,7 @@ class GsApi(object):
         return self.df
 
     def create_google_doc(self, title=None):
-        logging.info('Creating GSlides Presentation: {}'.format(title))
+        logging.info('Creating Google Doc: {}'.format(title))
         body = {
             "title": title,
         }
@@ -1015,105 +1019,317 @@ class GsApi(object):
         return '' if text.lower() in GsApi.null_cell_text else text
 
     @staticmethod
-    def fill_row(row, index):
-        """Insert requests for one table row's cells, walking the index
-        forward cell by cell; returns ``(requests, index, ranges)`` where
-        ``ranges`` are the non-empty cells' text spans (for styling).
-
-        A blank cell inserts nothing — the Docs API rejects empty text —
-        but still advances the index by its structural width (cell start
-        + paragraph newline), so the walk stays aligned with the table.
-        """
-        row_requests = []
-        ranges = []
-        for cell in row:
-            text = GsApi.cell_text(cell)
-            if text:
-                row_requests.append({
-                    "insertText":
-                        {
-                            "text": text,
-                            "location":
-                                {
-                                    "index": index
-                                }
-                        }
-                })
-                ranges.append((index, index + GsApi.utf16_len(text)))
-            index += GsApi.utf16_len(text) + 2
-        index += 1
-        return row_requests, index, ranges
+    def pt(magnitude):
+        """A Docs API dimension in points."""
+        return {'magnitude': magnitude, 'unit': 'PT'}
 
     @staticmethod
-    def _table_header_style_reqs(table_start, ncols, header_ranges, style):
-        """Style requests for a Docs table's header row — a brand fill
-        behind row 0 plus bold contrast text — so an exported table reads
-        as a designed artifact rather than a raw grid.
+    def _color(rgb01):
+        return {'color': {'rgbColor': rgb01}}
 
-        :param table_start: the table element's start index.
-        :param ncols: header cell count.
-        :param header_ranges: the header cells' text ranges.
-        :param style: ``{'header_bg': rgb01, 'header_fg': rgb01}``.
-        :returns: the style request list.
-        """
-        reqs = [{'updateTableCellStyle': {
-            'tableCellStyle': {'backgroundColor': {'color': {
-                'rgbColor': style['header_bg']}}},
-            'fields': 'backgroundColor',
+    @classmethod
+    def text_style_req(cls, start, end, style):
+        """An ``updateTextStyle`` request from a friendly style dict:
+        ``bold`` / ``italic`` / ``size`` (pt) / ``font`` / ``weight`` /
+        ``color`` (rgb01). ``None`` for an empty style or range."""
+        ts, fields = {}, []
+        if style.get('bold') is not None:
+            ts['bold'] = bool(style['bold'])
+            fields.append('bold')
+        if style.get('italic') is not None:
+            ts['italic'] = bool(style['italic'])
+            fields.append('italic')
+        if style.get('size'):
+            ts['fontSize'] = cls.pt(style['size'])
+            fields.append('fontSize')
+        if style.get('font'):
+            ts['weightedFontFamily'] = {'fontFamily': style['font'],
+                                        'weight': style.get('weight', 400)}
+            fields.append('weightedFontFamily')
+        if style.get('color'):
+            ts['foregroundColor'] = cls._color(style['color'])
+            fields.append('foregroundColor')
+        if not fields or end <= start:
+            return None
+        return {'updateTextStyle': {
+            'range': {'startIndex': start, 'endIndex': end},
+            'textStyle': ts, 'fields': ','.join(fields)}}
+
+    @classmethod
+    def paragraph_style_req(cls, start, end, style):
+        """An ``updateParagraphStyle`` request from a friendly style dict:
+        ``alignment`` / ``space_above`` / ``space_below`` / ``indent_start``
+        (pt) / ``line_spacing`` (%) / ``keep_with_next`` / ``keep_together``
+        / ``page_break_before`` / ``shading`` (rgb01) / ``border_bottom``
+        (``(rgb01, width_pt, padding_pt)``). ``None`` for an empty style."""
+        ps, fields = {}, []
+        simple = (('alignment', 'alignment'),
+                  ('keep_with_next', 'keepWithNext'),
+                  ('keep_together', 'keepLinesTogether'),
+                  ('page_break_before', 'pageBreakBefore'),
+                  ('line_spacing', 'lineSpacing'))
+        for key, api_key in simple:
+            if style.get(key) is not None:
+                ps[api_key] = style[key]
+                fields.append(api_key)
+        for key, api_key in (('space_above', 'spaceAbove'),
+                             ('space_below', 'spaceBelow'),
+                             ('indent_start', 'indentStart')):
+            if style.get(key) is not None:
+                ps[api_key] = cls.pt(style[key])
+                fields.append(api_key)
+        if style.get('shading'):
+            ps['shading'] = {'backgroundColor': cls._color(style['shading'])}
+            fields.append('shading')
+        if style.get('border_bottom'):
+            color, width, padding = style['border_bottom']
+            ps['borderBottom'] = {'color': cls._color(color),
+                                  'width': cls.pt(width),
+                                  'padding': cls.pt(padding),
+                                  'dashStyle': 'SOLID'}
+            fields.append('borderBottom')
+        if not fields:
+            return None
+        return {'updateParagraphStyle': {
+            'range': {'startIndex': start, 'endIndex': end},
+            'paragraphStyle': ps, 'fields': ','.join(fields)}}
+
+    @staticmethod
+    def document_style_req(margins_pt):
+        """``updateDocumentStyle`` for page margins —
+        ``(top, right, bottom, left)`` in points."""
+        top, right, bottom, left = margins_pt
+        return {'updateDocumentStyle': {
+            'documentStyle': {
+                'marginTop': GsApi.pt(top), 'marginRight': GsApi.pt(right),
+                'marginBottom': GsApi.pt(bottom),
+                'marginLeft': GsApi.pt(left)},
+            'fields': 'marginTop,marginRight,marginBottom,marginLeft'}}
+
+    @staticmethod
+    def _cell_paragraphs(cell):
+        """A cell spec as ``[(text, text_style, para_style)]``; a bare
+        value is one unstyled paragraph."""
+        if isinstance(cell, (list, tuple)) and cell and \
+                isinstance(cell[0], (list, tuple)):
+            return [(GsApi.cell_text(p[0]),
+                     p[1] if len(p) > 1 and p[1] else {},
+                     p[2] if len(p) > 2 and p[2] else {}) for p in cell]
+        return [(GsApi.cell_text(cell), {}, {})]
+
+    @staticmethod
+    def _cell_style_req(table_start, row, col, row_span, col_span, style,
+                        fields):
+        return {'updateTableCellStyle': {
+            'tableCellStyle': style, 'fields': fields,
             'tableRange': {
                 'tableCellLocation': {
                     'tableStartLocation': {'index': table_start},
-                    'rowIndex': 0, 'columnIndex': 0},
-                'rowSpan': 1, 'columnSpan': ncols}}}]
-        for start, end in header_ranges:
-            reqs.append({'updateTextStyle': {
-                'range': {'startIndex': start, 'endIndex': end},
-                'textStyle': {'bold': True, 'foregroundColor': {'color': {
-                    'rgbColor': style['header_fg']}}},
-                'fields': 'bold,foregroundColor'}})
+                    'rowIndex': row, 'columnIndex': col},
+                'rowSpan': row_span, 'columnSpan': col_span}}}
+
+    @classmethod
+    def _cell_border(cls, rgb01, width_pt):
+        return {'color': cls._color(rgb01), 'width': cls.pt(width_pt),
+                'dashStyle': 'SOLID'}
+
+    def table_requests(self, cells, index, style=None):
+        """Requests rendering ``cells`` as a native, styled Docs table,
+        plus the index one past it (the table element itself starts one
+        past ``index`` — the API writes a leading newline first).
+
+        :param cells: rows of cell specs — a scalar (one paragraph, blank
+            for null-ish values) or a list of ``(text, text_style,
+            para_style)`` paragraphs.
+        :param index: the end of the segment, where the table appends.
+        :param style: optional dict — ``header`` (``header_bg`` fill +
+            bold ``header_fg`` text on row 0), ``zebra`` (rgb01 on
+            alternate body rows), ``borders`` (``'rules'`` for a
+            ``rule``-colored hairline under each row, ``'none'``, a
+            per-side ``{'top': (rgb01, width_pt)}`` dict, or the default
+            grid), ``padding`` (pt), ``font`` / ``font_size`` / ``color``,
+            ``numeric_align``, ``col_widths`` (pt per column),
+            ``cell_bg``, ``top_borders`` (per-column ``(rgb01,
+            width_pt)`` or ``None`` on row 0).
+        :returns: ``(requests, index)``; ``([], index)`` for no rows.
+        """
+        style = style or {}
+        rows = self._rectangular_cells(cells)
+        if not rows:
+            return [], index
+        ncols = len(rows[0])
+        start_ind, table_start = index, index + 1
+        reqs = [{'insertTable': {
+            'rows': len(rows), 'columns': ncols,
+            'endOfSegmentLocation': {'segmentId': ''}}}]
+        text_reqs, grid, index = self._lay_out_cells(rows, index + 4)
+        end_ind = index - 1
+        base_text = {api: style[key] for key, api in (
+            ('font', 'font'), ('font_size', 'size'), ('color', 'color'))
+            if style.get(key)}
+        style_reqs = [
+            self.get_format_req(start_ind, end_ind, self.text_format),
+            self.paragraph_style_req(table_start, end_ind, {
+                'line_spacing': 100, 'space_above': 0, 'space_below': 0}),
+            self.text_style_req(table_start, end_ind, base_text)]
+        style_reqs += self._table_frame_style_reqs(
+            table_start, len(rows), ncols, style)
+        style_reqs += self._table_content_style_reqs(grid, ncols, style)
+        return (reqs + text_reqs + [r for r in style_reqs if r]), end_ind
+
+    @classmethod
+    def _rectangular_cells(cls, cells):
+        """``cells`` as equal-length rows of paragraph lists — the Docs
+        API only inserts rectangular tables. Empty for no rows."""
+        rows = [[cls._cell_paragraphs(c) for c in row] for row in cells]
+        rows = [r for r in rows if r]
+        if not rows:
+            return []
+        ncols = max(len(r) for r in rows)
+        for row in rows:
+            row.extend([[('', {}, {})]] * (ncols - len(row)))
+        return rows
+
+    def _lay_out_cells(self, rows, index):
+        """``(insert_requests, grid, index)`` — every cell's text at the
+        index the API gives it: a cell costs its text plus two, a row one
+        more."""
+        reqs, grid = [], []
+        for row in rows:
+            row_cells = []
+            for paragraphs in row:
+                text = '\n'.join(p[0] for p in paragraphs)
+                cell_start, pos, para_ranges = index, index, []
+                if text:
+                    reqs.append({'insertText': {
+                        'text': text, 'location': {'index': index}}})
+                for ptext, _, _ in paragraphs:
+                    para_ranges.append((pos, pos + self.utf16_len(ptext)))
+                    pos += self.utf16_len(ptext) + 1
+                index += self.utf16_len(text) + 2
+                row_cells.append(TableCell(cell_start, index - 1,
+                                           para_ranges, paragraphs))
+            index += 1
+            grid.append(row_cells)
+        return reqs, grid, index
+
+    @classmethod
+    def _table_borders(cls, style, paper):
+        """``{borderSide: border}`` for ``borders`` (a per-side dict,
+        ``'rules'`` or ``'none'``), empty for the default grid; a hidden
+        side is drawn paper-colored at zero width."""
+        borders = style.get('borders')
+        sides = ('Top', 'Left', 'Right', 'Bottom')
+        if isinstance(borders, dict):
+            return {f'border{side}': cls._cell_border(
+                *(borders.get(side.lower()) or (paper, 0)))
+                for side in sides}
+        if borders not in ('rules', 'none'):
+            return {}
+        rule = style.get('rule') or paper
+        under = 'Bottom' if borders == 'rules' else ''
+        return {f'border{side}': cls._cell_border(
+            rule if side == under else paper, 0.5 if side == under else 0)
+            for side in sides}
+
+    @classmethod
+    def _table_frame_style_reqs(cls, table_start, nrows, ncols, style):
+        """The table's own dressing — padding, borders, header fill,
+        zebra body rows, per-column top rules and fixed widths."""
+        paper = style.get('paper') or {'red': 1, 'green': 1, 'blue': 1}
+        cell_style = dict(cls._table_borders(style, paper))
+        pad = style.get('padding')
+        if pad is not None:
+            for side in ('Top', 'Bottom', 'Left', 'Right'):
+                cell_style[f'padding{side}'] = cls.pt(pad)
+        if style.get('cell_bg'):
+            cell_style['backgroundColor'] = cls._color(style['cell_bg'])
+        reqs = []
+        if cell_style:
+            reqs.append(cls._cell_style_req(
+                table_start, 0, 0, nrows, ncols, cell_style,
+                ','.join(sorted(cell_style))))
+        header = bool(style.get('header'))
+        if header and style.get('header_bg'):
+            reqs.append(cls._cell_style_req(
+                table_start, 0, 0, 1, ncols,
+                {'backgroundColor': cls._color(style['header_bg'])},
+                'backgroundColor'))
+        if style.get('zebra'):
+            for row in range((1 if header else 0) + 1, nrows, 2):
+                reqs.append(cls._cell_style_req(
+                    table_start, row, 0, 1, ncols,
+                    {'backgroundColor': cls._color(style['zebra'])},
+                    'backgroundColor'))
+        for col, top in enumerate(style.get('top_borders') or []):
+            if top and col < ncols:
+                reqs.append(cls._cell_style_req(
+                    table_start, 0, col, 1, 1,
+                    {'borderTop': cls._cell_border(*top)}, 'borderTop'))
+        for col, width in enumerate(style.get('col_widths') or []):
+            if width and col < ncols:
+                reqs.append({'updateTableColumnProperties': {
+                    'tableStartLocation': {'index': table_start},
+                    'columnIndices': [col],
+                    'tableColumnProperties': {
+                        'widthType': 'FIXED_WIDTH', 'width': cls.pt(width)},
+                    'fields': 'widthType,width'}})
+        return reqs
+
+    @classmethod
+    def _numeric_columns(cls, grid, ncols, header):
+        """The column indices whose every filled body cell reads as a
+        number — the ones ``numeric_align`` right-aligns."""
+        body = grid[1:] if header else grid
+        out = set()
+        for col in range(ncols):
+            filled = [row[col].paragraphs[0][0] for row in body
+                      if row[col].paragraphs and row[col].paragraphs[0][0]]
+            if filled and all(cls._NUMERIC_CELL_RE.match(t) for t in filled):
+                out.add(col)
+        return out
+
+    @classmethod
+    def _table_content_style_reqs(cls, grid, ncols, style):
+        """Per-cell styling: the header row's bold contrast text,
+        right-aligned numeric columns, and each cell paragraph's own
+        text/paragraph style."""
+        header = bool(style.get('header'))
+        numeric = (cls._numeric_columns(grid, ncols, header)
+                   if style.get('numeric_align') else set())
+        reqs = []
+        for row_idx, row_cells in enumerate(grid):
+            for col, cell in enumerate(row_cells):
+                if cell.end > cell.start:
+                    if header and not row_idx and style.get('header_fg'):
+                        reqs.append(cls.text_style_req(
+                            cell.start, cell.end,
+                            {'bold': True, 'color': style['header_fg']}))
+                    if col in numeric:
+                        reqs.append(cls.paragraph_style_req(
+                            cell.start, cell.end, {'alignment': 'END'}))
+                for (ps, pe), (_, tstyle, pstyle) in zip(cell.para_ranges,
+                                                         cell.paragraphs):
+                    if tstyle:
+                        reqs.append(cls.text_style_req(ps, pe, tstyle))
+                    if pstyle:
+                        reqs.append(cls.paragraph_style_req(
+                            ps, pe + 1, pstyle))
         return reqs
 
     def add_table(self, data, index, style=None):
-        """Requests rendering ``data`` (a list of row dicts) as a native
-        Docs table, plus the index one past it.
+        """Requests rendering ``data`` (row dicts, header from the first's
+        keys) as a native Docs table plus the index one past it;
+        ``([], index)`` for no rows, which must not abort the document.
 
-        Returns ``([], index)`` for an empty table — a columned frame with
-        no rows is common in a generated report and must not abort the
-        whole document.
-
-        :param style: optional ``{'header_bg', 'header_fg'}`` rgb01 pair;
-            when given the header row gets a brand fill + bold contrast
-            text.
-
-        See for indexing: (https://stackoverflow.com/questions/75689738/
-        how-can-i-dynamically-populate-a-table-in-google-doc-using-their-api)
+        :param style: :meth:`table_requests` style; ``header`` is implied.
         """
         if not data:
             return [], index
-        start_ind = index
-        ncols = len(data[0])
-        table_requests = [{'insertTable': {
-            'rows': len(data) + 1,
-            'columns': ncols,
-            'endOfSegmentLocation': {
-                'segmentId': ''
-            }
-        }}]
-        index += 4
-        column_req, index, header_ranges = self.fill_row(data[0].keys(),
-                                                         index)
-        table_requests += column_req
-        for row in data:
-            row_request, index, _ = self.fill_row(row.values(), index)
-            table_requests += row_request
-        table_requests.append(self.get_format_req(start_ind, index - 1,
-                                                  self.text_format))
-        if style:
-            # The table element itself starts one past the insertion
-            # point (the API inserts a leading newline first).
-            table_requests += self._table_header_style_reqs(
-                start_ind + 1, ncols, header_ranges, style)
-        return table_requests, index - 1
+        header = list(data[0].keys())
+        cells = [header] + [[row.get(k) for k in header] for row in data]
+        style = dict(style or {}, header=True)
+        return self.table_requests(cells, index, style=style)
 
     def add_image_doc(self, presigned_url, index, width_pt=250,
                       height_pt=250):
@@ -1169,29 +1385,48 @@ class GsApi(object):
         w_pt = 468  # US-Letter content width (8.5" - 1" of margins)
         return w_pt, max(120, min(600, int(round(w_pt * img_h / img_w))))
 
-    def add_media_requests(self, item, index, table_style=None):
-        """``(requests, index)`` for an item's trailing media — an inline
-        chart image or a native table.
-
-        Every key here is optional: report payloads arrive from several
-        eras and generators, and a missing url / cols / rows must cost
-        that one item its media, never the whole document. ``cols``
-        carries plain column names from a client capture and column
-        dicts from a server-built table, so only the former can name an
-        image.
-
-        :param table_style: brand header colors threaded to
-            :meth:`add_table`, if any.
-        """
+    @staticmethod
+    def media_kind(item):
+        """``'image'`` / ``'cells'`` / ``'table'`` / ``None`` — the
+        trailing media an item carries; a missing url / cols / rows costs
+        that item its media, never the document."""
+        if item.get('cells'):
+            return 'cells'
         data = item.get('data') or {}
         cols = data.get('cols') or []
         if not cols:
-            return [], index
+            return None
         if 'imgURI' in cols:
+            return 'image' if item.get('url') else None
+        return 'table' if data.get('data') else None
+
+    def add_media_requests(self, item, index, table_style=None):
+        """``(requests, index)`` for an item's trailing media — an inline
+        chart image, a styled ``cells`` table, or a native table from
+        ``data`` rows.
+
+        :param table_style: brand table styling threaded to
+            :meth:`add_table`, if any; an item's own ``table_style``
+            wins.
+        """
+        kind = self.media_kind(item)
+        if kind == 'image':
             w_pt, h_pt = self.image_size_pt(item)
-            return self.add_image_doc(item.get('url'), index, w_pt, h_pt)
-        return self.add_table(data.get('data'), index=index,
-                              style=table_style)
+            reqs, index = self.add_image_doc(item.get('url'), index,
+                                             w_pt, h_pt)
+            para = dict(item.get('image_para_style') or {})
+            if item.get('image_align'):
+                para['alignment'] = item['image_align']
+            if reqs and para:
+                reqs.append(self.paragraph_style_req(index - 2, index, para))
+            return reqs, index
+        style = item.get('table_style') or table_style
+        if kind == 'cells':
+            return self.table_requests(item['cells'], index, style=style)
+        if kind == 'table':
+            return self.add_table(item['data']['data'], index=index,
+                                  style=style)
+        return [], index
 
     def get_document(self, doc_id):
         """The Docs document resource, for read-back verification."""
@@ -1217,107 +1452,96 @@ class GsApi(object):
                     return False
         return True
 
-    @staticmethod
-    def _item_text_style_reqs(item, start, end):
-        """Style requests for one item's inserted text — paragraph
-        alignment, a text color, italics — from the optional item keys
-        the report exporter stamps (``alignment`` / ``text_color`` /
-        ``italic``). Empty when the item carries none."""
-        reqs = []
+    @classmethod
+    def _item_text_style_reqs(cls, item, start, end):
+        """Style requests for one item's inserted text, from the optional
+        keys the report exporter stamps: ``alignment`` / ``text_color`` /
+        ``italic``, plus ``para_style`` and ``text_style`` friendly dicts.
+        Empty when the item carries none."""
+        para = dict(item.get('para_style') or {})
         if item.get('alignment'):
-            reqs.append({'updateParagraphStyle': {
-                'range': {'startIndex': start, 'endIndex': end},
-                'paragraphStyle': {'alignment': item['alignment']},
-                'fields': 'alignment'}})
-        style, fields = {}, []
+            para['alignment'] = item['alignment']
+        text = dict(item.get('text_style') or {})
         if item.get('text_color'):
-            style['foregroundColor'] = {'color': {
-                'rgbColor': item['text_color']}}
-            fields.append('foregroundColor')
+            text['color'] = item['text_color']
         if item.get('italic'):
-            style['italic'] = True
-            fields.append('italic')
-        if style and end > start:
-            reqs.append({'updateTextStyle': {
-                'range': {'startIndex': start, 'endIndex': end},
-                'textStyle': style, 'fields': ','.join(fields)}})
-        return reqs
+            text['italic'] = True
+        reqs = [cls.paragraph_style_req(start, end, para) if para else None,
+                cls.text_style_req(start, end, text) if text else None]
+        return [r for r in reqs if r]
 
     @staticmethod
     def _rich_text_reqs(rich, start):
-        """Style requests realizing a ``narrative_rich`` payload at its
-        inserted position: markdown bold becomes real bold runs, glyph
-        bullets become native Docs bulleted paragraphs. Ranges are
-        UTF-16 offsets into the rich text, matching Docs indexing."""
-        reqs = []
+        """``(style_requests, bullet_requests)`` realizing a
+        ``narrative_rich`` payload at its inserted UTF-16 position; bullets
+        come back apart because creating them strips the nesting tabs, so
+        the writer applies them last in reverse document order."""
+        reqs, bullets = [], []
         for s, e in rich.get('bold_ranges') or []:
             reqs.append({'updateTextStyle': {
                 'range': {'startIndex': start + s, 'endIndex': start + e},
                 'textStyle': {'bold': True}, 'fields': 'bold'}})
         for s, e in rich.get('bullet_ranges') or []:
-            reqs.append({'createParagraphBullets': {
+            bullets.append({'createParagraphBullets': {
                 'range': {'startIndex': start + s, 'endIndex': start + e},
-                'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'}})
-        return reqs
+                'bulletPreset': rich.get('bullet_preset')
+                or 'BULLET_DISC_CIRCLE_SQUARE'}})
+        return reqs, bullets
 
     def doc_body_requests(self, text_json, index=1, newline=True,
                           text_only=False, table_style=None):
         """Build the batchUpdate requests for a report body.
 
-        The pure half of :meth:`add_text` (kept separate so tests can
-        assert request shapes without a network). Items may carry, on
-        top of ``message``/``format``/``data``: ``page_break`` (start a
-        new page before the item), ``rich`` (a ``narrative_rich``
-        payload — real bold + native bullets), ``alignment``,
-        ``text_color`` and ``italic``. All styling degrades away under
-        ``text_only`` — the salvage retry stays maximally plain.
-
         :param text_json: the report items.
         :param index: document index to start writing at.
         :param newline: end every item's text with a newline.
         :param text_only: plain text only — no media, no styling.
-        :param table_style: brand header colors for native tables.
+        :param table_style: default table styling for native tables.
         :returns: the request list.
         """
         request = []
         format_request = []
+        bullet_request = []
         for item in text_json:
             if item.get('selected') == 'false' or 'message' not in item:
                 continue
             rich = None if text_only else item.get('rich')
+            media = None if text_only else self.media_kind(item)
             if item.get('page_break') and not text_only:
                 request.append({'insertPageBreak': {
                     'location': {'index': index}}})
                 index += 2
             text = rich['text'] if rich and rich.get('text') \
                 else item['message']
-            if newline:
-                text += '\n'
-            request.append({
-                'insertText': {
-                    'location': {
-                        'index': index,
-                    },
-                    'text': text
-                }
-            })
-            style = item.get('format') or self.text_format
-            end_ind = index + self.utf16_len(text) - 1
-            format_request.append(self.get_format_req(index, end_ind, style))
-            if not text_only:
-                format_request += self._item_text_style_reqs(
-                    item, index, end_ind)
-                if rich:
-                    format_request += self._rich_text_reqs(rich, index)
-            index += self.utf16_len(text)
-            if not text_only:
+            if text or not media:
+                if newline and media not in ('table', 'cells'):
+                    text = f'{text}\n'
+                if text:
+                    request.append({'insertText': {
+                        'location': {'index': index}, 'text': text}})
+                    style = item.get('format') or self.text_format
+                    end_ind = index + self.utf16_len(text) - 1
+                    if end_ind <= index:
+                        end_ind = index + 1
+                    format_request.append(
+                        self.get_format_req(index, end_ind, style))
+                    if not text_only:
+                        format_request += self._item_text_style_reqs(
+                            item, index, end_ind)
+                        if rich:
+                            styles, bullets = self._rich_text_reqs(rich,
+                                                                   index)
+                            format_request += styles
+                            bullet_request += bullets
+                    index += self.utf16_len(text)
+            if media:
                 media_req, index = self.add_media_requests(
                     item, index, table_style=table_style)
                 request += media_req
-        return request + format_request
+        return request + format_request + bullet_request[::-1]
 
     def add_text(self, doc_id, text_json=None, index=1, newline=True,
-                 text_only=False, table_style=None):
+                 text_only=False, table_style=None, doc_requests=None):
         """Write a report body into a Google Doc in one batchUpdate.
 
         :param doc_id: the target document.
@@ -1329,7 +1553,10 @@ class GsApi(object):
         :param text_only: skip images, tables and styling — the degraded
             retry used when the full body is rejected, so a client still
             gets the narrative rather than a blank document.
-        :param table_style: brand header colors for native tables.
+        :param table_style: default styling for native tables.
+        :param doc_requests: document-level requests (margins, see
+            :meth:`document_style_req`) sent ahead of the body; dropped
+            under ``text_only``.
         :returns: ``(response, body)``.
         """
         logging.info('Adding text to doc.')
@@ -1338,9 +1565,42 @@ class GsApi(object):
         request = self.doc_body_requests(
             text_json, index=index, newline=newline, text_only=text_only,
             table_style=table_style)
+        if request and doc_requests and not text_only:
+            request = list(doc_requests) + request
         body = {"requests": request}
         response = self.client.post(url=url, json=body, headers=headers)
         return response, body
+
+    def add_footer(self, doc_id, text, text_style=None, para_style=None):
+        """Give the document a running footer reading ``text``, created
+        in one call and filled in a second. Best-effort polish: a refusal
+        returns False rather than failing an export whose body landed."""
+        if not (text or '').strip():
+            return False
+        url = '{}/{}:batchUpdate'.format(self.docs_url, doc_id)
+        headers = {"Content-Type": "application/json"}
+        resp = self.client.post(url=url, headers=headers, json={
+            'requests': [{'createFooter': {'type': 'DEFAULT'}}]})
+        if not self.request_applied(resp, doc_id):
+            return False
+        try:
+            footer_id = resp.json()['replies'][0]['createFooter']['footerId']
+        except (ValueError, KeyError, IndexError, TypeError):
+            logging.warning('Docs footer: no footerId in reply')
+            return False
+        end = self.utf16_len(text)
+        reqs = [{'insertText': {
+            'location': {'segmentId': footer_id, 'index': 0},
+            'text': text}}]
+        for req in (self.text_style_req(0, end, text_style or {}),
+                    self.paragraph_style_req(0, end, para_style or {})):
+            if req:
+                key = next(iter(req))
+                req[key]['range']['segmentId'] = footer_id
+                reqs.append(req)
+        resp = self.client.post(url=url, headers=headers,
+                                json={'requests': reqs})
+        return self.request_applied(resp, doc_id)
 
     def check_sheet_id(self, results, acc_col, success_msg, failure_msg):
         self.get_client()

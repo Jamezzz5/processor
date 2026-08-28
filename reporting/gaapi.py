@@ -1,7 +1,9 @@
 import os
 import sys
 import json
+import time
 import logging
+import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
@@ -22,6 +24,8 @@ class GaApi(object):
     default_config_file_name = 'gaapi.json'
     regex_filter_type = "FULL_REGEXP"
     paid_media_filter = "paidmedia"
+    max_attempts = 10
+    retry_sleep = 30
 
     def __init__(self):
         self.config = None
@@ -136,14 +140,40 @@ class GaApi(object):
             }
         return body
 
+    def make_request(self, url, body, attempt=1):
+        """Posts the report request, retrying when the connection breaks.
+
+        :param url: the runReport url for the property
+        :param body: dict of the report request
+        :param attempt: current attempt, incremented on each retry
+        :returns: the response, or None once max_attempts is exhausted
+        """
+        try:
+            self.get_client()
+            r = self.client.post(url, json=body)
+        except (requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError) as e:
+            msg = 'Connection broken on attempt {} of {}'.format(
+                attempt, self.max_attempts)
+            if attempt >= self.max_attempts:
+                logging.warning('{} - aborting: {}'.format(msg, e))
+                return None
+            logging.warning('{} - retrying in {}s: {}'.format(
+                msg, self.retry_sleep, e))
+            time.sleep(self.retry_sleep)
+            r = self.make_request(url, body, attempt + 1)
+        return r
+
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         logging.info('Getting df from {} to {}'.format(sd, ed))
-        self.get_client()
         url = self.create_url()
         body = self.create_body(sd, ed, fields)
-        r = self.client.post(url, json=body)
-        df = self.data_to_df(r)
+        self.r = self.make_request(url, body)
+        if self.r is None:
+            logging.warning('Could not get data returning empty df.')
+            return pd.DataFrame()
+        df = self.data_to_df(self.r)
         return df
 
     @staticmethod

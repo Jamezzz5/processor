@@ -894,6 +894,58 @@ class TestSimApi:
                                       'desktop_visits']
 
 
+class _FakeGaClient(object):
+    """Stand in for the GA session, breaking n posts before it answers."""
+
+    def __init__(self, breaks, response=None):
+        self.breaks = breaks
+        self.response = response
+        self.calls = 0
+
+    def post(self, url, json=None):
+        self.calls += 1
+        if self.calls <= self.breaks:
+            raise gaapi.requests.exceptions.ChunkedEncodingError(
+                'Connection broken: IncompleteRead(1239 bytes read, '
+                '9001 more expected)')
+        return self.response
+
+
+class TestGaApi:
+    """A GA response body that stops mid stream retries, never raises."""
+
+    @staticmethod
+    def make_api(monkeypatch, breaks, rows=True):
+        response = _FakeResponse(200, json_data={
+            'dimensionHeaders': [{'name': 'date'}],
+            'metricHeaders': [{'name': 'sessions'}],
+            'rows': [{'dimensionValues': [{'value': '20260826'}],
+                      'metricValues': [{'value': '5'}]}]}) if rows else None
+        api = gaapi.GaApi()
+        api.ga_id = '1234'
+        api.max_attempts = 3
+        api.client = _FakeGaClient(breaks, response)
+        monkeypatch.setattr(api, 'get_client', _no_sleep)
+        monkeypatch.setattr(gaapi.time, 'sleep', _no_sleep)
+        return api
+
+    def test_broken_read_retries_then_recovers(self, monkeypatch):
+        """The df still comes back once a later attempt reads cleanly."""
+        api = self.make_api(monkeypatch, breaks=2)
+        df = api.get_data()
+        assert api.client.calls == 3
+        assert list(df['sessions']) == ['5']
+
+    def test_broken_read_exhausts_retries_to_empty_df(self, monkeypatch):
+        """Retries spent, the vendor yields an empty df instead of killing
+        the run - importhandler leaves the last good raw file alone."""
+        api = self.make_api(monkeypatch, breaks=99)
+        df = api.get_data()
+        assert api.client.calls == api.max_attempts
+        assert df.empty
+        assert api.r is None
+
+
 class TestVendormatrix:
     def test_ad_cost_calculation(self):
         clicks = 10
