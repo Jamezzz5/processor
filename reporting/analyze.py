@@ -4075,8 +4075,13 @@ class AliChat(object):
             logging.warning(f'LLM telemetry hook failed: {exc}')
 
     def llm_request_generator(self, body, connect_timeout=5,
-                              read_timeout=120, retries=1):
+                              read_timeout=None, retries=1):
         """Stream parsed LLM deltas, never hanging or raising.
+
+        ``read_timeout`` is the socket *inactivity* timeout between
+        streamed bytes; ``None`` takes ``LLM_STREAM_READ_TIMEOUT``
+        (default 120s). Benchmarks on a CPU-offloaded box raise it —
+        a 27k-token prompt can take minutes before the first delta.
 
         A connect-phase failure (connection refused / timed out
         before any delta arrived) is retried once — nothing has
@@ -4091,6 +4096,9 @@ class AliChat(object):
         consumed here for the timing log, never forwarded.
         """
         body.setdefault('stream_options', {'include_usage': True})
+        if read_timeout is None:
+            read_timeout = int(
+                os.environ.get('LLM_STREAM_READ_TIMEOUT', '120') or 120)
         attempts = 0
         yielded = False
         t0 = time.time()
