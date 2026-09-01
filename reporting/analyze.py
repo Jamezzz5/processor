@@ -4074,6 +4074,38 @@ class AliChat(object):
         except Exception as exc:
             logging.warning(f'LLM telemetry hook failed: {exc}')
 
+    @staticmethod
+    def _server_error_detail(resp):
+        """The server's own explanation of a rejected request, read
+        while the response is still open.
+
+        ``raise_for_status`` reports only the status line, so a 400 is
+        an over-long prompt and an unknown model alike. Best-effort:
+        an unreadable body degrades to an empty detail.
+        """
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = None
+        detail = ''
+        if isinstance(payload, dict):
+            err = payload.get('error')
+            if isinstance(err, dict):
+                detail = err.get('message') or ''
+                counts = ', '.join(
+                    f'{k}={err[k]}' for k in ('n_prompt_tokens', 'n_ctx')
+                    if err.get(k) is not None)
+                if counts:
+                    detail = f'{detail} ({counts})'.strip()
+            elif isinstance(err, str):
+                detail = err
+        if not detail:
+            try:
+                detail = (resp.text or '').strip()
+            except Exception:
+                detail = ''
+        return detail[:500]
+
     def llm_request_generator(self, body, connect_timeout=5,
                               read_timeout=None, retries=1):
         """Stream parsed LLM deltas, never hanging or raising.
@@ -4100,6 +4132,7 @@ class AliChat(object):
             read_timeout = int(
                 os.environ.get('LLM_STREAM_READ_TIMEOUT', '120') or 120)
         attempts = 0
+        error_detail = ''
         yielded = False
         t0 = time.time()
         t_first = None
@@ -4111,7 +4144,11 @@ class AliChat(object):
                 with requests.post(
                         self.llm_url, json=body, stream=True,
                         timeout=(connect_timeout, read_timeout)) as r:
-                    r.raise_for_status()
+                    try:
+                        r.raise_for_status()
+                    except requests.exceptions.RequestException:
+                        error_detail = self._server_error_detail(r)
+                        raise
                     r.encoding = 'utf-8'
                     for delta in self._parse_llm_stream_lines(r):
                         if delta.get('type') == 'usage':
@@ -4138,9 +4175,11 @@ class AliChat(object):
                         f"LLM connect failed ({exc}) — retrying "
                         f"({attempts}/{retries}).")
                     continue
-                logging.warning(f"LLM stream failed: {exc}")
-                yield {"type": "error",
-                       "delta": f"{type(exc).__name__}: {exc}"}
+                reason = f"{type(exc).__name__}: {exc}"
+                if error_detail:
+                    reason = f"{reason} — {error_detail}"
+                logging.warning(f"LLM stream failed: {reason}")
+                yield {"type": "error", "delta": reason}
                 self._log_llm_timing(
                     body, t0, t_first, delta_count, usage_info,
                     finish_reason or 'error')
