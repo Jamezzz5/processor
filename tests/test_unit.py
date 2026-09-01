@@ -2999,6 +2999,50 @@ class TestGamesDb:
         assert float(latest.views) == 1600
         assert latest.youtubevideoid == video.youtubevideoid
 
+    def test_pulse_and_price_upserts_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        slot = dt.datetime(2026, 8, 31, 8)
+        pulse_key = {'gameid': game.gameid, 'sampled_at': slot}
+        assert gdb.upsert_fact(
+            s, gmdl.CommunityPulse, pulse_key,
+            {'twitch_viewers': 42000, 'twitch_channels': 310,
+             'sponsored_streams': 2}) == 1
+        assert gdb.upsert_fact(
+            s, gmdl.StreamFlag,
+            {'gameid': game.gameid, 'sampled_at': slot,
+             'channel': 'streamer_one'},
+            {'title': 'Halo w/ sponsor #ad', 'token': '#ad',
+             'viewer_count': 1200}) == 1
+        s.commit()
+        assert gdb.upsert_fact(
+            s, gmdl.CommunityPulse, pulse_key,
+            {'twitch_viewers': 43000}) == 0
+        assert gdb.upsert_fact(
+            s, gmdl.StreamFlag,
+            {'gameid': game.gameid, 'sampled_at': slot,
+             'channel': 'streamer_one'}, {'viewer_count': 1300}) == 0
+        s.commit()
+        assert s.query(gmdl.CommunityPulse).count() == 1
+        assert s.query(gmdl.StreamFlag).count() == 1
+        pulse = s.query(gmdl.CommunityPulse).one()
+        assert float(pulse.twitch_viewers) == 43000
+        assert float(pulse.sponsored_streams) == 2
+        price_key = {'gameid': game.gameid,
+                     'price_date': dt.date(2026, 8, 31)}
+        assert gdb.upsert_fact(
+            s, gmdl.PriceSnapshot, price_key,
+            {'currency': 'USD', 'base_price': 59.99,
+             'final_price': 29.99, 'discount_pct': 50}) == 1
+        assert gdb.upsert_fact(
+            s, gmdl.PriceSnapshot, price_key,
+            {'final_price': 59.99, 'discount_pct': 0}) == 0
+        s.commit()
+        snap = s.query(gmdl.PriceSnapshot).one()
+        assert float(snap.discount_pct) == 0
+        assert float(snap.base_price) == 59.99
+
     def test_review_text_and_theme_upsert_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite',

@@ -15,6 +15,11 @@ class PmApi(object):
     config_path = utl.config_path
     base_url = 'https://explorer.pathmatics.com'
     temp_path = 'tmp'
+    sign_in_id = 'signin-username'
+    password_id = 'signin-password'
+    sign_in_button_id = 'signin-button'
+    signed_in_id = 'omnibox-text'
+    sign_in_attempts = 300
 
     def __init__(self, headless=True):
         self.sw = None
@@ -72,14 +77,37 @@ class PmApi(object):
         return sd, ed
 
     def sign_in(self):
-        user_pass = [(self.username, '//*[@id="signin-username"]'),
-                     (self.password, '//*[@id=\"signin-password\"]')]
-        submit_path = '//*[@id=\"signin-button\"]'
-        for item in user_pass:
-            elem = self.browser.find_element_by_xpath(item[1])
-            elem.send_keys(item[0])
-            self.sw.click_on_xpath(submit_path, sleep=5)
-        time.sleep(2)
+        """Fill Explorer's sign in form and submit it once.
+
+        :return: True once the signed in app is up
+        """
+        form_up = self.sw.wait_for_elem_load(
+            self.sign_in_id, attempts=self.sign_in_attempts,
+            sleep_time=.1, visible=True, raise_exception=False)
+        if not form_up:
+            if self.sw.wait_for_elem_load(
+                    self.signed_in_id, attempts=20, sleep_time=.1,
+                    raise_exception=False):
+                logging.info('Already signed in, continuing.')
+                return True
+            raise ex.NoSuchElementException(
+                'Neither the sign in form ({}) nor the signed in app '
+                '({}) loaded.'.format(self.sign_in_id, self.signed_in_id))
+        user_pass = [(self.username, self.sign_in_id),
+                     (self.password, self.password_id)]
+        for value, elem_id in user_pass:
+            elem = self.find_elem(self.sw.get_xpath_from_id(elem_id))
+            elem.clear()
+            elem.send_keys(value)
+        self.sw.click_on_xpath(
+            self.sw.get_xpath_from_id(self.sign_in_button_id), sleep=5)
+        if not self.sw.wait_for_elem_load(
+                self.signed_in_id, attempts=self.sign_in_attempts,
+                sleep_time=.1, raise_exception=False):
+            raise ex.NoSuchElementException(
+                'Sign in did not complete - check the credentials in '
+                '{}.'.format(self.config_file))
+        return True
 
     def find_elem(self, xpath):
         elem = self.browser.find_element_by_xpath(xpath)

@@ -59,6 +59,24 @@ def price_of(value):
     return None
 
 
+def price_snapshot_fields(value):
+    """appdetails ``price_overview`` dict -> ``price_snapshot``
+    columns, or None when the block is absent or priceless (free
+    titles carry no price_overview; their sale cycle is not a
+    thing)."""
+    if not isinstance(value, dict):
+        return None
+    initial, final = value.get('initial'), value.get('final')
+    if initial is None and final is None:
+        return None
+    return {
+        'currency': value.get('currency'),
+        'base_price': None if initial is None else initial / 100,
+        'final_price': None if final is None else final / 100,
+        'discount_pct': value.get('discount_percent') or 0,
+    }
+
+
 def game_fields(row):
     """The ``game`` dim fields present in one wide-df row."""
     return {

@@ -907,3 +907,123 @@ class ReviewTheme(Base):
     computed_at = Column(
         DateTime, comment='Naive UTC; when derive wrote this row - '
                           'the recency column.')
+
+
+class CommunityPulse(Base):
+    """Intraday Twitch sample — one row per game per pulse slot.
+
+    ``community_snapshot.twitch_viewers`` is one point-in-time reading
+    a day; this table holds the intraday curve behind it. A slot is
+    the sample time truncated to the pulse interval, so a rerun inside
+    a slot updates in place instead of stacking rows, and
+    hours-watched derivations know the grain they average over."""
+    __tablename__ = 'community_pulse'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'sampled_at',
+                         name='uq_community_pulse_slot'),
+        Index('ix_community_pulse_sampled', 'sampled_at'),
+        {'schema': 'games',
+         'comment': 'Intraday Twitch viewership samples per game. '
+                    'Sparse by design: a budgeted slice of the '
+                    'tracked pool per slot, so absence of a row is '
+                    '"not sampled", never "zero viewers".'},
+    )
+
+    communitypulseid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    sampled_at = Column(
+        DateTime, nullable=False,
+        comment='Naive UTC slot start - the sample time truncated to '
+                'the pulse interval (4h at ship).')
+    twitch_viewers = Column(
+        Numeric, comment='Concurrent viewers on the title\'s Twitch '
+                         'category (Helix Get Streams, top pages '
+                         'summed) at sample time.')
+    twitch_channels = Column(
+        Numeric, comment='Live channels observed across the pages '
+                         'read - a floor when pagination stops early, '
+                         'not a census.')
+    sponsored_streams = Column(
+        Numeric, comment='Of the observed channels, those whose '
+                         'stream title carries a sponsorship token '
+                         '("sponsored" without "not sponsored", #ad, '
+                         '"paid partnership", ...). The token rule '
+                         'lives in the twitch_pulse lane.')
+
+
+class StreamFlag(Base):
+    """Evidence rows behind ``community_pulse.sponsored_streams`` —
+    the flagged streams themselves, capped per title per slot in the
+    lane so a big campaign cannot flood the table. Natural key
+    ``(gameid, sampled_at, channel)``: one row per channel per slot,
+    updated in place on a rerun."""
+    __tablename__ = 'stream_flag'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'sampled_at', 'channel',
+                         name='uq_stream_flag_slot'),
+        Index('ix_stream_flag_gameid', 'gameid'),
+        Index('ix_stream_flag_sampled', 'sampled_at'),
+        {'schema': 'games',
+         'comment': 'Streams whose title matched a sponsorship token '
+                    'during a community_pulse sample. Capped '
+                    'per title per slot - evidence, not a census; '
+                    'counts live on community_pulse.'},
+    )
+
+    streamflagid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    sampled_at = Column(
+        DateTime, nullable=False,
+        comment='Naive UTC slot start - same truncation as '
+                'community_pulse.sampled_at.')
+    channel = Column(Text, nullable=False,
+                     comment='Streamer login (user_login).')
+    title = Column(Text, comment='Stream title as observed.')
+    token = Column(Text, comment='The sponsorship token that matched.')
+    viewer_count = Column(
+        Numeric, comment='Viewers on the flagged stream at sample '
+                         'time.')
+
+
+class PriceSnapshot(Base):
+    """Steam list price per game per day — the sale-cycle fact.
+
+    Written by the appdetails lane from ``price_overview`` (one
+    region per run, ``cc=us`` at ship), so history accrues at the
+    lane's budgeted pace: a title is re-priced when its appdetails
+    turn comes around, not nightly. ``game_event.price`` (legacy
+    steapi path, final price only) is unrelated and left alone."""
+    __tablename__ = 'price_snapshot'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'price_date',
+                         name='uq_price_snapshot_day'),
+        Index('ix_price_snapshot_date', 'price_date'),
+        {'schema': 'games',
+         'comment': 'Daily Steam price/discount state per game from '
+                    'appdetails price_overview, single region (US at '
+                    'ship). Sparse: a row lands when the appdetails '
+                    'budget reaches the title, so gaps mean "not '
+                    'checked", never "no price". Free titles carry '
+                    'no row (appdetails omits price_overview).'},
+    )
+
+    pricesnapshotid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    price_date = Column(Date, nullable=False,
+                        comment='UTC ingest date.')
+    currency = Column(Text,
+                      comment='ISO currency code as returned '
+                              '(request is cc=us, so USD in '
+                              'practice).')
+    base_price = Column(
+        Numeric, comment='List price before discount '
+                         '(price_overview.initial / 100).')
+    final_price = Column(
+        Numeric, comment='Price after the current discount '
+                         '(price_overview.final / 100).')
+    discount_pct = Column(
+        Numeric, comment="Steam's own discount_percent (0 when not "
+                         'on sale).')
