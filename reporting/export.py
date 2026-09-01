@@ -21,6 +21,8 @@ import reporting.expcolumns as exc
 
 log = logging.getLogger()
 config_path = utl.config_path
+CONNECT_ATTEMPTS = 5
+CONNECT_TIMEOUT = 10
 
 
 class ExportHandler(object):
@@ -386,18 +388,42 @@ class DB(object):
                 logging.warning(item + 'not in DB config file.  Aborting.')
                 sys.exit(0)
 
-    def connect(self):
-        logging.debug('Connecting to DB at Host: ' + self.host)
-        self.engine = sqa.create_engine(self.conn_string,
-                                        connect_args={'sslmode': 'prefer'})
+    def close(self):
+        """Return the checked-out connection to the pool, rolling back
+        anything the last statement left open. Safe with none open."""
+        if not self.connection:
+            return
         try:
-            self.connection = self.engine.raw_connection()
-        except AssertionError:
-            self.connection = self.engine.raw_connection()
-        except sqa.exc.OperationalError:
-            logging.warning('Connection timed out. Reconnecting in 30s.')
-            time.sleep(30)
-            self.connect()
+            self.connection.close()
+        except psycopg2.Error as e:
+            logging.warning('Could not close connection: {}'.format(e))
+        self.connection = None
+        self.cursor = None
+
+    def connect(self):
+        """Check a connection out of this DB's one engine."""
+        logging.debug('Connecting to DB at Host: ' + self.host)
+        if self.engine is None:
+            self.engine = sqa.create_engine(
+                self.conn_string, pool_pre_ping=True,
+                connect_args={'sslmode': 'prefer',
+                              'connect_timeout': CONNECT_TIMEOUT})
+        self.close()
+        for attempt in range(1, CONNECT_ATTEMPTS + 1):
+            try:
+                self.connection = self.engine.raw_connection()
+                break
+            except (AssertionError, sqa.exc.OperationalError,
+                    psycopg2.OperationalError) as e:
+                if attempt == CONNECT_ATTEMPTS:
+                    raise
+                wait = 2 ** attempt
+                logging.warning(
+                    'Could not connect ({}).  Attempt {} of {}, '
+                    'retrying in {}s.'.format(
+                        e, attempt, CONNECT_ATTEMPTS, wait))
+                self.engine.dispose()
+                time.sleep(wait)
         self.cursor = self.connection.cursor()
 
     def df_to_output(self, df):

@@ -20,6 +20,7 @@ import processor.reporting.dictcolumns as dctc
 import processor.reporting.calc as cal
 import processor.reporting.analyze as az
 import processor.reporting.errorreport as er
+import psycopg2
 import processor.reporting.export as exp
 import processor.reporting.expcolumns as exc
 import processor.reporting.azapi as azapi
@@ -2313,6 +2314,44 @@ conv_event_sum_cols = [
 ]
 
 
+class FakeConn:
+    """A raw_connection() double: it remembers being closed."""
+
+    def __init__(self):
+        self.closed = False
+
+    def cursor(self):
+        return object()
+
+    def close(self):
+        self.closed = True
+
+
+class FakeEngine:
+    """An engine double that counts checkouts and disposals, and can
+    refuse the next ``fail_times`` connects the way psycopg2 does when
+    the host is out of ephemeral ports."""
+
+    def __init__(self):
+        self.conns = []
+        self.checkouts = 0
+        self.disposals = 0
+        self.fail_times = 0
+
+    def raw_connection(self):
+        self.checkouts += 1
+        if self.fail_times:
+            self.fail_times -= 1
+            raise psycopg2.OperationalError(
+                'connection to server at "127.0.0.1", port 5434 failed: '
+                'Address already in use')
+        self.conns.append(FakeConn())
+        return self.conns[-1]
+
+    def dispose(self):
+        self.disposals += 1
+
+
 class TestExport:
 
     @pytest.mark.parametrize(
@@ -2598,6 +2637,55 @@ class TestExport:
         sb = exp.ScriptBuilder()
         append_tables = sb.get_active_event_tables(metrics)
         assert set(append_tables) == set(expected_tables)
+
+    @staticmethod
+    def make_db(monkeypatch, engines):
+        """An exp.DB whose engine is a recording double."""
+        db = exp.DB()
+        db.host, db.conn_string = 'h', 'postgresql://u:p@h:1/d'
+        monkeypatch.setattr(
+            exp.sqa, 'create_engine',
+            lambda *a, **kw: engines.append(FakeEngine()) or engines[-1])
+        return db
+
+    def test_close_is_safe_with_nothing_open(self):
+        exp.DB().close()
+
+    def test_connect_reuses_one_engine(self, monkeypatch):
+        """An upload connects several times per table across ~25
+        tables. Building an engine per statement opened a socket every
+        time and closed none of them, and a host that runs out of
+        ephemeral ports fails the export mid-write ("Address already
+        in use"). One engine, and the last checkout handed back before
+        the next."""
+        engines = []
+        db = self.make_db(monkeypatch, engines)
+        for _ in range(5):
+            db.connect()
+        assert len(engines) == 1, 'an engine per connect leaks sockets'
+        assert engines[0].checkouts == 5
+        assert sum(c.closed for c in engines[0].conns) == 4
+        db.close()
+        assert all(c.closed for c in engines[0].conns)
+        assert db.connection is None
+
+    def test_connect_retries_a_refused_connection(self, monkeypatch):
+        """Port pressure and a restarting database both clear on
+        their own, so a refused connect backs off and tries again
+        rather than ending the run. psycopg2 raises its own
+        OperationalError through raw_connection() -- the SQLAlchemy
+        wrapper this used to catch never sees it."""
+        engines = []
+        db = self.make_db(monkeypatch, engines)
+        monkeypatch.setattr(exp.time, 'sleep', lambda s: None)
+        db.connect()
+        engines[0].fail_times = 2
+        db.connect()
+        assert engines[0].checkouts == 4, 'two failures, then a hand-back'
+        assert engines[0].disposals == 2
+        engines[0].fail_times = exp.CONNECT_ATTEMPTS
+        with pytest.raises(psycopg2.OperationalError):
+            db.connect()
 
 
 class TestRun:
