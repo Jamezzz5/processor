@@ -105,23 +105,34 @@ class DcApi(object):
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
-                self.config = json.load(f)
+                config = json.load(f)
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.refresh_url = self.config['refresh_url']
-        self.usr_id = self.config['usr_id']
-        self.original_report_id = self.config['report_id']
+        self.load_config_dict(config)
+
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict, bypassing the
+        config file load (used by the app-layer credential vault).
+        ``usr_id`` and ``report_id`` may be absent when the dict is a
+        pooled credential rather than a card.
+
+        :param config: dict in dcapi.json shape
+        """
+        self.config = config
+        self.client_id = config.get('client_id', '')
+        self.client_secret = config.get('client_secret', '')
+        self.access_token = config.get('access_token', '')
+        self.refresh_token = config.get('refresh_token', '')
+        self.refresh_url = config.get('refresh_url', '')
+        self.usr_id = config.get('usr_id', '')
+        self.original_report_id = config.get('report_id', '')
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token, self.refresh_url, self.usr_id]
-        if 'advertiser_id' in self.config:
-            self.advertiser_id = self.remove_space(self.config['advertiser_id'])
-        if 'campaign_id' in self.config:
-            self.campaign_id = self.remove_space(self.config['campaign_id'])
+        if 'advertiser_id' in config:
+            self.advertiser_id = self.remove_space(config['advertiser_id'])
+        if 'campaign_id' in config:
+            self.campaign_id = self.remove_space(config['campaign_id'])
 
     @staticmethod
     def remove_space(val):
@@ -169,11 +180,21 @@ class DcApi(object):
         token = self.refresh_client_token(extra)
         self.client = OAuth2Session(self.client_id, token=token)
 
+    def create_profiles_url(self):
+        return '{}/v{}/userprofiles'.format(base_url, self.version)
+
     def create_user_url(self):
-        vers_url = '/v{}'.format(self.version)
-        usr_url = '/userprofiles/{}/'.format(self.usr_id)
-        user_url = '{}{}{}'.format(base_url, vers_url, usr_url)
-        return user_url
+        return '{}/{}/'.format(self.create_profiles_url(), self.usr_id)
+
+    def get_user_profiles(self):
+        """Every Campaign Manager user profile the credential can act as.
+
+        :returns: list of profile dicts (``profileId``, ``accountName``,
+            ``userName``), empty when the call failed
+        """
+        self.get_client()
+        r = self.client.get(self.create_profiles_url())
+        return r.json().get('items', []) if r.status_code == 200 else []
 
     def create_url(self, arg, path=report_path):
         user_url = self.create_user_url()

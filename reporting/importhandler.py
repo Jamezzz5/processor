@@ -186,6 +186,7 @@ class ImportHandler(object):
         key_list -- list of Vendormatrix keys for a given API
         api_class -- The class of API to call
         """
+        stats_by_vk = {}
         for vk in key_list:
             params = self.matrix.vendor_set(vk)
             try:
@@ -193,6 +194,9 @@ class ImportHandler(object):
             except (FileNotFoundError, ValueError, SystemExit) as e:
                 logging.warning(e)
                 continue
+            # Clear records a previous key's failure left behind,
+            # so nothing is attributed to the wrong card.
+            utl.drain_campaign_filter_stats()
             start_check = self.date_check(params[vmc.startdate])
             end_check = self.date_check(params[vmc.enddate])
             if params[vmc.apifields] == ['nan']:
@@ -219,6 +223,12 @@ class ImportHandler(object):
                         params[vmc.firstrow], params[vmc.lastrow],
                         params[vmc.date], params[vmc.startdate],
                         params[vmc.enddate])
+            stat = utl.drain_campaign_filter_stats()
+            if stat:
+                stat['date'] = dt.datetime.today().strftime(
+                    '%Y-%m-%d %H:%M:%S')
+                stats_by_vk[vk] = stat
+        utl.write_campaign_filter_stats(stats_by_vk)
 
     def api_loop(self):
         """Loops through all APIs and makes function call to retrieve data.

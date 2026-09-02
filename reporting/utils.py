@@ -660,6 +660,8 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
             r'\.0$', '', regex=True)
         mask |= ids.isin(values)
     tdf = df[mask]
+    record_campaign_filter_stats(values, tdf, df, cols[0],
+                                 keep_on_no_match)
     if tdf.empty:
         logging.warning(
             'Campaign filter {} did not match any of the {} campaigns '
@@ -671,6 +673,63 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
     logging.info('Filtered to {} of {} rows on campaign filter.'.format(
         len(tdf), len(df)))
     return tdf.reset_index(drop=True)
+
+
+campaign_filter_stats_file = 'campaign_filter_stats.json'
+_STATS_SAMPLE_CAP = 25
+_pending_filter_stat = {}
+
+
+def record_campaign_filter_stats(values, tdf, df, campaign_col,
+                                 keep_on_no_match):
+    """Hold the match record for a just-filtered report."""
+    try:
+        campaigns = df[campaign_col].dropna().astype('U').unique().tolist()
+        _pending_filter_stat.clear()
+        _pending_filter_stat.update({
+            'filter_values': list(values),
+            'matched': int(tdf[campaign_col].nunique()),
+            'total': len(campaigns),
+            'kept_all': bool(tdf.empty and keep_on_no_match),
+            'sample_campaigns': sorted(campaigns)[:_STATS_SAMPLE_CAP],
+        })
+    except Exception as e:
+        logging.warning('Could not record campaign filter stats: '
+                        '{}'.format(e))
+
+
+def drain_campaign_filter_stats():
+    """Return and clear the pending record -- the import handler calls
+    this per vendor key so a record cannot bleed across cards."""
+    stat = dict(_pending_filter_stat)
+    _pending_filter_stat.clear()
+    return stat
+
+
+def write_campaign_filter_stats(stats_by_vk, config_path_dir=None):
+    """Merge per-vendor-key match records into the config-dir JSON
+    the app reads, so an earlier partial import's records survive."""
+    if not stats_by_vk:
+        return
+    file_dir = config_path_dir or config_path
+    file_name = os.path.join(file_dir, campaign_filter_stats_file)
+    existing = {}
+    if os.path.exists(file_name):
+        try:
+            with open(file_name, 'r') as f:
+                existing = json.load(f)
+        except (IOError, ValueError):
+            existing = {}
+    if not isinstance(existing, dict):
+        existing = {}
+    existing.update(stats_by_vk)
+    dir_check(file_dir)
+    try:
+        with open(file_name, 'w') as f:
+            json.dump(existing, f)
+    except IOError as e:
+        logging.warning('Could not write campaign filter stats: '
+                        '{}'.format(e))
 
 
 def image_to_binary(file_name, as_bytes_io=False):

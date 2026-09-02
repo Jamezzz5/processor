@@ -82,11 +82,13 @@ class AmzApi(object):
         self.seen_asin = {}
         self.asin_path = os.path.join(config_path,
                                       'asin_product_mapping.csv')
-        if not os.path.exists(self.cache_file):
-            with open(self.cache_file, 'w') as f:
-                json.dump({}, f)
-        with open(self.cache_file, 'r') as f:
-            self.report_cache = json.load(f)
+        self.report_cache = {}
+        if os.path.isdir(config_path):
+            if not os.path.exists(self.cache_file):
+                with open(self.cache_file, 'w') as f:
+                    json.dump({}, f)
+            with open(self.cache_file, 'r') as f:
+                self.report_cache = json.load(f)
         self.fresh_pull = False
         self.product_report = False
         self.include_keywords = False
@@ -108,19 +110,30 @@ class AmzApi(object):
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
-                self.config = json.load(f)
+                config = json.load(f)
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.advertiser_id = self.config['advertiser_id']
+        self.load_config_dict(config)
+
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict, bypassing the
+        config file load (used by the app-layer credential vault).
+        ``advertiser_id`` may be absent when the dict is a pooled
+        credential rather than a card.
+
+        :param config: dict in amzapi.json shape
+        """
+        self.config = config
+        self.client_id = config.get('client_id', '')
+        self.client_secret = config.get('client_secret', '')
+        self.access_token = config.get('access_token', '')
+        self.refresh_token = config.get('refresh_token', '')
+        self.advertiser_id = config.get('advertiser_id', '')
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.refresh_token]
-        if 'campaign_id' in self.config:
-            self.campaign_id = self.config['campaign_id']
+        if 'campaign_id' in config:
+            self.campaign_id = config['campaign_id']
 
     def check_config(self):
         for item in self.config_list:
@@ -230,18 +243,26 @@ class AmzApi(object):
                 url = endpoints[region]
         return url
 
+    def request_profiles(self, endpoint):
+        """The profiles one regional endpoint lists, retried while the
+        response is not yet a list.
+
+        :param endpoint: regional base url
+        :returns: list of profile dicts, empty when the region never listed
+        """
+        url = '{}/v{}/profiles'.format(endpoint, self.version)
+        for _ in range(5):
+            r = self.make_request(url, method='GET', headers=self.headers)
+            json_response = r.json()
+            if isinstance(json_response, list):
+                return json_response
+            time.sleep(10)
+        return []
+
     def get_profiles(self):
         self.set_headers()
         for endpoint in [self.na_url, self.eu_url, self.fe_url]:
-            url = '{}/v{}/profiles'.format(endpoint, self.version)
-            json_response = []
-            for _ in range(5):
-                r = self.make_request(url, method='GET', headers=self.headers)
-                json_response = r.json()
-                if isinstance(json_response, list):
-                    break
-                else:
-                    time.sleep(10)
+            json_response = self.request_profiles(endpoint)
             profile = [x for x in json_response
                        if self.advertiser_id[1:] in x['accountInfo']['id']]
             if not profile:

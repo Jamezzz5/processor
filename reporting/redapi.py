@@ -627,6 +627,32 @@ class RedApi(object):
                     time.sleep(5)
         return business_ids
 
+    def request_ad_accounts(self, business_id):
+        """
+        Lists one business's ad accounts, retried while Reddit answers
+        without data
+
+        :param business_id: Business id to list
+        :return: list of ad account dicts, empty when the business never
+            answered
+        """
+        url = '{}businesses/{}/ad_accounts'.format(
+            self.base_api_url, business_id)
+        for x in range(20):
+            r = requests.get(url, headers=self.headers)
+            try:
+                resp = r.json()
+            except json.decoder.JSONDecodeError as e:
+                logging.warning(e)
+                time.sleep(1)
+                continue
+            if 'data' in resp:
+                return resp['data']
+            logging.warning('Data not in response: {}'.format(resp))
+            time.sleep(5)
+        logging.warning('Could not get business {}'.format(business_id))
+        return []
+
     def get_ad_accounts_by_business(self, business_ids):
         """
         Loops through provided business ids list to get account id of username
@@ -636,30 +662,12 @@ class RedApi(object):
         """
         account_id = ''
         for business_id in business_ids:
-            url = '{}businesses/{}/ad_accounts'.format(
-                self.base_api_url, business_id)
-            resp = None
-            for x in range(20):
-                r = requests.get(url, headers=self.headers)
-                try:
-                    resp = r.json()
-                except json.decoder.JSONDecodeError as e:
-                    logging.warning(e)
-                    time.sleep(1)
-                    continue
-                if 'data' in resp:
-                    break
-                else:
-                    logging.warning('Data not in response: {}'.format(resp))
-                    time.sleep(5)
-            if not resp or 'data' not in resp:
-                logging.warning('Could not get business {}'.format(business_id))
-                continue
-            account_ids = [x['id'] for x in resp['data']
+            ad_accounts = self.request_ad_accounts(business_id)
+            account_ids = [x['id'] for x in ad_accounts
                            if x['name'].lower() == self.username.lower()]
             if account_ids:
                 account_id = account_ids[0]
-                self.time_zone_id = resp['data'][0]['time_zone_id']
+                self.time_zone_id = ad_accounts[0]['time_zone_id']
                 break
         return account_id
 

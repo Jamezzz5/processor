@@ -787,6 +787,114 @@ def _no_sleep(*args, **kwargs):
     """Keep polling loops instant under test."""
 
 
+class TestAccountListing:
+    """Dict loaders and the account listings the app's pickers call."""
+
+    @staticmethod
+    def response(payload, status_code=200):
+        return types.SimpleNamespace(status_code=status_code,
+                                     json=lambda: payload)
+
+    def test_load_config_dict_skips_the_file(self):
+        cases = [
+            (fbapi.FbApi(), 'access_token',
+             {'app_id': 'a', 'app_secret': 's', 'access_token': 't'}),
+            (awapi.AwApi(), 'developer_token',
+             {'client_id': 'c', 'client_secret': 's', 'developer_token': 'd',
+              'refresh_token': 'r', 'login_customer_id': '1'}),
+            (dcapi.DcApi(), 'refresh_url',
+             {'client_id': 'c', 'client_secret': 's', 'refresh_token': 'r',
+              'refresh_url': 'u'}),
+            (amzapi.AmzApi(), 'refresh_token',
+             {'client_id': 'c', 'client_secret': 's', 'refresh_token': 'r'}),
+            (yvapi.YvApi(), 'client_secret',
+             {'client_id': 'c', 'client_secret': 's', 'advertiser': '7'}),
+        ]
+        for api, key, config in cases:
+            api.load_config_dict(config)
+            assert getattr(api, key) == config[key]
+            assert api.config is config
+        assert cases[1][0].login_customer_id == '1'
+        assert cases[1][0].client_customer_id == ''
+        assert cases[4][0].advertiser == 7
+
+    def test_fb_ad_accounts_export_rows(self, monkeypatch):
+        row = types.SimpleNamespace(
+            export_all_data=lambda: {'account_id': '1', 'name': 'One'})
+        monkeypatch.setattr(fbapi, 'User', lambda fbid: types.SimpleNamespace(
+            get_ad_accounts=lambda fields=None: [row]))
+        assert fbapi.FbApi.get_ad_accounts() == [
+            {'account_id': '1', 'name': 'One'}]
+
+    def test_aw_accessible_customers_strip_prefix(self, monkeypatch):
+        api = awapi.AwApi()
+        monkeypatch.setattr(api, 'get_client', lambda: {})
+        api.client = types.SimpleNamespace(
+            get=lambda url, headers=None: self.response(
+                {'resourceNames': ['customers/1', 'customers/2']}))
+        assert api.get_accessible_customers() == ['1', '2']
+        api.client = types.SimpleNamespace(
+            get=lambda url, headers=None: self.response({'error': 'x'}))
+        assert api.get_accessible_customers() == []
+
+    def test_aw_customer_clients_parse_and_skip_failures(self, monkeypatch):
+        api = awapi.AwApi()
+        page = [{'results': [{'customerClient': {
+            'id': '10', 'descriptiveName': 'Client', 'manager': False}}]}]
+        monkeypatch.setattr(api, 'request_report',
+                            lambda report: self.response(page))
+        assert api.get_customer_clients('9') == [
+            {'id': '10', 'name': 'Client', 'manager': False}]
+        assert (api.login_customer_id, api.client_customer_id) == ('9', '9')
+        monkeypatch.setattr(api, 'request_report',
+                            lambda report: self.response([{'error': {}}], 403))
+        assert api.get_customer_clients('9') == []
+        monkeypatch.setattr(api, 'request_report', lambda report: None)
+        assert api.get_customer_clients('9') == []
+
+    def test_dc_user_profiles_share_the_url(self, monkeypatch):
+        api = dcapi.DcApi()
+        api.usr_id = '55'
+        assert api.create_user_url() == (
+            'https://www.googleapis.com/dfareporting/v5/userprofiles/55/')
+        monkeypatch.setattr(api, 'get_client', lambda: None)
+        api.client = types.SimpleNamespace(
+            get=lambda url: self.response({'items': [{'profileId': 1}]}))
+        assert api.get_user_profiles() == [{'profileId': 1}]
+        api.client = types.SimpleNamespace(
+            get=lambda url: self.response({'error': {}}, 401))
+        assert api.get_user_profiles() == []
+
+    def test_amz_builds_without_a_config_dir(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        assert amzapi.AmzApi().report_cache == {}
+
+    def test_amz_request_profiles_waits_for_a_list(self, monkeypatch):
+        api = amzapi.AmzApi()
+        monkeypatch.setattr(amzapi.time, 'sleep', lambda s: None)
+        answers = [{'code': 'PENDING'}, [{'profileId': 1}]]
+        monkeypatch.setattr(
+            api, 'make_request',
+            lambda url, method, headers=None: self.response(answers.pop(0)))
+        assert api.request_profiles(api.eu_url) == [{'profileId': 1}]
+        monkeypatch.setattr(
+            api, 'make_request',
+            lambda url, method, headers=None: self.response({'code': 'NO'}))
+        assert api.request_profiles(api.eu_url) == []
+
+    def test_red_request_ad_accounts_feeds_the_username_match(
+            self, monkeypatch):
+        api = redapi.RedApi()
+        api.username = 'Liquid'
+        rows = [{'id': 't2_a', 'name': 'liquid', 'time_zone_id': 'UTC'}]
+        monkeypatch.setattr(redapi.requests, 'get',
+                            lambda url, headers=None: self.response(
+                                {'data': rows}))
+        assert api.request_ad_accounts('b1') == rows
+        assert api.get_ad_accounts_by_business(['b1']) == 't2_a'
+        assert api.time_zone_id == 'UTC'
+
+
 class TestSimApi:
     """Failure paths must degrade or recover, never raise."""
 

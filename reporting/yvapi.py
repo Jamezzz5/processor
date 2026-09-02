@@ -56,17 +56,28 @@ class YvApi(object):
     def load_config(self):
         try:
             with open(self.config_file, 'r') as f:
-                self.config = json.load(f)
+                config = json.load(f)
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config["client_id"]
-        self.client_secret = self.config["client_secret"]
-        self.advertiser = int(self.config["advertiser"])
+        self.load_config_dict(config)
+
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict, bypassing the
+        config file load (used by the app-layer credential vault).
+        ``advertiser`` may be absent when the dict is a pooled
+        credential rather than a card.
+
+        :param config: dict in yzapi.json shape
+        """
+        self.config = config
+        self.client_id = config.get('client_id', '')
+        self.client_secret = config.get('client_secret', '')
+        self.advertiser = (int(config['advertiser'])
+                           if 'advertiser' in config else '')
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.advertiser]
-        if 'campaign' in self.config:
-            self.campaign_filter = self.config['campaign']
+        self.campaign_filter = config.get('campaign', self.campaign_filter)
 
     def check_config(self):
         for item in self.config_list:

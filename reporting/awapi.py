@@ -173,23 +173,33 @@ class AwApi(object):
     def load_config(self):
         try:
             with open(self.configfile, 'r') as f:
-                self.config = yaml.safe_load(f)
+                config = yaml.safe_load(f)
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        self.config = self.config['adwords']
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.developer_token = self.config['developer_token']
-        self.refresh_token = self.config['refresh_token']
-        self.client_customer_id = self.config['client_customer_id']
+        self.load_config_dict(config['adwords'])
+
+    def load_config_dict(self, config):
+        """Populate credentials from the flat ``adwords`` dict, bypassing
+        the config file load (used by the app-layer credential vault).
+        ``client_customer_id`` may be absent when the dict is a pooled
+        credential rather than a card.
+
+        :param config: dict in awconfig.yaml's ``adwords`` shape
+        """
+        self.config = config
+        self.client_id = config.get('client_id', '')
+        self.client_secret = config.get('client_secret', '')
+        self.developer_token = config.get('developer_token', '')
+        self.refresh_token = config.get('refresh_token', '')
+        self.client_customer_id = config.get('client_customer_id', '')
         self.config_list = [self.config, self.client_id, self.client_secret,
                             self.developer_token, self.refresh_token,
                             self.client_customer_id]
-        if 'campaign_filter' in self.config:
-            self.campaign_filter = self.config['campaign_filter']
-        if 'login_customer_id' in self.config:
-            self.login_customer_id = self.config['login_customer_id']
+        self.campaign_filter = config.get('campaign_filter',
+                                          self.campaign_filter)
+        self.login_customer_id = config.get('login_customer_id',
+                                            self.login_customer_id)
 
     def check_config(self):
         for item in self.config_list:
@@ -249,16 +259,43 @@ class AwApi(object):
                         df[self.rb.impressions.display_name].astype(float))
         return df
 
-    def find_correct_login_customer_id(self, report):
+    def get_accessible_customers(self):
+        """Bare ids of every customer the credential directly accesses.
+
+        :returns: list of customer id strings, empty when the call failed
+        """
         headers = self.get_client()
         r = self.client.get(self.access_url, headers=headers)
-        customer_ids = []
-        if 'resourceNames' in r.json():
-            customer_ids = r.json()['resourceNames']
-        else:
+        if 'resourceNames' not in r.json():
             logging.warning(r.json())
-        for customer_id in customer_ids:
-            customer_id = customer_id.replace('customers/', '')
+            return []
+        return [x.replace('customers/', '') for x in r.json()['resourceNames']]
+
+    def get_customer_clients(self, customer_id):
+        """Every account under one accessible customer: itself, and for a
+        manager its whole client tree.
+
+        :param customer_id: bare customer id to query and log in as
+        :returns: list of dicts with ``id``, ``name`` and ``manager``
+        """
+        self.login_customer_id = customer_id
+        self.client_customer_id = customer_id
+        query = """
+            SELECT customer_client.id, customer_client.descriptive_name, 
+                customer_client.manager 
+            FROM customer_client
+        """
+        report = {'query': query}
+        r = self.request_report(report)
+        pages = r.json() if r is not None and r.status_code == 200 else []
+        clients = [x['customerClient'] for page in pages
+                   for x in page.get('results', [])]
+        return [{'id': str(x.get('id', '')),
+                 'name': x.get('descriptiveName', ''),
+                 'manager': bool(x.get('manager'))} for x in clients]
+
+    def find_correct_login_customer_id(self, report):
+        for customer_id in self.get_accessible_customers():
             logging.info('Attempting customer id: {}'.format(customer_id))
             self.login_customer_id = customer_id
             r = self.request_report(report)

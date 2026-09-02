@@ -46,6 +46,7 @@ class Analyze(object):
     adserving_alert = 'adserving_alert'
     daily_pacing_alert = 'daily_pacing'
     raw_file_update_col = 'raw_file_update'
+    campaign_filter_col = 'campaign_filter_match'
     topline_col = 'topline_metrics'
     lw_topline_col = 'last_week_topline_metrics'
     tw_topline_col = 'two_week_topline_merics'
@@ -117,7 +118,8 @@ class Analyze(object):
         self.chat = None
         self.vc = ValueCalc()
         self.class_list = [
-            CheckRawFileUpdateTime, CheckFirstRow, CheckLastRow,
+            CheckRawFileUpdateTime, CheckCampaignFilter,
+            CheckFirstRow, CheckLastRow,
             CheckColumnNames, FindPlacementNameCol, CheckPlacementsNotInMp,
             CheckPlanPartnersNotDelivered,
             CheckAutoDictOrder, CheckApiDateLength, CheckFlatSpends,
@@ -3068,6 +3070,68 @@ class CheckRawFileUpdateTime(AnalyzeBase):
         self.add_to_analysis_dict(df, update_msg)
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=update_msg, data=df.to_dict())
+        return True
+
+
+class CheckCampaignFilter(AnalyzeBase):
+    """Surfaces campaign-filter match evidence per API card.
+
+    ``filter_df_on_campaign`` fails open, so a mistyped filter shows
+    up only as inflated numbers and a log line.  This reads the import
+    handler's per-card record into the analysis dict, so the app can
+    badge the card and raise a fix request instead.
+    """
+    name = Analyze.campaign_filter_col
+    match_col = 'matched'
+    total_col = 'total'
+    kept_all_col = 'kept_all'
+    verdict_col = 'verdict'
+    verdict_no_match = 'No Match - All Data Kept'
+    verdict_partial = 'Partial Match'
+    verdict_ok = 'OK'
+
+    @staticmethod
+    def read_stats():
+        """The import handler's per-vendor-key records, or {} when the
+        processor has not imported since this check shipped."""
+        file_name = os.path.join(utl.config_path,
+                                 utl.campaign_filter_stats_file)
+        if not os.path.exists(file_name):
+            return {}
+        try:
+            with open(file_name, 'r') as f:
+                stats_by_vk = json.load(f)
+        except (IOError, ValueError):
+            return {}
+        return stats_by_vk if isinstance(stats_by_vk, dict) else {}
+
+    @classmethod
+    def verdict(cls, stats):
+        """One card's match record as the word a person reads."""
+        if stats.get(cls.kept_all_col):
+            return cls.verdict_no_match
+        if stats.get(cls.match_col, 0) < stats.get(cls.total_col, 0):
+            return cls.verdict_partial
+        return cls.verdict_ok
+
+    def do_analysis(self):
+        rows = [{
+            vmc.vendorkey: vk,
+            'filter_values': ','.join(stats.get('filter_values', [])),
+            self.match_col: stats.get(self.match_col, 0),
+            self.total_col: stats.get(self.total_col, 0),
+            self.verdict_col: self.verdict(stats),
+            'sample_campaigns': ' | '.join(
+                stats.get('sample_campaigns', [])),
+            'date': stats.get('date', ''),
+        } for vk, stats in self.read_stats().items()
+            if isinstance(stats, dict)]
+        if not rows:
+            return False
+        msg = 'Campaign filter matches per API card are as follows:'
+        self.aly.add_to_analysis_dict(
+            key_col=self.name, message=msg,
+            data=pd.DataFrame(rows).to_dict())
         return True
 
 

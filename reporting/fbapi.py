@@ -14,6 +14,7 @@ import reporting.vendormatrix as matrix
 import reporting.vmcolumns as vmc
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
+from facebook_business.adobjects.user import User
 from facebook_business.exceptions import FacebookRequestError,\
     FacebookBadObjectError
 from facebook_business.adobjects.adsinsights import AdsInsights
@@ -99,24 +100,45 @@ class FbApi(object):
         self.configfile = os.path.join(config_path, config)
         self.load_config()
         self.check_config()
-        FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
-        self.account = AdAccount(self.config['act_id'])
 
     def load_config(self):
         try:
             with open(self.configfile, 'r') as f:
-                self.config = json.load(f)
+                config = json.load(f)
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        self.app_id = self.config['app_id']
-        self.app_secret = self.config['app_secret']
-        self.access_token = self.config['access_token']
-        self.act_id = self.config['act_id']
+        self.load_config_dict(config)
+
+    def load_config_dict(self, config):
+        """Populate credentials from an in-memory dict and initialize the
+        SDK, bypassing the config file load (used by the app-layer
+        credential vault).  ``act_id`` may be absent when the dict is a
+        pooled credential rather than a card.
+
+        :param config: dict in fbconfig.json shape
+        """
+        self.config = config
+        self.app_id = config.get('app_id', '')
+        self.app_secret = config.get('app_secret', '')
+        self.access_token = config.get('access_token', '')
+        self.act_id = config.get('act_id', '')
         self.config_list = [self.app_id, self.app_secret, self.access_token,
                             self.act_id]
-        if 'campaign_filter' in self.config:
-            self.campaign_filter = self.config['campaign_filter']
+        self.campaign_filter = config.get('campaign_filter',
+                                          self.campaign_filter)
+        FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
+        self.account = AdAccount(self.act_id)
+
+    @staticmethod
+    def get_ad_accounts():
+        """Every ad account the initialized token can see, all pages.
+
+        :returns: list of dicts with ``account_id`` and ``name``
+        """
+        accounts = User(fbid='me').get_ad_accounts(
+            fields=['account_id', 'name'])
+        return [x.export_all_data() for x in accounts]
 
     def check_config(self):
         for item in self.config_list:
