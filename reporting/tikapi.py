@@ -398,6 +398,12 @@ class TikApi(object):
                 'total_page', 1)
             if page >= total_pages:
                 break
+            if page >= 999:
+                logging.warning(
+                    'Maximum number of pages (999) reached for campaign list, '
+                    'buying types {}. There may be additional campaigns that '
+                    'were not retrieved.'.format(buying_types)
+                )
         return campaigns
 
     def get_campaign_list(self):
