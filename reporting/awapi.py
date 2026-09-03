@@ -177,13 +177,17 @@ class AwApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        self.load_config_dict(config['adwords'])
+        self.load_config_dict(config.get('adwords', config))
 
     def load_config_dict(self, config):
         """Populate credentials from the flat ``adwords`` dict, bypassing
         the config file load (used by the app-layer credential vault).
         ``client_customer_id`` may be absent when the dict is a pooled
         credential rather than a card.
+
+        A config file that has lost its ``adwords:`` section arrives
+        here as its own root, so the card still runs; the next write of
+        the file nests it again.
 
         :param config: dict in awconfig.yaml's ``adwords`` shape
         """

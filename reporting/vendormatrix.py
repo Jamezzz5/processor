@@ -443,20 +443,49 @@ class ImportConfig(object):
 
     @staticmethod
     def get_config_file_value(config_file, name, nest=None):
-        if not pd.isna(nest) and name in config_file[nest]:
-            value = config_file[nest][name]
-        elif name not in config_file:
-            value = ''
-        else:
-            value = config_file[name]
-        return value
+        """
+        Reads one param from a config file, from the channel's nested
+        section when it declares one.
+
+        A file that has lost its section - flattened by hand, or copied
+        from a channel that does not nest - is read from the root
+        instead of raising, so the card still reports its account id
+        and the next save nests it again.
+
+        :param config_file:Loaded contents of the card's config file
+        :param name:Config param to read, ignored when unnamed
+        :param nest:Section holding the channel's params, if any
+        :return:Value of the param, or '' when the file has none
+        """
+        section = None if pd.isna(nest) else config_file.get(nest)
+        if isinstance(section, dict) and name in section:
+            return section[name]
+        return config_file[name] if name in config_file else ''
 
     @staticmethod
     def set_config_file_value(config_file, name, new_val, nest=None):
+        """
+        Writes one param into a config file, creating the channel's
+        nested section when the file has none.
+
+        A param the channel's import config does not name is written
+        nowhere: a Key with no import_config row falls back to the raw
+        file params, which would otherwise stamp an unnamed key into
+        the config file it copies.
+
+        :param config_file:Loaded contents of the card's config file
+        :param name:Config param to write, ignored when unnamed
+        :param new_val:Value to write
+        :param nest:Section holding the channel's params, if any
+        :return:The config file, changed in place
+        """
         if not config_file:
             config_file = {}
+        if pd.isna(name):
+            return config_file
         if not pd.isna(nest):
-            config_file[nest][name] = new_val
+            config_file.setdefault(nest, {})[name] = new_val
+            config_file.pop(name, None)
         else:
             config_file[name] = new_val
         return config_file

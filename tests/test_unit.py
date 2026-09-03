@@ -702,6 +702,23 @@ class TestApis:
         self.send_api_call(api)
         self.send_test_api_call(api)
 
+    def test_awapi_loads_a_config_without_its_section(self, tmp_path_factory):
+        """A card config that has lost its `adwords:` section still
+        runs, reading the file as its own section. The next write of
+        the file nests it again.
+        """
+        config = {'client_customer_id': '123', 'client_id': 'abc',
+                  'campaign_filter': 'sem'}
+        file_name = '{}/awconfig.yaml'.format(
+            tmp_path_factory.mktemp('config'))
+        with open(file_name, 'w') as f:
+            yaml.dump(config, f)
+        api = awapi.AwApi()
+        api.configfile = file_name
+        api.load_config()
+        assert api.client_customer_id == '123'
+        assert api.campaign_filter == 'sem'
+
     @staticmethod
     def send_test_api_call(api):
         vk = ''
@@ -1146,6 +1163,35 @@ class TestVendormatrix:
         })
         result = ic.get_default_vm_value('DBM', 'API')
         assert len(result) == 1
+
+    def test_get_config_file_value_without_the_section(self):
+        """An Adwords config that has lost its `adwords:` section reads
+        from the root instead of raising, so the card keeps reporting
+        its account id. Reading one used to KeyError, which took down
+        every Set Imports save on the processor.
+        """
+        get_value = vm.ImportConfig.get_config_file_value
+        nested = {'adwords': {'client_customer_id': '123'}}
+        assert get_value(nested, 'client_customer_id', 'adwords') == '123'
+        flat = {'client_customer_id': '456'}
+        assert get_value(flat, 'client_customer_id', 'adwords') == '456'
+        assert get_value(flat, 'campaign_filter', 'adwords') == ''
+
+    def test_set_config_file_value_creates_the_section(self):
+        """Writing a nested param into a flattened config nests it,
+        leaving no second answer at the root."""
+        config = vm.ImportConfig.set_config_file_value(
+            {'client_customer_id': '456'}, 'client_customer_id', '123',
+            'adwords')
+        assert config == {'adwords': {'client_customer_id': '123'}}
+
+    def test_set_config_file_value_skips_an_unnamed_param(self):
+        """A Key with no import_config row falls back to the raw file
+        params, whose account id column is empty; that must not stamp a
+        nan key into the config file it copied."""
+        config = vm.ImportConfig.set_config_file_value(
+            {'campaign_id': ''}, np.nan, '123')
+        assert config == {'campaign_id': ''}
 
 
 class TestDictionary:
