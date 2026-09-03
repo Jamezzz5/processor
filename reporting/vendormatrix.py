@@ -66,6 +66,26 @@ class VendorMatrix(object):
                 self.vm_df[miss_col] = ''
         self.vm_df[cols].to_csv(csv_full_file, index=False, encoding='utf-8')
 
+    @staticmethod
+    def blank_df():
+        """Returns an empty vendor matrix carrying every expected column."""
+        return pd.DataFrame(columns=[vmc.vendorkey] + vmc.vmkeys)
+
+    def vm_col_check(self, df):
+        """Restores the columns the vendor matrix file did not supply.
+
+        :param df: the vendor matrix as read from disk
+        :returns: a df holding the vendor key and every vm column
+        """
+        if df is None or vmc.vendorkey not in df.columns:
+            logging.warning('Could not read {}.  Continuing with a blank '
+                            'vendor matrix.'.format(csv_full_file))
+            return self.blank_df()
+        for col in [x for x in [vmc.vendorkey] + vmc.vmkeys
+                    if x not in df.columns]:
+            df[col] = ''
+        return df
+
     def plan_net_check(self):
         if not self.vm['Vendor Key'].isin(['Plan Net']).any():
             logging.warning('No Plan Net key in Vendor Matrix.  Add it.')
@@ -82,12 +102,9 @@ class VendorMatrix(object):
         if not df.empty:
             self.vm_df = df
         else:
-            self.vm_df = pd.DataFrame(columns=vmc.datacol)
             self.vm_df = self.read()
+        self.vm_df = self.vm_col_check(self.vm_df)
         self.vm_df = self.add_file_name_col()
-        if self.vm_df is None:
-            cols = vmc.vmkeys + vmc.datacol
-            self.vm_df = pd.DataFrame(columns=cols)
         self.vm = self.vm_df.copy()
         self.plan_net_check()
         drop = self.vm.columns[self.vm.columns.str.startswith('|')]
@@ -399,7 +416,7 @@ class ImportConfig(object):
     def import_vm(self):
         if not self.matrix:
             self.matrix = VendorMatrix(display_log=False)
-        self.matrix_df = self.matrix.read()
+        self.matrix_df = self.matrix.vm_col_check(self.matrix.read())
         self.df = self.read()
 
     def read(self):
@@ -733,8 +750,6 @@ class ImportConfig(object):
         if not matrix:
             self.import_vm()
         import_dicts = []
-        if self.matrix_df is None:
-            return import_dicts
         api_keys = [x for x in self.matrix_df[vmc.vendorkey]
                     if x[:4] == import_type]
         for api_key in api_keys:

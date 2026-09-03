@@ -1119,6 +1119,25 @@ class TestVendormatrix:
         plan_val = matrix.vm[bar_col][vm.plan_key]
         assert isinstance(plan_val, list)
 
+    @pytest.mark.parametrize('contents', [
+        '', 'FILENAME,Placement Name\n', 'not a csv\n"unclosed\n'])
+    def test_vm_parse_survives_an_unreadable_file(self, tmp_path, monkeypatch,
+                                                  contents):
+        """An empty or unparsable Vendormatrix.csv read back as None or
+        as a frame without a Vendor Key column, and everything indexes
+        the matrix by that column, so opening a processor whose file had
+        been truncated raised a KeyError instead of a warning."""
+        os.makedirs(os.path.join(tmp_path, utl.config_path))
+        with open(os.path.join(tmp_path, vm.csv_full_file), 'w') as f:
+            f.write(contents)
+        monkeypatch.chdir(tmp_path)
+        matrix = vm.VendorMatrix()
+        assert vmc.vendorkey in matrix.vm_df.columns
+        assert not matrix.vm_df.columns.duplicated().any()
+        assert matrix.vm_df.empty
+        assert matrix.vl == [vm.plan_key]
+        assert vm.ImportConfig(matrix=matrix).get_current_imports() == []
+
     @staticmethod
     def _bare_source(original, new):
         return {
@@ -3196,6 +3215,57 @@ class TestGamesDb:
         snap = s.query(gmdl.PriceSnapshot).one()
         assert float(snap.discount_pct) == 0
         assert float(snap.base_price) == 59.99
+
+    def test_store_asset_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        key = {'gameid': game.gameid,
+               'checked_at': dt.date(2026, 9, 1),
+               'asset_kind': 'screenshots'}
+        assert gdb.upsert_fact(
+            s, gmdl.StoreAsset, key,
+            {'digest': 'abc', 'item_count': 6,
+             'sample': 'https://cdn/ss_1.jpg', 'changed': False}) == 1
+        s.commit()
+        assert gdb.upsert_fact(
+            s, gmdl.StoreAsset, key, {'digest': 'def',
+                                      'changed': True}) == 0
+        s.commit()
+        row = s.query(gmdl.StoreAsset).one()
+        assert row.digest == 'def' and row.changed is True
+        assert row.item_count == 6
+
+    def test_store_asset_fields_shapes(self):
+        assert gamesw.store_asset_fields(None) == []
+        assert gamesw.store_asset_fields({}) == []
+        data = {
+            'header_image': 'https://cdn/header.jpg?t=1700000000',
+            'screenshots': [
+                {'id': 0, 'path_full': 'https://cdn/ss_a.jpg?t=1'},
+                {'id': 1, 'path_full': 'https://cdn/ss_b.jpg?t=2'}],
+            'movies': [{'id': 256, 'name': 'Launch Trailer',
+                        'webm': {'max': 'https://cdn/m.webm?t=3'}}],
+            'short_description': '  Fight   the\nBanished.  '}
+        rows = dict(gamesw.store_asset_fields(data))
+        assert list(rows) == list(gamesw.ASSET_KINDS)
+        restamped = dict(gamesw.store_asset_fields({
+            **data, 'header_image': 'https://cdn/header.jpg?t=9',
+            'screenshots': [
+                {'id': 0, 'path_full': 'https://cdn/ss_a.jpg?t=7'},
+                {'id': 1, 'path_full': 'https://cdn/ss_b.jpg?t=8'}]}))
+        for kind in gamesw.ASSET_KINDS:
+            assert rows[kind]['digest'] == restamped[kind]['digest']
+        assert rows['header']['sample'] == 'https://cdn/header.jpg'
+        assert rows['screenshots']['item_count'] == 2
+        assert rows['movies']['sample'] == 'Launch Trailer'
+        assert rows['description']['sample'] == 'Fight the Banished.'
+        swapped = dict(gamesw.store_asset_fields({
+            **data, 'header_image': 'https://cdn/header_v2.jpg'}))
+        assert swapped['header']['digest'] != rows['header']['digest']
+        partial = dict(gamesw.store_asset_fields(
+            {'short_description': 'Only words.'}))
+        assert list(partial) == ['description']
 
     def test_review_text_and_theme_upsert_idempotent(self):
         s = self._session()

@@ -1027,3 +1027,54 @@ class PriceSnapshot(Base):
     discount_pct = Column(
         Numeric, comment="Steam's own discount_percent (0 when not "
                          'on sale).')
+
+
+class StoreAsset(Base):
+    """Steam storefront asset state per game per checked day — the
+    creative-refresh fact.
+
+    Each asset kind lands as a digest of its normalised content, and
+    ``changed`` says whether it differs from the title's previous
+    stored digest for that kind; a first observation is a baseline,
+    and a CDN cache-buster is stripped before hashing."""
+    __tablename__ = 'store_asset'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'checked_at', 'asset_kind',
+                         name='uq_store_asset_day'),
+        Index('ix_store_asset_date', 'checked_at'),
+        {'schema': 'games',
+         'comment': 'Storefront asset digests per game per checked '
+                    'day from Steam appdetails (header image, '
+                    'screenshots, movies, short description). '
+                    'Sparse: a row lands when the appdetails budget '
+                    'reaches the title, so gaps mean "not checked", '
+                    'never "unchanged". changed compares against the '
+                    'previous stored digest for the same kind; a '
+                    'first observation is never a change.'},
+    )
+
+    storeassetid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    checked_at = Column(Date, nullable=False,
+                        comment='UTC ingest date.')
+    asset_kind = Column(
+        Text, nullable=False,
+        comment='header | screenshots | movies | description.')
+    digest = Column(
+        Text, nullable=False,
+        comment='sha1 over the normalised asset content (URLs with '
+                'cache-busters stripped, movie id:name pairs, or '
+                'whitespace-collapsed description text).')
+    item_count = Column(
+        Integer, comment='Items behind the digest (screenshots or '
+                         'movies in the set; 1 for header and '
+                         'description).')
+    sample = Column(
+        Text, comment='First URL, first movie name, or the opening '
+                      'characters of the description - evidence for '
+                      'the change row, not the full asset.')
+    changed = Column(
+        Boolean, comment='True when the digest differs from this '
+                         "game's previous stored digest for the same "
+                         'kind; False on the first observation.')
