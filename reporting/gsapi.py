@@ -711,20 +711,28 @@ class GsApi(object):
                 align='END', color=colors['muted'])
         return reqs
 
+    def _tone_color(self, tone, colors, default):
+        """The deck colour a good/bad tone earns, else ``default``."""
+        return {'good': self.DECK_GOOD,
+                'bad': self.DECK_BAD}.get(tone, default)
+
     def add_stat_tile_slide(self, presentation_id, slide_id, title, tiles,
                             brand=None, footer=None, page=None):
         """A slide of native stat tiles — each a card with a hero number, a
-        label, and a one-line comparison caption — built from Slides shapes so
-        the export never screenshots a KPI chart. ``tiles`` = list of
-        ``{'value','label','caption'}`` (6-8 read best; capped at 8)."""
+        label, a one-line comparison caption and an optional muted note
+        (the driver line) — built from Slides shapes so the export never
+        screenshots a KPI chart. ``tiles`` = list of
+        ``{'value','label','caption','note'}`` (6-9 read best; capped at
+        9; five, six or nine tiles lay out three across)."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page)
-        tiles = list(tiles or [])[:8]
+        tiles = list(tiles or [])[:9]
         if tiles:
-            cols = 4 if len(tiles) > 3 else len(tiles)
+            cols = (3 if len(tiles) in (5, 6, 9)
+                    else 4 if len(tiles) > 3 else len(tiles))
             n_rows = (len(tiles) + cols - 1) // cols
             gap = 137160  # 0.15"
             grid_y = self.CONTENT_TOP_EMU
@@ -737,28 +745,69 @@ class GsApi(object):
                 r, c = divmod(i, cols)
                 x = cx + c * (cell_w + gap)
                 y = grid_y + r * (cell_h + gap)
-                base = '{}c{}'.format(slide_id, i)
-                cap_color = {'good': self.DECK_GOOD,
-                             'bad': self.DECK_BAD}.get(
-                    tile.get('tone'), colors['muted'])
+                base = f'{slide_id}c{i}'
+                cap_color = self._tone_color(tile.get('tone'), colors,
+                                             colors['muted'])
                 reqs += self._rect_reqs(slide_id, base + 'r', x, y,
                                         cell_w, cell_h, colors['card'])
                 reqs += self._text_box_reqs(
                     slide_id, base + 'v', str(tile.get('value', '')),
-                    x + pad, y + pad, cell_w - 2 * pad, cell_h * 45 // 100,
+                    x + pad, y + pad, cell_w - 2 * pad, cell_h * 40 // 100,
                     font_pt=26, bold=True, align='START',
                     color=colors['accent'])
                 reqs += self._text_box_reqs(
                     slide_id, base + 'l', str(tile.get('label', '')),
-                    x + pad, y + cell_h * 45 // 100, cell_w - 2 * pad,
-                    cell_h * 26 // 100, font_pt=11, align='START',
+                    x + pad, y + cell_h * 42 // 100, cell_w - 2 * pad,
+                    cell_h * 20 // 100, font_pt=11, align='START',
                     color=colors['ink'])
                 if tile.get('caption'):
                     reqs += self._text_box_reqs(
                         slide_id, base + 'p', str(tile['caption']),
-                        x + pad, y + cell_h * 71 // 100, cell_w - 2 * pad,
-                        cell_h * 26 // 100, font_pt=9, align='START',
+                        x + pad, y + cell_h * 62 // 100, cell_w - 2 * pad,
+                        cell_h * 18 // 100, font_pt=9, align='START',
                         color=cap_color)
+                if tile.get('note'):
+                    reqs += self._text_box_reqs(
+                        slide_id, base + 'n', str(tile['note']),
+                        x + pad, y + cell_h * 80 // 100, cell_w - 2 * pad,
+                        cell_h * 18 // 100, font_pt=8, align='START',
+                        color=colors['muted'])
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def add_columns_slide(self, presentation_id, slide_id, title, columns,
+                          brand=None, footer=None, page=None):
+        """A slide of two to four side-by-side cards — the gold deck's
+        Continue / Stop / Test learnings, its numbered challenges, its
+        wins — each ``{'head', 'body', 'tone'}``: a bold toned heading
+        over the card's copy. Capped at four; more would not read."""
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._content_chrome_reqs(slide_id, title, colors,
+                                          footer=footer, page=page)
+        columns = list(columns or [])[:4]
+        if columns:
+            gap, pad = 137160, 100000
+            y = self.CONTENT_TOP_EMU
+            h = self.PAGE_H_EMU - y - 420000
+            w = (cw - gap * (len(columns) - 1)) // len(columns)
+            for i, column in enumerate(columns):
+                x = cx + i * (w + gap)
+                base = f'{slide_id}k{i}'
+                head_color = self._tone_color(column.get('tone'), colors,
+                                              colors['accent'])
+                reqs += self._rect_reqs(slide_id, base + 'r', x, y, w, h,
+                                        colors['card'])
+                reqs += self._text_box_reqs(
+                    slide_id, base + 'h', str(column.get('head', '')),
+                    x + pad, y + pad, w - 2 * pad, 400000, font_pt=13,
+                    bold=True, align='START', color=head_color)
+                reqs += self._text_box_reqs(
+                    slide_id, base + 'b', str(column.get('body', '')),
+                    x + pad, y + pad + 420000, w - 2 * pad,
+                    h - 2 * pad - 420000, font_pt=10, align='START',
+                    color=colors['ink'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
