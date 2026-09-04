@@ -394,7 +394,7 @@ class TitleRank(Base):
 
 class TitleScore(Base):
     """Daily competitive-score snapshot — one row per tracked title per
-    day, persisting the brandtracker weighted z-scores and the
+    day, persisting the brandtracker dimension scores and the
     competitive league so trend history exists without a human opening
     the tab."""
     __tablename__ = 'title_score'
@@ -403,10 +403,11 @@ class TitleScore(Base):
                          name='uq_title_score_day'),
         Index('ix_title_score_gameid', 'gameid'),
         {'schema': 'games',
-         'comment': 'Daily competitive snapshot; brandtracker weighted '
-                    'z-scores + share-of-voice league per tracked '
-                    'title. Z-scores are relative to the tracked set '
-                    'on that day, not the whole market.'},
+         'comment': 'Daily competitive snapshot; brandtracker '
+                    'rank-normal dimension scores + share-of-voice '
+                    'league per tracked title. A score is a position '
+                    'within the set scored that day, not the whole '
+                    'market.'},
     )
 
     titlescoreid = Column(BigIntPk, primary_key=True)
@@ -428,7 +429,11 @@ class TitleScore(Base):
     influence = Column(Numeric)
     engagement = Column(Numeric)
     momentum = Column(Numeric)
-    composite = Column(Numeric, comment='Sum of the dimension z-scores.')
+    composite = Column(
+        Numeric, comment='Mean of the composite dimensions the title '
+                         'carries, each the weighted mean of its '
+                         'signals\' rank-normal scores, on a ±100 '
+                         'scale.')
     headline_metric = Column(
         Text, comment='Metric the current/prior/share columns read on.')
     current = Column(Numeric)
@@ -443,6 +448,15 @@ class TitleScore(Base):
                          'rows carrying different set_size values are '
                          'not directly comparable — the field widened '
                          'when the automated title universe landed.')
+    signals = Column(
+        Integer, comment='How many metrics the composite dimensions '
+                         'actually read — the evidence the score '
+                         'stands on. Under the kernel\'s minimum the '
+                         'title is thin: it keeps its number, ranks '
+                         'behind every fully scored title and sits the '
+                         'daily board out. NULL on rows scored before '
+                         'the column; Rescore Title Scores fills '
+                         'them.')
     satisfaction = Column(
         Numeric, comment='Weighted z-score of the reception signals '
                          '(Steam positive review share). Reported '
@@ -452,10 +466,11 @@ class TitleScore(Base):
         JSON().with_variant(JSONB, 'postgresql'),
         comment='Every metric behind the row\'s scores: {metric: '
                 '{value, prior, z, weight, dimension}} — the month '
-                'mean, the comparison month\'s mean, its z-score '
-                'against that day\'s field, the weight it carried and '
-                'the dimension it rode. Roughly 19 metrics per title '
-                'per day. NULL on rows scored before the column.')
+                'mean, the comparison month\'s mean, its rank-normal '
+                'score against that day\'s field, the weight it '
+                'carried and the dimension it rode. Roughly 19 metrics '
+                'per title per day. NULL on rows scored before the '
+                'column.')
 
 
 class GwiAffinity(Base):

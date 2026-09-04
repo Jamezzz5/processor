@@ -3065,9 +3065,9 @@ class TestGamesDb:
                   'headline_metric': 'Player Share', 'current': 0.5,
                   'prior': 0.4, 'share': 0.62, 'share_delta': 0.02,
                   'movement': 'Rising', 'primary_period': '2026-07',
-                  'comparison_period': '2026-06', 'genre': 'Shooter'}
+                  'comparison_period': '2026-06', 'genre': 'Shooter',
+                  'set_size': 40, 'signals': 7}
         assert gdb.upsert_fact(s, gmdl.TitleScore, key, fields) == 1
-        # Unmatched titles land too, with a NULL gameid.
         assert gdb.upsert_fact(
             s, gmdl.TitleScore,
             {'score_date': day, 'title': 'Mystery Title'},
@@ -3084,6 +3084,7 @@ class TestGamesDb:
         assert row.gameid == game.gameid
         assert row.movement == 'Rising'
         assert row.genre == 'Shooter'
+        assert row.set_size == 40 and row.signals == 7
 
     def test_new_games_facts_use_full_natural_keys(self):
         s = self._session()
