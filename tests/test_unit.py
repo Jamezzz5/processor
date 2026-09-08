@@ -3265,8 +3265,15 @@ class TestGamesDb:
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite',
                                registry_slug='halo-infinite')
+        video = gmdl.YoutubeVideo(
+            video_id='abc123', gameid=game.gameid, kind='official',
+            source='igdb', label='Launch Trailer')
+        s.add(video)
+        s.flush()
         slot = dt.datetime(2026, 8, 31, 8)
         pulse_key = {'gameid': game.gameid, 'sampled_at': slot}
+        video_key = {'youtubevideoid': video.youtubevideoid,
+                     'sampled_at': slot}
         assert gdb.upsert_fact(
             s, gmdl.CommunityPulse, pulse_key,
             {'twitch_viewers': 42000, 'twitch_channels': 310,
@@ -3277,6 +3284,9 @@ class TestGamesDb:
              'channel': 'streamer_one'},
             {'title': 'Halo w/ sponsor #ad', 'token': '#ad',
              'viewer_count': 1200}) == 1
+        assert gdb.upsert_fact(s, gmdl.YoutubeVideoPulse, video_key,
+                               {'views': 1000, 'likes': 10,
+                                'comments': 1}) == 1
         s.commit()
         assert gdb.upsert_fact(
             s, gmdl.CommunityPulse, pulse_key,
@@ -3285,12 +3295,18 @@ class TestGamesDb:
             s, gmdl.StreamFlag,
             {'gameid': game.gameid, 'sampled_at': slot,
              'channel': 'streamer_one'}, {'viewer_count': 1300}) == 0
+        assert gdb.upsert_fact(s, gmdl.YoutubeVideoPulse, video_key,
+                               {'views': 1200}) == 0
         s.commit()
         assert s.query(gmdl.CommunityPulse).count() == 1
         assert s.query(gmdl.StreamFlag).count() == 1
         pulse = s.query(gmdl.CommunityPulse).one()
         assert float(pulse.twitch_viewers) == 43000
         assert float(pulse.sponsored_streams) == 2
+        sample = s.query(gmdl.YoutubeVideoPulse).one()
+        assert float(sample.views) == 1200
+        assert float(sample.likes) == 10
+        assert sample.sampled_at == slot
         price_key = {'gameid': game.gameid,
                      'price_date': dt.date(2026, 8, 31)}
         assert gdb.upsert_fact(

@@ -738,6 +738,40 @@ class YoutubeVideoStat(Base):
     comments = Column(Numeric)
 
 
+class YoutubeVideoPulse(Base):
+    """Intraday YouTube sample — one row per VIDEO per pulse slot, the
+    curve inside ``youtube_video_stat``'s nightly step. Keyed by video
+    because one game can drop several trailers at a showcase, and by
+    slot so a rerun inside one updates in place."""
+    __tablename__ = 'youtube_video_pulse'
+    __table_args__ = (
+        UniqueConstraint('youtubevideoid', 'sampled_at',
+                         name='uq_youtube_video_pulse_slot'),
+        Index('ix_youtube_video_pulse_sampled', 'sampled_at'),
+        {'schema': 'games',
+         'comment': 'Intraday YouTube view samples per video. Sparse '
+                    'by design: sampled only while an industry '
+                    'event window is live and only for a budgeted '
+                    'slice of its trailers, so absence of a row is '
+                    '"not sampled", never "no views"; idle between '
+                    'events.'},
+    )
+
+    youtubevideopulseid = Column(BigIntPk, primary_key=True)
+    youtubevideoid = Column(
+        BigInteger, ForeignKey('games.youtube_video.youtubevideoid'),
+        nullable=False)
+    sampled_at = Column(
+        DateTime, nullable=False,
+        comment='Naive UTC slot start - the sample time truncated to '
+                'the pulse interval (4h at ship).')
+    views = Column(Numeric, comment='Cumulative view count at sample '
+                                    'time (the API total, never a '
+                                    'delta).')
+    likes = Column(Numeric)
+    comments = Column(Numeric)
+
+
 class AttentionShare(Base):
     """Weekly attention-share snapshot — one row per tracked title per
     ISO week; the volume-share companion to the z-scored
