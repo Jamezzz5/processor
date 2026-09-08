@@ -71,6 +71,7 @@ class Analyze(object):
     package_vendor_good = 'package_vendor_good'
     package_vendor_bad = 'package_vendor_bad'
     cap_name = 'cap_name'
+    package_cap_status = 'package_cap_status'
     blank_lines = 'blank_lines'
     check_last_row = 'check_last_row'
     change_auto_order = 'change_auto_order'
@@ -1733,6 +1734,8 @@ class CheckPackageCapping(AnalyzeBase):
     package_vendor_bad = 'Package_Vendor_Bad'
     plan_net_temp = 'Planned Net Cost - TEMP'
     net_cost_capped = 'Net Cost (Capped)'
+    capped_temp = 'Net Cost (Capped) - TEMP'
+    over_ratio = 1.5
     pre_run = True
     fix = False
 
@@ -1745,38 +1748,62 @@ class CheckPackageCapping(AnalyzeBase):
         pdf -> cap file data
         cap_file -> MetricCap() object
         """
-        df = self.aly.df
+        df = self.aly.df.copy()
+        if vmc.cost in df.columns:
+            df[self.capped_temp] = df[vmc.cost]
         df = cal.net_cost_calculation(df).reset_index(drop=True)
         cap_file = cal.MetricCap()
         df = cap_file.apply_all_caps(df, final_calculation=False)
         temp_package_cap = cap_file.c[cap_file.proc_dim]
         return df, temp_package_cap, cap_file.c, cap_file.pdf, cap_file
 
-    def check_package_cap(self, df, temp_package_cap):
-        """
-        Checks if a package used for capping has reached or exceeded its cap
-        Prints to logfile
+    @staticmethod
+    def join_vendors(vendors):
+        """Sorted, comma-joined unique vendor names for one package."""
+        return ', '.join(sorted(set(vendors.dropna().astype(str))))
 
-        Make sure cap file exists, set as pdf and append to our dataframe
-        temp_package_cap -> column name we are capping on from raw file
-        'plan_net_temp -> how much we cap,taken from raw file
-        """
+    def package_status(self, df, temp_package_cap):
+        """Sum cap, delivered and capped cost per package as floats with the
+        vendors each package touches, empty when no cap amount is numeric."""
+        delivered = (cal.NC_PRE_CAP if cal.NC_PRE_CAP in df.columns
+                     else vmc.cost)
+        capped = (self.capped_temp if self.capped_temp in df.columns
+                  else vmc.cost)
+        vendors = df[dctc.VEN] if dctc.VEN in df.columns else np.nan
+        tdf = pd.DataFrame({
+            temp_package_cap: df[temp_package_cap],
+            'Cap': pd.to_numeric(df[self.plan_net_temp], errors='coerce'),
+            'Delivered': pd.to_numeric(df[delivered], errors='coerce'),
+            'Capped': pd.to_numeric(df[capped], errors='coerce'),
+            'Vendors': vendors})
+        if tdf['Cap'].notna().sum() == 0:
+            return pd.DataFrame()
+        status = tdf.groupby(temp_package_cap).agg(
+            Cap=('Cap', 'sum'), Delivered=('Delivered', 'sum'),
+            Capped=('Capped', 'sum'), Vendors=('Vendors', self.join_vendors))
+        status['Percent'] = np.where(
+            status['Cap'] > 0, status['Delivered'] / status['Cap'], 0.0)
+        return status.reset_index()
+
+    def check_package_cap(self, df, temp_package_cap):
+        """Writes one status row per capped package plus the full and
+        over-delivery messages, answering the packages at or over their
+        cap as the legacy percent frame."""
         cols = [temp_package_cap, self.plan_net_temp, vmc.cost]
         missing_cols = [x for x in cols if x not in df.columns]
         if any(missing_cols):
             logging.warning('Missing columns: {}'.format(missing_cols))
             return pd.DataFrame()
-        df = df[cols]
-        if any(not isinstance(x, (int, np.integer)) or
-               not isinstance(y, (int, np.integer)) for x, y in
-               df[[self.plan_net_temp, vmc.cost]].values):
+        status = self.package_status(df, temp_package_cap)
+        if status.empty:
             logging.warning('Package Caps may not be formatted correctly')
             return pd.DataFrame()
-        df = df.groupby([temp_package_cap])
-        df = df.apply(lambda x:
-                      0 if x[self.plan_net_temp].sum() == 0
-                      else x[vmc.cost].sum() / x[self.plan_net_temp].sum())
-        f_df = df[df >= 1]
+        self.aly.add_to_analysis_dict(
+            key_col=self.cap_name, param=self.aly.package_cap_status,
+            data=status.to_dict())
+        ratio = pd.Series(status['Percent'].values,
+                          index=status[temp_package_cap])
+        f_df = ratio[ratio >= 1]
         if f_df.empty:
             delivery_msg = 'No Packages have exceeded their cap'
             logging.info(delivery_msg)
@@ -1785,29 +1812,27 @@ class CheckPackageCapping(AnalyzeBase):
                 param=self.aly.under_delivery_col,
                 message=delivery_msg)
             return f_df
-        else:
-            del_p = f_df.apply(lambda x: "{0:.2f}%".format(x * 100))
-            delivery_msg = 'The following packages have delivered in full: '
+        del_p = f_df.map('{:.2%}'.format)
+        delivery_msg = 'The following packages have delivered in full: '
+        logging.info('{}\n{}'.format(delivery_msg, del_p))
+        data = del_p.reset_index().rename(columns={0: 'Cap'})
+        self.aly.add_to_analysis_dict(
+            key_col=self.cap_name,
+            param=self.aly.full_delivery_col,
+            message=delivery_msg,
+            data=data.to_dict())
+        o_df = f_df[f_df > self.over_ratio]
+        if not o_df.empty:
+            del_p = o_df.map('{:.2%}'.format)
+            delivery_msg = 'The following packages have over-delivered:'
             logging.info('{}\n{}'.format(delivery_msg, del_p))
             data = del_p.reset_index().rename(columns={0: 'Cap'})
             self.aly.add_to_analysis_dict(
                 key_col=self.cap_name,
-                param=self.aly.full_delivery_col,
+                param=self.aly.over_delivery_col,
                 message=delivery_msg,
                 data=data.to_dict())
-            o_df = f_df[f_df > 1.5]
-            if not o_df.empty:
-                del_p = o_df.apply(lambda x:
-                                   "{0:.2f}%".format(x * 100))
-                delivery_msg = 'The following packages have over-delivered:'
-                logging.info('{}\n{}'.format(delivery_msg, del_p))
-                data = del_p.reset_index().rename(columns={0: 'Cap'})
-                self.aly.add_to_analysis_dict(
-                    key_col=self.cap_name,
-                    param=self.aly.over_delivery_col,
-                    message=delivery_msg,
-                    data=data.to_dict())
-            return data
+        return data
 
     def check_package_vendor(self, df, temp_package_cap, pdf):
         """

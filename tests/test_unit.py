@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import json
@@ -193,6 +194,44 @@ class TestUtils:
         assert list(ndf.columns) == ['a', 'b']
         assert len(ndf) == 2
         os.remove(file_name)
+
+    def test_import_read_csv_narrow_title_row(self):
+        """A title row narrower than the data makes pandas move the leading
+        columns into an index; they come back as data so the header search
+        and first_last_adj see every column."""
+        file_name = 'test_narrow_title.csv'
+        cols = ['a', 'b', 'c', 'd', 'e']
+        with open(file_name, 'w', newline='') as f:
+            f.write('Report Title\n' + ','.join(cols) + '\n1,2,3,4,5\n')
+        df = utl.import_read_csv(file_name)
+        assert isinstance(df.index, pd.RangeIndex)
+        assert len(df.columns) == len(cols)
+        for idx in range(len(df)):
+            tdf = utl.first_last_adj(df, idx, 0)
+            if 'a' in tdf.columns:
+                break
+        assert list(tdf.columns) == cols
+        assert len(tdf) == 1
+        assert list(df.columns) != cols
+        os.remove(file_name)
+
+    def test_import_read_csv_utf16_file_object(self):
+        """An uploaded utf-16 csv arrives as a file object, not a path; the
+        encoding sniff and the retry read it in place."""
+        text = 'a,b\n1,2\n'
+        mem = io.BytesIO(text.encode('utf-16'))
+        df = utl.import_read_csv(mem, file_check=False, file_type='.csv')
+        assert list(df.columns) == ['a', 'b']
+        assert df.iloc[0].tolist() == [1, 2]
+        mem = io.BytesIO('Report\na,b,c\n1,2,3\n'.encode('utf-16'))
+        df = utl.import_read_csv(mem, file_check=False, file_type='.csv')
+        assert len(df.columns) == 3
+
+    def test_first_last_adj_ignores_index_labels(self):
+        df = pd.DataFrame({'x': ['a', 1], 'y': ['b', 2]}, index=[5, 9])
+        adj = utl.first_last_adj(df, 1, 0)
+        assert list(adj.columns) == ['a', 'b']
+        assert list(df.columns) == ['x', 'y']
 
     def test_import_read_xlsx_with_sheet_split(self):
         file_name = 'test.xlsx'
@@ -1473,6 +1512,35 @@ class TestCalc:
         df = df[[x for x in edf.columns]]
         assert pd.testing.assert_frame_equal(df, edf) is None
 
+    def test_metric_cap_keeps_pre_cap_cost(self, tmp_path):
+        cap_file = tmp_path / 'cap.csv'
+        pd.DataFrame({'Package Description': ['pkd'],
+                      'Net Cost (Capped)': [500.0]}).to_csv(
+            cap_file, index=False)
+        config = tmp_path / 'cap_config.csv'
+        pd.DataFrame({'file_name': [str(cap_file)],
+                      'file_dim': ['Package Description'],
+                      'file_metric': ['Net Cost (Capped)'],
+                      'processor_dim': [dctc.PKD],
+                      'processor_metric': [dctc.PNC]}).to_csv(
+            config, index=False)
+        df = pd.DataFrame({vmc.date: ['1/1/23', '1/2/23'],
+                           dctc.FPN: ['fpn', 'fpn'],
+                           dctc.PKD: ['pkd', 'pkd'],
+                           vmc.cost: [300.0, 400.0]})
+        df = cal.MetricCap(config_file=str(config)).apply_all_caps(df)
+        assert df[cal.NC_PRE_CAP].tolist() == [300.0, 400.0]
+        assert df[vmc.cost].tolist() == [300.0, 200.0]
+
+    def test_net_plan_comp_string_uncapped(self):
+        for flags in (['True', ''], [True, False]):
+            df = pd.DataFrame({dctc.PFPN: ['a', 'b'],
+                               dctc.PNC: [100.0, 100.0],
+                               vmc.cost: [50.0, 50.0],
+                               dctc.UNC: flags})
+            df = cal.net_plan_comp(df)
+            assert df[cal.DIF_PNC].isna().tolist() == [True, False]
+
     def test_prog_fees_calculation(self):
         prog_fee = .05
         net_cost = 100
@@ -2010,6 +2078,26 @@ class TestAnalyze:
         temp_package_cap = dctc.PKD
         df = cpc.check_package_cap(df, temp_package_cap)
         assert df.empty
+
+    def test_package_cap_status_floats(self):
+        cpc = az.CheckPackageCapping(az.Analyze())
+        df = pd.DataFrame({
+            dctc.VEN: [np.nan, 'Facebook', 'Adwords'],
+            dctc.PKD: ['Pkg', 'Pkg', 'Pkg'],
+            cpc.plan_net_temp: [100.0, np.nan, np.nan],
+            vmc.cost: [np.nan, 60.0, 40.0],
+            cal.NC_PRE_CAP: [np.nan, 80.0, 70.0]})
+        df = cpc.check_package_cap(df, dctc.PKD)
+        assert df['Cap'][0] == '150.00%'
+        status = [x for x in cpc.aly.analysis_dict
+                  if x[az.Analyze.analysis_dict_param_col] ==
+                  az.Analyze.package_cap_status][0]
+        status = pd.DataFrame(status[az.Analyze.analysis_dict_data_col])
+        assert status['Cap'][0] == 100.0
+        assert status['Delivered'][0] == 150.0
+        assert status['Capped'][0] == 100.0
+        assert status['Vendors'][0] == 'Adwords, Facebook'
+        assert status['Percent'][0] == 1.5
 
     def test_package_vendor_duplicates(self):
         cpc = az.CheckPackageCapping(az.Analyze())

@@ -39,6 +39,7 @@ agency_fee_file = 'agencyfee_threshold.csv'
 PROG_FEES = 'Programmatic Fees'
 
 NCF = 'Net Cost Final'
+NC_PRE_CAP = 'Net Cost Pre Cap'
 TOTAL_COST = 'Total Cost'
 
 CLI_PD = 'Clicks by Placement Date'
@@ -197,7 +198,8 @@ def net_plan_comp(df, p_col=dctc.PFPN, n_cost=vmc.cost, p_cost=dctc.PNC):
     df[p_cost] = df[p_cost].fillna(0)
     nc_pnc = df.copy()
     if dctc.UNC in df.columns:
-        nc_pnc = df[df[dctc.UNC] != True]
+        uncapped = df[dctc.UNC].astype(str).str.lower() == 'true'
+        nc_pnc = df[~uncapped]
     if p_col not in nc_pnc.columns:
         logging.warning('{} not in df, continuing.'.format(p_col))
         return df
@@ -366,7 +368,9 @@ class MetricCap(object):
             return df
         df = net_cost_final_calculation(df, p_col=c[self.proc_dim],
                                         p_cost=self.temp_metric)
-        df = df[~df[dctc.FPN].isnull()]
+        df = df[~df[dctc.FPN].isnull()].copy()
+        if NC_PRE_CAP not in df.columns:
+            df[NC_PRE_CAP] = df[vmc.cost]
         if NCF in df.columns:
             df[vmc.cost] = df[NCF]
         df = utl.col_removal(df, 'Raw Data', [self.temp_metric])

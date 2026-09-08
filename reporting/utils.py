@@ -58,17 +58,42 @@ def dir_check(directory):
         os.makedirs(directory)
 
 
+def rewind(filename):
+    """Seeks an in-memory upload back to its start so it can be read again.
+
+    :param filename: a path on disk, left alone, or a file object
+    :returns: the same filename
+    """
+    if hasattr(filename, 'seek'):
+        filename.seek(0)
+    return filename
+
+
+def read_head_bytes(filename, size):
+    """Reads the first bytes of a path on disk or of a file object.
+
+    :param filename: a path on disk or a file object
+    :param size: how many bytes to read
+    :returns: the leading bytes of the file
+    """
+    if hasattr(filename, 'read'):
+        head = rewind(filename).read(size)
+        rewind(filename)
+        return head if isinstance(head, bytes) else head.encode('utf-8')
+    with open(filename, 'rb') as f:
+        return f.read(size)
+
+
 def get_file_encoding(filename):
     """Determines a file's encoding from its byte order mark, if any.
 
-    :param filename: the name of the file to check on disk
+    :param filename: a path on disk or a file object to check
     :returns: the name of the encoding the file was written with
     """
     boms = [(codecs.BOM_UTF8, 'utf-8-sig'), (codecs.BOM_UTF32_LE, 'utf-32'),
             (codecs.BOM_UTF32_BE, 'utf-32'), (codecs.BOM_UTF16_LE, 'utf-16'),
             (codecs.BOM_UTF16_BE, 'utf-16')]
-    with open(filename, 'rb') as f:
-        bom = f.read(4)
+    bom = read_head_bytes(filename, 4)
     encoding = [x[1] for x in boms if bom.startswith(x[0])]
     return encoding[0] if encoding else 'iso-8859-1'
 
@@ -81,13 +106,13 @@ def read_ragged_csv(filename, kwargs):
     column is named for each field so no rows are lost.  Rows wider than any
     in the sample are skipped.
 
-    :param filename: the name of the file to read from disk
+    :param filename: a path on disk or a file object
     :param kwargs: the keyword arguments of the read attempt that failed
     :returns: a dataframe of the file
     """
     encoding = kwargs.get('encoding', 'utf-8')
-    with open(filename, encoding=encoding, errors='replace') as f:
-        sample = f.read(1024 * 1024)
+    sample = read_head_bytes(filename, 1024 * 1024)
+    sample = sample.decode(encoding, errors='replace')
     try:
         delimiter = csv.Sniffer().sniff(sample, delimiters=',\t;|').delimiter
     except csv.Error:
@@ -99,20 +124,20 @@ def read_ragged_csv(filename, kwargs):
     if widths[0] < common_width:
         names = [str(x) for x in range(max(widths))]
         kwargs = dict(kwargs, names=names, header=None, skiprows=1)
-    return pd.read_csv(filename, **kwargs)
+    return pd.read_csv(rewind(filename), **kwargs)
 
 
 def read_csv_fallback(read_func, filename, kwargs):
     """Retries a read so an unparsable file does not stop the run.
 
     :param read_func: the pandas function used by the failed read attempt
-    :param filename: the name of the file to read from disk
+    :param filename: a path on disk or a file object
     :param kwargs: the keyword arguments of the read attempt that failed
     :returns: a dataframe of the file, empty when it could not be read
     """
     try:
         try:
-            return read_func(filename, **kwargs)
+            return read_func(rewind(filename), **kwargs)
         except pd.errors.ParserError as e:
             msg = 'Ragged rows in {}, widening columns. {}'
             logging.warning(msg.format(filename, e))
@@ -123,8 +148,30 @@ def read_csv_fallback(read_func, filename, kwargs):
         return pd.DataFrame()
 
 
+def reset_implicit_index(df):
+    """Returns leading columns pandas moved into the index to the data.
+
+    A csv whose first row is narrower than the rows below it, as with a
+    report title above the header, reads with its leading columns as an
+    unnamed index; those values belong in the rows for the header search.
+
+    :param df: the dataframe returned by read_csv
+    :returns: the dataframe with a fresh positional index
+    """
+    if isinstance(df, pd.DataFrame) and not isinstance(df.index,
+                                                       pd.RangeIndex):
+        df = df.reset_index()
+    return df
+
+
 def import_read_csv(filename, path=None, file_check=True, error_bad='error',
                     empty_df=False, nrows=None, file_type=None):
+    """Reads a csv or xlsx from disk or from an uploaded file object.
+
+    :param filename: a path, optionally with ``:::sheet`` suffixes, or a
+        file object such as an upload
+    :returns: a dataframe, None or empty when the file has no data
+    """
     sheet_names = []
     if file_check and sheet_name_splitter in filename:
         filename = filename.split(sheet_name_splitter)
@@ -171,6 +218,8 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
         df = read_csv_fallback(pd.read_csv, filename, kwargs)
     if sheet_names and isinstance(df, dict):
         df = pd.concat(df, ignore_index=True, sort=True)
+    if read_func is pd.read_csv:
+        df = reset_implicit_index(df)
     df = df.rename(columns=lambda x: x.strip())
     return df
 
@@ -345,11 +394,12 @@ def first_last_adj(df, first_row, last_row):
     is greater than zero, sets the dataframe's columns to the row above
     first_row and removes any rows above first_row in the df. Logs a warning
     if the df columns are null. If last_row is greater than zero, removes
-    last_row number of rows from the end of the df.
+    last_row number of rows from the end of the df.  Rows are positions, so
+    the frame's index labels do not matter; the caller's frame is left as is.
 
     :param df:Dataframe to adjust
-    :param first_row:Index of first row of data in df
-    :param last_row:Index of last row of data in df
+    :param first_row:Position of first row of data in df
+    :param last_row:Number of rows to drop from the end of df
     :returns:Adjusted dataframe
     """
     logging.debug('Removing First & Last Rows')
@@ -359,8 +409,8 @@ def first_last_adj(df, first_row, last_row):
     first_row = int(first_row)
     last_row = int(last_row)
     if first_row > 0:
-        df.columns = df.loc[first_row - 1]
-        df = df.iloc[first_row:]
+        header = df.iloc[first_row - 1]
+        df = df.iloc[first_row:].set_axis(header.values, axis=1)
     if 0 < abs(last_row) < len(df):
         df = df.iloc[:-abs(last_row)]
     if pd.isnull(df.columns.values).any():
