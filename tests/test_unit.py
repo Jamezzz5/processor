@@ -3261,6 +3261,45 @@ class TestGamesDb:
         assert float(latest.views) == 1600
         assert latest.youtubevideoid == video.youtubevideoid
 
+    def test_descriptor_neighbour_alias_upserts_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Halo Infinite',
+                               registry_slug='halo-infinite')
+        rival = gdb.upsert_game(s, 'Destiny 2', registry_slug='destiny-2')
+        desc_key = {'gameid': game.gameid}
+        assert gdb.upsert_fact(
+            s, gmdl.GameDescriptor, desc_key,
+            {'igdb_id': 1, 'genres': 'Shooter', 'themes': 'Sci-fi',
+             'similar_igdb_ids': '2, 3',
+             'first_release_date': dt.date(2021, 12, 8)}) == 1
+        assert gdb.upsert_fact(
+            s, gmdl.GameAlias, {'alias_key': 'halo'},
+            {'gameid': game.gameid, 'alias': 'Halo',
+             'source': 'test'}) == 1
+        s.add(gmdl.GameNeighbour(
+            gameid=game.gameid, neighbour_gameid=rival.gameid, rank=1,
+            score=0.7, evidence_weight=0.5,
+            components={'genre': {'s': 1, 'w': 0.16,
+                                  'shared': ['Shooter'],
+                                  'label': 'Shooter'}},
+            computed_at=dt.datetime(2026, 9, 9, 11)))
+        s.commit()
+        assert gdb.upsert_fact(s, gmdl.GameDescriptor, desc_key,
+                               {'themes': 'Sci-fi, War'}) == 0
+        assert gdb.upsert_fact(s, gmdl.GameAlias, {'alias_key': 'halo'},
+                               {'alias': 'HALO'}) == 0
+        s.commit()
+        assert s.query(gmdl.GameDescriptor).one().themes == 'Sci-fi, War'
+        assert s.query(gmdl.GameAlias).one().alias == 'HALO'
+        edge = s.query(gmdl.GameNeighbour).one()
+        assert edge.components['genre']['shared'] == ['Shooter']
+        s.add(gmdl.GameNeighbour(
+            gameid=game.gameid, neighbour_gameid=rival.gameid, rank=2,
+            score=0.1, computed_at=dt.datetime(2026, 9, 9, 11)))
+        import sqlalchemy.exc as sa_exc
+        with pytest.raises(sa_exc.IntegrityError):
+            s.commit()
+
     def test_pulse_and_price_upserts_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Halo Infinite',

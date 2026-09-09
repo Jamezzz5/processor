@@ -1176,3 +1176,114 @@ class CriticReview(Base):
         DateTime, nullable=False,
         comment='Naive UTC; the last sweep that touched the row - the '
                 "lane's rotation watermark (max per gameid).")
+
+
+class GameDescriptor(Base):
+    """IGDB descriptor facts per dim title — the multi-valued labels
+    the dim's single ``primary_genre`` cannot hold. One row per game,
+    overwritten by each refresh: a descriptor is current state, not
+    history."""
+    __tablename__ = 'game_descriptor'
+    __table_args__ = (
+        UniqueConstraint('gameid', name='uq_game_descriptor_game'),
+        Index('ix_game_descriptor_updated', 'updated_at'),
+        {'schema': 'games',
+         'comment': 'IGDB multi-valued descriptors per game (genres, '
+                    'themes, keywords, modes, perspectives, platforms, '
+                    'similar-game ids, summary). Comma-joined text like '
+                    'game_release; one row per game, refreshed in '
+                    'place by the nightly descriptor lane.'},
+    )
+
+    gamedescriptorid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    igdb_id = Column(BigInteger, nullable=False)
+    genres = Column(Text, comment='Comma-joined IGDB genre names.')
+    themes = Column(Text, comment='Comma-joined IGDB theme names.')
+    keywords = Column(Text, comment='Comma-joined IGDB keywords, the '
+                                    'first 20 in IGDB order.')
+    game_modes = Column(Text, comment='Comma-joined IGDB game_modes names.')
+    player_perspectives = Column(
+        Text, comment='Comma-joined IGDB player_perspectives names.')
+    platforms = Column(Text, comment='Comma-joined IGDB platform '
+                                     'abbreviations (name when none).')
+    similar_igdb_ids = Column(
+        Text, comment='Comma-joined IGDB ids from similar_games; the '
+                      'competitor model reads it as a direct edge.')
+    summary = Column(Text, comment='IGDB summary text; stored for '
+                                   'reading, never scored.')
+    first_release_date = Column(
+        Date, comment='IGDB first_release_date as a date; NULL when '
+                      'IGDB has none.')
+    updated_at = Column(DateTime, comment='Naive UTC; last refresh - '
+                                          'the lane rotation column.')
+
+
+class GameNeighbour(Base):
+    """Materialised similarity edge — the top-N neighbours of one dim
+    title from the nightly competitor model, each carrying the
+    components it was scored on so a reader can print why."""
+    __tablename__ = 'game_neighbour'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'neighbour_gameid',
+                         name='uq_game_neighbour_pair'),
+        Index('ix_game_neighbour_neighbour', 'neighbour_gameid'),
+        Index('ix_game_neighbour_computed', 'computed_at'),
+        {'schema': 'games',
+         'comment': 'Nightly top-N similarity neighbours per game. '
+                    'score is a weighted mean over the components both '
+                    'titles carried (weights renormalise over the '
+                    'present ones); components names every fact behind '
+                    'it. Rebuilt whole each night - absence means "not '
+                    'built", never "no neighbours".'},
+    )
+
+    gameneighbourid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    neighbour_gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                              nullable=False)
+    rank = Column(Integer, nullable=False,
+                  comment="1-based position among the subject's "
+                          'neighbours.')
+    score = Column(Numeric, nullable=False,
+                   comment='0-1 weighted similarity over the present '
+                           'components.')
+    evidence_weight = Column(
+        Numeric, comment='Sum of the weights of the components both '
+                         'titles carried (1.0 = fully evidenced).')
+    components = Column(
+        JSON().with_variant(JSONB, 'postgresql'),
+        comment='{component: {s, w, shared, label}} for every PRESENT '
+                'component; absent ones are omitted, never zeroed.')
+    computed_at = Column(DateTime, nullable=False,
+                         comment='Naive UTC; the derive that wrote it.')
+
+
+class GameAlias(Base):
+    """A curated alternate name for one dim title — the Pathmatics
+    brand, an advertiser label, a store spelling — so every lane's
+    exact-name match lands on the right game without guessing."""
+    __tablename__ = 'game_alias'
+    __table_args__ = (
+        UniqueConstraint('alias_key', name='uq_game_alias_key'),
+        Index('ix_game_alias_gameid', 'gameid'),
+        {'schema': 'games',
+         'comment': 'Curated alternate names per game (Pathmatics '
+                    'brands, advertiser labels, store spellings). '
+                    'alias_key is the casefolded alias and is unique: '
+                    'one spelling names one game. Matching is exact, '
+                    'never fuzzy.'},
+    )
+
+    gamealiasid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    alias = Column(Text, nullable=False, comment='The name as written.')
+    alias_key = Column(Text, nullable=False,
+                       comment='Casefolded, stripped alias - the match '
+                               'key.')
+    source = Column(Text, comment='Who curated it: registry sheet, '
+                                  'competitor band, pathmatics brand.')
+    created_at = Column(DateTime, comment='Naive UTC.')
