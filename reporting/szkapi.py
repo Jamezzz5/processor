@@ -13,6 +13,15 @@ config_path = utl.config_path
 
 
 class SzkApi(object):
+    api_field_options = (
+        ('Total', 'Total time breakdown'),
+        ('Week', 'Weekly time breakdown'),
+        ('Placement', 'Placement name and id attributes'),
+        ('Campaign', 'Campaign name and id attributes'),
+        ('Lifetime', 'Campaign lifetime date range'),
+        ('Site', 'Site dimensions'),
+        ('Unique', 'Unique metrics'),
+        ('P2C', 'P2C report type'))
     login_url = 'https://adapi.sizmek.com/sas/login/login/'
     base_report_url = 'https://api.sizmek.com/rest/ReportBuilder/reports/'
     report_ex_route = 'executions'

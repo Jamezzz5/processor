@@ -22,6 +22,14 @@ config_path = utl.config_path
 
 
 class AmzApi(object):
+    api_field_options = (
+        ('keyword', 'Search term rows for Sponsored Products and Brands'),
+        ('product', 'Purchased product report with ASIN titles'),
+        ('creative', 'Break performance out by creative'),
+        ('conversion', 'Off Amazon conversion metrics and definitions'),
+        ('refresh', 'Ignore the report cache and pull fresh'),
+        ('v1', 'Ads API v1 reporting, the default'),
+        ('v3', 'Legacy v3 reporting'))
     base_url = 'https://advertising-api.amazon.com'
     na_url = 'https://advertising-api.amazon.com'
     eu_url = 'https://advertising-api-eu.amazon.com'

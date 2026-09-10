@@ -13,6 +13,9 @@ config_path = utl.config_path
 
 
 class GaApi(object):
+    api_field_options = (
+        ('DCM', 'Add DCM dimensions'),
+        ('paidmedia', 'Only paid media sessions'))
     base_url = 'https://analyticsdata.googleapis.com/v1beta/properties/'
     def_metrics = ['totalUsers', 'eventCount', 'sessions', 'engagedSessions',
                    'newUsers', 'averageSessionDuration',

@@ -18,6 +18,10 @@ base_url = 'https://www.googleapis.com/dfareporting'
 
 
 class DcApi(object):
+    api_field_options = (
+        ('platformType', 'Add the platform type dimension'),
+        ('60', 'Relative date range of the last 60 days'),
+        ('30', 'Relative date range of the last 30 days'))
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
         'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId',

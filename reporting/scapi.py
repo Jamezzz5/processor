@@ -24,6 +24,13 @@ def_fields = add_fields
 
 
 class ScApi(object):
+    api_field_options = (
+        ('Total', 'One row per campaign, no breakdown'),
+        ('Campaign', 'One row per campaign, no breakdown'),
+        ('Unique', 'Lifetime unique metrics'),
+        ('Age', 'Break down by age'),
+        ('Gender', 'Break down by gender'),
+        ('Country', 'Break down by country'))
     campaign_filter_col = 'campaign_filter'
     campaign_col = 'Campaign'
     default_config_file_name = 'scconfig.json'

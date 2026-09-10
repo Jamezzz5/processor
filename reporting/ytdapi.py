@@ -12,6 +12,8 @@ config_path = utl.config_path
 
 
 class YtdApi(object):
+    api_field_options = (
+        ('channel', 'Channel level rather than video level'),)
     base_url = 'https://www.googleapis.com/youtube/v3/'
     search_url = 'search?part=snippet'
     video_url = 'videos?part=snippet,statistics'

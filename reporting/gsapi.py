@@ -19,6 +19,8 @@ TableCell = collections.namedtuple(
 
 
 class GsApi(object):
+    api_field_options = (
+        ('Doc', 'Read a Google Doc rather than a sheet'),)
     sheets_url = 'https://sheets.googleapis.com/v4/spreadsheets'
     slides_url = 'https://slides.googleapis.com/v1/presentations'
     files_url = 'https://www.googleapis.com/drive/v3/files'

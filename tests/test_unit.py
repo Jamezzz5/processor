@@ -3928,3 +3928,43 @@ class TestDcApiCampaignFilter:
             df, api.campaign_name_filter, dcapi.DcApi.campaign_col,
             dcapi.DcApi.campaign_id_col)
         assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']
+
+
+
+class TestApiFieldOptions:
+    """The API Fields the Import card offers are declared beside the code
+    that reads them, so the two cannot drift apart unnoticed."""
+
+    def test_options_are_well_formed(self):
+        classes = ih.ImportHandler(None, None).class_list
+        declared = 0
+        for key, cls in classes.items():
+            rows = getattr(cls, 'api_field_options', ())
+            values = [value for value, _ in rows]
+            assert len(values) == len(set(values)), key
+            for value, note in rows:
+                assert value and isinstance(value, str), key
+                assert note and isinstance(note, str), key
+            declared += bool(rows)
+        assert declared >= 16
+
+    def test_amazon_options_flip_the_flags_they_name(self):
+        """Every offered Amazon token still lands on the flag set_fields
+        keeps for it, and nothing is offered that set_fields ignores."""
+        flags = {'keyword': 'include_keywords',
+                 'product': 'product_report',
+                 'creative': 'include_creative',
+                 'conversion': 'include_conversions',
+                 'refresh': 'fresh_pull'}
+        for value, attr in flags.items():
+            api = amzapi.AmzApi()
+            api.set_fields([value])
+            assert getattr(api, attr) is True, value
+        api = amzapi.AmzApi()
+        api.set_fields(['v3'])
+        assert api.use_v1 is False
+        api = amzapi.AmzApi()
+        api.set_fields(['v1'])
+        assert api.use_v1 is True
+        offered = {value for value, _ in amzapi.AmzApi.api_field_options}
+        assert offered == set(flags) | {'v1', 'v3'}
