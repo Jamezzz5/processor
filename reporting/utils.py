@@ -16,6 +16,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import urllib3.exceptions as url_ex
+from urllib.parse import unquote, urlparse
 import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
@@ -880,6 +881,40 @@ class SeleniumWrapper(object):
                        'akzeptieren und weiter']
     cookie_wait = 2
     cookie_timeout = 15
+    ad_hosts = ('doubleclick.net', 'googlesyndication.com',
+                'googleadservices.com', 'adnxs.com', 'amazon-adsystem.com',
+                'rubiconproject.com', 'criteo.com', 'openx.net',
+                'pubmatic.com', 'taboola.com', 'outbrain.com')
+    ad_markers = ('google_ads_iframe', 'div-gpt-ad', 'adsbygoogle',
+                  'google-query-id')
+    iab_sizes = ((300, 250), (728, 90), (300, 600), (160, 600), (320, 50),
+                 (970, 250), (970, 90), (336, 280), (300, 50))
+    redirect_params = ('adurl', 'url', 'r', 'dest', 'clickurl', 'redirect',
+                       'u')
+    slot_mark = 'data-lq-slot'
+    max_ad_slots = 12
+    scan_budget = 45
+    frame_read_script = (
+        "return {hrefs: [...document.querySelectorAll('a[href]')]"
+        "  .slice(0, 20).map(a => a.href),"
+        " imgs: [...document.querySelectorAll('img')].slice(0, 10)"
+        "  .map(i => ({src: i.src, alt: i.alt || ''})),"
+        " labels: [...document.querySelectorAll('[aria-label]')]"
+        "  .slice(0, 10).map(e => e.getAttribute('aria-label')),"
+        " text: (document.body ? document.body.innerText : '')"
+        "  .slice(0, 500)};")
+    candidates_script = (
+        "const sel = 'iframe, ins.adsbygoogle, [id^=div-gpt-ad],"
+        " [data-google-query-id]';"
+        "return [...document.querySelectorAll(sel)].map((el, n) => {"
+        "  const r = el.getBoundingClientRect();"
+        "  el.setAttribute(arguments[0], String(n));"
+        "  return {n: n, tag: el.tagName.toLowerCase(), id: el.id || '',"
+        "    src: el.getAttribute('src') || '',"
+        "    width: Math.round(r.width), height: Math.round(r.height),"
+        "    attrs: [el.id, el.className,"
+        "            ...[...el.attributes].map(a => a.name)].join(' ')};"
+        "}).filter(c => c.width > 0 && c.height > 0);")
 
     def __init__(self, mobile=False, headless=True, page_load_strategy=''):
         self.mobile = mobile
@@ -1267,11 +1302,6 @@ class SeleniumWrapper(object):
         shutil.rmtree(temp_path)
         return df
 
-    def take_screenshot_get_ads(self, url=None, file_name=None):
-        self.take_screenshot(url=url, file_name=file_name)
-        ads = self.get_all_iframe_ads()
-        return ads
-
     @classmethod
     def get_accept_xpath(cls):
         """Xpath matching a cookie-consent accept control.
@@ -1328,14 +1358,18 @@ class SeleniumWrapper(object):
             return False
         return True
 
-    def switch_to_frame(self, iframe=None):
-        """Switch into a frame, or back out to the page.
+    def switch_to_frame(self, iframe=None, parent=False):
+        """Switch into a frame, up to its parent, or back out to the
+        page.
 
         :param iframe: frame WebElement, or None for default content
+        :param parent: step up one frame instead
         :return: whether the switch succeeded
         """
         try:
-            if iframe is None:
+            if parent:
+                self.browser.switch_to.parent_frame()
+            elif iframe is None:
                 self.browser.switch_to.default_content()
             else:
                 self.browser.switch_to.frame(iframe)
@@ -1359,7 +1393,7 @@ class SeleniumWrapper(object):
             if time.time() > deadline:
                 logging.warning('Timed out looking for a cookie banner.')
                 return
-            if not self.elem_visible(iframe):
+            if not self.elem_visible(iframe) or self.is_ad_frame(iframe):
                 continue
             if not self.switch_to_frame(iframe):
                 continue
@@ -1367,7 +1401,8 @@ class SeleniumWrapper(object):
             if not self.switch_to_frame() or accepted:
                 return
 
-    def take_screenshot(self, url=None, file_name=None, max_attempts=2):
+    def take_screenshot(self, url=None, file_name=None, max_attempts=2,
+                        scroll_first=False):
         """Save a screenshot of ``url``, or of the current page.
 
         :param url: page to load first; omit to shoot what is loaded
@@ -1375,6 +1410,8 @@ class SeleniumWrapper(object):
         :param max_attempts: navigation attempts, kept low because a
             screenshot run walks a whole site list and one unreachable
             site should not hold up the rest
+        :param scroll_first: walk the page before the shot so lazily
+            loaded slots render
         """
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
@@ -1384,8 +1421,25 @@ class SeleniumWrapper(object):
         if went_to_url:
             if url:
                 self.accept_cookies()
+            if scroll_first:
+                self.scroll_through()
             self.browser.execute_script("window.scrollTo(0, 0)")
             self.browser.save_screenshot(file_name)
+
+    def scroll_through(self, steps=3, pause=0.7):
+        """Walk the page top to bottom and back so lazily loaded ad
+        slots render before the shot.
+
+        :param steps: viewport stops on the way down
+        :param pause: seconds to settle at each stop
+        """
+        for i in range(1, steps + 1):
+            self.browser.execute_script(
+                'window.scrollTo(0, document.body.scrollHeight * {} / {});'
+                .format(i, steps))
+            time.sleep(pause)
+        self.browser.execute_script('window.scrollTo(0, 0);')
+        time.sleep(pause)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
         logging.info('Getting screenshot from {} and '
@@ -1394,38 +1448,179 @@ class SeleniumWrapper(object):
         elem = self.browser.find_element_by_xpath(xpath)
         elem.screenshot(file_name)
 
-    def get_all_iframes(self, url=None):
-        if url:
-            self.go_to_url(url)
-        all_iframes = self.browser.find_elements_by_tag_name('iframe')
-        all_iframes = [x for x in all_iframes if x.is_displayed()]
-        return all_iframes
+    @staticmethod
+    def url_host(url):
+        """The host of a url, lower-cased and without ``www.``; '' for
+        anything that is not a url."""
+        host = urlparse(url or '').netloc.lower()
+        return host[4:] if host.startswith('www.') else host
 
-    def get_all_iframe_ads(self, url=None):
-        ads = []
-        all_iframes = self.get_all_iframes(url)
-        for iframe in all_iframes:
-            iframe_properties = {}
-            for x in ['width', 'height']:
-                try:
-                    iframe_properties[x] = iframe.get_attribute(x)
-                except ex.StaleElementReferenceException:
-                    logging.warning('{} element not gathered.'.format(x))
-                    iframe_properties[x] = 'None'
-            iframe.click()
-            if len(self.browser.window_handles) > 1:
-                new_window = [x for x in self.browser.window_handles
-                              if x != self.base_window][0]
-                self.browser.switch_to.window(new_window)
-                time.sleep(5)
-                iframe_properties['lp_url'] = self.browser.current_url
-                logging.info('Got iframe with properties:'
-                             ' {}'.format(iframe_properties))
-                ads.append(iframe_properties)
-                self.browser.close()
-                self.browser.switch_to.window(self.base_window)
-            time.sleep(5)
-        return ads
+    @classmethod
+    def is_ad_host(cls, host):
+        return any(host == x or host.endswith('.' + x) for x in cls.ad_hosts)
+
+    def is_ad_frame(self, iframe):
+        """Whether a frame is served by an ad host. A frame that went
+        stale counts as one: nothing in it should be clicked."""
+        try:
+            return self.is_ad_host(
+                self.url_host(iframe.get_attribute('src') or ''))
+        except ex.StaleElementReferenceException:
+            return True
+
+    def find_ad_candidates(self):
+        """Visible frames and ad containers on the page, each stamped
+        with a slot number so it can be found again after a frame
+        switch, in one driver round trip.
+
+        :return: list of dicts with n, tag, id, src, width, height, attrs
+        """
+        return self.browser.execute_script(self.candidates_script,
+                                           self.slot_mark)
+
+    @classmethod
+    def slot_evidence(cls, cand):
+        """The ad signals a candidate carries: an ad-server host in its
+        src, a known slot marker in its id or attributes, or a standard
+        ad size. Size alone counts only for a frame.
+
+        :param cand: one dict from ``find_ad_candidates``
+        :return: list of evidence strings, empty when it is not a slot
+        """
+        found = []
+        host = cls.url_host(cand.get('src', ''))
+        if cls.is_ad_host(host):
+            found.append('src host {}'.format(host))
+        text = '{} {}'.format(cand.get('id', ''), cand.get('attrs', ''))
+        found += ['marker {}'.format(x) for x in cls.ad_markers if x in text]
+        size = (cand.get('width'), cand.get('height'))
+        if size in cls.iab_sizes and (found or cand.get('tag') == 'iframe'):
+            found.append('size {}x{}'.format(*size))
+        return found
+
+    @classmethod
+    def landing_domain(cls, hrefs):
+        """The page an ad's links lead to, read off the links: a
+        redirect parameter's target when one names a non-ad host, else
+        the first link host that is not an ad server.
+
+        :param hrefs: link urls read out of the frame
+        :return: a host, or '' when every link stays on ad servers
+        """
+        pattern = re.compile('[?&;](?:{})=([^&;#]+)'.format(
+            '|'.join(cls.redirect_params)))
+        fallback = ''
+        for href in hrefs:
+            for target in pattern.findall(href):
+                host = cls.url_host(unquote(target))
+                if host and not cls.is_ad_host(host):
+                    return host
+            host = cls.url_host(href)
+            if host and not fallback and not cls.is_ad_host(host):
+                fallback = host
+        return fallback
+
+    def read_ad_frame(self, iframe, depth=0):
+        """Read an ad frame's links, images and text without touching
+        anything in it. One level of nesting is followed, since a
+        SafeFrame wraps the creative in a frame of its own.
+
+        :param iframe: the frame WebElement, from the current context
+        :param depth: nesting level already entered
+        :return: dict of hrefs, imgs, labels (lists) and text (str)
+        """
+        found = {'hrefs': [], 'imgs': [], 'labels': [], 'text': ''}
+        if not self.switch_to_frame(iframe):
+            return found
+        try:
+            found = self.browser.execute_script(self.frame_read_script)
+            inner = [] if depth else [
+                x for x in self.browser.find_elements(By.TAG_NAME, 'iframe')
+                if self.elem_visible(x)][:2]
+            for child in inner:
+                got = self.read_ad_frame(child, depth=1)
+                for key in ('hrefs', 'imgs', 'labels'):
+                    found[key] += got[key]
+                found['text'] = '{} {}'.format(found['text'], got['text'])
+        except ex.WebDriverException as e:
+            logging.warning('Could not read ad frame: {}'.format(e))
+        finally:
+            self.switch_to_frame(parent=bool(depth))
+        return found
+
+    def shoot_elem(self, elem, path):
+        """Screenshot one element to ``path``; '' when the driver
+        could not."""
+        try:
+            elem.screenshot(path)
+        except ex.WebDriverException as e:
+            logging.warning('Could not shoot ad slot: {}'.format(e))
+            return ''
+        return path
+
+    def read_ad_slot(self, cand, evidence, shot_prefix):
+        """One slot's shot and reading, or None when it vanished.
+
+        :param cand: one dict from ``find_ad_candidates``
+        :param evidence: its ``slot_evidence``
+        :param shot_prefix: path prefix for the slot shot, '' to skip
+        :return: the ad dict, or None
+        """
+        try:
+            elem = self.browser.find_element(
+                By.CSS_SELECTOR,
+                '[{}="{}"]'.format(self.slot_mark, cand['n']))
+            self.scroll_to_elem(elem)
+            shot_path = self.shoot_elem(
+                elem, '{}_ad{}.png'.format(shot_prefix, cand['n'])
+            ) if shot_prefix else ''
+            found = (self.read_ad_frame(elem) if cand['tag'] == 'iframe'
+                     else {'hrefs': [], 'imgs': [], 'labels': [], 'text': ''})
+        except self.browser_errors as e:
+            logging.warning('Ad slot {} not read: {}'.format(cand['n'], e))
+            return None
+        text = ' '.join([x['alt'] for x in found['imgs'] if x['alt']]
+                        + found['labels'] + [found['text']])
+        return {'shot_path': shot_path, 'width': cand['width'],
+                'height': cand['height'],
+                'frame_host': self.url_host(cand['src']),
+                'landing_domain': self.landing_domain(found['hrefs']),
+                'text': ' '.join(text.split())[:200], 'evidence': evidence}
+
+    def scan_ad_slots(self, shot_prefix='', max_slots=None, budget_s=None):
+        """Photograph and read the page's ad slots without clicking
+        any of them.
+
+        Each slot is shot from the top document and, when it is a
+        frame, read for its links, images and text; the click-through
+        is inferred from link parameters, never by following one. Work
+        is bounded per page so one heavy site cannot stall the sweep.
+
+        :param shot_prefix: path prefix for slot shots (``_ad<n>.png``)
+        :param max_slots: slots to keep, default ``max_ad_slots``
+        :param budget_s: seconds for the whole scan, default
+            ``scan_budget``
+        :return: list of ad dicts (shot_path, width, height,
+            frame_host, landing_domain, text, evidence)
+        """
+        deadline = time.time() + (budget_s or self.scan_budget)
+        slots = []
+        try:
+            for cand in self.find_ad_candidates():
+                if len(slots) >= (max_slots or self.max_ad_slots):
+                    break
+                if time.time() > deadline:
+                    logging.warning('Ad scan budget exhausted.')
+                    break
+                evidence = self.slot_evidence(cand)
+                if evidence:
+                    slots.append(self.read_ad_slot(cand, evidence,
+                                                   shot_prefix))
+        except self.browser_errors as e:
+            logging.warning('Ad scan stopped: {}'.format(e))
+        finally:
+            self.switch_to_frame()
+        return [x for x in slots if x]
 
     def clear_elem(self, elem_id, attempts=10, sleep_time=.1):
         """Clear an input, retrying while it is not yet interactable.
