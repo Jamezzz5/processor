@@ -4773,30 +4773,46 @@ class AliChat(object):
     _STOP_WORDS_CACHE = None
 
     @staticmethod
-    def _ensure_nltk_corpus(name, path):
-        """Download an nltk corpus only when it isn't already present.
+    def _nltk_corpus_present(name):
+        """Whether an nltk corpus is on disk, in either shape the
+        downloader leaves it in.
+        """
+        for path in ('corpora/{}'.format(name),
+                     'corpora/{}.zip/{}/'.format(name, name)):
+            try:
+                nltk.data.find(path)
+                return True
+            except LookupError:
+                continue
+        return False
 
-        ``nltk.download`` reaches out to the network to check the
-        package index on EVERY call even when the corpus is installed
-        (and blocks on connect/read timeouts behind a firewall), so
-        guard it with ``nltk.data.find``. This ran twice per ``AliChat``
-        construction — i.e. once per ``/post_chat`` — and was a
-        multi-second synchronous cost in the chat path."""
-        try:
-            nltk.data.find(path)
-        except LookupError:
-            nltk.download(name, quiet=True)
+    @staticmethod
+    def _ensure_nltk_corpus(name):
+        """Whether an nltk corpus is available, downloading it once
+        when it isn't, and reporting the outcome rather than assuming
+        the download worked.
+        """
+        if AliChat._nltk_corpus_present(name):
+            return True
+        nltk.download(name, quiet=True)
+        if AliChat._nltk_corpus_present(name):
+            return True
+        logging.error(
+            'nltk corpus %s is missing and could not be downloaded. '
+            'Install it with `python scripts/install_nltk_data.py`; '
+            'until then tokenisation raises LookupError.', name)
+        return False
 
     @staticmethod
     def get_stop_words():
-        # Cache per process: the english stopword list never changes,
-        # so building it (and probing nltk data) once is enough.
-        if AliChat._STOP_WORDS_CACHE is None:
-            AliChat._ensure_nltk_corpus('stopwords', 'corpora/stopwords')
-            AliChat._ensure_nltk_corpus('wordnet', 'corpora/wordnet')
-            AliChat._STOP_WORDS_CACHE = list(
-                nltk.corpus.stopwords.words('english'))
-        return AliChat._STOP_WORDS_CACHE
+        if AliChat._STOP_WORDS_CACHE is not None:
+            return AliChat._STOP_WORDS_CACHE
+        ready = AliChat._ensure_nltk_corpus('stopwords')
+        ready = AliChat._ensure_nltk_corpus('wordnet') and ready
+        stop_words = list(nltk.corpus.stopwords.words('english'))
+        if ready:
+            AliChat._STOP_WORDS_CACHE = stop_words
+        return stop_words
 
     @staticmethod
     def _format_page_context_line(page_context):
