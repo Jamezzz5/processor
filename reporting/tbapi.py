@@ -12,6 +12,12 @@ import reporting.hyper.postgres_extractor as pge
 
 config_path = utl.config_path
 
+tsc_exceptions = tsc.server.endpoint.exceptions
+retry_errors = (tsc_exceptions.ServerResponseError,
+                tsc_exceptions.InternalServerError,
+                tsc_exceptions.NonXMLResponseError,
+                requests.exceptions.RequestException)
+
 
 class TabApi(object):
     base_url = 'https://us-east-1.online.tableau.com/api/'
@@ -181,6 +187,33 @@ class TabApi(object):
         return tableau_auth, server
 
     @staticmethod
+    def retry_call(func, description, *args, attempts=10, wait=10, **kwargs):
+        """Call a Tableau endpoint, retrying it when the server is unwell.
+
+        :param func: endpoint method to call
+        :param description: phrase naming the call, used in log messages
+        :param args: passed through to func
+        :param attempts: how many times to try before giving up
+        :param wait: seconds to wait after the first failure
+        :param kwargs: passed through to func
+        :returns: func's return value, or None when every attempt failed
+        """
+        for x in range(attempts):
+            try:
+                return func(*args, **kwargs)
+            except retry_errors as e:
+                msg = 'Attempt {} of {}.  Could not {}: \n{}'.format(
+                    x + 1, attempts, description, e)
+                logging.warning(msg)
+                if x + 1 < attempts:
+                    sleep_for = min(wait * (x + 1), 60)
+                    logging.warning('Retrying in {}s'.format(sleep_for))
+                    time.sleep(sleep_for)
+        logging.error('Could not {} after {} attempts.  Skipping.'.format(
+            description, attempts))
+        return None
+
+    @staticmethod
     def create_hyper(db, table_name='auto_processor'):
         db_conn_dict = dict(
             host=db.config['HOST'],
@@ -220,35 +253,29 @@ class TabApi(object):
             conn_cred = tsc.ConnectionCredentials(
                 name=db.config['USER'], password=db.config['PASS'], embed=True)
             connection.connection_credentials = conn_cred
-            object_published = False
-            for x in range(10):
-                logging.info('Attempting to publish attempt {}'.format(x + 1))
-                try:
-                    published_obj = ser_object.publish(
-                        pub_obj, '{}{}'.format(object_name, ext_object),
-                        mode=publish_mode, connection_credentials=conn_cred)
-                    object_published = True
-                    break
-                except tsc.server.endpoint.exceptions.ServerResponseError as e:
-                    logging.warning('Error attempting again in 30s')
-                    time.sleep(30)
-            publish_msg = ' ' if object_published else ' not '
-            logging.info('Object{}published with name: {}'.format(
-                publish_msg, published_obj.name))
-            return object_published
+            published_obj = ser_object.publish(
+                pub_obj, '{}{}'.format(object_name, ext_object),
+                mode=publish_mode, connection_credentials=conn_cred)
+            logging.info('Object published with name: {}'.format(
+                published_obj.name))
+            return True
 
     def publish_object_with_error_catch(self, db, object_name,
                                         object_type='datasource'):
-        for x in range(10):
-            try:
-                self.publish_object(
-                    db, object_name=object_name, object_type=object_type)
-                break
-            except tsc.server.endpoint.exceptions.ServerResponseError as e:
-                msg = 'Attempt: {}.  Could not publish error: \n{}'.format(
-                    x + 1, e)
-                logging.warning(msg)
-                time.sleep(10)
+        """Publish a datasource or workbook, retrying a failing server.
+
+        The whole publish is retried, sign in and project lookup included,
+        since those reach the same endpoints that drop the connection.
+
+        :param db: database whose connection details get embedded
+        :param object_name: name to publish the object under
+        :param object_type: 'datasource' or 'workbook'
+        :returns: True when the object published
+        """
+        published = self.retry_call(
+            self.publish_object, 'publish {}'.format(object_name), db,
+            wait=30, object_name=object_name, object_type=object_type)
+        return bool(published)
 
     def create_publish_hyper(self, db, table_name='auto_processor'):
         self.create_hyper(db, table_name)
@@ -266,16 +293,14 @@ class TabApi(object):
                     return file_path
 
     def download_workbook_with_error_catch(self, wb_name='auto_template'):
-        file_path = ''
-        for x in range(10):
-            try:
-                file_path = self.download_workbook(wb_name)
-                break
-            except tsc.server.endpoint.exceptions.ServerResponseError as e:
-                msg = 'Attempt: {}. Could not download: \n{}'.format(x + 1, e)
-                logging.warning(msg)
-                time.sleep(10)
-        return file_path
+        """Download a workbook, retrying a failing server.
+
+        :param wb_name: name of the workbook to download
+        :returns: path the workbook downloaded to, or '' when it did not
+        """
+        file_path = self.retry_call(
+            self.download_workbook, 'download {}'.format(wb_name), wb_name)
+        return file_path if file_path else ''
 
     @staticmethod
     def change_workbook_datasource(
@@ -286,13 +311,22 @@ class TabApi(object):
 
     def create_publish_workbook_hyper(self, db, table_name='auto_processor',
                                       wb_name='auto_template', new_wb_name=''):
+        """Publish the hyper extract and the workbook that reads it.
+
+        :param db: database whose connection details get embedded
+        :param table_name: name to publish the extract under
+        :param wb_name: template workbook to base the new one on
+        :param new_wb_name: name to publish the new workbook under
+        :returns: True when the workbook published
+        """
         if not self.username:
             return False
         self.create_publish_hyper(db, table_name)
         file_path = self.download_workbook_with_error_catch(wb_name)
-        if file_path:
-            self.change_workbook_datasource(file_path, table_name)
-            new_path = file_path.replace(wb_name, new_wb_name)
-            shutil.copy(file_path, new_path)
-            self.publish_object_with_error_catch(db, object_name=new_wb_name,
-                                                 object_type='workbook')
+        if not file_path:
+            return False
+        self.change_workbook_datasource(file_path, table_name)
+        new_path = file_path.replace(wb_name, new_wb_name)
+        shutil.copy(file_path, new_path)
+        return self.publish_object_with_error_catch(
+            db, object_name=new_wb_name, object_type='workbook')

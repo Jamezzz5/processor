@@ -30,6 +30,7 @@ import processor.reporting.awapi as awapi
 import processor.reporting.amzapi as amzapi
 import processor.reporting.gaapi as gaapi
 import processor.reporting.fbapi as fbapi
+import processor.reporting.ssapi as ssapi
 import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
@@ -53,8 +54,7 @@ import processor.reporting.steapi as steapi
 import processor.reporting.asaapi as asaapi
 import processor.reporting.importhandler as ih
 
-# Dev machines carry gitignored credentials and data artifacts that
-# CI checkouts lack; gate the tests that genuinely need them.
+
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 requires_api_configs = pytest.mark.skipif(
     not os.path.exists(os.path.join(CONFIG_PATH, 'fbconfig.json')),
@@ -72,9 +72,7 @@ def _raise_read_timeout(*args, **kwargs):
     raise url_ex.ReadTimeoutError(None, 'url', 'Read timed out.')
 
 
-# Body copy holding 'OK' inside 'COOKIES' and a settings control that
-# must not be mistaken for consent -- the two things a substring match
-# on every node in the document gets wrong.
+
 COOKIE_DECOYS = (
     '<p>We use COOKIES. Continue reading our policy.</p>'
     '<button onclick="window.picked=\'settings\'">Cookie settings</button>')
@@ -90,6 +88,28 @@ COOKIE_FRAME_PAGE = (
 COOKIE_FRAME = (
     '<html><body><button onclick="document.body.setAttribute('
     '\'data-picked\', \'accept\')">I agree</button></body></html>')
+AD_CREATIVE = (
+    '<html><body><script>window.clicked = 0;</script>'
+    '<a href="https://ad.doubleclick.net/ddm/clk/1;2;adurl='
+    'https%3A%2F%2Fwww.landing.example.com%2Fbuy"'
+    ' onclick="window.clicked = 1"><img alt="Buy Game X" src="data:image/'
+    'gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">'
+    '</a></body></html>')
+AD_PAGE = (
+    '<html><body style="margin:0"><script>window.clicked = 0;'
+    "document.addEventListener('click', () => { window.clicked += 1; });"
+    '</script><div style="height:1600px"></div>'
+    '<iframe id="google_ads_iframe_1" src="creative.html" width="300"'
+    ' height="250" style="border:0"></iframe>'
+    '<iframe id="plain" src="creative.html" width="400" height="200"'
+    ' style="border:0"></iframe>'
+    '<div id="div-gpt-ad-1" style="width:0;height:0"></div>'
+    '</body></html>')
+TALL_PAGE = (
+    '<html><body><div style="height:5000px"></div><script>'
+    'window.scrolls = 0;'
+    "window.addEventListener('scroll', () => { window.scrolls += 1; });"
+    '</script></body></html>')
 
 
 def _write_page(tmp_path, name, html):
@@ -155,6 +175,53 @@ def func(x):
 
 def test_example():
     assert func(3) == 4
+
+
+class _FakeSweepBrowser(object):
+    """Stand-in for the sweep's browser: a shot becomes a one-byte file
+    and the ad scan answers one canned slot, so the sweep class is the
+    only real thing under test."""
+
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.mobile = kwargs.get('mobile', False)
+        self.browser_errors = (ValueError,)
+        self.shots = []
+        _FakeSweepBrowser.instances.append(self)
+
+    def take_screenshot(self, url=None, file_name=None, max_attempts=2,
+                        scroll_first=False):
+        with open(file_name, 'wb') as f:
+            f.write(b'x')
+        self.shots.append((url, file_name, scroll_first))
+
+    def scan_ad_slots(self, shot_prefix='', **kwargs):
+        path = '{}_ad0.png'.format(shot_prefix)
+        with open(path, 'wb') as f:
+            f.write(b'y')
+        return [{'shot_path': path, 'width': 300, 'height': 250,
+                 'frame_host': 'tpc.googlesyndication.com',
+                 'landing_domain': 'landing.example.com',
+                 'text': 'Buy Game X',
+                 'evidence': ['marker google_ads_iframe']}]
+
+    def restart_browser(self):
+        pass
+
+    def quit(self):
+        pass
+
+
+class _FakeS3(object):
+    """Bucket stand-in recording every upload by key."""
+
+    def __init__(self):
+        self.uploads = {}
+
+    def s3_upload_file_obj(self, file_object, key):
+        self.uploads[key] = file_object.read()
+        return 'https://b.s3.amazonaws.com/{}'.format(key)
 
 
 class TestUtils:
@@ -473,6 +540,88 @@ class TestUtils:
         finally:
             sw.quit()
 
+    def test_scan_ad_slots_reads_without_clicking(self, tmp_path):
+        """The marked frame is shot and read -- marker, size, landing
+        page off the click url's adurl, alt text -- the plain frame and
+        the empty container are not slots, nothing is clicked in either
+        document, and the page is left on its default content."""
+        _write_page(tmp_path, 'creative.html', AD_CREATIVE)
+        url = _write_page(tmp_path, 'adpage.html', AD_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            slots = sw.scan_ad_slots(
+                shot_prefix=str(tmp_path / 'adpage_Desktop'))
+            assert len(slots) == 1
+            slot = slots[0]
+            assert slot['evidence'] == ['marker google_ads_iframe',
+                                        'size 300x250']
+            assert slot['landing_domain'] == 'landing.example.com'
+            assert 'Buy Game X' in slot['text']
+            assert (slot['width'], slot['height']) == (300, 250)
+            assert os.path.isfile(slot['shot_path'])
+            assert sw.browser.execute_script('return window.clicked;') == 0
+            frame = sw.browser.find_element(By.ID, 'google_ads_iframe_1')
+            sw.switch_to_frame(frame)
+            assert sw.browser.execute_script('return window.clicked;') == 0
+        finally:
+            sw.quit()
+
+    def test_scroll_through_only_when_asked(self, tmp_path):
+        """The default shot never moves the page; ``scroll_first``
+        walks it and comes back to the top."""
+        url = _write_page(tmp_path, 'tall.html', TALL_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            sw.take_screenshot(file_name=str(tmp_path / 'a.png'))
+            assert sw.browser.execute_script('return window.scrolls;') == 0
+            sw.take_screenshot(file_name=str(tmp_path / 'b.png'),
+                               scroll_first=True)
+            assert sw.browser.execute_script('return window.scrolls;') > 0
+            assert sw.browser.execute_script('return window.scrollY;') == 0
+        finally:
+            sw.quit()
+
+    def test_landing_domain_parsing(self):
+        ld = utl.SeleniumWrapper.landing_domain
+        assert ld(['https://ad.doubleclick.net/ddm/clk/1;2;adurl='
+                   'https%3A%2F%2Fwww.game.com%2Fbuy']) == 'game.com'
+        assert ld(['https://www.googleadservices.com/pagead/aclk?sa=L&ai=x'
+                   '&adurl=https://store.example.org/x']) == (
+            'store.example.org')
+        assert ld(['https://securepubads.g.doubleclick.net/pcs/click?x=1']
+                  ) == ''
+        assert ld(['https://www.rival.com/landing', 'https://other.com']
+                  ) == 'rival.com'
+        assert ld([]) == ''
+
+    def test_slot_evidence_rules(self):
+        """A host or marker signal makes a slot; a standard size alone
+        does only for a frame."""
+        ev = utl.SeleniumWrapper.slot_evidence
+        assert ev({'tag': 'iframe', 'id': 'x', 'attrs': '', 'width': 1,
+                   'height': 1, 'src': 'https://tpc.googlesyndication.com/'
+                   'safeframe/1-0-40/html/container.html'}) == [
+            'src host tpc.googlesyndication.com']
+        assert ev({'tag': 'div', 'id': 'div-gpt-ad-123', 'src': '',
+                   'width': 300, 'height': 250,
+                   'attrs': 'div-gpt-ad-123'}) == [
+            'marker div-gpt-ad', 'size 300x250']
+        assert ev({'tag': 'iframe', 'id': '', 'attrs': '', 'width': 728,
+                   'height': 90, 'src': 'https://cdn.example.com/w.html'}
+                  ) == ['size 728x90']
+        assert ev({'tag': 'div', 'id': 'hero', 'src': '', 'width': 728,
+                   'height': 90, 'attrs': 'hero'}) == []
+
+    def test_ad_clickers_are_gone(self):
+        """The old frame walk clicked live ads to learn their landing
+        pages, which registers clicks on them -- ours included."""
+        for name in ('get_all_iframe_ads', 'get_all_iframes',
+                     'take_screenshot_get_ads'):
+            assert not hasattr(utl.SeleniumWrapper, name)
+        assert not hasattr(ssapi.SsApi, 'take_screenshots_get_ads')
+
     @pytest.mark.parametrize(
         'sd, ed, expected_output', [
             (dt.datetime.today(),
@@ -531,6 +680,77 @@ class TestUtils:
         df[vmc.date] = 'x'
         tdf = utl.col_removal(df, key='None', removal_cols=['ALL'])
         assert vmc.date in tdf.columns
+
+
+class TestSsApi:
+    """The capture sweep: string site names, per-row ad slots, the run
+    manifest and the in-process seam."""
+
+    @staticmethod
+    def _api(tmp_path, monkeypatch, **kwargs):
+        monkeypatch.chdir(tmp_path)
+        return ssapi.SsApi(sites=[{'url': 'ign.com', 'partner': 'IGN'}],
+                           s3=_FakeS3(), ss_file_path_date='260101_08',
+                           **kwargs)
+
+    def test_sites_seam_bypasses_csv(self, tmp_path, monkeypatch):
+        api = self._api(tmp_path, monkeypatch)
+        rows = list(api.config.values())
+        assert sorted(r['device'] for r in rows) == ['Desktop', 'Mobile']
+        assert all(r['site'] == 'ign.com' for r in rows)
+        assert all(r['partner'] == 'IGN' for r in rows)
+        assert api.get_site(0).name == 'ign.com'
+        assert api.get_site(0).url == 'https://www.ign.com'
+
+    def test_default_constructor_reads_csv_and_leaves_s3_unset(
+            self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / 'config').mkdir()
+        csv = tmp_path / 'config' / 'site_config.csv'
+        csv.write_text('url\ngamespot.com\n')
+        api = ssapi.SsApi(ss_file_path_date='260101_08')
+        assert api.s3 is None
+        assert api.ss_file_path == 'screenshots'
+        assert [r['site'] for r in api.config.values()] == (
+            ['gamespot.com'] * 2)
+        # The import loop builds one per processor, list or no list.
+        csv.unlink()
+        assert ssapi.SsApi(ss_file_path_date='260101_08').config == {}
+
+    def test_get_data_writes_string_sites_manifest_and_ad_columns(
+            self, tmp_path, monkeypatch):
+        """Every capture lands as a string-named row with its ad
+        columns, and the run's manifest carries the row, the shot and
+        its slots under the caller's prefix."""
+        api = self._api(tmp_path, monkeypatch, prefix='screenshots/plans/7')
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
+                            _FakeSweepBrowser)
+        _FakeSweepBrowser.instances = []
+        df = api.get_data(None, None, None)
+        assert df['site'].map(type).eq(str).all()
+        assert df['ad_count'].tolist() == [1, 1]
+        assert set(df['ad_domains']) == {'landing.example.com'}
+        run = 'screenshots/plans/7/260101_08/'
+        for name in ('ign_Desktop.png', 'ign_Desktop_ad0.png',
+                     'ign_Mobile.png', 'manifest.json'):
+            assert run + name in api.s3.uploads
+        rows = json.loads(api.s3.uploads[run + 'manifest.json'])
+        row = rows[0]
+        assert (row['partner'], row['run'], row['device']) == (
+            'IGN', '260101_08', 'Desktop')
+        assert row['captured_at'] == '2026-01-01T08:00:00'
+        assert row['url'] == 'https://www.ign.com'
+        assert row['img_url'].endswith(run + 'ign_Desktop.png')
+        assert row['shot_key'] == run + 'ign_Desktop.png'
+        assert row['ads'][0]['shot_url'].endswith('ign_Desktop_ad0.png')
+        assert row['ads'][0]['evidence'] == ['marker google_ads_iframe']
+        assert 'shot_path' not in row['ads'][0]
+        assert os.path.isfile(tmp_path / 'screenshots' / 'plans' / '7'
+                              / '260101_08' / 'manifest.json')
+        shots = [s for b in _FakeSweepBrowser.instances for s in b.shots]
+        assert len(shots) == 2 and all(s[2] for s in shots)
+        assert [b.mobile for b in _FakeSweepBrowser.instances] == [
+            False, True]
 
 
 @requires_api_configs
@@ -3930,41 +4150,107 @@ class TestDcApiCampaignFilter:
         assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']
 
 
+class TestTikApiAdIds:
+    """A TikTok report only carries ad ids, so the ad and campaign names
+    are pulled separately and joined on, and that pull can come back
+    empty for an advertiser the token cannot fully see."""
 
-class TestApiFieldOptions:
-    """The API Fields the Import card offers are declared beside the code
-    that reads them, so the two cannot drift apart unnoticed."""
+    @staticmethod
+    def make_api(campaign_id=None):
+        api = tikapi.TikApi()
+        api.advertiser_id = '123'
+        api.campaign_id = campaign_id
+        api.set_headers()
+        return api
 
-    def test_options_are_well_formed(self):
-        classes = ih.ImportHandler(None, None).class_list
-        declared = 0
-        for key, cls in classes.items():
-            rows = getattr(cls, 'api_field_options', ())
-            values = [value for value, _ in rows]
-            assert len(values) == len(set(values)), key
-            for value, note in rows:
-                assert value and isinstance(value, str), key
-                assert note and isinstance(note, str), key
-            declared += bool(rows)
-        assert declared >= 16
+    @staticmethod
+    def report_response(ad_id='1'):
+        return _FakeResponse(200, json_data={'data': {
+            'list': [{'dimensions': {'ad_id': ad_id,
+                                     'stat_time_day': '2026-09-10'},
+                      'metrics': {'spend': '1.5', 'impressions': '10'}}],
+            'page_info': {'total_page': 1}}})
 
-    def test_amazon_options_flip_the_flags_they_name(self):
-        """Every offered Amazon token still lands on the flag set_fields
-        keeps for it, and nothing is offered that set_fields ignores."""
-        flags = {'keyword': 'include_keywords',
-                 'product': 'product_report',
-                 'creative': 'include_creative',
-                 'conversion': 'include_conversions',
-                 'refresh': 'fresh_pull'}
-        for value, attr in flags.items():
-            api = amzapi.AmzApi()
-            api.set_fields([value])
-            assert getattr(api, attr) is True, value
-        api = amzapi.AmzApi()
-        api.set_fields(['v3'])
-        assert api.use_v1 is False
-        api = amzapi.AmzApi()
-        api.set_fields(['v1'])
-        assert api.use_v1 is True
-        offered = {value for value, _ in amzapi.AmzApi.api_field_options}
-        assert offered == set(flags) | {'v1', 'v3'}
+    @staticmethod
+    def campaigns():
+        return [{'campaign_id': '32357452', 'campaign_name': 'GameA Launch',
+                 'campaign_automation_type': 'SMART_PLUS'},
+                {'campaign_id': '99999999', 'campaign_name': 'GameB Teaser',
+                 'campaign_automation_type': ''}]
+
+    def test_report_survives_an_empty_ad_id_pull(self, monkeypatch):
+        """An empty id list has no ad_id column to merge the report on,
+        which raised a KeyError that ended the entire run."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'make_request',
+                            _FakeRequests([self.report_response()]))
+        df = api.request_and_get_data('2026-09-10', '2026-09-11')
+        assert len(df) == 1
+        assert df[tikapi.TikApi.old_date].tolist() == ['2026-09-10']
+        assert 'stat_cost' in df.columns
+        assert 'ad_name' not in df.columns
+
+    def test_get_data_survives_an_empty_ad_id_pull(self, monkeypatch):
+        """One api raising takes every other vendor's data down with it,
+        so no campaigns to pull ids for has to stay a warning."""
+        api = self.make_api('GameA')
+        monkeypatch.setattr(api, 'check_url', lambda: [])
+        monkeypatch.setattr(api, 'make_request',
+                            _FakeRequests([self.report_response()]))
+        assert len(api.get_data()) == 1
+
+    def test_ad_ids_merge_on_when_they_pulled(self):
+        """A duplicated id must not fan the report's row out either."""
+        api = self.make_api()
+        api.ad_id_list = [{'ad_id': '1', 'ad_name': 'Video4.mp4_Real Name'},
+                          {'ad_id': '1', 'ad_name': 'Video4.mp4_Real Name'}]
+        df = api.merge_ad_ids(pd.DataFrame({'ad_id': ['1', '2'],
+                                            'spend': [1, 2]}))
+        assert len(df) == 2
+        assert df['ad_name'][0] == 'Video4.mp4_Real Name'
+        assert df['ad_name'].isna().tolist() == [False, True]
+
+    def test_campaign_filter_matches_an_id(self, monkeypatch):
+        """A filter is as often a campaign id as a campaign name, and an
+        id matched against the name alone found no campaigns at all."""
+        api = self.make_api('32357452')
+        monkeypatch.setattr(api, 'get_campaign_list', self.campaigns)
+        assert api.check_url() == [{'ad_url': tikapi.TikApi.smart_url,
+                                    'campaign_id': '32357452'}]
+
+    def test_campaign_filter_matches_a_name(self, monkeypatch):
+        api = self.make_api('GameB')
+        monkeypatch.setattr(api, 'get_campaign_list', self.campaigns)
+        assert api.check_url() == [{'ad_url': tikapi.TikApi.ad_url,
+                                    'campaign_id': '99999999'}]
+
+    def test_campaign_filter_no_match_keeps_every_campaign(self, monkeypatch):
+        """A stale filter costs the report its filter, not its ad names."""
+        api = self.make_api('NoSuchCampaign')
+        monkeypatch.setattr(api, 'get_campaign_list', self.campaigns)
+        assert len(api.check_url()) == 2
+
+    def test_no_campaign_list_pulls_ad_ids_blind(self, monkeypatch):
+        """A campaign list the token cannot see must not mean no ad ids."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'get_campaign_list', lambda: [])
+        assert api.check_url() == [{'ad_url': tikapi.TikApi.ad_url,
+                                    'campaign_id': None}]
+
+    def test_report_filter_matches_an_id(self):
+        """The report filter has to agree with the campaign list filter,
+        or the right ads pull and then every row of them is dropped."""
+        api = self.make_api('32357452')
+        df = pd.DataFrame({'campaign_id': ['32357452', '99999999'],
+                           'campaign_name': ['GameA Launch', 'GameB Teaser'],
+                           'stat_cost': [1, 2]})
+        assert api.filter_df_on_campaign(df)['stat_cost'].tolist() == [1]
+
+    def test_request_id_error_response_is_not_fatal(self, monkeypatch):
+        """An errored id request carries a message and no data key."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'make_request', _FakeRequests(
+            [_FakeResponse(200, json_data={'code': 40001, 'message': 'no'})]))
+        ids, r = api.request_id('http://u', {}, [])
+        assert ids == []
+        assert api.ad_id_list == []

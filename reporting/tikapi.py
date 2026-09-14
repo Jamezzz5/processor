@@ -69,6 +69,9 @@ class TikApi(object):
                        'campaign_automation_type']
     buying_type_groups = [['AUCTION', 'RESERVATION_RF'],
                           ['RESERVATION_TOP_VIEW']]
+    ad_id_col = 'ad_id'
+    campaign_col = 'campaign_name'
+    campaign_id_col = 'campaign_id'
 
     def __init__(self):
         self.config = None
@@ -76,6 +79,8 @@ class TikApi(object):
         self.access_token = None
         self.advertiser_id = None
         self.campaign_id = None
+        self.campaign_ids = []
+        self.campaign_name_filter = []
         self.ad_id_list = []
         self.campaign_id_list = []
         self.config_list = None
@@ -244,10 +249,13 @@ class TikApi(object):
 
         :returns: list of ids and request response
         """
-        key = 'ad_id' if ad_ids else 'campaign_id'
+        key = self.ad_id_col if ad_ids else self.campaign_id_col
         r = self.make_request(url, method='GET', headers=self.headers,
                               params=params)
-        response_data = r.json()['data']
+        if not r:
+            logging.warning('No response getting {}s.'.format(key))
+            return ids, r
+        response_data = r.json().get('data', {})
         if 'list' not in response_data:
             logging.warning(
                 'No list in response please make sure accounts '
@@ -307,11 +315,14 @@ class TikApi(object):
             self.params['page'] = x
             r = self.make_request(url=url, method='GET', headers=self.headers,
                                   params=self.params)
+            if not r:
+                logging.warning('No response for page #{}.'.format(x))
+                break
             if ('data' not in r.json() or 'list' not in r.json()['data'] or
                     not r.json()['data']['list']):
                 logging.warning('Data not in response as follows:\n'
                                 '{}'.format(r.json()))
-                return self.df
+                break
             df = pd.DataFrame(r.json()['data']['list'])
             df = self.unpack_nested_dataframe(df)
             self.df = pd.concat([self.df, df], ignore_index=True)
@@ -320,9 +331,7 @@ class TikApi(object):
                 break
             logging.info('Data retrieved {} pages remaining'
                          ''.format(page_rem - x))
-        id_df = (pd.DataFrame(self.ad_id_list).drop_duplicates(subset="ad_id"))
-        self.df = self.df.merge(pd.DataFrame(id_df), on='ad_id',
-                                how='left')
+        self.df = self.merge_ad_ids(self.df)
         self.df = self.clean_ad_name(self.df)
         cols = self.metrics.copy()
         cols[self.new_date] = self.old_date
@@ -330,18 +339,47 @@ class TikApi(object):
         logging.info('Data successfully pulled.  Returning df.')
         return self.df
 
-    def filter_df_on_campaign(self, df):
+    def merge_ad_ids(self, df):
         """
-        Filters dataframe on campaign name column based on campaign_id
-        in config file
+        Joins the pulled ad ids on to the report for their names.
+
+        :param df: the downloaded report
+        :returns: the report with the ad and campaign names joined on
+        """
+        id_df = pd.DataFrame(self.ad_id_list)
+        has_ids = [self.ad_id_col in x.columns for x in (df, id_df)]
+        if not all(has_ids):
+            logging.warning(
+                'No ad ids to merge on, returning the report without ad '
+                'names.  Ads pulled: {}.  Report rows: {}.'.format(
+                    len(self.ad_id_list), len(df)))
+            return df
+        id_df = id_df.drop_duplicates(subset=self.ad_id_col)
+        return df.merge(id_df, on=self.ad_id_col, how='left')
+
+    def parse_campaign_filter(self):
+        """
+        Splits the campaign filter into ids to match and values to match.
+
+        :returns: the filter values to match campaigns against
+        """
+        self.campaign_ids, self.campaign_name_filter = (
+            utl.parse_campaign_filter(self.campaign_id))
+        return self.campaign_name_filter
+
+    def filter_df_on_campaign(self, df, keep_on_no_match=True):
+        """
+        Filters a dataframe down to the campaigns the filter names.
 
         :param df: dataframe to filter
+        :param keep_on_no_match: whether a filter that matches nothing keeps
+            the unfiltered df
         :returns: filtered dataframe
         """
-        campaign_col = 'campaign_name'
-        if self.campaign_id:
-            df = utl.filter_df_on_col(df, campaign_col, self.campaign_id)
-        return df
+        self.parse_campaign_filter()
+        return utl.filter_df_on_campaign(
+            df, self.campaign_name_filter, self.campaign_col,
+            self.campaign_id_col, keep_on_no_match=keep_on_no_match)
 
     def reset_params(self):
         self.df = pd.DataFrame()
@@ -423,16 +461,18 @@ class TikApi(object):
         Pairs every campaign with the ad endpoint its ads live on.
 
         Smart+ campaigns expose their ads on their own endpoint, so the
-        campaign list is walked first rather than pulling ad ids blind.
+        campaign list is walked first rather than pulling ad ids blind.  An
+        advertiser whose campaign list does not come back is pulled blind
+        anyway, since no ad ids at all leaves the report with no ad names.
 
         :returns: list of dicts of ad url and campaign id
         """
         campaign_list = self.get_campaign_list()
-        if self.campaign_id:
-            campaign_list = [
-                c for c in campaign_list
-                if self.campaign_id in c.get('campaign_name', '')
-            ]
+        if not campaign_list:
+            logging.warning('No campaigns returned, pulling every ad id of '
+                            'the advertiser instead.')
+            return [{'ad_url': self.ad_url, 'campaign_id': None}]
+        campaign_list = self.filter_campaign_list(campaign_list)
         urls = []
         for campaign in campaign_list:
             ad_url = self.smart_url if 'SMART' in campaign.get(
@@ -442,6 +482,37 @@ class TikApi(object):
         logging.info('Found {} campaigns to pull ad ids for.'.format(
             len(urls)))
         return urls
+
+    def filter_campaign_list(self, campaign_list):
+        """
+        Narrows the campaign list to the campaigns the filter names.
+
+        A value is matched against the campaign id as well as the name,
+        since a filter is as often one as the other.  A filter that matches
+        nothing keeps every campaign, so a stale value costs the report its
+        campaign filter rather than every ad name in it.
+
+        :param campaign_list: every campaign of the advertiser
+        :returns: the campaigns to pull ad ids for
+        """
+        values = self.parse_campaign_filter()
+        if not values:
+            return campaign_list
+        campaigns = [
+            c for c in campaign_list
+            if any(v in str(c.get(self.campaign_col, '')) or
+                   v == str(c.get(self.campaign_id_col, '')) for v in values)]
+        if not campaigns:
+            logging.warning(
+                'Campaign filter {} did not match any of the {} campaigns '
+                'returned, pulling ad ids for all of them.  Campaigns: '
+                '{}'.format(values, len(campaign_list),
+                            sorted(str(c.get(self.campaign_col, ''))
+                                   for c in campaign_list)))
+            return campaign_list
+        logging.info('Filtered to {} of {} campaigns on the campaign '
+                     'filter.'.format(len(campaigns), len(campaign_list)))
+        return campaigns
 
     def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
         metrics = 'spend'
@@ -480,7 +551,7 @@ class TikApi(object):
             results.append(row)
             return results
         df = pd.DataFrame(data=self.campaign_id_list)
-        df = self.filter_df_on_campaign(df)
+        df = self.filter_df_on_campaign(df, keep_on_no_match=False)
         if 'campaign_name' not in df.columns:
             msg = ' '.join([failure_msg, 'No Campaigns Under Advertiser. '
                                          'Check Active and Permissions.'])

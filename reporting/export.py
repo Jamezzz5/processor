@@ -23,6 +23,9 @@ log = logging.getLogger()
 config_path = utl.config_path
 CONNECT_ATTEMPTS = 5
 CONNECT_TIMEOUT = 10
+REFUSED_MARKS = ('Connection refused', 'connection refused',
+                 'could not translate host name', 'does not exist',
+                 'password authentication failed')
 
 
 class ExportHandler(object):
@@ -124,9 +127,19 @@ class ExportHandler(object):
 
     @staticmethod
     def update_tableau(db, view_name):
+        """Publish a view to Tableau, without ending the run if it fails.
+
+        :param db: database holding the view
+        :param view_name: view to publish as extract and workbook
+        :returns: True when the workbook published
+        """
         tb = tbapi.TabApi()
-        tb.create_publish_workbook_hyper(
+        published = tb.create_publish_workbook_hyper(
             db, table_name=view_name, new_wb_name=view_name)
+        if not published:
+            logging.warning(
+                'Tableau was not updated for view: {}'.format(view_name))
+        return published
 
     def export_ftp(self, exp_key):
         ftp_class = ftp.FTP()
@@ -415,9 +428,10 @@ class DB(object):
                 break
             except (AssertionError, sqa.exc.OperationalError,
                     psycopg2.OperationalError) as e:
-                if attempt == CONNECT_ATTEMPTS:
+                refused = any(mark in str(e) for mark in REFUSED_MARKS)
+                if attempt == CONNECT_ATTEMPTS or (refused and attempt > 1):
                     raise
-                wait = 2 ** attempt
+                wait = 1 if refused else 2 ** attempt
                 logging.warning(
                     'Could not connect ({}).  Attempt {} of {}, '
                     'retrying in {}s.'.format(
