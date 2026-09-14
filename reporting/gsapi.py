@@ -354,32 +354,23 @@ class GsApi(object):
         response = self.client.post(url=url, json=body, headers=headers)
         return response
 
-    # --- Report-deck builders (additive; used by app report_export) ------
-    # 16:9 page geometry, EMU (914400 EMU/inch).
     PAGE_W_EMU = 9144000
     PAGE_H_EMU = 5143500
     MARGIN_EMU = 457200
-    # Deck typography — mirrors the app export brand kit
-    # (app/features/exports.py BRAND_FONT / BRAND_NAVY / BRAND_MUTED);
-    # duplicated here because the submodule cannot import the app.
     DECK_FONT = 'Segoe UI'
     DECK_INK = {'red': 0.173, 'green': 0.243, 'blue': 0.314}
     DECK_MUTED = {'red': 0.533, 'green': 0.533, 'blue': 0.533}
-    # Accent (3B82F6 = app BRAND_ACCENT) and tile-card fill (F4F7FA =
-    # BRAND_ZEBRA). Defaults for the native tiles / scorecard / dividers; the
-    # app passes a per-client ``brand`` dict of rgbColor values to override.
     DECK_ACCENT = {'red': 0.231, 'green': 0.510, 'blue': 0.965}
     DECK_CARD = {'red': 0.957, 'green': 0.969, 'blue': 0.980}
     DECK_WHITE = {'red': 1.0, 'green': 1.0, 'blue': 1.0}
-    # Hairline for image frames (E0E7EE — the app BRAND_RULE).
     DECK_RULE = {'red': 0.878, 'green': 0.906, 'blue': 0.933}
-    # Muted text that stays legible on the dark ink cover/dividers.
     DECK_MUTED_LIGHT = {'red': 0.722, 'green': 0.780, 'blue': 0.839}
-    # Comparator tones (15803D / DC2626 — match the app success/danger).
     DECK_GOOD = {'red': 0.082, 'green': 0.502, 'blue': 0.239}
     DECK_BAD = {'red': 0.863, 'green': 0.149, 'blue': 0.149}
-    # Where content starts on a chrome'd slide (below title + accent rule).
     CONTENT_TOP_EMU = 980000
+    CAPTION_H_EMU = 340000
+    CAPTION_GAP_EMU = 80000
+    CAPTION_FOOT_EMU = 380000
 
     def _brand_colors(self, brand):
         """Resolve a deck color set from an optional ``brand`` dict (rgbColor
@@ -580,21 +571,21 @@ class GsApi(object):
     def add_chart_slide(self, presentation_id, slide_id, title=None,
                         image_url=None, caption=None, notes=None,
                         img_w=None, img_h=None, brand=None, footer=None,
-                        page=None):
+                        page=None, caption_h=CAPTION_H_EMU):
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        caption_y = self.PAGE_H_EMU - self.CAPTION_FOOT_EMU - caption_h
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page)
         if image_url:
             box_y = self.CONTENT_TOP_EMU if title else 300000
-            box_h = self.PAGE_H_EMU - box_y - (800000 if caption else 420000)
+            box_h = (caption_y - box_y - self.CAPTION_GAP_EMU if caption
+                     else self.PAGE_H_EMU - box_y - 420000)
             x, y, w, h = self._fit_box(img_w, img_h, cx, box_y, cw, box_h)
             reqs.append({'createImage': {
                 'objectId': slide_id + 'i', 'url': image_url,
                 'elementProperties': self._elem_props(slide_id, w, h, x, y)}})
-            # Hairline frame so a white-background chart PNG doesn't float
-            # edgeless on the white slide.
             reqs.append({'updateImageProperties': {
                 'objectId': slide_id + 'i',
                 'imageProperties': {'outline': {
@@ -604,9 +595,9 @@ class GsApi(object):
                 'fields': 'outline'}})
         if caption:
             reqs += self._text_box_reqs(
-                slide_id, slide_id + 'c', caption, cx,
-                self.PAGE_H_EMU - 720000, cw, 340000, font_pt=11,
-                align='START', color=colors['muted'])
+                slide_id, slide_id + 'c', caption, cx, caption_y, cw,
+                caption_h, font_pt=11, align='START',
+                color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         if notes:
             self.add_speaker_notes(presentation_id, slide_id, notes)

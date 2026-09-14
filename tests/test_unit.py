@@ -4148,3 +4148,109 @@ class TestDcApiCampaignFilter:
             df, api.campaign_name_filter, dcapi.DcApi.campaign_col,
             dcapi.DcApi.campaign_id_col)
         assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']
+
+
+class TestTikApiAdIds:
+    """A TikTok report only carries ad ids, so the ad and campaign names
+    are pulled separately and joined on, and that pull can come back
+    empty for an advertiser the token cannot fully see."""
+
+    @staticmethod
+    def make_api(campaign_id=None):
+        api = tikapi.TikApi()
+        api.advertiser_id = '123'
+        api.campaign_id = campaign_id
+        api.set_headers()
+        return api
+
+    @staticmethod
+    def report_response(ad_id='1'):
+        return _FakeResponse(200, json_data={'data': {
+            'list': [{'dimensions': {'ad_id': ad_id,
+                                     'stat_time_day': '2026-09-10'},
+                      'metrics': {'spend': '1.5', 'impressions': '10'}}],
+            'page_info': {'total_page': 1}}})
+
+    @staticmethod
+    def campaigns():
+        return [{'campaign_id': '32357452', 'campaign_name': 'GameA Launch',
+                 'campaign_automation_type': 'SMART_PLUS'},
+                {'campaign_id': '99999999', 'campaign_name': 'GameB Teaser',
+                 'campaign_automation_type': ''}]
+
+    def test_report_survives_an_empty_ad_id_pull(self, monkeypatch):
+        """An empty id list has no ad_id column to merge the report on,
+        which raised a KeyError that ended the entire run."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'make_request',
+                            _FakeRequests([self.report_response()]))
+        df = api.request_and_get_data('2026-09-10', '2026-09-11')
+        assert len(df) == 1
+        assert df[tikapi.TikApi.old_date].tolist() == ['2026-09-10']
+        assert 'stat_cost' in df.columns
+        assert 'ad_name' not in df.columns
+
+    def test_get_data_survives_an_empty_ad_id_pull(self, monkeypatch):
+        """One api raising takes every other vendor's data down with it,
+        so no campaigns to pull ids for has to stay a warning."""
+        api = self.make_api('GameA')
+        monkeypatch.setattr(api, 'check_url', lambda: [])
+        monkeypatch.setattr(api, 'make_request',
+                            _FakeRequests([self.report_response()]))
+        assert len(api.get_data()) == 1
+
+    def test_ad_ids_merge_on_when_they_pulled(self):
+        """A duplicated id must not fan the report's row out either."""
+        api = self.make_api()
+        api.ad_id_list = [{'ad_id': '1', 'ad_name': 'Video4.mp4_Real Name'},
+                          {'ad_id': '1', 'ad_name': 'Video4.mp4_Real Name'}]
+        df = api.merge_ad_ids(pd.DataFrame({'ad_id': ['1', '2'],
+                                            'spend': [1, 2]}))
+        assert len(df) == 2
+        assert df['ad_name'][0] == 'Video4.mp4_Real Name'
+        assert df['ad_name'].isna().tolist() == [False, True]
+
+    def test_campaign_filter_matches_an_id(self, monkeypatch):
+        """A filter is as often a campaign id as a campaign name, and an
+        id matched against the name alone found no campaigns at all."""
+        api = self.make_api('32357452')
+        monkeypatch.setattr(api, 'get_campaign_list', self.campaigns)
+        assert api.check_url() == [{'ad_url': tikapi.TikApi.smart_url,
+                                    'campaign_id': '32357452'}]
+
+    def test_campaign_filter_matches_a_name(self, monkeypatch):
+        api = self.make_api('GameB')
+        monkeypatch.setattr(api, 'get_campaign_list', self.campaigns)
+        assert api.check_url() == [{'ad_url': tikapi.TikApi.ad_url,
+                                    'campaign_id': '99999999'}]
+
+    def test_campaign_filter_no_match_keeps_every_campaign(self, monkeypatch):
+        """A stale filter costs the report its filter, not its ad names."""
+        api = self.make_api('NoSuchCampaign')
+        monkeypatch.setattr(api, 'get_campaign_list', self.campaigns)
+        assert len(api.check_url()) == 2
+
+    def test_no_campaign_list_pulls_ad_ids_blind(self, monkeypatch):
+        """A campaign list the token cannot see must not mean no ad ids."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'get_campaign_list', lambda: [])
+        assert api.check_url() == [{'ad_url': tikapi.TikApi.ad_url,
+                                    'campaign_id': None}]
+
+    def test_report_filter_matches_an_id(self):
+        """The report filter has to agree with the campaign list filter,
+        or the right ads pull and then every row of them is dropped."""
+        api = self.make_api('32357452')
+        df = pd.DataFrame({'campaign_id': ['32357452', '99999999'],
+                           'campaign_name': ['GameA Launch', 'GameB Teaser'],
+                           'stat_cost': [1, 2]})
+        assert api.filter_df_on_campaign(df)['stat_cost'].tolist() == [1]
+
+    def test_request_id_error_response_is_not_fatal(self, monkeypatch):
+        """An errored id request carries a message and no data key."""
+        api = self.make_api()
+        monkeypatch.setattr(api, 'make_request', _FakeRequests(
+            [_FakeResponse(200, json_data={'code': 40001, 'message': 'no'})]))
+        ids, r = api.request_id('http://u', {}, [])
+        assert ids == []
+        assert api.ad_id_list == []
