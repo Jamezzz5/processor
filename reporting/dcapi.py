@@ -46,6 +46,10 @@ class DcApi(object):
         'uniqueReachAverageImpressionFrequencyCoviewed':
             'Unique Reach: Average Impression Frequency (Co-Viewed)',
         'uniqueReachImpressionReach': 'Unique Reach: Impression Reach',
+        'uniqueReachTotalReach': 'Unique Reach: Total Reach',
+        'uniqueReachClickReach': 'Unique Reach: Click Reach',
+        'uniqueReachAverageViewableImpressionFrequency':
+            'Unique Reach: Average Viewable Impression Frequency',
         'uniqueReachImpressionReachCoviewed':
             'Unique Reach: Impression Reach (Co-Viewed)',
         'uniqueReachIncrementalClickReach':
@@ -241,7 +245,9 @@ class DcApi(object):
                         (True, False, False, False),
                         (True, True, False, False),
                         (True, True, True, False),
-                        (True, True, False, True)]
+                        (True, True, False, True),
+                        (True, False, True, False),
+                        (True, False, False, True)]
         if self.original_report_id:
             self.report_ids.append(self.original_report_id)
             report_types = []
@@ -526,9 +532,10 @@ class DcApi(object):
         if no_date:
             dimensions = [x for x in dimensions if 'date' not in x]
         if campaign_report:
-            dimensions = [x for x in dimensions if x == 'campaign']
+            dimensions = [x for x in dimensions if x in ('campaign', 'date')]
         if vendor_report:
-            dimensions = [x for x in dimensions if x in ['campaign', 'site']]
+            dimensions = [x for x in dimensions
+                          if x in ('campaign', 'site', 'date')]
         criteria = {
             'dateRange': self.date_range,
             'dimensions': [{'kind': 'dfareporting#sortedDimension', 'name': x}
@@ -573,6 +580,10 @@ class DcApi(object):
             if col_str:
                 for k, v in self.reach_metrics.items():
                     rename_dict[v] = '{}{}'.format(v, col_str)
+            for boundary in ('startDate', 'endDate'):
+                if boundary in (self.date_range or {}):
+                    tdf[f'CM360 {boundary}{col_str}'] = (
+                        self.date_range[boundary])
         tdf.rename(columns=rename_dict, inplace=True)
         return tdf
 
