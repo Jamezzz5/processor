@@ -14,6 +14,8 @@ base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 
 
 class DbApi(object):
+    api_field_options = (
+        ('YOUTUBE', 'YouTube groupings and metrics'),)
     campaign_groups = ['FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME']
     campaign_col = 'Campaign'
     campaign_id_col = 'Campaign ID'

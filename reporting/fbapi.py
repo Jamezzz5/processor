@@ -78,6 +78,21 @@ config_path = utl.config_path
 
 
 class FbApi(object):
+    api_field_options = (
+        ('Actions', 'Add action metrics'),
+        ('Age', 'Break down by age'),
+        ('Gender', 'Break down by gender'),
+        ('Placement', 'Break down by placement'),
+        ('Publisher', 'Break down by publisher platform'),
+        ('Country', 'Break down by country'),
+        ('Impression Device', 'Break down by impression device'),
+        ('Device', 'Break down by device'),
+        ('Product', 'Break down by product'),
+        ('Action Device', 'Break actions down by device'),
+        ('Total', 'One row for the whole range, not one per day'),
+        ('Adset', 'Ad set level'),
+        ('Campaign', 'Campaign level'),
+        ('Screenshots', 'Capture ad screenshots'))
     default_config_file_name = 'fbconfig.json'
 
     def __init__(self):

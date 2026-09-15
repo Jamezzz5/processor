@@ -13,6 +13,9 @@ config_path = utl.config_path
 
 
 class RsApi(object):
+    api_field_options = (
+        ('Display', 'Display groups and fields'),
+        ('DateTriggered', 'Group by the trigger date, not the click date'))
     games_url = 'https://api.marketing.gamesight.io/games'
     games_version = '1.1.0'
     stats_url = 'https://api.marketing.gamesight.io/stats'

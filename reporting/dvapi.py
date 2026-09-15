@@ -11,6 +11,8 @@ import selenium.common.exceptions as ex
 
 
 class DvApi(object):
+    api_field_options = (
+        ('Facebook', 'Facebook brand safety report layout'),)
     config_path = utl.config_path
     base_url = 'https://pinnacle.doubleverify.com/login'
     report_url = '{}/report-builder/my-reports'.format(

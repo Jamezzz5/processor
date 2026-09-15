@@ -13,6 +13,8 @@ config_path = utl.config_path
 
 
 class CriApi(object):
+    api_field_options = (
+        ('Line', 'Line item level; type campaign or line ids to narrow'),)
     base_url = 'https://api.criteo.com'
     auth_url = '{}/oauth2/token'.format(base_url)
     version_url = '/2025-04/retail-media'

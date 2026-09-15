@@ -136,6 +136,13 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
+    api_field_options = (
+        ('Conversions', 'Conversion metrics in place of the defaults'),
+        ('Campaign', 'Campaign level report'),
+        ('UAC', 'App campaign report with base conversions'),
+        ('no_date', 'Drop the date parameters'),
+        ('Device', 'Add the device dimension'),
+        ('RF', 'Add reach and frequency metrics'))
     version = 24
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'

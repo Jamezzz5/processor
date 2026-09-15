@@ -89,6 +89,8 @@ user_fields = ['id', 'name', 'screen_name', 'location', 'description',
 
 
 class TwApi(object):
+    api_field_options = (
+        ('CONVERSIONS', 'Add the conversion metric groups'),)
     default_config_file_name = 'twconfig.json'
 
     def __init__(self):

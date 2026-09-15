@@ -45,6 +45,9 @@ class OtpRequired(ex.WebDriverException):
 
 
 class PmApi(object):
+    api_field_options = (
+        ('Brand Tracker',
+         'Brand tracker pull; any other value is an iSpot title'),)
     config_path = utl.config_path
     temp_path = 'tmp'
     sign_in_attempts = 300
