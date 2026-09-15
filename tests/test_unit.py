@@ -4254,3 +4254,28 @@ class TestTikApiAdIds:
         ids, r = api.request_id('http://u', {}, [])
         assert ids == []
         assert api.ad_id_list == []
+
+
+def test_slides_sparse_table_height_and_caption(monkeypatch):
+    """Sparse tables stay compact; dense tables stay inside the slide."""
+    api = gsapi.GsApi.__new__(gsapi.GsApi)
+    captured = []
+    monkeypatch.setattr(api, 'slides_batch_update',
+                        lambda pid, reqs: captured.extend(reqs))
+    api.add_table_slide('p', 'compact', 'Summary', ['Metric', 'Value'],
+                        [['Cost', '$10']], caption='Evidence')
+    table = next(req['createTable'] for req in captured
+                 if 'createTable' in req)
+    height = table['elementProperties']['size']['height']['magnitude']
+    assert height == 720000
+    caption = next(req['createShape'] for req in captured
+                   if req.get('createShape', {}).get('objectId') == 'compactc')
+    assert caption['elementProperties']['transform']['translateY'] == (
+        api.CONTENT_TOP_EMU + height + 80000)
+    captured.clear()
+    api.add_table_slide('p', 'dense', 'Summary', ['Metric', 'Value'],
+                        [['Cost', '$10']] * 30, caption='Evidence')
+    table = next(req['createTable'] for req in captured
+                 if 'createTable' in req)
+    assert table['elementProperties']['size']['height']['magnitude'] == (
+        api.PAGE_H_EMU - api.CONTENT_TOP_EMU - 800000)

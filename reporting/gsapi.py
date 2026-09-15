@@ -853,8 +853,6 @@ class GsApi(object):
             'tableCellProperties': {'tableCellBackgroundFill': {
                 'solidFill': {'color': {'rgbColor': colors['accent']}}}},
             'fields': 'tableCellBackgroundFill.solidFill.color'}})
-        # Zebra banding on alternating body rows keeps a 12-row scorecard
-        # scannable without heavy gridlines.
         for r in range(2, len(all_rows), 2):
             reqs.append({'updateTableCellProperties': {
                 'objectId': table_id,
@@ -879,12 +877,13 @@ class GsApi(object):
                                           footer=footer, page=page)
         ty = self.CONTENT_TOP_EMU
         th = self.PAGE_H_EMU - ty - (800000 if caption else 420000)
+        th = min(th, (len(body_rows) + 1) * 360000)
         reqs += self._table_reqs(slide_id, slide_id + 'tbl', cx, ty, cw, th,
                                  header, body_rows, colors)
         if caption:
             reqs += self._text_box_reqs(
                 slide_id, slide_id + 'c', caption, cx,
-                self.PAGE_H_EMU - 720000, cw, 340000, font_pt=11,
+                ty + th + 80000, cw, 340000, font_pt=11,
                 align='START', color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
