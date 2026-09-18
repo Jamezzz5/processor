@@ -4257,7 +4257,8 @@ class TestTikApiAdIds:
 
 
 def test_slides_sparse_table_height_and_caption(monkeypatch):
-    """Sparse tables stay compact; dense tables stay inside the slide."""
+    """Sparse tables stay compact; dense tables continue onto more
+    slides before reaching the footer, each inside the page."""
     api = gsapi.GsApi.__new__(gsapi.GsApi)
     captured = []
     monkeypatch.setattr(api, 'slides_batch_update',
@@ -4272,10 +4273,19 @@ def test_slides_sparse_table_height_and_caption(monkeypatch):
                    if req.get('createShape', {}).get('objectId') == 'compactc')
     assert caption['elementProperties']['transform']['translateY'] == (
         api.CONTENT_TOP_EMU + height + 80000)
-    captured.clear()
+    batches = []
+    monkeypatch.setattr(api, 'slides_batch_update',
+                        lambda pid, reqs: batches.append(reqs))
     api.add_table_slide('p', 'dense', 'Summary', ['Metric', 'Value'],
                         [['Cost', '$10']] * 30, caption='Evidence')
-    table = next(req['createTable'] for req in captured
-                 if 'createTable' in req)
-    assert table['elementProperties']['size']['height']['magnitude'] == (
-        api.PAGE_H_EMU - api.CONTENT_TOP_EMU - 800000)
+    tables = [req['createTable'] for batch in batches for req in batch
+              if 'createTable' in req]
+    assert len(tables) == len(batches) > 1
+    assert sum(table['rows'] - 1 for table in tables) == 30
+    assert all(table['elementProperties']['size']['height']['magnitude']
+               <= api.PAGE_H_EMU - api.CONTENT_TOP_EMU - 800000
+               for table in tables)
+    texts = [req['insertText']['text'] for batch in batches for req in batch
+             if 'insertText' in req]
+    assert texts.count('Summary (continued)') == len(batches) - 1
+    assert texts.count('Evidence') == len(batches)
