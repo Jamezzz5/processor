@@ -391,6 +391,28 @@ class VendorMatrix(object):
                 data_dict[x] = []
         return data_dict
 
+    def get_cur_client_naming_delimiter(self):
+        """
+        Determines the current client naming delimiter set in the vendormatrix
+        based on the transform value of the first entry. If no special delimiter
+        has been set, returns '_'.
+
+        :return:Current client naming delimiter for the vendormatrix
+        """
+        delim_val = '_'
+        if (self.vm_df.empty or pd.isna(self.vm_df[vmc.transform][0]) or
+                not self.vm_df[vmc.transform][0]):
+            return delim_val
+        raw_transform_val = self.vm_df[vmc.transform][0]
+        vm_transforms = raw_transform_val.split(':::')
+        transform_type = 'StringReplaceAll'
+        rel_transforms = [x for x in vm_transforms if
+                          x.startswith(transform_type) and
+                          x.endswith('::_')]
+        if rel_transforms:
+            delim_val = rel_transforms[0].replace(f'{transform_type}::', '')
+            delim_val = delim_val.replace('::_', '')
+        return delim_val
 
 class ImportConfig(object):
     key = 'Key'
@@ -901,7 +923,8 @@ class DataSource(object):
         df = self.get_raw_df_before_transform(nrows=nrows)
         if df is None or df.empty:
             return df
-        df = df_transform(df, self.p[vmc.transform])
+        delim_cols = self.get_delim_cols()
+        df = df_transform(df, self.p[vmc.transform], [], delim_cols)
         df = full_placement_creation(df, self.key, dctc.FPN,
                                      self.p[vmc.fullplacename])
         return df
@@ -1004,6 +1027,22 @@ class DataSource(object):
     def write(self, df=None):
         utl.write_file(df, self.p[vmc.filename_true])
 
+    def get_delim_cols(self):
+        """
+        Get list of column names that may be delimited/ combinations of other
+        columns for the data source, including full placement name columns,
+        placement column, and relational key columns.
+
+        :returns: List of the names of potentially delimited columns
+        """
+        delim_cols = []
+        delim_cols += [x.removeprefix('::') for x in self.p[vmc.fullplacename]]
+        delim_cols.append(self.p[vmc.placement])
+        rc = dct.RelationalConfig()
+        rc.read(dctc.filename_rel_config)
+        delim_cols += rc.key_list
+        return list(set(delim_cols))
+
 
 def import_plan_data(key, df, plan_omit_list, **kwargs):
     """
@@ -1057,17 +1096,17 @@ def vm_update_rule_check(vm, vm_col):
     return vm
 
 
-def df_transform(df, transform, skip_transforms=[]):
+def df_transform(df, transform, skip_transforms=[], delim_cols=None):
     if str(transform) == 'nan':
         return df
     split_transform = transform.split(':::')
     for t in split_transform:
         if t.split('::')[0] not in skip_transforms:
-            df = df_single_transform(df, t)
+            df = df_single_transform(df, t, delim_cols)
     return df
 
 
-def df_single_transform(df, transform):
+def df_single_transform(df, transform, delim_cols=None):
     if str(transform) == 'nan':
         return df
     transform = transform.split('::')
@@ -1085,7 +1124,7 @@ def df_single_transform(df, transform):
         df[date_col] = df[date_col].fillna(method='ffill')
         df = df[df['temp'].isnull()].reset_index(drop=True)
         df.drop('temp', axis=1, inplace=True)
-    if transform_type == 'Pivot':
+    elif transform_type == 'Pivot':
         pivot_col = transform[1]
         val_col = transform[2].split('|')
         if pivot_col not in df.columns:
@@ -1101,7 +1140,7 @@ def df_single_transform(df, transform):
         if type(df.columns) == pd.MultiIndex:
             df.columns = [' - '.join([str(y) for y in x]) for x in df.columns]
         df = df.reset_index()
-    if (transform_type == 'Merge' or transform_type == 'MergeReplace'
+    elif (transform_type == 'Merge' or transform_type == 'MergeReplace'
             or transform_type == 'MergeReplaceExclude'):
         merge_file = transform[1]
         if '.' in merge_file:
@@ -1116,8 +1155,8 @@ def df_single_transform(df, transform):
                 merge_df = df_transform(merge_df, ds.p[vmc.transform],
                                         skip_transforms=['Merge',
                                                          'MergeReplace',
-                                                         'MergeReplaceExclude']
-                                        )
+                                                         'MergeReplaceExclude'],
+                                        delim_cols=delim_cols)
         if merge_df is None or merge_df.empty:
             logging.error('Unable to execute merge transform. Requested merge '
                           'source {} returned empty dataframe.'
@@ -1161,7 +1200,7 @@ def df_single_transform(df, transform):
                                  merge_col=['merge-col', 'merge-col'])
             df = err.merge_df
             df = df.drop('_merge', axis=1)
-    if transform_type == 'DateSplit':
+    elif transform_type == 'DateSplit':
         start_date = transform[1]
         end_date = transform[2]
         if len(transform) == 4:
@@ -1178,7 +1217,7 @@ def df_single_transform(df, transform):
             lambda x: pd.date_range(start=x.iat[0], periods=len(x))))
         df = df.drop('days', axis=1)
         df = df.reset_index(drop=True)  # type: pd.DataFrame
-    if transform_type == 'Stack':
+    elif transform_type == 'Stack':
         header_col_name = transform[1]
         hold_col_name = transform[2]
         if hold_col_name not in df.columns:
@@ -1198,7 +1237,7 @@ def df_single_transform(df, transform):
             ndf = pd.concat([ndf, tdf])
         df = pd.concat([ndf, hdf], axis=1, join='inner')
         df = df.reset_index(drop=True)  # type: pd.DataFrame
-    if transform_type == 'Melt':
+    elif transform_type == 'Melt':
         header_col_name = transform[1]
         variable_cols = transform[2].split('|')
         missing_cols = [x for x in variable_cols if x not in df.columns]
@@ -1209,7 +1248,7 @@ def df_single_transform(df, transform):
                      var_name='{}-variable'.format(header_col_name),
                      value_name='{}-value'.format(header_col_name))
         df = df.reset_index(drop=True)
-    if transform_type == 'CombineColumnsUnderscore':
+    elif transform_type == 'CombineColumnsUnderscore':
         cols = transform[1].split('|')
         if cols[0] not in df.columns or cols[1] not in df.columns:
             log.warning('Unable to execute {} transform. Column "{}" or "{}" '
@@ -1219,18 +1258,18 @@ def df_single_transform(df, transform):
         df[cols[0]] = (df[cols[0]].astype(str) + '_'
                        + df[cols[1]].astype(str))
         df.drop(cols[1], axis=1, inplace=True)
-    if transform_type == vmc.transform_raw_translate:
+    elif transform_type == vmc.transform_raw_translate:
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
         df = tc.apply_translation_to_dict(df)
-    if transform_type == 'AddColumn':
+    elif transform_type == 'AddColumn':
         if len(transform) < 3:
             logging.warning('Not formed correctly: {}'.format(transform))
             return df
         col_name = transform[1]
         col_val = transform[2]
         df[col_name] = col_val
-    if transform_type == 'FilterCol':
+    elif transform_type == 'FilterCol':
         if len(transform) < 3:
             logging.warning('Not formed correctly: {}'.format(transform))
             return df
@@ -1241,7 +1280,7 @@ def df_single_transform(df, transform):
             if transform[3] == 'Exclude':
                 exclude_toggle = True
         df = utl.filter_df_on_col(df, col_name, col_val, exclude_toggle)
-    if transform_type == 'CombineColumns':
+    elif transform_type == 'CombineColumns':
         cols = transform[1].split('|')
         if cols[0] not in df.columns or cols[1] not in df.columns:
             log.warning('Unable to execute {} transform. Column "{}" or "{}" '
@@ -1250,7 +1289,7 @@ def df_single_transform(df, transform):
             return df
         df[cols[0]] = df[cols[0]].combine_first(df[cols[1]])
         df.drop(cols[1], axis=1, inplace=True)
-    if transform_type == 'EqualReplace':
+    elif transform_type == 'EqualReplace':
         col = transform[1]
         comp_cols = transform[2].split('|')
         replace_val = transform[3]
@@ -1265,17 +1304,17 @@ def df_single_transform(df, transform):
         comp = df[col].str.split(delimiter).str[int(idx)] == df[
             comp_col].astype('U')
         df[col] = np.where(comp, replace_val, df[col])
-    if transform_type == 'RenameCol':
+    elif transform_type == 'RenameCol':
         cols = transform[1:]
         replace_dict = {x.split('|')[0]: x.split('|')[1] for x in cols}
         df = df.rename(columns=replace_dict)
-    if transform_type == 'PercentDecode':
+    elif transform_type == 'PercentDecode':
         cols = transform[1:]
         for col in cols:
             df[col] = df[col].map(
                 lambda x: urllib.parse.unquote(
                     x, encoding='utf-8', errors='replace'))
-    if transform_type == 'PriceCalculate':
+    elif transform_type == 'PriceCalculate':
         count_suffix = ' Count'
         prefix_filter = 'Purchase - '
         prices = {}
@@ -1313,6 +1352,19 @@ def df_single_transform(df, transform):
         df['Gamesight purchases'] = (
             df[purchase_count_cols].apply(pd.to_numeric, errors='coerce')
             .fillna(0).sum(axis=1) if purchase_count_cols else 0)
+    elif transform_type == 'StringReplaceAll':
+        # transform command format:
+        #   transform_type::old_val::replace_val
+        old_val = transform[1]
+        replace_val = transform[2]
+        target_cols = delim_cols if delim_cols else []
+        for col in target_cols:
+            if col not in df.columns:
+                log.warning('{}: skipping target column "{}" (not in '
+                            'datasource).'.format(transform_type, col))
+                continue
+            df[col] = df[col].astype(str).str.replace(old_val, replace_val,
+                                                      regex=False)
     return df
 
 

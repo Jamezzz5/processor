@@ -1370,6 +1370,23 @@ class TestVendormatrix:
         assert out['Download - Other Item Count'].tolist() == [9, 9]
         assert 'Download - Other Item Revenue' not in out.columns
 
+    def test_string_replace_all_transform(self):
+        df = pd.DataFrame({
+            'Campaign Name': ['camp a|camp b|camp c', 'camp 1|camp 2|camp 3'],
+            'Adset Name': ['adset a|adset b', 'adset 1'],
+            'Adgroup Name': ['adgroup a', 'adgroup 1|adgroup 2|adgroup 3'],
+            'Partner Name': ['Partner|1', 'Partner|2'],
+        })
+        transform = 'StringReplaceAll::|::_'
+        delim_cols = ['Campaign Name', 'Adset Name', 'Adgroup Name']
+        result = vm.df_transform(df, transform, [], delim_cols)
+        expected = ['camp a_camp b_camp c', 'camp 1_camp 2_camp 3']
+        assert result['Campaign Name'].tolist() == expected
+        assert result['Adset Name'].tolist() == ['adset a_adset b', 'adset 1']
+        expected = ['adgroup a', 'adgroup 1_adgroup 2_adgroup 3']
+        assert result['Adgroup Name'].tolist() == expected
+        assert result['Partner Name'].tolist() == ['Partner|1', 'Partner|2']
+
     @requires_base_config
     def test_vm_load(self):
         matrix = vm.VendorMatrix()

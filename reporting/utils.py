@@ -1697,8 +1697,11 @@ class SeleniumWrapper(object):
         elem = self.browser.find_element_by_xpath(elem_xpath)
         is_liquid = self.liquid_xpath in elem_xpath
         clear_specified = len(item) > 2 and item[2] == 'clear'
-        if clear_existing and (is_liquid or clear_specified):
-            self._click_liquid_clear_button(elem)
+        if clear_existing:
+            if is_liquid or clear_specified:
+                self._click_liquid_clear_button(elem)
+            else:
+                elem.clear()
         elem_type = self.get_elem_type(elem_xpath, elem)
         if elem_type == 'checkbox':
             self.click_on_xpath(elem=elem, sleep=.1)
