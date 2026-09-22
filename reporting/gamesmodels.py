@@ -227,6 +227,10 @@ class CommunitySnapshot(Base):
     youtube_video_count = Column(
         Numeric, comment='Uploads on the linked official channel in '
                          'the trailing 90 days.')
+    discord_online = Column(
+        Numeric, comment='Members online on the linked Discord server '
+                         '(invite approximate_presence_count) at the '
+                         'nightly sample - a point-in-time count.')
 
 
 class CommunityLink(Base):
@@ -1259,6 +1263,44 @@ class GameNeighbour(Base):
                 'component; absent ones are omitted, never zeroed.')
     computed_at = Column(DateTime, nullable=False,
                          comment='Naive UTC; the derive that wrote it.')
+
+
+class TargetingSnapshot(Base):
+    """Daily advertiser-catalogue query evidence per provider.
+
+    queried_gameid identifies the query subject, not ownership of every
+    returned entry. TikTok rows are targeting suggestions; Meta rows
+    carry the platform's interest audience-size bounds.
+    """
+    __tablename__ = 'targeting_snapshot'
+    __table_args__ = (
+        UniqueConstraint('provider', 'account_key', 'subject_key',
+                         'source', 'query_text', 'snapshot_date',
+                         name='uq_targeting_snapshot_query_day'),
+        Index('ix_targeting_snapshot_date', 'snapshot_date'),
+        Index('ix_targeting_snapshot_game', 'queried_gameid'),
+        {'schema': 'games'},
+    )
+
+    targetingsnapshotid = Column(BigIntPk, primary_key=True)
+    provider = Column(Text, nullable=False,
+                      comment="'tiktok' | 'meta' - the advertising "
+                              'platform whose catalogue answered.')
+    account_key = Column(Text, nullable=False)
+    subject_key = Column(Text, nullable=False)
+    queried_gameid = Column(BigInteger, ForeignKey('games.game.gameid'))
+    title = Column(Text)
+    source = Column(Text, nullable=False)
+    query_text = Column(Text, nullable=False)
+    snapshot_date = Column(Date, nullable=False)
+    collected_at = Column(DateTime, nullable=False)
+    coverage = Column(Text, nullable=False)
+    evidence = Column(
+        JSON().with_variant(JSONB, 'postgresql'), nullable=False,
+        comment='API query scope, status and returned entries. Related '
+                'suggestions are not attributed to the query game. No '
+                'post counts or views inferred; Meta audience bounds '
+                "are the platform's own estimate.")
 
 
 class GameAlias(Base):
