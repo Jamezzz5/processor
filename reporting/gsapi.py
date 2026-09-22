@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import collections
+import textwrap
 import pandas as pd
 import reporting.awss3 as awss3
 import reporting.utils as utl
@@ -13,6 +14,67 @@ from requests_oauthlib import OAuth2Session
 import requests
 
 config_path = utl.config_path
+
+
+EMU_PER_PT = 12700
+TEXT_INSET_EMU = 100000
+LINE_LEADING_PT = 3
+GLYPH_WIDTH_RATIO = .6
+MIN_ROW_EMU = 360000
+TILE_PAD_EMU = 100000
+TILE_VALUE_H_EMU = 450000
+TILE_MIN_H_EMU = 1370000
+TILE_TEXT_PT = (11, 9, 8)
+
+
+def _tile_text_height(text, width, font_pt):
+    """Reserve wrapped lines and Slides' text insets before the next block.
+
+    Slides gives no metrics back, so the wrap is estimated from the
+    face's average advance width. It errs tall: a box with slack under
+    it reads fine, one the next block overlaps does not.
+    """
+    if not text:
+        return 0
+    chars = max(1, int((width - TEXT_INSET_EMU)
+                       / (font_pt * EMU_PER_PT * GLYPH_WIDTH_RATIO)))
+    lines = sum(max(1, len(textwrap.wrap(line, chars)))
+                for line in str(text).split('\n'))
+    return int(lines * (font_pt + LINE_LEADING_PT) * EMU_PER_PT
+               + TEXT_INSET_EMU)
+
+
+def _table_row_height(row, width, font_pt):
+    """Reserve native cell wrapping, including Slides' cell insets."""
+    cell_w = width / max(1, len(row))
+    return max(MIN_ROW_EMU, max((_tile_text_height(value, cell_w, font_pt)
+                                 for value in row), default=0))
+
+
+def _tile_block_heights(tile, width):
+    """``(label, caption, note)`` heights for one stat tile's text — read
+    once to size the grid and again to place each block, so the two
+    cannot drift apart and overlap."""
+    return tuple(_tile_text_height(tile.get(key), width, font_pt)
+                 for key, font_pt in zip(('label', 'caption', 'note'),
+                                         TILE_TEXT_PT))
+
+
+def _fit_rows(rows, heights, budget):
+    """``rows`` split into slide-sized groups, in order. A row taller
+    than ``budget`` gets a group of its own rather than no group: it
+    still has to print somewhere."""
+    groups, group, used = [], [], 0
+    for row, height in zip(rows, heights):
+        if group and used + height > budget:
+            groups.append(group)
+            group, used = [], 0
+        group.append(row)
+        used += height
+    if group:
+        groups.append(group)
+    return groups
+
 
 TableCell = collections.namedtuple(
     'TableCell', 'start end para_ranges paragraphs')
@@ -712,11 +774,12 @@ class GsApi(object):
     def add_stat_tile_slide(self, presentation_id, slide_id, title, tiles,
                             brand=None, footer=None, page=None):
         """A slide of native stat tiles — each a card with a hero number, a
-        label, a one-line comparison caption and an optional muted note
+        label, a wrapped comparison caption and an optional muted note
         (the driver line) — built from Slides shapes so the export never
         screenshots a KPI chart. ``tiles`` = list of
         ``{'value','label','caption','note'}`` (6-9 read best; capped at
-        9; five, six or nine tiles lay out three across)."""
+        9; five, six or nine tiles lay out three across). Dense grids
+        continue before wrapped text would overlap the next row."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
@@ -732,9 +795,22 @@ class GsApi(object):
             grid_h = self.PAGE_H_EMU - grid_y - 420000
             cell_w = (cw - gap * (cols - 1)) // cols
             cell_h = (grid_h - gap * (n_rows - 1)) // n_rows
-            cell_h = min(cell_h, 1370000)  # ~1.5"
-            pad = 100000
+            pad, text_w = TILE_PAD_EMU, cell_w - 2 * TILE_PAD_EMU
+            blocks = [_tile_block_heights(tile, text_w) for tile in tiles]
+            required = max(2 * pad + TILE_VALUE_H_EMU + sum(block)
+                           for block in blocks)
+            if required > cell_h and n_rows > 1:
+                for start in range(0, len(tiles), cols):
+                    self.add_stat_tile_slide(
+                        presentation_id,
+                        slide_id + (f'part{start}' if start else ''),
+                        f'{title} (continued)' if start else title,
+                        tiles[start:start + cols], brand, footer, page)
+                return slide_id
+            cell_h = min(cell_h, max(TILE_MIN_H_EMU, required))
             for i, tile in enumerate(tiles):
+                label_h, caption_h, note_h = blocks[i]
+                label_pt, caption_pt, note_pt = TILE_TEXT_PT
                 r, c = divmod(i, cols)
                 x = cx + c * (cell_w + gap)
                 y = grid_y + r * (cell_h + gap)
@@ -743,27 +819,30 @@ class GsApi(object):
                                              colors['muted'])
                 reqs += self._rect_reqs(slide_id, base + 'r', x, y,
                                         cell_w, cell_h, colors['card'])
+                label_y = y + pad + TILE_VALUE_H_EMU
+                caption_y = label_y + label_h
+                note_y = caption_y + caption_h
                 reqs += self._text_box_reqs(
                     slide_id, base + 'v', str(tile.get('value', '')),
-                    x + pad, y + pad, cell_w - 2 * pad, cell_h * 40 // 100,
+                    x + pad, y + pad, text_w, TILE_VALUE_H_EMU,
                     font_pt=26, bold=True, align='START',
                     color=colors['accent'])
                 reqs += self._text_box_reqs(
                     slide_id, base + 'l', str(tile.get('label', '')),
-                    x + pad, y + cell_h * 42 // 100, cell_w - 2 * pad,
-                    cell_h * 20 // 100, font_pt=11, align='START',
+                    x + pad, label_y, text_w, label_h,
+                    font_pt=label_pt, align='START',
                     color=colors['ink'])
                 if tile.get('caption'):
                     reqs += self._text_box_reqs(
                         slide_id, base + 'p', str(tile['caption']),
-                        x + pad, y + cell_h * 62 // 100, cell_w - 2 * pad,
-                        cell_h * 18 // 100, font_pt=9, align='START',
+                        x + pad, caption_y, text_w, caption_h,
+                        font_pt=caption_pt, align='START',
                         color=cap_color)
                 if tile.get('note'):
                     reqs += self._text_box_reqs(
                         slide_id, base + 'n', str(tile['note']),
-                        x + pad, y + cell_h * 80 // 100, cell_w - 2 * pad,
-                        cell_h * 18 // 100, font_pt=8, align='START',
+                        x + pad, note_y, text_w, note_h,
+                        font_pt=note_pt, align='START',
                         color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
@@ -879,9 +958,25 @@ class GsApi(object):
                                           footer=footer, page=page)
         ty = self.CONTENT_TOP_EMU
         th = self.PAGE_H_EMU - ty - (800000 if caption else 420000)
-        th = min(th, (len(body_rows) + 1) * 360000)
+        head_h = _table_row_height(header, cw, 11)
+        heights = [_table_row_height(row, cw, 10) for row in body_rows]
+        groups = _fit_rows(body_rows, heights, th - head_h)
+        if len(groups) > 1:
+            for index, rows in enumerate(groups):
+                self.add_table_slide(
+                    presentation_id,
+                    slide_id + (f'part{index}' if index else ''),
+                    f'{title} (continued)' if index else title, header,
+                    rows, brand, caption, footer, page)
+            return slide_id
+        th = min(th, head_h + sum(heights))
         reqs += self._table_reqs(slide_id, slide_id + 'tbl', cx, ty, cw, th,
                                  header, body_rows, colors)
+        for index, height in enumerate([head_h] + heights):
+            reqs.append({'updateTableRowProperties': {
+                'objectId': slide_id + 'tbl', 'rowIndices': [index],
+                'tableRowProperties': {'minRowHeight': self._emu(height)},
+                'fields': 'minRowHeight'}})
         if caption:
             reqs += self._text_box_reqs(
                 slide_id, slide_id + 'c', caption, cx,
@@ -926,8 +1021,16 @@ class GsApi(object):
             return None
         pres = self.get_presentation(presentation_id)
         requests = []
-        for slide in pres.get('slides', []):
+        for number, slide in enumerate(pres.get('slides', []), start=1):
             sid = slide.get('objectId')
+            page_id = str(sid) + 'pg'
+            if any(e.get('objectId') == page_id
+                   for e in slide.get('pageElements', [])):
+                requests += [
+                    {'deleteText': {'objectId': page_id,
+                                    'textRange': {'type': 'ALL'}}},
+                    {'insertText': {'objectId': page_id,
+                                    'insertionIndex': 0, 'text': str(number)}}]
             text = notes_by_slide.get(sid)
             if not text:
                 continue
