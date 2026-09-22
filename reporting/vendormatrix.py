@@ -391,28 +391,6 @@ class VendorMatrix(object):
                 data_dict[x] = []
         return data_dict
 
-    def get_cur_client_naming_delimiter(self):
-        """
-        Determines the current client naming delimiter set in the vendormatrix
-        based on the transform value of the first entry. If no special delimiter
-        has been set, returns '_'.
-
-        :return:Current client naming delimiter for the vendormatrix
-        """
-        delim_val = '_'
-        if (self.vm_df.empty or pd.isna(self.vm_df[vmc.transform][0]) or
-                not self.vm_df[vmc.transform][0]):
-            return delim_val
-        raw_transform_val = self.vm_df[vmc.transform][0]
-        vm_transforms = raw_transform_val.split(':::')
-        transform_type = 'StringReplaceAll'
-        rel_transforms = [x for x in vm_transforms if
-                          x.startswith(transform_type) and
-                          x.endswith('::_')]
-        if rel_transforms:
-            delim_val = rel_transforms[0].replace(f'{transform_type}::', '')
-            delim_val = delim_val.replace('::_', '')
-        return delim_val
 
 class ImportConfig(object):
     key = 'Key'
