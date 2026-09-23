@@ -901,7 +901,8 @@ class DataSource(object):
         df = self.get_raw_df_before_transform(nrows=nrows)
         if df is None or df.empty:
             return df
-        delim_cols = self.get_delim_cols()
+        delim_cols = self.get_delim_cols() \
+            if 'StringReplaceAll' in str(self.p[vmc.transform]) else []
         df = df_transform(df, self.p[vmc.transform], [], delim_cols)
         df = full_placement_creation(df, self.key, dctc.FPN,
                                      self.p[vmc.fullplacename])
