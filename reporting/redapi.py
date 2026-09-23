@@ -579,6 +579,14 @@ class RedApi(object):
                             self.access_token)}
         return True
 
+    def check_account_access(self, account_id, timeout=8, user_agent=None):
+        """True when the token can see ad account ``account_id`` by id
+        or name — the same match the report pull makes."""
+        if not account_id or not self.check_liveness(timeout, user_agent):
+            return False
+        self.username = account_id
+        return bool(self.get_account_id())
+
     def revoke_token(self, user_agent=None, timeout=10):
         """Best-effort revoke of the refresh token at Reddit."""
         if not self.refresh_token:
@@ -655,7 +663,8 @@ class RedApi(object):
 
     def get_ad_accounts_by_business(self, business_ids):
         """
-        Loops through provided business ids list to get account id of username
+        Loops through provided business ids list to get the ad account
+        whose id or name matches username
 
         :param business_ids: List of business ids
         :return: account_id that matches username or blank
@@ -663,8 +672,9 @@ class RedApi(object):
         account_id = ''
         for business_id in business_ids:
             ad_accounts = self.request_ad_accounts(business_id)
-            account_ids = [x['id'] for x in ad_accounts
-                           if x['name'].lower() == self.username.lower()]
+            account_ids = [
+                x['id'] for x in ad_accounts if self.username.lower() in
+                (x['id'].lower(), (x.get('name') or '').lower())]
             if account_ids:
                 account_id = account_ids[0]
                 self.time_zone_id = ad_accounts[0]['time_zone_id']
@@ -852,7 +862,6 @@ class RedApi(object):
 
         :return: account_id that matches self.username
         """
-        self.get_access_token()
         business_ids = self.get_all_business_ids()
         account_id = self.get_ad_accounts_by_business(business_ids)
         return account_id

@@ -1169,6 +1169,10 @@ class TestAccountListing:
         assert api.request_ad_accounts('b1') == rows
         assert api.get_ad_accounts_by_business(['b1']) == 't2_a'
         assert api.time_zone_id == 'UTC'
+        api.username = 'T2_A'
+        assert api.get_ad_accounts_by_business(['b1']) == 't2_a'
+        api.username = 'nobody'
+        assert api.get_ad_accounts_by_business(['b1']) == ''
 
 
 class TestSimApi:
