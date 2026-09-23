@@ -17,6 +17,7 @@ import numpy as np
 import datetime as dt
 import urllib3.exceptions as url_ex
 from urllib.parse import unquote, urlparse
+from PIL import Image
 import selenium.webdriver as wd
 import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
@@ -875,16 +876,80 @@ class SeleniumWrapper(object):
     command_timeout = 60
     browser_errors = (ex.WebDriverException, url_ex.HTTPError,
                       http_client.HTTPException)
-    accept_exact = ['ok', 'continue', 'proceed', 'i agree', 'accetto',
-                    'accetta', 'zustimmen', "j'accepte"]
+    accept_exact = ['ok', 'continue', 'proceed', 'i agree', 'agree',
+                    'accept', 'accept all', 'allow all', 'i accept',
+                    'got it', 'consent', 'accetto', 'accetta',
+                    'zustimmen', 'alle akzeptieren', "j'accepte",
+                    'tout accepter']
     accept_contains = ['accept cookies', 'accept all cookies',
-                       'akzeptieren und weiter']
+                       'akzeptieren und weiter', 'accept & continue']
+    consent_selectors = (
+        '#onetrust-accept-btn-handler', '#didomi-notice-agree-button',
+        '.qc-cmp2-summary-buttons button[mode=primary]',
+        '.fc-cta-consent', 'button[title="Accept all"]',
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        '.sp_choice_type_11')
+    consent_frame_marks = ('sp_message_iframe', 'consent', 'cmp', 'privacy')
     cookie_wait = 2
     cookie_timeout = 15
-    ad_hosts = ('doubleclick.net', 'googlesyndication.com',
-                'googleadservices.com', 'adnxs.com', 'amazon-adsystem.com',
-                'rubiconproject.com', 'criteo.com', 'openx.net',
-                'pubmatic.com', 'taboola.com', 'outbrain.com')
+    verdict_markers = {
+        'bot_check': ('performing security verification', 'just a moment',
+                      'verify you are human', 'checking your browser',
+                      'enable javascript and cookies to continue'),
+        'blocked': ('sorry, you have been blocked',
+                    'blocked by network security', 'access denied',
+                    'request blocked'),
+        'ssl_error': ('your connection is not private', 'net::err_cert'),
+        'error_page': ('something went wrong', "this page isn't working",
+                       "this site can't be reached", '502 bad gateway',
+                       '503 service unavailable', 'net::err_')}
+    login_markers = ('log in', 'sign in', 'login')
+    login_paths = ('/login', '/signin', '/sign-in', '/account/login',
+                   '/users/sign_in')
+    login_body_max = 400
+    consent_words = ('cookie', 'consent', 'privacy', 'agree', 'partners',
+                     'datenschutz')
+    blank_span = 6
+    blank_ratio = 0.995
+    retry_settles = {'blank': (3, 8), 'bot_check': (8,),
+                     'consent_wall': (1,)}
+    ready_wait = 8
+    verdict_budget = 20
+    page_state_script = (
+        "const box = [...document.querySelectorAll("
+        "'[role=dialog],[aria-modal=true],#onetrust-banner-sdk,"
+        ".qc-cmp2-container,#didomi-host,.fc-consent-root')]"
+        "  .find(e => e.getBoundingClientRect().height > 0);"
+        "const text = document.body ? document.body.innerText : '';"
+        "return {title: document.title || '', url: location.href,"
+        "  proto: location.protocol, state: document.readyState,"
+        "  text: text.slice(0, 2000), len: text.length,"
+        "  dialog: box ? box.innerText.slice(0, 300) : ''};")
+    stealth_script = (
+        "Object.defineProperty(navigator, 'webdriver',"
+        " {get: () => undefined});"
+        "window.navigator.chrome = {runtime: {}};"
+        "Object.defineProperty(navigator, 'plugins',"
+        " {get: () => [1, 2, 3, 4, 5]});"
+        "Object.defineProperty(navigator, 'languages',"
+        " {get: () => ['en-US', 'en']});")
+    ad_vendors = (
+        ('doubleclick.net', 'Google'), ('googlesyndication.com', 'Google'),
+        ('googleadservices.com', 'Google'), ('2mdn.net', 'Google'),
+        ('googletagservices.com', 'Google'), ('adnxs.com', 'Xandr'),
+        ('amazon-adsystem.com', 'Amazon DSP'),
+        ('rubiconproject.com', 'Magnite'), ('criteo.com', 'Criteo'),
+        ('criteo.net', 'Criteo'), ('openx.net', 'OpenX'),
+        ('pubmatic.com', 'PubMatic'), ('taboola.com', 'Taboola'),
+        ('outbrain.com', 'Outbrain'), ('teads.tv', 'Teads'),
+        ('indexww.com', 'Index Exchange'),
+        ('casalemedia.com', 'Index Exchange'),
+        ('smartadserver.com', 'Equativ'), ('adsrvr.org', 'The Trade Desk'),
+        ('yieldmo.com', 'Yieldmo'), ('sharethrough.com', 'Sharethrough'),
+        ('adform.net', 'Adform'), ('3lift.com', 'TripleLift'),
+        ('mgid.com', 'MGID'), ('revcontent.com', 'Revcontent'))
+    ad_hosts = tuple(host for host, _ in ad_vendors)
+    site_vendor = 'Site direct'
     ad_markers = ('google_ads_iframe', 'div-gpt-ad', 'adsbygoogle',
                   'google-query-id')
     iab_sizes = ((300, 250), (728, 90), (300, 600), (160, 600), (320, 50),
@@ -1002,25 +1067,6 @@ class SeleniumWrapper(object):
         shutil.move(file_name, destination)
         """
 
-    @staticmethod
-    def get_random_user_agent():
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/605.1.15 "
-            "(KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 "
-            "Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 "
-            "Firefox/89.0"
-        ]
-        random_user_agent = random.choice(user_agents)
-        return random_user_agent
-
     def create_browser(self, co):
         """Chrome via the locally downloaded driver when one exists
         (kept current by the retry in ``init_browser`` whenever Chrome
@@ -1041,12 +1087,8 @@ class SeleniumWrapper(object):
             co.page_load_strategy = self.page_load_strategy
         if headless:
             co.add_argument('--headless=new')
-            # --headless=new spawns a real (black) window on Windows;
-            # park it far off-screen so it never flashes on the desktop
-            # while keeping new-headless rendering for the screenshot tests.
             co.add_argument('--window-position=-32000,-32000')
-        random_user_agent = self.get_random_user_agent()
-        co.add_argument('user-agent={}'.format(random_user_agent))
+        co.add_argument('--lang=en-US')
         co.add_argument('--window-size=1920,1080')
         co.add_argument('--start-maximized')
         co.add_argument('--no-sandbox')
@@ -1082,8 +1124,8 @@ class SeleniumWrapper(object):
         return browser, co
 
     def configure_browser(self, browser, headless, download_path):
-        """Post-spawn setup: stealth shims, window size, timeouts and
-        the headless download directory.
+        """Post-spawn setup: stealth shims, user agent, window size,
+        timeouts and the headless download directory.
 
         Runs under :func:`init_browser`'s guard: every statement here
         talks to a chrome that already exists, so a raise would
@@ -1094,15 +1136,14 @@ class SeleniumWrapper(object):
         :param download_path: directory downloads land in
         :return: None
         """
-        browser.execute_script("""
-            Object.defineProperty(navigator, 'webdriver',
-            { get: () => undefined });
-            window.navigator.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins',
-            { get: () => [1, 2, 3, 4, 5] });
-            Object.defineProperty(navigator, 'languages',
-            { get: () => ['en-US', 'en'] });
-        """)
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
+                                {'source': self.stealth_script})
+        browser.execute_script(self.stealth_script)
+        agent = browser.execute_script('return navigator.userAgent;') or ''
+        if not self.mobile and 'HeadlessChrome' in agent:
+            browser.execute_cdp_cmd('Network.setUserAgentOverride', {
+                'userAgent': agent.replace('HeadlessChrome', 'Chrome'),
+                'acceptLanguage': 'en-US,en;q=0.9'})
         if headless:
             # maximize_window with no screen shrinks the viewport
             # below the requested --window-size; pin it instead.
@@ -1326,13 +1367,17 @@ class SeleniumWrapper(object):
         return ' | '.join('//{}[{}]'.format(x, cond) for x in tags)
 
     def find_accept_buttons(self, btn_xpath):
-        """Visible consent controls in the current frame.
+        """Visible consent controls in the current frame: a consent
+        platform's own button by id or class first, else one by text.
 
         :param btn_xpath: xpath from ``get_accept_xpath``
         :return: list of visible WebElements
         """
-        elems = self.browser.find_elements(By.XPATH, btn_xpath)
-        return [x for x in elems if self.elem_visible(x)]
+        cmp = self.browser.find_elements(By.CSS_SELECTOR,
+                                         ', '.join(self.consent_selectors))
+        return ([x for x in cmp if self.elem_visible(x)]
+                or [x for x in self.browser.find_elements(By.XPATH, btn_xpath)
+                    if self.elem_visible(x)])
 
     def click_accept_buttons(self, btn_xpath, wait=0):
         """Click the first visible consent control in the current frame.
@@ -1378,22 +1423,38 @@ class SeleniumWrapper(object):
             return False
         return True
 
-    def accept_cookies(self):
+    def is_consent_frame(self, iframe):
+        """Whether a frame's src, id or title marks it as a consent
+        platform's."""
+        try:
+            marks = ' '.join(iframe.get_attribute(a) or ''
+                             for a in ('src', 'id', 'title')).lower()
+        except ex.StaleElementReferenceException:
+            return False
+        return any(x in marks for x in self.consent_frame_marks)
+
+    def accept_cookies(self, wait=None):
         """Dismiss a cookie banner on the page or in one of its frames.
 
-        Stops at the first banner accepted: a page has one, and every
-        further frame on an ad-heavy page is a driver round trip that
-        buys nothing.
+        Stops at the first banner accepted, trying consent platform
+        frames first: every further frame is a driver round trip.
+
+        :param wait: seconds to poll the page itself, ``cookie_wait``
+            by default
         """
         btn_xpath = self.get_accept_xpath()
-        if self.click_accept_buttons(btn_xpath, wait=self.cookie_wait):
+        wait = self.cookie_wait if wait is None else wait
+        if self.click_accept_buttons(btn_xpath, wait=wait):
             return
         deadline = time.time() + self.cookie_timeout
-        for iframe in self.browser.find_elements(By.TAG_NAME, 'iframe'):
+        frames = [x for x in self.browser.find_elements(By.TAG_NAME, 'iframe')
+                  if self.elem_visible(x)]
+        frames.sort(key=lambda x: not self.is_consent_frame(x))
+        for iframe in frames:
             if time.time() > deadline:
                 logging.warning('Timed out looking for a cookie banner.')
                 return
-            if not self.elem_visible(iframe) or self.is_ad_frame(iframe):
+            if self.is_ad_frame(iframe) and not self.is_consent_frame(iframe):
                 continue
             if not self.switch_to_frame(iframe):
                 continue
@@ -1401,9 +1462,130 @@ class SeleniumWrapper(object):
             if not self.switch_to_frame() or accepted:
                 return
 
+    def dismiss_consent(self):
+        """A longer second try at a consent wall, then Escape."""
+        self.accept_cookies(wait=self.cookie_wait * 2)
+        try:
+            self.browser.find_element(By.TAG_NAME, 'body').send_keys(
+                Keys.ESCAPE)
+        except ex.WebDriverException as e:
+            logging.warning('Could not send Escape: {}'.format(e))
+
+    @classmethod
+    def is_solid_png(cls, png_bytes):
+        """Whether a shot is one colour give or take ``blank_span``
+        grey levels, or unreadable: a page that had not painted."""
+        if not png_bytes:
+            return True
+        try:
+            with Image.open(io.BytesIO(png_bytes)) as img:
+                grey = img.convert('L')
+                grey.thumbnail((128, 128))
+                lo, hi = grey.getextrema()
+                hist = grey.histogram()
+        except (OSError, ValueError):
+            return True
+        if hi - lo <= cls.blank_span:
+            return True
+        mode = max(range(len(hist)), key=hist.__getitem__)
+        near = sum(hist[max(0, mode - cls.blank_span):
+                        mode + cls.blank_span + 1])
+        return near / float(sum(hist) or 1) >= cls.blank_ratio
+
+    @classmethod
+    def _marker_hit(cls, text, kind):
+        """The first ``kind`` marker found in ``text``, or ''."""
+        return next((m for m in cls.verdict_markers[kind] if m in text),
+                    '')
+
+    @classmethod
+    def classify_page(cls, state, png_bytes=None):
+        """``(kind, detail)`` naming what stood between the browser and
+        the page, or ``('ok', '')``; markers are read before pixels since
+        every interstitial is mostly one colour too.
+
+        :param state: dict from ``page_state_script``
+        :param png_bytes: the shot, for the solid-colour check
+        """
+        state = state or {}
+        text = f"{state.get('title', '')} {state.get('text', '')}".lower()
+        text = text.replace('\u2019', "'")
+        url = str(state.get('url') or '')
+        if str(state.get('proto') or '').startswith('chrome-error'):
+            kind = ('ssl_error' if cls._marker_hit(text, 'ssl_error')
+                    else 'error_page')
+            return kind, cls._marker_hit(text, kind) or url[:120]
+        for kind in ('bot_check', 'blocked', 'ssl_error'):
+            hit = cls._marker_hit(text, kind)
+            if hit:
+                return kind, hit
+        path = urlparse(url).path.lower()
+        login = next((m for m in cls.login_markers if m in text), '')
+        if any(path.startswith(p) for p in cls.login_paths):
+            return 'login_wall', path[:120]
+        if login and int(state.get('len') or 0) < cls.login_body_max:
+            return 'login_wall', login
+        dialog = ' '.join(str(state.get('dialog') or '').lower().split())
+        if any(w in dialog for w in cls.consent_words):
+            return 'consent_wall', dialog[:120]
+        if png_bytes is not None and cls.is_solid_png(png_bytes):
+            return 'blank', 'single-colour page'
+        hit = cls._marker_hit(text, 'error_page')
+        if hit:
+            return 'error_page', hit
+        return 'ok', ''
+
+    def capture_verdict(self, png_bytes=None):
+        """``classify_page`` for the page in the browser now, shooting
+        it unless ``png_bytes`` is given; a dead driver is ``error_page``.
+        """
+        try:
+            state = self.browser.execute_script(self.page_state_script)
+            if png_bytes is None:
+                png_bytes = self.browser.get_screenshot_as_png()
+        except self.browser_errors as e:
+            return 'error_page', str(e)[:120]
+        return self.classify_page(state, png_bytes)
+
+    def wait_ready(self, seconds):
+        """Poll for ``document.readyState == 'complete'``."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            try:
+                if self.browser.execute_script(
+                        'return document.readyState;') == 'complete':
+                    return True
+            except self.browser_errors:
+                return False
+            time.sleep(.25)
+        return False
+
+    def settle_and_reshoot(self, png, kind, detail):
+        """``(png, kind, detail)`` after re-shooting, within
+        ``verdict_budget``, an interstitial that time or a click clears:
+        a blank page, a bot check or a consent wall.
+        """
+        deadline = time.time() + self.verdict_budget
+        settles = {k: list(v) for k, v in self.retry_settles.items()}
+        while settles.get(kind) and time.time() < deadline:
+            pause = settles[kind].pop(0)
+            if kind == 'blank':
+                self.wait_ready(self.ready_wait)
+            elif kind == 'consent_wall':
+                self.dismiss_consent()
+            time.sleep(pause)
+            try:
+                self.browser.execute_script('window.scrollTo(0, 0);')
+                png = self.browser.get_screenshot_as_png()
+            except self.browser_errors as e:
+                return png, 'error_page', str(e)[:120]
+            kind, detail = self.capture_verdict(png)
+        return png, kind, detail
+
     def take_screenshot(self, url=None, file_name=None, max_attempts=2,
-                        scroll_first=False):
-        """Save a screenshot of ``url``, or of the current page.
+                        scroll_first=False, sleep=5):
+        """Save a screenshot of ``url``, or of the current page, and
+        return ``classify_page``'s verdict on it.
 
         :param url: page to load first; omit to shoot what is loaded
         :param file_name: path the png is written to
@@ -1412,19 +1594,25 @@ class SeleniumWrapper(object):
             site should not hold up the rest
         :param scroll_first: walk the page before the shot so lazily
             loaded slots render
+        :param sleep: seconds to let ``url`` settle after loading
         """
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
-        went_to_url = True
+        if url and not self.go_to_url(url, sleep=sleep,
+                                      max_attempts=max_attempts):
+            return 'error_page', 'page unreachable'
         if url:
-            went_to_url = self.go_to_url(url, max_attempts=max_attempts)
-        if went_to_url:
-            if url:
-                self.accept_cookies()
-            if scroll_first:
-                self.scroll_through()
-            self.browser.execute_script("window.scrollTo(0, 0)")
-            self.browser.save_screenshot(file_name)
+            self.accept_cookies()
+        if scroll_first:
+            self.scroll_through()
+        self.browser.execute_script("window.scrollTo(0, 0)")
+        png = self.browser.get_screenshot_as_png()
+        png, kind, detail = self.settle_and_reshoot(
+            png, *self.capture_verdict(png))
+        if file_name:
+            with open(file_name, 'wb') as f:
+                f.write(png)
+        return kind, detail
 
     def scroll_through(self, steps=3, pause=0.7):
         """Walk the page top to bottom and back so lazily loaded ad
@@ -1455,9 +1643,14 @@ class SeleniumWrapper(object):
         host = urlparse(url or '').netloc.lower()
         return host[4:] if host.startswith('www.') else host
 
+    @staticmethod
+    def host_under(host, domain):
+        """Whether ``host`` is ``domain`` or one of its subdomains."""
+        return host == domain or host.endswith(f'.{domain}')
+
     @classmethod
     def is_ad_host(cls, host):
-        return any(host == x or host.endswith('.' + x) for x in cls.ad_hosts)
+        return any(cls.host_under(host, x) for x in cls.ad_hosts)
 
     def is_ad_frame(self, iframe):
         """Whether a frame is served by an ad host. A frame that went
@@ -1581,11 +1774,31 @@ class SeleniumWrapper(object):
             return None
         text = ' '.join([x['alt'] for x in found['imgs'] if x['alt']]
                         + found['labels'] + [found['text']])
+        hosts = sorted({self.url_host(x) for x in found['hrefs']}
+                       | {self.url_host(x['src']) for x in found['imgs']}
+                       - {''})
+        frame_host = self.url_host(cand['src'])
         return {'shot_path': shot_path, 'width': cand['width'],
-                'height': cand['height'],
-                'frame_host': self.url_host(cand['src']),
+                'height': cand['height'], 'frame_host': frame_host,
+                'hosts': hosts,
+                'links': [x[:300] for x in found['hrefs'][:8]],
+                'vendor': self.vendor_of(hosts, frame_host, evidence),
                 'landing_domain': self.landing_domain(found['hrefs']),
                 'text': ' '.join(text.split())[:200], 'evidence': evidence}
+
+    @classmethod
+    def vendor_of(cls, hosts, frame_host='', evidence=()):
+        """Who served an ad slot: its creative's hosts, then its frame's,
+        then a Google slot marker; else the site's own, or '' for
+        nothing to go on.
+        """
+        for host in [*hosts, frame_host]:
+            for suffix, name in cls.ad_vendors:
+                if cls.host_under(host, suffix):
+                    return name
+        if any(x.startswith('marker') for x in evidence):
+            return 'Google'
+        return cls.site_vendor if (hosts or frame_host) else ''
 
     def scan_ad_slots(self, shot_prefix='', max_slots=None, budget_s=None):
         """Photograph and read the page's ad slots without clicking

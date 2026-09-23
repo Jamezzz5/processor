@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import urllib3.exceptions as url_ex
+from PIL import Image, ImageDraw
 from selenium.webdriver.common.by import By
 from processor.main import main
 import processor.reporting.utils as utl
@@ -110,6 +111,32 @@ TALL_PAGE = (
     'window.scrolls = 0;'
     "window.addEventListener('scroll', () => { window.scrolls += 1; });"
     '</script></body></html>')
+CF_INTERSTITIAL = (
+    '<html><head><title>Just a moment...</title></head><body>'
+    '<h1>www.gamespot.com</h1><p>Performing security verification</p>'
+    '<p>This website uses a security service to protect itself.</p>'
+    '</body></html>')
+BLOCKED_PAGE = (
+    '<html><head><title>Attention Required!</title></head><body>'
+    '<h1>Sorry, you have been blocked</h1>'
+    '<p>You are unable to access giantbomb.com</p></body></html>')
+LOGIN_PAGE = (
+    '<html><head><title>Log in</title></head><body>'
+    '<h1>Log in to continue</h1><input type="password"></body></html>')
+CONSENT_MODAL = (
+    f'<html><body><h1>Real news</h1>{"<p>An article paragraph.</p>" * 20}'
+    '<div id="onetrust-banner-sdk" role="dialog" style="position:fixed;'
+    'inset:0;background:#fff"><p>We and our partners use cookies. By '
+    'clicking Agree you consent to our privacy policy.</p>'
+    '<button id="onetrust-accept-btn-handler" onclick="window.picked='
+    '\'cmp\';document.getElementById(\'onetrust-banner-sdk\').remove()">'
+    'Accept all</button></div></body></html>')
+LATE_PAINT = (
+    '<html><body style="margin:0;background:#eef2f7"><script>'
+    "setTimeout(() => { document.body.innerHTML = `<h1 style=\"font-size:"
+    "120px;color:#000\">Painted at last</h1><p>${'words '.repeat(200)}"
+    "</p>`; }, 1500);"
+    '</script></body></html>')
 
 
 def _write_page(tmp_path, name, html):
@@ -162,6 +189,9 @@ class _HalfBuiltBrowser(object):
     def __init__(self):
         self.quit_calls = 0
 
+    def execute_cdp_cmd(self, *args, **kwargs):
+        return {}
+
     def execute_script(self, *args, **kwargs):
         raise ValueError('Configure failed.')
 
@@ -183,6 +213,9 @@ class _FakeSweepBrowser(object):
     only real thing under test."""
 
     instances = []
+    verdicts = []
+    url_host = utl.SeleniumWrapper.url_host
+    host_under = utl.SeleniumWrapper.host_under
 
     def __init__(self, *args, **kwargs):
         self.mobile = kwargs.get('mobile', False)
@@ -191,10 +224,15 @@ class _FakeSweepBrowser(object):
         _FakeSweepBrowser.instances.append(self)
 
     def take_screenshot(self, url=None, file_name=None, max_attempts=2,
-                        scroll_first=False):
+                        scroll_first=False, sleep=5):
         with open(file_name, 'wb') as f:
             f.write(b'x')
         self.shots.append((url, file_name, scroll_first))
+        queue = _FakeSweepBrowser.verdicts
+        return queue.pop(0) if queue else ('ok', '')
+
+    def capture_verdict(self, png_bytes=None):
+        return 'ok', ''
 
     def scan_ad_slots(self, shot_prefix='', **kwargs):
         path = '{}_ad0.png'.format(shot_prefix)
@@ -614,6 +652,126 @@ class TestUtils:
         assert ev({'tag': 'div', 'id': 'hero', 'src': '', 'width': 728,
                    'height': 90, 'attrs': 'hero'}) == []
 
+    @pytest.mark.parametrize('state, expected', [
+        ({'title': 'Just a moment...', 'text': 'Performing security '
+          'verification', 'url': 'https://www.gamespot.com/', 'len': 60},
+         ('bot_check', 'performing security verification')),
+        ({'title': 'x', 'text': "You've been blocked by network security",
+          'url': 'https://www.reddit.com/r/gaming', 'len': 40},
+         ('blocked', 'blocked by network security')),
+        ({'title': 'Privacy error', 'text': 'Your connection is not '
+          'private NET::ERR_CERT_DATE_INVALID', 'url': 'https://hitek.fr/',
+          'proto': 'chrome-error:', 'len': 80},
+         ('ssl_error', 'your connection is not private')),
+        ({'title': 'Log in', 'text': 'Log in to continue',
+          'url': 'https://x.com/', 'len': 18}, ('login_wall', 'log in')),
+        ({'title': 'Home', 'text': f'Sign in {"news " * 200}',
+          'url': 'https://www.ign.com/', 'len': 1000}, ('ok', '')),
+        ({'title': 'Account', 'text': 'x' * 900,
+          'url': 'https://www.twitch.tv/login?next=/', 'len': 900},
+         ('login_wall', '/login')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'We and our partners use cookies', 'len': 900},
+         ('consent_wall', 'we and our partners use cookies')),
+        ({'title': 'Oops', 'text': 'Something went wrong. Try again.',
+          'url': 'https://www.funimation.com/', 'len': 32},
+         ('error_page', 'something went wrong')),
+        ({'title': 'Site', 'text': f'Something went wrong {"x" * 900}',
+          'url': 'https://a.com/', 'len': 920},
+         ('error_page', 'something went wrong')),
+    ])
+    def test_classify_page_names_each_interstitial(self, state, expected):
+        """A header's "Sign in" link on a long page is not a login wall."""
+        assert utl.SeleniumWrapper.classify_page(state) == expected
+
+    @staticmethod
+    def _png(color, size=(64, 48), mark=None):
+        img = Image.new('RGB', size, color)
+        if mark:
+            ImageDraw.Draw(img).rectangle(mark, fill=(200, 30, 30))
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        return buffer.getvalue()
+
+    def test_is_solid_png_reads_solid_and_drawn_images(self):
+        """Any solid shade is blank, a thin drawn strip is not, and
+        unreadable bytes count as blank."""
+        solid = utl.SeleniumWrapper.is_solid_png
+        assert solid(self._png((0, 0, 0)))
+        assert solid(self._png((238, 238, 238)))
+        assert not solid(self._png((255, 255, 255), mark=(0, 0, 63, 3)))
+        assert solid(b'not a png')
+        state = {'title': 'Site', 'text': 'x' * 900, 'len': 900,
+                 'url': 'https://a.com/'}
+        assert utl.SeleniumWrapper.classify_page(
+            state, self._png((244, 244, 244))) == (
+            'blank', 'single-colour page')
+
+    def test_vendor_of_names_the_serving_network(self):
+        """The creative's hosts outrank the frame's."""
+        vendor = utl.SeleniumWrapper.vendor_of
+        assert vendor(['s0.2mdn.net', 'www.landing.example'],
+                      'tpc.googlesyndication.com') == 'Google'
+        assert vendor(['www.landing.example'],
+                      'aax-us-east.amazon-adsystem.com') == 'Amazon DSP'
+        assert vendor(['cdn.taboola.com'], 'www.ign.com') == 'Taboola'
+        assert vendor([], '', ['marker div-gpt-ad']) == 'Google'
+        assert vendor(['www.ign.com'], 'www.ign.com') == 'Site direct'
+        assert vendor([], '') == ''
+
+    def test_capture_verdict_reads_fixture_pages(self, tmp_path):
+        """Real Chrome names each interstitial and reports no headless
+        user agent or webdriver flag."""
+        pages = (('cf.html', CF_INTERSTITIAL, 'bot_check'),
+                 ('blocked.html', BLOCKED_PAGE, 'blocked'),
+                 ('login.html', LOGIN_PAGE, 'login_wall'),
+                 ('consent.html', CONSENT_MODAL, 'consent_wall'),
+                 ('banner.html', COOKIE_BANNER, 'ok'))
+        sw = utl.SeleniumWrapper()
+        try:
+            for name, html, expected in pages:
+                sw.go_to_url(_write_page(tmp_path, name, html), sleep=0)
+                assert sw.capture_verdict()[0] == expected, name
+            assert 'HeadlessChrome' not in sw.browser.execute_script(
+                'return navigator.userAgent;')
+            assert sw.browser.execute_script(
+                'return navigator.webdriver;') is None
+        finally:
+            sw.quit()
+
+    def test_take_screenshot_reshoots_a_late_painting_page(self, tmp_path):
+        """The re-shoot after a blank first shot is the file written."""
+        url = _write_page(tmp_path, 'late.html', LATE_PAINT)
+        seen = []
+        sw = utl.SeleniumWrapper()
+        verdict = sw.capture_verdict
+        sw.capture_verdict = lambda png=None: seen.append(
+            verdict(png)) or seen[-1]
+        try:
+            sw.go_to_url(url, sleep=0)
+            kind, detail = sw.take_screenshot(
+                file_name=str(tmp_path / 'late.png'))
+        finally:
+            sw.quit()
+        assert seen[0][0] == 'blank'
+        assert (kind, detail) == ('ok', '')
+        assert not utl.SeleniumWrapper.is_solid_png(
+            (tmp_path / 'late.png').read_bytes())
+
+    def test_consent_selector_dismisses_a_cmp_modal(self, tmp_path):
+        """A consent platform's button is found by id, not text."""
+        url = _write_page(tmp_path, 'cmp.html', CONSENT_MODAL)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            assert sw.capture_verdict()[0] == 'consent_wall'
+            sw.accept_cookies()
+            assert sw.browser.execute_script('return window.picked;') == (
+                'cmp')
+            assert sw.capture_verdict()[0] == 'ok'
+        finally:
+            sw.quit()
+
     def test_ad_clickers_are_gone(self):
         """The old frame walk clicked live ads to learn their landing
         pages, which registers clicks on them -- ours included."""
@@ -751,6 +909,58 @@ class TestSsApi:
         assert len(shots) == 2 and all(s[2] for s in shots)
         assert [b.mobile for b in _FakeSweepBrowser.instances] == [
             False, True]
+        assert (row['capture_status'], row['capture_detail']) == ('ok', '')
+        assert 'capture_status' not in df.columns
+
+    def test_get_data_writes_capture_status_to_manifest_not_csv(
+            self, tmp_path, monkeypatch):
+        """A page not shown keeps its verdict on the manifest and gets
+        no ad scan; the sheet and db frame never carry the verdict."""
+        api = self._api(tmp_path, monkeypatch)
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
+                            _FakeSweepBrowser)
+        _FakeSweepBrowser.instances = []
+        _FakeSweepBrowser.verdicts = [
+            ('bot_check', 'performing security verification'), ('ok', '')]
+        df = api.get_data(None, None, None)
+        rows = json.loads(api.s3.uploads['screenshots/260101_08/'
+                                         'manifest.json'])
+        assert [(r['capture_status'], r['capture_detail']) for r in rows
+                ] == [('bot_check', 'performing security verification'),
+                      ('ok', '')]
+        assert [r['ad_count'] for r in rows] == [0, 1]
+        assert not {'capture_status', 'capture_detail'} & set(df.columns)
+        sheet = pd.read_csv(tmp_path / 'sites.csv')
+        assert 'capture_status' not in sheet.columns
+
+    def test_blocked_reddit_falls_back_to_old_reddit(
+            self, tmp_path, monkeypatch):
+        """A blocked reddit page is re-shot on old.reddit.com under the
+        configured url, and the row says so."""
+        monkeypatch.chdir(tmp_path)
+        api = ssapi.SsApi(sites=[{'url': 'https://www.reddit.com/r/gaming',
+                                  'partner': 'Reddit'}],
+                          s3=_FakeS3(), ss_file_path_date='260101_08')
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
+                            _FakeSweepBrowser)
+        _FakeSweepBrowser.instances = []
+        _FakeSweepBrowser.verdicts = [
+            ('blocked', 'blocked by network security'), ('ok', ''),
+            ('ok', '')]
+        api.get_data(None, None, None)
+        shots = [s for b in _FakeSweepBrowser.instances for s in b.shots]
+        assert [s[0] for s in shots] == [
+            'https://www.reddit.com/r/gaming',
+            'https://old.reddit.com/r/gaming',
+            'https://www.reddit.com/r/gaming']
+        assert len({s[1] for s in shots[:2]}) == 1
+        rows = json.loads(api.s3.uploads['screenshots/260101_08/'
+                                         'manifest.json'])
+        assert rows[0]['url'] == 'https://www.reddit.com/r/gaming'
+        assert (rows[0]['capture_status'], rows[0]['capture_detail']) == (
+            'ok', 'via old.reddit.com')
+        assert rows[1]['capture_status'] == 'ok'
+        assert ssapi.SsApi.fallback_url('https://ign.com/news') == ''
 
 
 @requires_api_configs
@@ -1226,8 +1436,8 @@ class TestSimApi:
         assert api.config['report_id'] == 'fresh'
         assert not df.empty
 
-    def test_v3_endpoint_gone_falls_back_to_v4(self, monkeypatch):
-        """A sunset v3 report endpoint falls back to the v4 surface."""
+    def test_v5_endpoint_gone_falls_back_to_v4(self, monkeypatch):
+        """A missing v5 report endpoint falls back to v4, then pins it."""
         api = self.make_api()
         posts = _FakeRequests([
             _FakeResponse(404, 'gone'),
@@ -1236,9 +1446,40 @@ class TestSimApi:
         monkeypatch.setattr(simapi.time, 'sleep', _no_sleep)
         sd = ed = dt.datetime.today()
         assert api.make_request(sd, ed) == 'abc'
-        assert api.use_v4 is True
-        assert api.website_url in posts.calls[0]
-        assert api.batch_v4_url in posts.calls[1]
+        assert api.make_request(sd, ed) == 'abc'
+        assert posts.calls == [
+            'https://api.similarweb.com/batch/v5/request-report',
+            'https://api.similarweb.com/batch/v4/request-report',
+            'https://api.similarweb.com/batch/v4/request-report']
+
+    def test_every_version_gone_returns_none(self, monkeypatch):
+        """When no batch version answers, nothing is pinned or charged."""
+        api = self.make_api()
+        posts = _FakeRequests([_FakeResponse(404, 'gone')])
+        monkeypatch.setattr(simapi.requests, 'post', posts)
+        sd = ed = dt.datetime.today()
+        assert api.make_request(sd, ed) is None
+        assert api.batch_url is None
+        assert len(posts.calls) == 2
+
+    def test_status_validate_and_retry_paths(self, monkeypatch):
+        """Status is unversioned; validate and retry stay on v3/batch."""
+        api = self.make_api()
+        gets = _FakeRequests([_FakeResponse(200, json_data={
+            'status': 'completed', 'download_url': 'http://d'})])
+        posts = _FakeRequests([_FakeResponse(200, json_data={
+            'is_valid': True, 'estimated_credits': 3})])
+        monkeypatch.setattr(simapi.requests, 'get', gets)
+        monkeypatch.setattr(simapi.requests, 'post', posts)
+        monkeypatch.setattr(api, 'download_report', _download_stub)
+        api.check_report_status('rid')
+        api.request_report_retry('rid')
+        assert api.make_validate_request()['estimated_credits'] == 3
+        assert gets.calls == [
+            'https://api.similarweb.com/batch/request-status/rid']
+        assert posts.calls == [
+            'https://api.similarweb.com/v3/batch/retry/rid',
+            'https://api.similarweb.com/v3/batch/request-validate']
 
     def test_internal_error_uses_free_retry(self, monkeypatch):
         """internal_error hits the free retry endpoint, then resumes."""
@@ -1279,8 +1520,18 @@ class TestSimApi:
         api.config = {'metrics': 'all_traffic_visits,desktop_visits'}
         payload = api.construct_payload(dt.datetime.today(),
                                         dt.datetime.today())
-        assert payload['metrics'] == ['all_traffic_visits',
-                                      'desktop_visits']
+        table = payload['report_query']['tables'][0]
+        assert table['metrics'] == ['all_traffic_visits', 'desktop_visits']
+        assert table['vtable'] == 'traffic_and_engagement'
+
+    def test_config_data_version_passthrough(self):
+        """A data_version in config rides along."""
+        api = self.make_api()
+        today = dt.datetime.today()
+        api.config = {'data_version': 'VERSION_5.0'}
+        table = api.construct_payload(today, today)['report_query'][
+            'tables'][0]
+        assert table['data_version'] == 'VERSION_5.0'
 
 
 class _FakeGaClient(object):

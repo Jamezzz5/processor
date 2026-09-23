@@ -4,6 +4,7 @@ import json
 import logging
 import pandas as pd
 import datetime as dt
+from urllib.parse import urlparse
 import reporting.utils as utl
 import reporting.awss3 as awss3
 
@@ -17,6 +18,9 @@ class SsApi(object):
     ad_count = 'ad_count'
     ad_domains = 'ad_domains'
     shot_key = 'shot_key'
+    capture_status = 'capture_status'
+    capture_detail = 'capture_detail'
+    manifest_only = (capture_status, capture_detail)
     date = 'date'
     hour = 'hour'
     device = 'device'
@@ -27,6 +31,9 @@ class SsApi(object):
     output_csv = 'sites.csv'
     manifest_name = 'manifest.json'
     run_format = '%y%m%d_%H'
+    host_fallbacks = {'reddit.com': 'old.reddit.com'}
+    fallback_kinds = ('blocked', 'bot_check')
+    scan_kinds = ('ok', 'consent_wall')
 
     def __init__(self, file_name='site_config.csv', ss_file_path_date=None,
                  sites=None, s3=None, prefix=None):
@@ -111,27 +118,57 @@ class SsApi(object):
             self.config[new_index] = self.config[index].copy()
             self.config[new_index][self.device] = self.device_mobile
 
-    @staticmethod
-    def screenshot_site(browser, site, attempts=2, scan_ads=False):
+    @classmethod
+    def fallback_url(cls, url):
+        """``url`` on the stand-in ``host_fallbacks`` names for its host
+        or a parent of it, else ''."""
+        host = utl.SeleniumWrapper.url_host(url)
+        for domain, alt in cls.host_fallbacks.items():
+            if utl.SeleniumWrapper.host_under(host, domain):
+                return urlparse(url)._replace(netloc=alt).geturl()
+        return ''
+
+    @classmethod
+    def fallback_shot(cls, browser, url, verdict, file_name=None,
+                      **shot_kwargs):
+        """Re-shoot a blocked page at its stand-in host, returning the
+        new verdict with that host named: reddit's new front end refuses
+        the browser where old.reddit.com still serves the page.
+        """
+        alt = cls.fallback_url(url)
+        if verdict[0] not in cls.fallback_kinds or not alt or alt == url:
+            return verdict
+        kind, detail = browser.take_screenshot(alt, file_name,
+                                               scroll_first=True,
+                                               **shot_kwargs)
+        via = f'via {utl.SeleniumWrapper.url_host(alt)}'
+        return kind, f'{detail} {via}' if detail else via
+
+    @classmethod
+    def screenshot_site(cls, browser, site, attempts=2, scan_ads=False):
         """Screenshot one site, rebuilding the browser between tries.
 
         A command that timed out leaves the driver session unusable, so
-        retrying on the same browser only times out again.
+        retrying on the same browser only times out again; ad slots
+        are read only off a page that was actually shown.
 
         :param browser: SeleniumWrapper to shoot with
         :param site: Site providing the url and output file name
         :param attempts: tries before the site is given up on
         :param scan_ads: also read the page's ad slots, without clicks
-        :return: the ad slots found; [] when not asked or the site failed
+        :return: (ad slots found, (kind, detail) of the shot); the slots
+            are [] when not asked, not shown or the site failed
         """
         for attempt in range(attempts):
             try:
-                browser.take_screenshot(site.url, site.file_name,
-                                        scroll_first=True)
-                if scan_ads:
+                verdict = browser.take_screenshot(site.url, site.file_name,
+                                                  scroll_first=True)
+                verdict = cls.fallback_shot(browser, site.url, verdict,
+                                            site.file_name)
+                if scan_ads and verdict[0] in cls.scan_kinds:
                     return browser.scan_ad_slots(
-                        shot_prefix=site.file_name[:-4])
-                return []
+                        shot_prefix=site.file_name[:-4]), verdict
+                return [], verdict
             except browser.browser_errors as e:
                 logging.warning(
                     'Failed to screenshot {} on attempt {}. {}'.format(
@@ -139,7 +176,7 @@ class SsApi(object):
                 if attempt < attempts - 1:
                     browser.restart_browser()
         logging.error('Could not screenshot {}.'.format(site.url))
-        return []
+        return [], ('error_page', 'page unreachable')
 
     def get_data(self, sd, ed, fields):
         if not self.config:
@@ -153,13 +190,16 @@ class SsApi(object):
                     browser.quit()
                     browser = utl.SeleniumWrapper(
                         mobile=True, page_load_strategy='eager')
-                slots = self.screenshot_site(browser, site, scan_ads=True)
+                slots, verdict = self.screenshot_site(browser, site,
+                                                      scan_ads=True)
                 self.slots[index] = slots
                 self.config[index][self.file_name] = site.file_name
                 self.config[index][self.ad_count] = len(slots)
                 self.config[index][self.ad_domains] = ';'.join(sorted(
                     {x['landing_domain'] for x in slots
                      if x['landing_domain']}))
+                self.config[index][self.capture_status] = verdict[0]
+                self.config[index][self.capture_detail] = verdict[1]
         finally:
             browser.quit()
         self.write_config_to_df()
@@ -235,7 +275,11 @@ class SsApi(object):
         return file_path
 
     def write_config_to_df(self):
+        """The run's frame for the sheet and the db load, without the
+        verdict columns that ride the manifest only."""
         df = pd.DataFrame.from_dict(self.config, orient='index')
+        df = df.drop(columns=[c for c in self.manifest_only
+                              if c in df.columns])
         date = dt.datetime.strptime(self.run_id, self.run_format)
         df[self.date] = date
         df[self.hour] = date.hour

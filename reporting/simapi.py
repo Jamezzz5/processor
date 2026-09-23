@@ -13,14 +13,11 @@ import reporting.vmcolumns as vmc
 class SimApi(object):
     config_path = utl.config_path
     url = 'https://api.similarweb.com'
-    batch_url = '/v3/batch'
-    batch_v4_url = '/batch/v4'
-    rest_url = '/v4/website'
-    validate_url = '/request-validate'
-    website_url = '/traffic_and_engagement'
+    batch_versions = ['/batch/v5', '/batch/v4']
     request_url = '/request-report'
-    status_url = '/request-status/'
-    retry_url = '/retry/'
+    validate_url = '/v3/batch/request-validate'
+    status_url = '/batch/request-status/'
+    retry_url = '/v3/batch/retry/'
     vtable = 'traffic_and_engagement'
     default_config_file_name = 'simconfig.json'
     default_metrics = [
@@ -42,7 +39,7 @@ class SimApi(object):
         self.domains = None
         self.countries = None
         self.report_id = None
-        self.use_v4 = None
+        self.batch_url = None
         self.r = None
         self.df = pd.DataFrame()
 
@@ -98,25 +95,10 @@ class SimApi(object):
         return self.default_metrics
 
     def construct_payload(self, sd, ed):
-        payload = {'metrics': self.get_metrics(),
-                   'filters': {
-                       'domains': self.domains.split(','),
-                       'countries': self.countries.split(','),
-                       'include_subdomains': True
-                   },
-                   'granularity': 'monthly',
-                   'start_date': sd.strftime("%Y-%m-%d"),
-                   'end_date': ed.strftime("%Y-%m-%d"),
-                   'response_format': 'csv',
-                   'delivery_method': 'download_link'
-                   }
-        return payload
+        """Build the batch request body.
 
-    def construct_payload_v4(self, sd, ed):
-        """Build the batch/v4 request body.
-
-        v4 nests the report definition under report_query/tables with an
-        explicit vtable and takes monthly dates as YYYY-MM.
+        The report nests under report_query/tables with monthly
+        YYYY-MM dates; a config ``data_version`` is passed through.
 
         :param sd: start date as a datetime
         :param ed: end date as a datetime
@@ -134,6 +116,9 @@ class SimApi(object):
             'start_date': sd.strftime('%Y-%m'),
             'end_date': ed.strftime('%Y-%m')
         }
+        data_version = (self.config or {}).get('data_version')
+        if data_version:
+            table['data_version'] = data_version
         payload = {
             'report_name': 'lqapp_{}'.format(self.vtable),
             'report_query': {'tables': [table]},
@@ -173,49 +158,35 @@ class SimApi(object):
             attempts))
         return None
 
-    def build_request_url(self, endpoint, use_v4):
-        if use_v4:
-            return '{}{}{}'.format(self.url, self.batch_v4_url, endpoint)
-        return '{}{}{}{}'.format(self.url, self.batch_url, self.website_url,
-                                 endpoint)
+    def send_report_request(self, sd, ed):
+        """POST the report to the newest batch version that exists,
+        pinning it for the rest of the run.
 
-    def send_report_request(self, endpoint, sd, ed):
-        """POST a report payload, falling back from v3 to v4.
-
-        The first request that is not rejected as a missing endpoint
-        pins the api version for the rest of the run.
-
-        :param endpoint: request_url or validate_url
         :param sd: start date as a datetime
         :param ed: end date as a datetime
         :returns: requests response, or None on connection failure
         """
-        if self.use_v4 is None:
-            versions = [False, True]
-        else:
-            versions = [self.use_v4]
+        payload = self.construct_payload(sd, ed)
+        versions = [self.batch_url] if self.batch_url else self.batch_versions
         r = None
-        for use_v4 in versions:
-            url = self.build_request_url(endpoint, use_v4)
-            if use_v4:
-                payload = self.construct_payload_v4(sd, ed)
-            else:
-                payload = self.construct_payload(sd, ed)
+        for version in versions:
+            url = '{}{}{}'.format(self.url, version, self.request_url)
             r = self.request_with_retry(url, method='POST',
                                         json_body=payload)
             if r is None:
                 return None
-            if r.status_code in (404, 410) and not use_v4:
-                logging.warning('v3 endpoint missing (code {}), retrying '
-                                'with v4.'.format(r.status_code))
+            if r.status_code in (404, 410):
+                logging.warning('{} missing (code {}), trying the next '
+                                'batch version.'.format(
+                                    version, r.status_code))
                 continue
-            self.use_v4 = use_v4
+            self.batch_url = version
             return r
         return r
 
     # Uses Data Credits
     def make_request(self, sd, ed):
-        r = self.send_report_request(self.request_url, sd, ed)
+        r = self.send_report_request(sd, ed)
         if r is None:
             return None
         if r.status_code == 200:
@@ -304,8 +275,7 @@ class SimApi(object):
 
         :param report_id: string id of the failed report
         """
-        url = '{}{}{}{}'.format(self.url, self.batch_url, self.retry_url,
-                                report_id)
+        url = '{}{}{}'.format(self.url, self.retry_url, report_id)
         logging.info('Report hit internal error, requesting free retry.')
         self.request_with_retry(url, method='POST')
 
@@ -325,8 +295,7 @@ class SimApi(object):
             completed), or None when the report id is unusable and a
             fresh request may succeed
         """
-        url = '{}{}{}{}'.format(self.url, self.batch_url, self.status_url,
-                                report_id)
+        url = '{}{}{}'.format(self.url, self.status_url, report_id)
         delay = initial_delay
         error_count = 0
         retries_requested = 0
@@ -400,7 +369,9 @@ class SimApi(object):
 
     def make_validate_request(self, sd=None, ed=None):
         sd, ed = self.get_data_default_check(sd, ed)
-        r = self.send_report_request(self.validate_url, sd, ed)
+        url = '{}{}'.format(self.url, self.validate_url)
+        r = self.request_with_retry(url, method='POST',
+                                    json_body=self.construct_payload(sd, ed))
         if r is None or r.status_code != 200:
             if r is not None:
                 logging.warning('Validate request failed with code '
