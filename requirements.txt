@@ -12,7 +12,7 @@ pyjwt==2.13.0
 pytz==2022.7
 selenium==4.2.0
 seaborn==0.13.2
-Pillow==12.1.1
+Pillow==12.3.0
 boto3==1.33.2
 tableauserverclient==0.18.0
 tableauhyperapi==0.0.14751
