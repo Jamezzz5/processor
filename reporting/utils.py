@@ -874,6 +874,9 @@ class SeleniumWrapper(object):
     selectize_xpath = 'selectized'
     liquid_xpath = 'liquid'
     command_timeout = 60
+    launch_errors = (url_ex.HTTPError, http_client.HTTPException)
+    launch_attempts = 3
+    launch_pause = 15
     browser_errors = (ex.WebDriverException, url_ex.HTTPError,
                       http_client.HTTPException)
     accept_exact = ['ok', 'continue', 'proceed', 'i agree', 'agree',
@@ -977,9 +980,45 @@ class SeleniumWrapper(object):
         "  return {n: n, tag: el.tagName.toLowerCase(), id: el.id || '',"
         "    src: el.getAttribute('src') || '',"
         "    width: Math.round(r.width), height: Math.round(r.height),"
+        "    top: Math.round(r.top + window.scrollY),"
+        "    left: Math.round(r.left + window.scrollX),"
         "    attrs: [el.id, el.className,"
         "            ...[...el.attributes].map(a => a.name)].join(' ')};"
         "}).filter(c => c.width > 0 && c.height > 0);")
+    vitals_script = (
+        "window.__lqVitals = {lcp: 0, cls: 0};"
+        "try {"
+        "  new PerformanceObserver(list => {"
+        "    for (const e of list.getEntries()) {"
+        "      window.__lqVitals.lcp = e.renderTime || e.loadTime"
+        "        || e.startTime;"
+        "    }"
+        "  }).observe({type: 'largest-contentful-paint', buffered: true});"
+        "  new PerformanceObserver(list => {"
+        "    for (const e of list.getEntries()) {"
+        "      if (!e.hadRecentInput) window.__lqVitals.cls += e.value;"
+        "    }"
+        "  }).observe({type: 'layout-shift', buffered: true});"
+        "} catch (e) {}")
+    vitals_read_script = (
+        "const v = window.__lqVitals || {};"
+        "const nav = performance.getEntriesByType('navigation')[0];"
+        "const res = performance.getEntriesByType('resource');"
+        "const host = location.hostname.replace(/^www\\./, '');"
+        "const bytes = res.reduce((n, r) => n + (r.transferSize || 0), 0)"
+        "  + (nav ? (nav.transferSize || 0) : 0);"
+        "const hosts = new Set();"
+        "res.forEach(r => { try {"
+        "  const h = new URL(r.name).hostname.replace(/^www\\./, '');"
+        "  if (h && h !== host && !h.endsWith(`.${host}`)) hosts.add(h);"
+        "} catch (e) {} });"
+        "return {lab_lcp_ms: v.lcp ? Math.round(v.lcp) : null,"
+        "  lab_cls: (typeof v.cls === 'number')"
+        "    ? Math.round(v.cls * 1000) / 1000 : null,"
+        "  lab_ttfb_ms: nav ? Math.round(nav.responseStart) : null,"
+        "  page_kilobytes: Math.round(bytes / 1024),"
+        "  third_party_hosts: hosts.size,"
+        "  viewport: {w: window.innerWidth, h: window.innerHeight}};")
 
     def __init__(self, mobile=False, headless=True, page_load_strategy=''):
         self.mobile = mobile
@@ -1079,6 +1118,20 @@ class SeleniumWrapper(object):
             return wd.Chrome(service=service, options=co)
         return wd.Chrome(options=co)
 
+    def launch_browser(self, co):
+        """Start chrome, retrying with a growing pause when the
+        new-session call times out on a loaded box."""
+        for attempt in range(1, self.launch_attempts + 1):
+            try:
+                return self.create_browser(co)
+            except self.launch_errors as e:
+                if attempt == self.launch_attempts:
+                    raise
+                logging.warning(
+                    f'Browser launch attempt {attempt} of '
+                    f'{self.launch_attempts} failed, retrying: {e}')
+                time.sleep(self.launch_pause * attempt)
+
     def init_browser(self, headless):
         RemoteConnection.set_timeout(self.command_timeout)
         download_path = os.path.join(os.getcwd(), 'tmp')
@@ -1105,13 +1158,13 @@ class SeleniumWrapper(object):
             mobile_emulation = {"deviceName": "iPhone X"}
             co.add_experimental_option("mobileEmulation", mobile_emulation)
         try:
-            browser = self.create_browser(co)
+            browser = self.launch_browser(co)
         except (ex.SessionNotCreatedException, FileNotFoundError) as e:
             logging.warning(e)
             chrome_version = self.get_chrome_version()
             driver_version = self.get_chromedriver_version(chrome_version)
             self.download_chromedriver(driver_version)
-            browser = self.create_browser(co)
+            browser = self.launch_browser(co)
         try:
             self.configure_browser(browser, headless, download_path)
         except Exception:
@@ -1138,6 +1191,8 @@ class SeleniumWrapper(object):
         """
         browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
                                 {'source': self.stealth_script})
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
+                                {'source': self.vitals_script})
         browser.execute_script(self.stealth_script)
         agent = browser.execute_script('return navigator.userAgent;') or ''
         if not self.mobile and 'HeadlessChrome' in agent:
@@ -1751,6 +1806,36 @@ class SeleniumWrapper(object):
             return ''
         return path
 
+    def page_vitals(self):
+        """The shown page's lab LCP, CLS, TTFB, kilobytes, third-party
+        hosts, viewport and ad frames; {} when the driver cannot say."""
+        try:
+            out = self.browser.execute_script(self.vitals_read_script) or {}
+        except self.browser_errors as e:
+            logging.warning(f'Page vitals not read: {e}')
+            return {}
+        out['ad_frames'] = self.ad_frame_count()
+        return out
+
+    def ad_frame_count(self):
+        """Frames Chrome tagged as ads on the CDP frame tree, or None
+        when the driver cannot say."""
+        try:
+            tree = self.browser.execute_cdp_cmd('Page.getFrameTree', {})
+        except (AttributeError,) + self.browser_errors as e:
+            logging.warning(f'Ad frame tree not read: {e}')
+            return None
+        return self.count_ad_frames((tree or {}).get('frameTree') or {})
+
+    @classmethod
+    def count_ad_frames(cls, node):
+        """Ad-tagged frames in one CDP frame-tree node and its children."""
+        frame = node.get('frame') or {}
+        kind = (frame.get('adFrameStatus') or {}).get('adFrameType', 'none')
+        count = 0 if kind in ('none', None) else 1
+        return count + sum(cls.count_ad_frames(child)
+                           for child in node.get('childFrames') or [])
+
     def read_ad_slot(self, cand, evidence, shot_prefix):
         """One slot's shot and reading, or None when it vanished.
 
@@ -1779,7 +1864,8 @@ class SeleniumWrapper(object):
                        - {''})
         frame_host = self.url_host(cand['src'])
         return {'shot_path': shot_path, 'width': cand['width'],
-                'height': cand['height'], 'frame_host': frame_host,
+                'height': cand['height'], 'top': cand.get('top'),
+                'left': cand.get('left'), 'frame_host': frame_host,
                 'hosts': hosts,
                 'links': [x[:300] for x in found['hrefs'][:8]],
                 'vendor': self.vendor_of(hosts, frame_host, evidence),

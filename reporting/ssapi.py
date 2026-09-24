@@ -20,7 +20,11 @@ class SsApi(object):
     shot_key = 'shot_key'
     capture_status = 'capture_status'
     capture_detail = 'capture_detail'
-    manifest_only = (capture_status, capture_detail)
+    ad_viewport_density = 'ad_viewport_density'
+    vitals_fields = ('lab_lcp_ms', 'lab_cls', 'lab_ttfb_ms',
+                     'page_kilobytes', 'third_party_hosts', 'ad_frames',
+                     ad_viewport_density)
+    manifest_only = (capture_status, capture_detail) + vitals_fields
     date = 'date'
     hour = 'hour'
     device = 'device'
@@ -178,6 +182,51 @@ class SsApi(object):
         logging.error('Could not screenshot {}.'.format(site.url))
         return [], ('error_page', 'page unreachable')
 
+    @staticmethod
+    def viewport_density(slots, viewport):
+        """Return the first viewport's ad share, counting overlaps once.
+        Return None when the viewport is unavailable."""
+        width, height = viewport.get('w') or 0, viewport.get('h') or 0
+        if not width or not height:
+            return None
+        rectangles = []
+        edges = set()
+        for slot in slots:
+            top, left = slot.get('top'), slot.get('left')
+            if top is None or left is None:
+                continue
+            x1, x2 = max(left, 0), min(left + slot['width'], width)
+            y1, y2 = max(top, 0), min(top + slot['height'], height)
+            if x2 > x1 and y2 > y1:
+                rectangles.append((x1, x2, y1, y2))
+                edges.update((x1, x2))
+        edges = sorted(edges)
+        area = 0
+        for left, right in zip(edges, edges[1:]):
+            spans = sorted((y1, y2) for x1, x2, y1, y2 in rectangles
+                           if x1 < right and x2 > left)
+            covered = end = 0
+            for start, stop in spans:
+                covered += max(0, stop - max(start, end))
+                end = max(end, stop)
+            area += (right - left) * covered
+        return round(min(area / float(width * height), 1.0), 4)
+
+    @classmethod
+    def page_vitals(cls, browser, slots, verdict):
+        """The lab reading and ad viewport density of a page that was
+        shown, over ``vitals_fields``; {} for one that was not."""
+        if verdict[0] not in cls.scan_kinds:
+            return {}
+        read = getattr(browser, 'page_vitals', None)
+        vitals = dict(read() or {}) if read else {}
+        viewport = vitals.pop('viewport', None) or {}
+        out = {k: vitals[k] for k in cls.vitals_fields if k in vitals}
+        density = cls.viewport_density(slots, viewport)
+        if density is not None:
+            out[cls.ad_viewport_density] = density
+        return out
+
     def get_data(self, sd, ed, fields):
         if not self.config:
             logging.warning('No sites to screenshot.')
@@ -200,6 +249,8 @@ class SsApi(object):
                      if x['landing_domain']}))
                 self.config[index][self.capture_status] = verdict[0]
                 self.config[index][self.capture_detail] = verdict[1]
+                self.config[index].update(
+                    self.page_vitals(browser, slots, verdict))
         finally:
             browser.quit()
         self.write_config_to_df()

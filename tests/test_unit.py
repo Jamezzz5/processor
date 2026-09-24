@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 import datetime as dt
+from unittest.mock import Mock
 import urllib3.exceptions as url_ex
 from PIL import Image, ImageDraw
 from selenium.webdriver.common.by import By
@@ -239,10 +240,16 @@ class _FakeSweepBrowser(object):
         with open(path, 'wb') as f:
             f.write(b'y')
         return [{'shot_path': path, 'width': 300, 'height': 250,
+                 'top': 100, 'left': 50,
                  'frame_host': 'tpc.googlesyndication.com',
                  'landing_domain': 'landing.example.com',
                  'text': 'Buy Game X',
                  'evidence': ['marker google_ads_iframe']}]
+
+    def page_vitals(self):
+        return {'lab_lcp_ms': 1800, 'lab_cls': 0.05, 'lab_ttfb_ms': 300,
+                'page_kilobytes': 2048, 'third_party_hosts': 7,
+                'ad_frames': 2, 'viewport': {'w': 1000, 'h': 500}}
 
     def restart_browser(self):
         pass
@@ -514,6 +521,23 @@ class TestUtils:
             utl.SeleniumWrapper()
         assert fake.quit_calls == 1
 
+    @pytest.mark.parametrize('extra', [-1, 0])
+    def test_launch_retries_until_its_attempts_run_out(self, monkeypatch,
+                                                       extra):
+        """A slow chrome is retried; one that never answers still raises."""
+        attempts = utl.SeleniumWrapper.launch_attempts
+        launch = Mock(side_effect=[url_ex.ReadTimeoutError(
+            None, None, 'timed out')] * (attempts + extra) + ['browser'])
+        monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser', launch)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'launch_pause', 0)
+        sw = utl.SeleniumWrapper.__new__(utl.SeleniumWrapper)
+        if extra:
+            assert sw.launch_browser('options') == 'browser'
+        else:
+            with pytest.raises(url_ex.ReadTimeoutError):
+                sw.launch_browser('options')
+        assert launch.call_count == attempts
+
     def test_wrapper_is_a_context_manager(self, monkeypatch):
         """``with`` tears the browser down, raise or return alike."""
         quits = []
@@ -604,6 +628,40 @@ class TestUtils:
             assert sw.browser.execute_script('return window.clicked;') == 0
         finally:
             sw.quit()
+
+    def test_page_vitals_reads_the_shown_page(self, tmp_path):
+        """A page loaded after the browser started answers every lab
+        field without a raise."""
+        _write_page(tmp_path, 'creative.html', AD_CREATIVE)
+        url = _write_page(tmp_path, 'adpage.html', AD_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=1)
+            vitals = sw.page_vitals()
+            assert vitals['lab_lcp_ms'] is None or vitals['lab_lcp_ms'] >= 0
+            assert vitals['lab_cls'] is None or vitals['lab_cls'] >= 0
+            assert vitals['lab_ttfb_ms'] >= 0
+            assert vitals['page_kilobytes'] >= 0
+            assert vitals['third_party_hosts'] == 0
+            assert vitals['viewport']['w'] > 0
+            assert vitals['ad_frames'] is None or vitals['ad_frames'] >= 0
+            cands = sw.find_ad_candidates()
+            assert all(c['top'] >= 0 and c['left'] >= 0 for c in cands)
+        finally:
+            sw.quit()
+
+    def test_count_ad_frames_walks_the_tree(self):
+        tree = {'frame': {'id': '1'},
+                'childFrames': [
+                    {'frame': {'id': '2', 'adFrameStatus': {
+                        'adFrameType': 'root'}},
+                     'childFrames': [{'frame': {
+                         'id': '3', 'adFrameStatus': {
+                             'adFrameType': 'child'}}}]},
+                    {'frame': {'id': '4', 'adFrameStatus': {
+                        'adFrameType': 'none'}}}]}
+        assert utl.SeleniumWrapper.count_ad_frames(tree) == 2
+        assert utl.SeleniumWrapper.count_ad_frames({}) == 0
 
     def test_scroll_through_only_when_asked(self, tmp_path):
         """The default shot never moves the page; ``scroll_first``
@@ -874,6 +932,44 @@ class TestSsApi:
         # The import loop builds one per processor, list or no list.
         csv.unlink()
         assert ssapi.SsApi(ss_file_path_date='260101_08').config == {}
+
+    def test_viewport_density_counts_only_the_first_screen(self):
+        """Only the part of a slot on the first screen counts."""
+        slots = [{'width': 300, 'height': 250, 'top': 100, 'left': 50},
+                 {'width': 728, 'height': 90, 'top': 455, 'left': 0},
+                 {'width': 300, 'height': 600, 'top': 900, 'left': 0},
+                 {'width': 300, 'height': 250, 'top': None, 'left': None}]
+        density = ssapi.SsApi.viewport_density(slots, {'w': 1000, 'h': 500})
+        assert density == round((300 * 250 + 728 * 45) / 500000.0, 4)
+        assert ssapi.SsApi.viewport_density(slots, {}) is None
+        assert ssapi.SsApi.viewport_density([], {'w': 10, 'h': 10}) == 0.0
+        overlap = [
+            {'width': 50, 'height': 50, 'top': 0, 'left': 0},
+            {'width': 50, 'height': 50, 'top': 25, 'left': 25}]
+        assert ssapi.SsApi.viewport_density(
+            overlap, {'w': 100, 'h': 100}) == 0.4375
+        assert ssapi.SsApi.viewport_density(
+            overlap + overlap, {'w': 100, 'h': 100}) == 0.4375
+
+    def test_page_vitals_ride_the_manifest_only(self, tmp_path,
+                                                monkeypatch):
+        """Shown rows carry the lab reading in the manifest only; a
+        page that was not shown carries none."""
+        api = self._api(tmp_path, monkeypatch)
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
+                            _FakeSweepBrowser)
+        _FakeSweepBrowser.instances = []
+        _FakeSweepBrowser.verdicts = [('ok', ''), ('bot_check', 'captcha')]
+        df = api.get_data(None, None, None)
+        assert not set(ssapi.SsApi.vitals_fields) & set(df.columns)
+        rows = api.manifest_rows()
+        shown = next(r for r in rows if r['capture_status'] == 'ok')
+        blocked = next(r for r in rows if r['capture_status'] != 'ok')
+        assert shown['lab_lcp_ms'] == 1800
+        assert shown['ad_frames'] == 2
+        assert shown['ad_viewport_density'] == 0.15
+        assert 'viewport' not in shown
+        assert not any(k in blocked for k in ssapi.SsApi.vitals_fields)
 
     def test_get_data_writes_string_sites_manifest_and_ad_columns(
             self, tmp_path, monkeypatch):
