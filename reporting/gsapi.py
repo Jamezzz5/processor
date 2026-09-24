@@ -527,9 +527,8 @@ class GsApi(object):
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         colors = self._brand_colors(meta.get('deck_brand'))
         reqs = [self._blank_slide_req(slide_id)]
-        reqs += self._rect_reqs(slide_id, slide_id + 'bg', 0, 0,
-                                self.PAGE_W_EMU, self.PAGE_H_EMU,
-                                colors['ink'])
+        reqs += self._art_field_reqs(slide_id, colors, meta.get('image_url'),
+                                     meta.get('img_w'), meta.get('img_h'))
         # Brand-accent band anchoring the foot of the cover.
         band_h = 137160
         reqs += self._rect_reqs(slide_id, slide_id + 'band', 0,
@@ -537,17 +536,9 @@ class GsApi(object):
                                 band_h, colors['accent'])
         logo_url = meta.get('logo_url')
         if logo_url:
-            lw, lh = 1524000, 508000  # 3:1 brand mark, centered near the top
-            pad = 91440  # 0.1" plate padding
-            px = (self.PAGE_W_EMU - lw) // 2 - pad
-            reqs += self._rect_reqs(
-                slide_id, slide_id + 'plate', px, 520000 - pad,
-                lw + 2 * pad, lh + 2 * pad, self.DECK_WHITE,
-                shape_type='ROUND_RECTANGLE')
-            reqs.append({'createImage': {
-                'objectId': slide_id + 'logo', 'url': logo_url,
-                'elementProperties': self._elem_props(
-                    slide_id, lw, lh, (self.PAGE_W_EMU - lw) // 2, 520000)}})
+            reqs += self._logo_plate_reqs(
+                slide_id, slide_id + 'logo', logo_url,
+                (self.PAGE_W_EMU - self.LOGO_W_EMU) // 2, 520000)
         reqs += self._text_box_reqs(
             slide_id, slide_id + 't', meta.get('title', ''),
             cx, 1600200, cw, 900000, font_pt=30, bold=True, align='CENTER',
@@ -558,32 +549,84 @@ class GsApi(object):
             color=self.DECK_MUTED_LIGHT)
         reqs += self._text_box_reqs(
             slide_id, slide_id + 'b', meta.get('brand', ''),
-            cx, self.PAGE_H_EMU - 700000, cw, 400000, font_pt=12,
+            cx, self.PAGE_H_EMU - 700000, cw, 260000, font_pt=12,
             align='CENTER', color=self.DECK_MUTED_LIGHT)
+        if meta.get('legal'):
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'legal', meta['legal'],
+                cx, self.PAGE_H_EMU - 420000, cw, 260000, font_pt=9,
+                align='CENTER', color=self.DECK_MUTED_LIGHT)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def add_section_slide(self, presentation_id, slide_id, heading,
-                          brand=None):
+                          brand=None, eyebrow=None, note=None,
+                          image_url=None, img_w=None, img_h=None):
         """A divider slide, gold-deck style: a full-bleed dark ink field with
         the section heading in white and a short brand-accent underline —
-        richer than a colored band floating on white."""
+        richer than a colored band floating on white. ``eyebrow`` makes
+        it a statement slide, ``note`` adds a muted line under the rule
+        and ``image_url`` puts art behind the veil."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
-        reqs += self._rect_reqs(slide_id, slide_id + 'bg', 0, 0,
-                                self.PAGE_W_EMU, self.PAGE_H_EMU,
-                                colors['ink'])
-        head_h = 700000
+        reqs += self._art_field_reqs(slide_id, colors, image_url,
+                                     img_w, img_h)
+        head_h = 1100000 if eyebrow else 700000
         head_y = (self.PAGE_H_EMU - head_h) // 2 - 137160
+        if eyebrow:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'e', eyebrow, cx, head_y - 400000,
+                cw, 340000, font_pt=12, bold=True, align='CENTER',
+                color=colors['accent'])
         reqs += self._text_box_reqs(
             slide_id, slide_id + 't', heading or '',
             cx, head_y, cw, head_h,
-            font_pt=28, bold=True, align='CENTER', color=self.DECK_WHITE)
+            font_pt=24 if eyebrow else 28, bold=True, align='CENTER',
+            color=self.DECK_WHITE)
         rule_w = 2057400  # 2.25" accent underline centered below the heading
+        rule_y = head_y + head_h + 91440
         reqs += self._rect_reqs(
             slide_id, slide_id + 'rule', (self.PAGE_W_EMU - rule_w) // 2,
-            head_y + head_h + 91440, rule_w, 45720, colors['accent'])
+            rule_y, rule_w, 45720, colors['accent'])
+        if note:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'n', note, cx, rule_y + 150000,
+                cw, 400000, font_pt=12, align='CENTER',
+                color=self.DECK_MUTED_LIGHT)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    def add_closing_slide(self, presentation_id, slide_id, heading,
+                          logos=None, legal=None, brand=None,
+                          image_url=None, img_w=None, img_h=None):
+        """The deck's last slide: a thank-you on the art field over
+        ``logos`` (``[publisher_url, liquid_url]``, either None) and the
+        legal line."""
+        colors = self._brand_colors(brand)
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        reqs += self._art_field_reqs(slide_id, colors, image_url,
+                                     img_w, img_h)
+        reqs += self._text_box_reqs(
+            slide_id, slide_id + 't', heading or 'Thank you',
+            cx, 1700000, cw, 900000, font_pt=36, bold=True,
+            align='CENTER', color=self.DECK_WHITE)
+        logo_y = self.PAGE_H_EMU - 1150000
+        left, right = (list(logos or []) + [None, None])[:2]
+        if left:
+            reqs += self._logo_plate_reqs(slide_id, slide_id + 'l', left,
+                                          cx + 91440, logo_y)
+        if right:
+            reqs += self._logo_plate_reqs(
+                slide_id, slide_id + 'r', right,
+                self.PAGE_W_EMU - self.MARGIN_EMU - self.LOGO_W_EMU - 91440,
+                logo_y)
+        if legal:
+            reqs += self._text_box_reqs(
+                slide_id, slide_id + 'legal', legal, cx,
+                self.PAGE_H_EMU - 380000, cw, 300000, font_pt=9,
+                align='CENTER', color=self.DECK_MUTED_LIGHT)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -722,9 +765,15 @@ class GsApi(object):
         return slide_id
 
     def _rect_reqs(self, slide_id, shape_id, x, y, w, h, fill_color,
-                   shape_type='RECTANGLE'):
+                   shape_type='RECTANGLE', alpha=None):
         """A filled shape (no outline) — the card behind a stat tile, the
-        band behind a section heading, the ink field behind a cover."""
+        band behind a section heading, the ink field behind a cover;
+        ``alpha`` (0-1) makes it translucent."""
+        fill = {'color': {'rgbColor': fill_color}}
+        fields = 'shapeBackgroundFill.solidFill.color'
+        if alpha is not None:
+            fill['alpha'] = alpha
+            fields += ',shapeBackgroundFill.solidFill.alpha'
         return [
             {'createShape': {
                 'objectId': shape_id, 'shapeType': shape_type,
@@ -732,12 +781,73 @@ class GsApi(object):
             {'updateShapeProperties': {
                 'objectId': shape_id,
                 'shapeProperties': {
-                    'shapeBackgroundFill': {'solidFill': {
-                        'color': {'rgbColor': fill_color}}},
+                    'shapeBackgroundFill': {'solidFill': fill},
                     'outline': {'propertyState': 'NOT_RENDERED'}},
-                'fields': ('shapeBackgroundFill.solidFill.color,'
-                           'outline.propertyState')}},
+                'fields': fields + ',outline.propertyState'}},
         ]
+
+    def _image_reqs(self, slide_id, shape_id, url, x, y, w, h):
+        """A picture drawn at an exact box."""
+        return [{'createImage': {
+            'objectId': shape_id, 'url': url,
+            'elementProperties': self._elem_props(slide_id, w, h, x, y)}}]
+
+    def _cover_fit(self, img_w, img_h):
+        """``(x, y, w, h)`` that covers the page without distortion,
+        centred; unknown dimensions read as 16:9."""
+        img_w, img_h = img_w or 16, img_h or 9
+        scale = max(self.PAGE_W_EMU / float(img_w),
+                    self.PAGE_H_EMU / float(img_h))
+        draw_w, draw_h = img_w * scale, img_h * scale
+        return (int((self.PAGE_W_EMU - draw_w) / 2),
+                int((self.PAGE_H_EMU - draw_h) / 2),
+                int(draw_w), int(draw_h))
+
+    ART_VEIL_ALPHA = 0.72
+    LOGO_W_EMU, LOGO_H_EMU = 1524000, 508000
+
+    def _art_field_reqs(self, slide_id, colors, image_url=None,
+                        img_w=None, img_h=None):
+        """The field behind a dark slide: full-bleed art under a
+        translucent ink veil, else plain ink."""
+        reqs = []
+        if image_url:
+            x, y, w, h = self._cover_fit(img_w, img_h)
+            reqs += self._image_reqs(slide_id, slide_id + 'art', image_url,
+                                     x, y, w, h)
+        reqs += self._rect_reqs(
+            slide_id, slide_id + 'bg', 0, 0, self.PAGE_W_EMU,
+            self.PAGE_H_EMU, colors['ink'],
+            alpha=self.ART_VEIL_ALPHA if image_url else None)
+        return reqs
+
+    def _logo_plate_reqs(self, slide_id, shape_id, logo_url, x, y):
+        """A brand mark at ``(x, y)`` on a white plate, so any colourway
+        reads on the dark field."""
+        lw, lh = self.LOGO_W_EMU, self.LOGO_H_EMU
+        pad = 91440  # 0.1" plate padding
+        reqs = self._rect_reqs(
+            slide_id, shape_id + 'plate', x - pad, y - pad,
+            lw + 2 * pad, lh + 2 * pad, self.DECK_WHITE,
+            shape_type='ROUND_RECTANGLE')
+        return reqs + self._image_reqs(slide_id, shape_id, logo_url,
+                                       x, y, lw, lh)
+
+    PPTX_MIME = ('application/vnd.openxmlformats-officedocument'
+                 '.presentationml.presentation')
+    PDF_MIME = 'application/pdf'
+
+    def export_file(self, file_id, mime_type=PDF_MIME):
+        """A Drive file's bytes converted to ``mime_type``; ``None`` when
+        Drive refuses (the credential needs the drive scope)."""
+        response = self.client.get(f'{self.files_url}/{file_id}/export',
+                                   params={'mimeType': mime_type})
+        if getattr(response, 'status_code', 0) != 200:
+            logging.warning('Drive export of %s as %s refused: %s',
+                            file_id, mime_type,
+                            str(getattr(response, 'text', ''))[:300])
+            return None
+        return response.content
 
     def _content_chrome_reqs(self, slide_id, title, colors, footer=None,
                              page=None):
