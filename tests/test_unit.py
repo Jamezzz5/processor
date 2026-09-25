@@ -1468,7 +1468,9 @@ class TestAccountListing:
             self, monkeypatch):
         api = redapi.RedApi()
         api.username = 'Liquid'
-        rows = [{'id': 't2_a', 'name': 'liquid', 'time_zone_id': 'UTC'}]
+        rows = [{'id': 't2_other', 'name': 'other',
+                 'time_zone_id': 'America/New_York'},
+                {'id': 't2_a', 'name': 'liquid', 'time_zone_id': 'UTC'}]
         monkeypatch.setattr(redapi.requests, 'get',
                             lambda url, headers=None: self.response(
                                 {'data': rows}))
@@ -1479,6 +1481,7 @@ class TestAccountListing:
         assert api.get_ad_accounts_by_business(['b1']) == 't2_a'
         api.username = 'nobody'
         assert api.get_ad_accounts_by_business(['b1']) == ''
+        assert api.time_zone_id == 'UTC'
 
 
 class TestSimApi:

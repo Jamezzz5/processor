@@ -672,12 +672,13 @@ class RedApi(object):
         account_id = ''
         for business_id in business_ids:
             ad_accounts = self.request_ad_accounts(business_id)
-            account_ids = [
-                x['id'] for x in ad_accounts if self.username.lower() in
+            matches = [
+                x for x in ad_accounts if self.username.lower() in
                 (x['id'].lower(), (x.get('name') or '').lower())]
-            if account_ids:
-                account_id = account_ids[0]
-                self.time_zone_id = ad_accounts[0]['time_zone_id']
+            if matches:
+                account_id = matches[0]['id']
+                self.time_zone_id = matches[0].get(
+                    'time_zone_id', self.time_zone_id)
                 break
         return account_id
 

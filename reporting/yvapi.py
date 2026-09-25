@@ -3,6 +3,7 @@ import sys
 import jwt
 import time
 import json
+import uuid
 import logging
 import requests
 import pandas as pd
@@ -14,9 +15,17 @@ config_path = utl.config_path
 
 
 class YvApi(object):
-    b2b_url = 'https://id.b2b.yahooinc.com'
-    token_url = "{}/identity/oauth2/access_token".format(b2b_url)
-    aud = "{}/identity/oauth2/access_token?realm=dsp".format(b2b_url)
+    # id.b2b.yahooinc.com stopped resolving; Yahoo's DSP setup guide
+    # (help.yahooinc.com/dsp-api/docs/setup-access-guide) now issues
+    # tokens from ZTS, which rejects an issuer without this prefix.
+    b2b_url = 'https://id.b2b.yahooincapis.com/zts/v1'
+    token_url = '{}/oauth2/token'.format(b2b_url)
+    aud = b2b_url
+    client_prefix = 'idb2b.dsp.dspapi.'
+    token_scope = 'api-client'
+    max_attempts = 3
+    retry_sleep = 30
+    request_timeout = 60
     schedule_url = 'http://api-sched-v3.admanagerplus.yahoo.com'
     report_url = '{}/yamplus_api/extreport/'.format(schedule_url)
     ad_manager_url = 'https://dspapi.admanagerplus.yahoo.com'
@@ -86,14 +95,68 @@ class YvApi(object):
                                 'Aborting.'.format(item))
                 sys.exit(0)
 
+    def make_request(self, method, url, attempt=1, **kwargs):
+        """Sends one request, retrying when the connection breaks.
+
+        A DNS failure, refused connection, timeout or truncated body
+        would otherwise escape ``get_data`` and ``importhandler``
+        re-raises it, ending the whole processor run on one vendor.
+
+        :param method: 'get' or 'post'
+        :param url: the url to request
+        :param attempt: current attempt, incremented on each retry
+        :param kwargs: passed through to requests
+        :returns: the response, or None once max_attempts is exhausted
+        """
+        try:
+            r = requests.request(method, url, timeout=self.request_timeout,
+                                 **kwargs)
+        except (requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as e:
+            msg = 'Connection to {} broken on attempt {} of {}'.format(
+                url, attempt, self.max_attempts)
+            if attempt >= self.max_attempts:
+                logging.warning('{} - aborting: {}'.format(msg, e))
+                return None
+            logging.warning('{} - retrying in {}s: {}'.format(
+                msg, self.retry_sleep, e))
+            time.sleep(self.retry_sleep)
+            r = self.make_request(method, url, attempt + 1, **kwargs)
+        return r
+
     def set_header(self):
+        """Mints a token and builds the auth header from it.
+
+        :returns: True when the header is set, False when no token
+            could be minted - the caller skips this card
+        """
         token = self.get_token()
+        if not token:
+            return False
         self.access_token = token['access_token']
         self.header = {"X-Auth-Method": "OAuth2",
                        "X-Auth-Token": self.access_token}
         logging.info('Header set with access token')
+        return True
+
+    def client_issuer(self):
+        """The JWT ``iss``/``sub``: the client id under ZTS's prefix.
+
+        Cards saved before the ZTS move hold the bare id, so the prefix
+        is added only when it is missing.
+        """
+        client_id = str(self.client_id)
+        if client_id.startswith(self.client_prefix):
+            return client_id
+        return '{}{}'.format(self.client_prefix, client_id)
 
     def get_token(self):
+        """Exchanges a client-assertion JWT for an access token.
+
+        :returns: the token response dict, or None when the endpoint is
+            unreachable or refuses the credentials
+        """
         logging.info('Retrieving access token')
         token_header = {"Content-Type": "application/x-www-form-urlencoded",
                         "Accept": "application/json"}
@@ -102,13 +165,15 @@ class YvApi(object):
             "alg": "HS256",
             "typ": "jwt"
         }
+        issuer = self.client_issuer()
+        now = time.time()
         jwt_payload = {
             "aud": self.aud,
-            "iss": self.client_id,
-            "sub": self.client_id,
-            "exp": time.time() + 600,
-            "iat": time.time(),
-            "jti": "f8799df2-254e-11ec-9621-0242ac130002"
+            "iss": issuer,
+            "sub": issuer,
+            "exp": now + 600,
+            "iat": now,
+            "jti": str(uuid.uuid4())
         }
         jwt_token = jwt.encode(payload=jwt_payload, key=self.client_secret,
                                headers=jwt_header)
@@ -117,18 +182,23 @@ class YvApi(object):
             "grant_type": "client_credentials",
             "client_assertion_type": assertion,
             "client_assertion": jwt_token,
-            "scope": "dsp-api-access",
+            "scope": self.token_scope,
             "realm": "dsp"}
-        r = requests.post(self.token_url, data=params, headers=token_header)
+        r = self.make_request('post', self.token_url, data=params,
+                              headers=token_header)
+        if r is None:
+            logging.warning('Could not reach the Yahoo token endpoint.')
+            return None
         try:
             token = r.json()
         except json.decoder.JSONDecodeError as e:
-            logging.warning(
-                'Response not json, exiting. \nError: {}\n Response'.format(
-                    e, r.text))
-            sys.exit(0)
+            logging.warning('Token response not json. Error: {} '
+                            'Response: {}'.format(e, r.text))
+            return None
+        if 'access_token' not in token:
+            logging.warning('No access token in response: {}'.format(token))
+            return None
         logging.info('Access token retrieved')
-        self.access_token = token
         return token
 
     @staticmethod
@@ -156,12 +226,8 @@ class YvApi(object):
         return sd, ed
 
     def check_file(self, download_url, attempt=1):
-        try:
-            r = requests.get(download_url, headers=self.header)
-        except ConnectionError as e:
-            r = None
-            logging.error('Connection error: {}'.format(e))
-            time.sleep(30)
+        r = self.make_request('get', download_url, headers=self.header)
+        if r is None:
             return False, r
         if 'status' in r.json() and r.json()['status'] == 'Success':
             return True, r
@@ -176,7 +242,7 @@ class YvApi(object):
         r = None
         for x in range(1, 101):
             report_status, r = self.check_file(download_url, attempt=x)
-            if report_status:
+            if report_status or r is None:
                 break
         if not report_status:
             logging.warning('Report could not download returning blank df.')
@@ -208,7 +274,10 @@ class YvApi(object):
             "endDate": ed_time
         }
         self.header['Content-Type'] = 'application/json'
-        r = requests.post(self.report_url, headers=self.header, json=payload)
+        r = self.make_request('post', self.report_url, headers=self.header,
+                              json=payload)
+        if r is None:
+            return ''
         if 'customerReportId' not in r.json():
             logging.warning('No customer report in response as follows: {}'
                             ''.format(r.json()))
@@ -224,7 +293,9 @@ class YvApi(object):
         return df
 
     def get_data(self, sd=None, ed=None, fields=None):
-        self.set_header()
+        if not self.set_header():
+            logging.warning('No access token returning blank df')
+            return pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         sd, ed = self.format_dates(sd, ed)
         logging.info('Getting data from {} to {}'.format(sd, ed))
@@ -233,6 +304,8 @@ class YvApi(object):
             logging.warning('No download url returning blank df')
             return pd.DataFrame()
         df = self.get_report(download_url)
+        if df is None:
+            return pd.DataFrame()
         logging.info('Data downloaded.')
         if self.campaign_filter and not df.empty:
             df = self.filter_df_on_campaign(df)
@@ -289,7 +362,11 @@ class YvApi(object):
     def test_connection(self, acc_col, camp_col, pre_col):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
-        self.set_header()
+        if not self.set_header():
+            msg = ' '.join([failure_msg, 'Could not get an access token. '
+                            'Check the client ID and secret.'])
+            return pd.DataFrame(data=[[acc_col, msg, False]],
+                                columns=vmc.r_cols)
         results = self.check_advertiser_id(
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
