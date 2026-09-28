@@ -218,6 +218,8 @@ class VendorMatrix(object):
                         if val.endswith(default[1]):
                             continue
                     self.vm_change(index, col, val)
+            if 'vm_transform' in source:
+                self.vm_change(index, vmc.transform, source['vm_transform'])
         self.write()
 
     def get_import_data_sources(self, import_type='API_', default_param=None):
@@ -390,6 +392,14 @@ class VendorMatrix(object):
             if x not in data_dict.keys():
                 data_dict[x] = []
         return data_dict
+
+    @staticmethod
+    def get_transform_types():
+        return ['MixedDateColumn', 'Pivot', 'Merge', 'MergeReplace',
+                'MergeReplaceExclude', 'DateSplit', 'Stack', 'Melt',
+                'CombineColumnsUnderscore', 'RawTranslate', 'AddColumn',
+                'FilterCol', 'CombineColumns', 'EqualReplace', 'RenameCol',
+                'PercentDecode', 'PriceCalculate', 'StringReplaceAll']
 
 
 class ImportConfig(object):
