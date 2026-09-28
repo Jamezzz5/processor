@@ -112,6 +112,23 @@ TALL_PAGE = (
     'window.scrolls = 0;'
     "window.addEventListener('scroll', () => { window.scrolls += 1; });"
     '</script></body></html>')
+NATIVE_PAGE = (
+    '<html><body style="margin:0"><script>window.clicked = 0;'
+    "document.addEventListener('click', () => { window.clicked += 1; });"
+    '</script><div id="taboola-below-article" style="width:600px;'
+    'height:300px"><iframe src="creative.html" width="600" height="280"'
+    ' style="border:0"></iframe></div>'
+    '<div class="ad-slot" style="width:300px;height:250px"><img alt="Play '
+    'Game Y" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAA'
+    'ALAAAAAABAAEAAAIBRAA7" width="300" height="250"></div>'
+    '<div class="advert-wrapper" style="width:1600px;height:2000px"></div>'
+    '<video width="640" height="360" style="display:block"></video>'
+    '</body></html>')
+STORY_PARAGRAPH = ('<p style="font-size:40px;color:#000">The quick brown '
+                   'fox jumps over the lazy dog and keeps running.</p>')
+LONG_ARTICLE = ('<html><head><title>Story</title></head>'
+                f'<body style="margin:0">{STORY_PARAGRAPH * 120}'
+                '</body></html>')
 CF_INTERSTITIAL = (
     '<html><head><title>Just a moment...</title></head><body>'
     '<h1>www.gamespot.com</h1><p>Performing security verification</p>'
@@ -225,10 +242,11 @@ class _FakeSweepBrowser(object):
         _FakeSweepBrowser.instances.append(self)
 
     def take_screenshot(self, url=None, file_name=None, max_attempts=2,
-                        scroll_first=False, sleep=5):
+                        scroll_first=False, sleep=5, full_file_name=None):
         with open(file_name, 'wb') as f:
             f.write(b'x')
         self.shots.append((url, file_name, scroll_first))
+        self.last_full_shot = ('', None)
         queue = _FakeSweepBrowser.verdicts
         return queue.pop(0) if queue else ('ok', '')
 
@@ -256,6 +274,26 @@ class _FakeSweepBrowser(object):
 
     def quit(self):
         pass
+
+
+class _FakeWalkingBrowser(_FakeSweepBrowser):
+    """The sweep browser that also finds one article per home page and
+    writes a full-page jpeg for every shown page."""
+
+    def take_screenshot(self, url=None, file_name=None, max_attempts=2,
+                        scroll_first=False, sleep=5, full_file_name=None):
+        verdict = super().take_screenshot(url, file_name, max_attempts,
+                                          scroll_first, sleep)
+        if full_file_name and verdict[0] == 'ok':
+            with open(full_file_name, 'wb') as f:
+                f.write(b'z')
+            self.last_full_shot = (full_file_name, 5000)
+        return verdict
+
+    @staticmethod
+    def find_article_links(base_url, limit):
+        return [f'{base_url}/articles/story-{n}'
+                for n in range(1, limit + 1)]
 
 
 class _FakeS3(object):
@@ -710,6 +748,103 @@ class TestUtils:
         assert ev({'tag': 'div', 'id': 'hero', 'src': '', 'width': 728,
                    'height': 90, 'attrs': 'hero'}) == []
 
+    def test_slot_evidence_native_and_container_markers(self):
+        """A native widget's name or an ad-container name is evidence;
+        a wrapper bigger than a slot and a bare video are not."""
+        ev = utl.SeleniumWrapper.slot_evidence
+        assert ev({'tag': 'div', 'id': 'taboola-below-article', 'src': '',
+                   'width': 600, 'height': 300,
+                   'attrs': 'taboola-below-article id style'}) == [
+            'native taboola']
+        assert ev({'tag': 'div', 'id': '', 'src': '', 'width': 300,
+                   'height': 250, 'attrs': ' ad-slot class style'}) == [
+            'container ad-slot', 'size 300x250']
+        assert ev({'tag': 'div', 'id': 'ad-top', 'src': '', 'width': 728,
+                   'height': 90, 'attrs': 'ad-top  id'}) == [
+            'container ad-top', 'size 728x90']
+        assert ev({'tag': 'div', 'id': '', 'src': '', 'width': 1600,
+                   'height': 2000, 'attrs': ' advert-wrapper class'}) == []
+        assert ev({'tag': 'video', 'id': '', 'src': '', 'width': 640,
+                   'height': 360, 'attrs': '  width height'}) == []
+        assert ev({'tag': 'video', 'id': 'preroll', 'width': 640,
+                   'height': 360, 'attrs': 'preroll  src',
+                   'src': 'https://cdn.connatix.com/v.mp4'}) == [
+            'src host cdn.connatix.com', 'size 640x360']
+
+    def test_pick_article_links_keeps_same_host_articles(self):
+        """Only deep same-host stories with a headline survive; section,
+        account and off-site links are dropped and paths dedupe."""
+        pick = utl.SeleniumWrapper.pick_article_links
+        base = 'https://www.ign.com'
+        links = [
+            {'href': 'https://www.ign.com/', 'text': 'Home page of IGN'},
+            {'href': 'https://www.ign.com/tag/rpg', 'text': 'Role playing'},
+            {'href': 'https://www.ign.com/login', 'text': 'Log in to IGN'},
+            {'href': 'https://www.ign.com/reviews', 'text': 'All reviews'},
+            {'href': 'https://twitter.com/ign/status/1', 'text': 'x' * 30},
+            {'href': 'https://www.ign.com/articles/big-story', 'text': 'x'},
+            {'href': 'https://www.ign.com/articles/big-story#c',
+             'text': 'The biggest story of the day'},
+            {'href': 'https://www.ign.com/articles/big-story/',
+             'text': 'The biggest story of the day again'},
+            {'href': 'https://www.ign.com/games/another-long-slug-here-x',
+             'text': 'Another long story headline'},
+            {'href': 'https://uk.ign.com/articles/third-story',
+             'text': 'A third story from the uk edition'},
+            {'href': 'https://www.ign.com/videos/trailer-drop',
+             'text': 'Watch the trailer drop'},
+            {'href': 'mailto:tips@ign.com', 'text': 'Send us your tips'}]
+        assert pick(links, base, 5) == [
+            'https://www.ign.com/articles/big-story',
+            'https://www.ign.com/games/another-long-slug-here-x',
+            'https://uk.ign.com/articles/third-story']
+        assert pick(links, base, 1) == [
+            'https://www.ign.com/articles/big-story']
+        assert pick([], base, 3) == []
+
+    def test_scan_ad_slots_finds_native_widget(self, tmp_path):
+        """A Taboola container and an ad-slot div are read as slots; the
+        oversized wrapper and the bare video are not, and nothing is
+        clicked."""
+        _write_page(tmp_path, 'creative.html', AD_CREATIVE)
+        url = _write_page(tmp_path, 'native.html', NATIVE_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            slots = sw.scan_ad_slots(
+                shot_prefix=str(tmp_path / 'native_Desktop'))
+            assert [s['evidence'] for s in slots] == [
+                ['native taboola'], ['container ad-slot', 'size 300x250']]
+            assert all(os.path.isfile(s['shot_path']) for s in slots)
+            assert sw.browser.execute_script('return window.clicked;') == 0
+        finally:
+            sw.quit()
+
+    def test_full_page_shot_is_capped(self, tmp_path):
+        """A shown page gets a full-page jpeg no taller than the cap
+        beside its viewport png, named on ``last_full_shot``; a shot
+        that did not ask for one resets it."""
+        url = _write_page(tmp_path, 'story.html', LONG_ARTICLE)
+        png, jpg = str(tmp_path / 'a.png'), str(tmp_path / 'a_full.jpg')
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            assert sw.take_screenshot(file_name=png, full_file_name=jpg) == (
+                'ok', '')
+            assert sw.last_full_shot[0] == jpg
+            assert sw.last_full_shot[1] > sw.full_shot_max_height
+            with Image.open(png) as image:
+                viewport_height = image.height
+            with Image.open(jpg) as image:
+                assert image.format == 'JPEG'
+                assert viewport_height < image.height <= \
+                    sw.full_shot_max_height
+                assert image.width > 0
+            sw.take_screenshot(file_name=png)
+            assert sw.last_full_shot == ('', None)
+        finally:
+            sw.quit()
+
     @pytest.mark.parametrize('state, expected', [
         ({'title': 'Just a moment...', 'text': 'Performing security '
           'verification', 'url': 'https://www.gamespot.com/', 'len': 60},
@@ -1007,6 +1142,78 @@ class TestSsApi:
             False, True]
         assert (row['capture_status'], row['capture_detail']) == ('ok', '')
         assert 'capture_status' not in df.columns
+
+    def test_article_row_copies_home_row_and_names_file(
+            self, tmp_path, monkeypatch):
+        """An article row keeps the home row's own columns and site
+        name, takes the article url, and is shot to a file named after
+        the home shot with the article ordinal before the device."""
+        api = self._api(tmp_path, monkeypatch)
+        api.config[0]['ad_count'] = 3
+        story = 'https://www.ign.com/articles/big-story'
+        row, site = api.article_row(0, story, 1)
+        assert (row['page_kind'], row['parent_url']) == (
+            'article', 'https://www.ign.com')
+        assert (row['url'], row['site'], row['partner'], row['device']) == (
+            story, 'ign.com', 'IGN', 'Desktop')
+        assert row['pages_walked'] == 0 and 'ad_count' not in row
+        assert site.url == story
+        assert site.file_name == os.path.join(
+            'screenshots', '260101_08', 'ign_a1_Desktop.png')
+        _, mobile = api.article_row(1, story, 2)
+        assert mobile.file_name.endswith('ign_a2_Mobile.png')
+
+    def test_write_config_to_df_drops_walk_columns(self, tmp_path,
+                                                   monkeypatch):
+        """The walk fields ride the manifest only; the sheet and the db
+        frame keep their columns, section included."""
+        monkeypatch.chdir(tmp_path)
+        api = ssapi.SsApi(sites=[{'url': 'ign.com', 'partner': 'IGN',
+                                  'section': 'gaming'}],
+                          s3=_FakeS3(), ss_file_path_date='260101_08')
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
+                            _FakeSweepBrowser)
+        _FakeSweepBrowser.instances = []
+        df = api.get_data(None, None, None)
+        assert not set(ssapi.SsApi.walk_fields) & set(df.columns)
+        assert 'partner' in df.columns
+        rows = api.manifest_rows()
+        assert all(r['section'] == 'gaming' for r in rows)
+        assert all(r['page_kind'] == 'home' for r in rows)
+
+    def test_get_data_walks_one_article_per_shown_home_page(
+            self, tmp_path, monkeypatch):
+        """Each shown home page gets one article row beside it and a
+        full-page jpeg in the bucket; a page not shown is not walked,
+        and rows handed in by a caller never walk unless asked."""
+        assert self._api(tmp_path, monkeypatch).articles_per_site == 0
+        api = self._api(tmp_path, monkeypatch, articles_per_site=1)
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
+                            _FakeWalkingBrowser)
+        _FakeSweepBrowser.instances = []
+        _FakeSweepBrowser.verdicts = [
+            ('bot_check', 'performing security verification'), ('ok', ''),
+            ('ok', '')]
+        df = api.get_data(None, None, None)
+        run = 'screenshots/260101_08/'
+        rows = json.loads(api.s3.uploads[run + 'manifest.json'])
+        assert [(r['page_kind'], r['device'], r['pages_walked'])
+                for r in rows] == [('home', 'Desktop', 0),
+                                   ('home', 'Mobile', 1),
+                                   ('article', 'Mobile', 0)]
+        article = rows[2]
+        assert article['url'] == 'https://www.ign.com/articles/story-1'
+        assert article['parent_url'] == 'https://www.ign.com'
+        assert article['site'] == 'ign.com' and article['partner'] == 'IGN'
+        assert article['shot_key'] == run + 'ign_a1_Mobile.png'
+        assert article['full_shot_key'] == run + 'ign_a1_Mobile_full.jpg'
+        assert article['page_height'] == 5000
+        assert rows[1]['full_shot_key'] == run + 'ign_Mobile_full.jpg'
+        assert rows[1]['full_shot_url'].endswith('ign_Mobile_full.jpg')
+        assert (rows[0]['full_shot_key'], rows[0]['page_height']) == ('', '')
+        assert run + 'ign_a1_Mobile_full.jpg' in api.s3.uploads
+        assert len(df) == 3 and df['site'].eq('ign.com').all()
+        assert 'page_kind' not in df.columns
 
     def test_get_data_writes_capture_status_to_manifest_not_csv(
             self, tmp_path, monkeypatch):
