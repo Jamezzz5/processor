@@ -63,6 +63,7 @@ class TikApi(object):
                'offline_complete_registration_events': 'Registrations (offline)',
                'offline_total_schedule': 'Schedules (offline)',
                'offline_subscribe_events': 'Subscriptions (offline)',
+               'offline_total_crm_events': 'CRM events (offline)',
                'offline_add_to_cart_events_value':
                    'Adds to cart (offline) - Value',
                'offline_add_to_wishlist_events_value':
