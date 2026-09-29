@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import time
 import logging
 import pandas as pd
 import datetime as dt
@@ -21,10 +22,26 @@ class SsApi(object):
     capture_status = 'capture_status'
     capture_detail = 'capture_detail'
     ad_viewport_density = 'ad_viewport_density'
+    page_kind = 'page_kind'
+    parent_url = 'parent_url'
+    pages_walked = 'pages_walked'
+    full_shot_key = 'full_shot_key'
+    full_shot_url = 'full_shot_url'
+    page_height = 'page_height'
+    section = 'section'
+    kind_home = 'home'
+    kind_article = 'article'
     vitals_fields = ('lab_lcp_ms', 'lab_cls', 'lab_ttfb_ms',
                      'page_kilobytes', 'third_party_hosts', 'ad_frames',
                      ad_viewport_density)
-    manifest_only = (capture_status, capture_detail) + vitals_fields
+    walk_fields = (page_kind, parent_url, pages_walked, full_shot_key,
+                   full_shot_url, page_height, section)
+    manifest_only = ((capture_status, capture_detail) + vitals_fields
+                     + walk_fields)
+    articles_per_site = 1
+    site_budget_s = 150
+    walk_budget_s = 2.5 * 3600
+    full_shot_suffix = '_full.jpg'
     date = 'date'
     hour = 'hour'
     device = 'device'
@@ -40,7 +57,7 @@ class SsApi(object):
     scan_kinds = ('ok', 'consent_wall')
 
     def __init__(self, file_name='site_config.csv', ss_file_path_date=None,
-                 sites=None, s3=None, prefix=None):
+                 sites=None, s3=None, prefix=None, articles_per_site=None):
         """Site list from the config csv, or from ``sites`` when a
         caller drives the sweep in-process.
 
@@ -51,17 +68,26 @@ class SsApi(object):
         :param prefix: bucket folder for this run in place of
             ``screenshots`` -- a plan check keeps its shots apart from
             the nightly sweep's
+        :param articles_per_site: article pages walked off each home
+            page; None means the class default for the csv sweep and
+            none at all for handed-in rows, which name exact pages
         """
         logging.info('Getting config from {}.'.format(file_name))
         self.file_name = os.path.join(utl.config_path, file_name)
         self.ss_file_path = prefix or self.ss_file_path
         self.sites = {}
         self.slots = {}
+        self.full_shots = {}
         self.run_id = None
+        if articles_per_site is None:
+            articles_per_site = 0 if sites is not None else \
+                self.articles_per_site
+        self.articles_per_site = articles_per_site
         self.config = (self.rows_to_config(sites) if sites is not None
                        else self.import_config())
         self.ss_file_path_date = self.add_file_path(ss_file_path_date)
         self.add_device_to_config()
+        self.add_walk_defaults()
         self.set_all_sites()
         self.s3 = s3
 
@@ -122,6 +148,23 @@ class SsApi(object):
             self.config[new_index] = self.config[index].copy()
             self.config[new_index][self.device] = self.device_mobile
 
+    def add_walk_defaults(self):
+        """Give every row the walk fields as a home page, so a manifest
+        reader never has to know which sweep wrote it."""
+        for row in self.config.values():
+            row[self.page_kind] = self.kind_home
+            row[self.parent_url] = ''
+            row[self.pages_walked] = 0
+            row[self.full_shot_key] = ''
+            row[self.full_shot_url] = ''
+            row[self.page_height] = ''
+            row[self.section] = self.clean_value(row.get(self.section, ''))
+
+    @classmethod
+    def full_shot_name(cls, file_name):
+        """The jpeg path of a page shot's full-page companion."""
+        return file_name[:-4] + cls.full_shot_suffix
+
     @classmethod
     def fallback_url(cls, url):
         """``url`` on the stand-in ``host_fallbacks`` names for its host
@@ -163,12 +206,15 @@ class SsApi(object):
         :return: (ad slots found, (kind, detail) of the shot); the slots
             are [] when not asked, not shown or the site failed
         """
+        full = cls.full_shot_name(site.file_name)
         for attempt in range(attempts):
             try:
                 verdict = browser.take_screenshot(site.url, site.file_name,
-                                                  scroll_first=True)
+                                                  scroll_first=True,
+                                                  full_file_name=full)
                 verdict = cls.fallback_shot(browser, site.url, verdict,
-                                            site.file_name)
+                                            site.file_name,
+                                            full_file_name=full)
                 if scan_ads and verdict[0] in cls.scan_kinds:
                     return browser.scan_ad_slots(
                         shot_prefix=site.file_name[:-4]), verdict
@@ -228,37 +274,94 @@ class SsApi(object):
         return out
 
     def get_data(self, sd, ed, fields):
+        """Shoot every listed page, walking articles off each shown
+        home page while the budgets hold; home pages always finish."""
         if not self.config:
             logging.warning('No sites to screenshot.')
             return pd.DataFrame()
         browser = utl.SeleniumWrapper(page_load_strategy='eager')
+        walk_deadline = time.time() + self.walk_budget_s
         try:
-            for index in self.config:
+            for index in list(self.config):
                 site = self.get_site(index)
                 if site.device == self.device_mobile and not browser.mobile:
                     browser.quit()
                     browser = utl.SeleniumWrapper(
                         mobile=True, page_load_strategy='eager')
+                site_deadline = time.time() + self.site_budget_s
                 slots, verdict = self.screenshot_site(browser, site,
                                                       scan_ads=True)
-                self.slots[index] = slots
-                self.config[index][self.file_name] = site.file_name
-                self.config[index][self.ad_count] = len(slots)
-                self.config[index][self.ad_domains] = ';'.join(sorted(
-                    {x['landing_domain'] for x in slots
-                     if x['landing_domain']}))
-                self.config[index][self.capture_status] = verdict[0]
-                self.config[index][self.capture_detail] = verdict[1]
-                self.config[index].update(
-                    self.page_vitals(browser, slots, verdict))
+                self.record_capture(browser, index, site, slots, verdict)
+                if (self.articles_per_site and verdict[0] in self.scan_kinds
+                        and time.time() < min(site_deadline,
+                                              walk_deadline)):
+                    self.walk_articles(browser, index, site, site_deadline)
         finally:
             browser.quit()
         self.write_config_to_df()
         df = self.upload_screenshots()
         return df
 
+    def record_capture(self, browser, index, site, slots, verdict):
+        """Land one page's shot, slots, verdict, lab reading and
+        full-page companion on its row."""
+        row = self.config[index]
+        self.slots[index] = slots
+        row[self.file_name] = site.file_name
+        row[self.ad_count] = len(slots)
+        row[self.ad_domains] = ';'.join(sorted(
+            {x['landing_domain'] for x in slots if x['landing_domain']}))
+        row[self.capture_status] = verdict[0]
+        row[self.capture_detail] = verdict[1]
+        row.update(self.page_vitals(browser, slots, verdict))
+        path, height = getattr(browser, 'last_full_shot', None) or ('', None)
+        self.full_shots[index] = path
+        row[self.page_height] = height if height is not None else ''
+
+    def walk_articles(self, browser, index, site, deadline):
+        """Shoot the articles linked off one shown home page, each as
+        its own row beside the home row, until ``deadline``."""
+        read = getattr(browser, 'find_article_links', None)
+        links = read(site.url, self.articles_per_site) if read else []
+        for n, url in enumerate(links, 1):
+            if time.time() > deadline:
+                logging.warning(f'Site budget spent on {site.url}; '
+                                'article walk stopped.')
+                break
+            new_index = max(self.config) + 1
+            row, article = self.article_row(index, url, n)
+            self.config[new_index] = row
+            self.sites[new_index] = article
+            slots, verdict = self.screenshot_site(browser, article,
+                                                  attempts=1, scan_ads=True)
+            self.record_capture(browser, new_index, article, slots, verdict)
+            self.config[index][self.pages_walked] += 1
+
+    def article_row(self, index, url, n):
+        """``(row, Site)`` for the ``n``th article off the home row at
+        ``index``, keeping the home row's own columns and site name."""
+        home = self.config[index]
+        skip = {self.file_name, self.ad_count, self.ad_domains,
+                self.img_url, self.shot_key, self.pages_walked,
+                *self.vitals_fields, self.capture_status,
+                self.capture_detail, self.full_shot_key,
+                self.full_shot_url, self.page_height}
+        row = {k: v for k, v in home.items() if k not in skip}
+        row.update({self.url: url, self.page_kind: self.kind_article,
+                    self.parent_url: self.get_site(index).url,
+                    self.pages_walked: 0, self.full_shot_key: '',
+                    self.full_shot_url: '', self.page_height: ''})
+        stem = os.path.basename(self.get_site(index).file_name)[:-4]
+        device = str(home.get(self.device) or '')
+        stem = stem.removesuffix(f'_{device}') if device else stem
+        name = f'{stem}_a{n}_{device}.png'
+        article = Site(row, file_name=name,
+                       ss_file_path_date=self.ss_file_path_date)
+        row[self.site] = article.name
+        return row, article
+
     def upload_screenshots(self):
-        """Push the page shots, their ad-slot shots and the run's
+        """Push the page, full-page and ad-slot shots and the run's
         manifest to the bucket, then write the run's frame."""
         for index in self.config:
             site = self.get_site(index)
@@ -268,10 +371,22 @@ class SsApi(object):
                 url = self.s3.s3_upload_file_obj(image_data, key)
                 self.config[index][self.img_url] = url
                 self.config[index][self.shot_key] = key
+            self.upload_full_shot(index)
             self.upload_slot_shots(index)
         self.upload_manifest()
         df = self.write_config_to_df()
         return df
+
+    def upload_full_shot(self, index):
+        """Upload one row's full-page jpeg beside its page shot."""
+        path = self.full_shots.get(index, '')
+        data = utl.image_to_binary(path, True) if path else None
+        if not data:
+            return
+        key = path.replace('\\', '/')
+        self.config[index][self.full_shot_url] = self.s3.s3_upload_file_obj(
+            data, key)
+        self.config[index][self.full_shot_key] = key
 
     def upload_slot_shots(self, index):
         """Upload one row's ad-slot shots beside its page shot."""

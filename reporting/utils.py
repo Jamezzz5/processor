@@ -950,18 +950,62 @@ class SeleniumWrapper(object):
         ('smartadserver.com', 'Equativ'), ('adsrvr.org', 'The Trade Desk'),
         ('yieldmo.com', 'Yieldmo'), ('sharethrough.com', 'Sharethrough'),
         ('adform.net', 'Adform'), ('3lift.com', 'TripleLift'),
-        ('mgid.com', 'MGID'), ('revcontent.com', 'Revcontent'))
+        ('mgid.com', 'MGID'), ('revcontent.com', 'Revcontent'),
+        ('raptive.com', 'Raptive'), ('adthrive.com', 'Raptive'),
+        ('mediavine.com', 'Mediavine'), ('freestar.io', 'Freestar'),
+        ('playwire.com', 'Playwire'), ('connatix.com', 'Connatix'),
+        ('primis.tech', 'Primis'), ('flashtalking.com', 'Flashtalking'),
+        ('innovid.com', 'Innovid'), ('serving-sys.com', 'Sizmek'),
+        ('sizmek.com', 'Sizmek'), ('celtra.com', 'Celtra'),
+        ('nativo.net', 'Nativo'), ('media.net', 'Media.net'),
+        ('lijit.com', 'Sovrn'), ('sovrn.com', 'Sovrn'),
+        ('zemanta.com', 'Zemanta'))
     ad_hosts = tuple(host for host, _ in ad_vendors)
     site_vendor = 'Site direct'
     ad_markers = ('google_ads_iframe', 'div-gpt-ad', 'adsbygoogle',
                   'google-query-id')
+    native_markers = ('taboola', 'outbrain', 'mgid', 'revcontent',
+                      'sharethrough', 'nativo', 'zergnet')
+    container_markers = ('ad-slot', 'ad_slot', 'adunit', 'ad-unit',
+                         'advert', 'data-ad', 'sponsored')
+    container_id_pattern = re.compile(r'(^|[-_])ad([-_]|$)')
+    container_max = (1200, 1400)
     iab_sizes = ((300, 250), (728, 90), (300, 600), (160, 600), (320, 50),
-                 (970, 250), (970, 90), (336, 280), (300, 50))
+                 (970, 250), (970, 90), (336, 280), (300, 50), (300, 1050),
+                 (320, 100), (250, 250), (468, 60), (120, 600), (970, 66),
+                 (640, 360))
     redirect_params = ('adurl', 'url', 'r', 'dest', 'clickurl', 'redirect',
                        'u')
     slot_mark = 'data-lq-slot'
-    max_ad_slots = 12
-    scan_budget = 45
+    max_ad_slots = 20
+    scan_budget = 60
+    min_slot_size = (100, 50)
+    full_shot_max_height = 4000
+    full_shot_quality = 80
+    full_shot_kinds = ('ok', 'consent_wall')
+    deny_paths = ('/tag/', '/tags/', '/video', '/videos', '/login',
+                  '/signin', '/subscribe', '/account', '/search', '/author',
+                  '/wiki/', '/forum', '/deals')
+    article_min_text = 15
+    article_long_slug = 20
+    candidate_selector = (
+        'iframe, ins.adsbygoogle, [id^=div-gpt-ad], [data-google-query-id],'
+        ' [id*="taboola"], [id*="outbrain"], .OUTBRAIN, [id*="mgid"],'
+        ' [id*="revcontent"], [data-widget-id], [id^="ad-"], [id*="-ad-"],'
+        ' [id$="-ad"], [class*="ad-slot"], [class*="ad_slot"],'
+        ' [class*="adunit"], [class*="ad-unit"], [class*="advert"],'
+        ' [data-ad], [data-ad-unit], [data-ad-slot], [class*="sponsored"],'
+        ' video')
+    article_links_script = (
+        "const sel = 'article a[href], main a[href], h2 a[href],"
+        " h3 a[href], [class*=headline] a[href], [class*=card] a[href]';"
+        "const seen = new Set();"
+        "return [...document.querySelectorAll(sel)].filter(a => {"
+        "  if (seen.has(a.href)) return false;"
+        "  seen.add(a.href); return true;"
+        "}).slice(0, 60).map(a => ({href: a.href,"
+        "  text: (a.innerText || a.textContent || '').trim().slice(0, 200)"
+        "}));")
     frame_read_script = (
         "return {hrefs: [...document.querySelectorAll('a[href]')]"
         "  .slice(0, 20).map(a => a.href),"
@@ -972,8 +1016,8 @@ class SeleniumWrapper(object):
         " text: (document.body ? document.body.innerText : '')"
         "  .slice(0, 500)};")
     candidates_script = (
-        "const sel = 'iframe, ins.adsbygoogle, [id^=div-gpt-ad],"
-        " [data-google-query-id]';"
+        "const sel = arguments[1];"
+        "const min = arguments[2];"
         "return [...document.querySelectorAll(sel)].map((el, n) => {"
         "  const r = el.getBoundingClientRect();"
         "  el.setAttribute(arguments[0], String(n));"
@@ -984,7 +1028,7 @@ class SeleniumWrapper(object):
         "    left: Math.round(r.left + window.scrollX),"
         "    attrs: [el.id, el.className,"
         "            ...[...el.attributes].map(a => a.name)].join(' ')};"
-        "}).filter(c => c.width > 0 && c.height > 0);")
+        "}).filter(c => c.width >= min[0] && c.height >= min[1]);")
     vitals_script = (
         "window.__lqVitals = {lcp: 0, cls: 0};"
         "try {"
@@ -1032,6 +1076,7 @@ class SeleniumWrapper(object):
         self.select_css = By.CSS_SELECTOR
         self.use_js_click = False
         self.default_elem_sleep = 2
+        self.last_full_shot = ('', None)
 
     def __enter__(self):
         """Support ``with SeleniumWrapper() as sw`` — teardown by
@@ -1638,7 +1683,7 @@ class SeleniumWrapper(object):
         return png, kind, detail
 
     def take_screenshot(self, url=None, file_name=None, max_attempts=2,
-                        scroll_first=False, sleep=5):
+                        scroll_first=False, sleep=5, full_file_name=None):
         """Save a screenshot of ``url``, or of the current page, and
         return ``classify_page``'s verdict on it.
 
@@ -1650,9 +1695,12 @@ class SeleniumWrapper(object):
         :param scroll_first: walk the page before the shot so lazily
             loaded slots render
         :param sleep: seconds to let ``url`` settle after loading
+        :param full_file_name: jpeg path for a capped full-page shot
+            of a shown page, reported on ``last_full_shot``
         """
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
+        self.last_full_shot = ('', None)
         if url and not self.go_to_url(url, sleep=sleep,
                                       max_attempts=max_attempts):
             return 'error_page', 'page unreachable'
@@ -1667,7 +1715,40 @@ class SeleniumWrapper(object):
         if file_name:
             with open(file_name, 'wb') as f:
                 f.write(png)
+        if full_file_name and kind in self.full_shot_kinds:
+            self.last_full_shot = self.shoot_full_page(full_file_name)
         return kind, detail
+
+    def shoot_full_page(self, file_name):
+        """Write a jpeg of the page beyond the viewport, capped at
+        ``full_shot_max_height`` so an endless feed stays one file.
+
+        :param file_name: jpeg path to write
+        :return: ``(path or '', page height in px or None)``
+        """
+        try:
+            size = self.browser.execute_script(
+                'return {w: window.innerWidth,'
+                ' h: document.documentElement.scrollHeight};') or {}
+            width, page_height = int(size.get('w') or 0), int(
+                size.get('h') or 0)
+            if not width or not page_height:
+                return '', None
+            shot = self.browser.execute_cdp_cmd(
+                'Page.captureScreenshot',
+                {'format': 'jpeg', 'quality': self.full_shot_quality,
+                 'captureBeyondViewport': True,
+                 'clip': {'x': 0, 'y': 0, 'width': width, 'scale': 1,
+                          'height': min(page_height,
+                                        self.full_shot_max_height)}})
+            data = base64.b64decode(shot['data'])
+        except (AttributeError, KeyError, ValueError,
+                TypeError) + self.browser_errors as e:
+            logging.warning(f'Full-page shot not taken: {e}')
+            return '', None
+        with open(file_name, 'wb') as f:
+            f.write(data)
+        return file_name, page_height
 
     def scroll_through(self, steps=3, pause=0.7):
         """Walk the page top to bottom and back so lazily loaded ad
@@ -1717,20 +1798,39 @@ class SeleniumWrapper(object):
             return True
 
     def find_ad_candidates(self):
-        """Visible frames and ad containers on the page, each stamped
-        with a slot number so it can be found again after a frame
-        switch, in one driver round trip.
+        """Visible frames, native widgets and ad containers on the page
+        of at least ``min_slot_size``, each stamped with a slot number
+        so it can be found again after a frame switch, in one driver
+        round trip.
 
         :return: list of dicts with n, tag, id, src, width, height, attrs
         """
-        return self.browser.execute_script(self.candidates_script,
-                                           self.slot_mark)
+        return self.browser.execute_script(
+            self.candidates_script, self.slot_mark, self.candidate_selector,
+            list(self.min_slot_size))
+
+    @classmethod
+    def container_hit(cls, cand):
+        """The ad-container word a candidate's id or attributes carry,
+        or '' -- a wrapper bigger than ``container_max`` is a page
+        region, never a slot."""
+        width, height = cand.get('width') or 0, cand.get('height') or 0
+        if width > cls.container_max[0] or height > cls.container_max[1]:
+            return ''
+        text = f"{cand.get('id', '')} {cand.get('attrs', '')}".lower()
+        hit = next((x for x in cls.container_markers if x in text), '')
+        if not hit and cls.container_id_pattern.search(
+                str(cand.get('id', '')).lower()):
+            hit = str(cand.get('id'))
+        return hit
 
     @classmethod
     def slot_evidence(cls, cand):
         """The ad signals a candidate carries: an ad-server host in its
-        src, a known slot marker in its id or attributes, or a standard
-        ad size. Size alone counts only for a frame.
+        src, a known slot marker in its id or attributes, a native
+        widget's name, or -- with none of those -- an ad-container name
+        within ``container_max``; then a standard ad size. Size alone
+        counts only for a frame, so a bare ``video`` never does.
 
         :param cand: one dict from ``find_ad_candidates``
         :return: list of evidence strings, empty when it is not a slot
@@ -1741,10 +1841,66 @@ class SeleniumWrapper(object):
             found.append('src host {}'.format(host))
         text = '{} {}'.format(cand.get('id', ''), cand.get('attrs', ''))
         found += ['marker {}'.format(x) for x in cls.ad_markers if x in text]
+        lowered = text.lower()
+        found += [f'native {x}' for x in cls.native_markers
+                  if x in lowered]
+        container = '' if found else cls.container_hit(cand)
+        if container:
+            found.append(f'container {container}')
         size = (cand.get('width'), cand.get('height'))
         if size in cls.iab_sizes and (found or cand.get('tag') == 'iframe'):
             found.append('size {}x{}'.format(*size))
         return found
+
+    @classmethod
+    def pick_article_links(cls, links, base_url, limit):
+        """The article pages among a home page's links: same host as
+        ``base_url``, a path deep or long enough to be a story, not a
+        section or account page, with a real headline; deduped by path.
+
+        :param links: dicts of href and text from
+            ``article_links_script``
+        :param base_url: the home page the links were read from
+        :param limit: articles to keep
+        :return: list of urls, at most ``limit``
+        """
+        base_host = cls.url_host(base_url)
+        base_path = urlparse(base_url).path.rstrip('/')
+        picked, seen = [], set()
+        for link in links:
+            href = str(link.get('href') or '')
+            text = ' '.join(str(link.get('text') or '').split())
+            parsed = urlparse(href)
+            path = parsed.path.rstrip('/')
+            segments = [s for s in path.split('/') if s]
+            deep = len(segments) >= 2 or (
+                segments and len(segments[-1]) >= cls.article_long_slug)
+            if (parsed.scheme not in ('http', 'https')
+                    or not cls.host_under(cls.url_host(href), base_host)
+                    or not deep or path == base_path or path in seen
+                    or len(text) < cls.article_min_text
+                    or any(d in path.lower() for d in cls.deny_paths)):
+                continue
+            seen.add(path)
+            picked.append(parsed._replace(fragment='').geturl())
+            if len(picked) >= limit:
+                break
+        return picked
+
+    def find_article_links(self, base_url, limit=1):
+        """Article urls on the shown home page, or [] when the driver
+        cannot read them; nothing is clicked.
+
+        :param base_url: the home page in the browser
+        :param limit: articles to keep
+        """
+        try:
+            links = self.browser.execute_script(
+                self.article_links_script) or []
+        except self.browser_errors as e:
+            logging.warning(f'Article links not read: {e}')
+            return []
+        return self.pick_article_links(links, base_url, limit)
 
     @classmethod
     def landing_domain(cls, hrefs):
