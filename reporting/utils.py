@@ -910,6 +910,13 @@ class SeleniumWrapper(object):
     login_paths = ('/login', '/signin', '/sign-in', '/account/login',
                    '/users/sign_in')
     login_body_max = 400
+    mobile_emulation = {
+        'deviceMetrics': {'width': 375, 'height': 812, 'pixelRatio': 3.0,
+                          'mobile': True, 'touch': True},
+        'userAgent': (
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+            'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 '
+            'Mobile/15E148 Safari/604.1')}
     consent_words = ('cookie', 'consent', 'privacy', 'agree', 'partners',
                      'datenschutz')
     blank_span = 6
@@ -1200,8 +1207,8 @@ class SeleniumWrapper(object):
         co.add_experimental_option('useAutomationExtension', False)
         co.add_argument('--disable-blink-features=AutomationControlled')
         if self.mobile:
-            mobile_emulation = {"deviceName": "iPhone X"}
-            co.add_experimental_option("mobileEmulation", mobile_emulation)
+            co.add_experimental_option('mobileEmulation',
+                                       dict(self.mobile_emulation))
         try:
             browser = self.launch_browser(co)
         except (ex.SessionNotCreatedException, FileNotFoundError) as e:

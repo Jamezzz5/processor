@@ -559,6 +559,22 @@ class TestUtils:
             utl.SeleniumWrapper()
         assert fake.quit_calls == 1
 
+    def test_mobile_emulation_names_no_device(self, monkeypatch):
+        """Mobile spells out its metrics rather than naming a device.
+
+        chromedriver prunes its device list; 154 dropped "iPhone X" and
+        refused every mobile session that named it.
+        """
+        launched = []
+        monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser',
+                            lambda self, co: launched.append(co) or 1 / 0)
+        with pytest.raises(ZeroDivisionError):
+            utl.SeleniumWrapper(mobile=True)
+        emulation = launched[0].experimental_options['mobileEmulation']
+        assert 'deviceName' not in emulation
+        assert emulation['deviceMetrics']['mobile']
+        assert 'iPhone' in emulation['userAgent']
+
     @pytest.mark.parametrize('extra', [-1, 0])
     def test_launch_retries_until_its_attempts_run_out(self, monkeypatch,
                                                        extra):
