@@ -62,7 +62,35 @@ class TikApi(object):
                'offline_shopping_events': 'Purchases (offline)',
                'offline_complete_registration_events': 'Registrations (offline)',
                'offline_total_schedule': 'Schedules (offline)',
-               'offline_subscribe_events': 'Subscriptions (offline)'}
+               'offline_subscribe_events': 'Subscriptions (offline)',
+               'offline_total_crm_events': 'CRM events (offline)',
+               'offline_add_to_cart_events_value':
+                   'Adds to cart (offline) - Value',
+               'offline_add_to_wishlist_events_value':
+                   'Adds to wishlist (offline) - Value',
+               'offline_initiate_checkout_events_value':
+                   'Checkouts initiated (offline) - Value',
+               'offline_contact_events_value':
+                   'Contacts (offline) - Value',
+               'offline_view_content_events_value':
+                   'Content views (offline) - Value',
+               'offline_download_events_value':
+                   'Downloads (offline) - Value',
+               'offline_form_events_value':
+                   'Form submissions (offline) - Value',
+               'offline_place_order_events_value':
+                   'Orders placed (offline) - Value',
+               'offline_add_payment_info_events_value':
+                   'Payment info adds (offline) - Value',
+               'offline_shopping_events_value':
+                   'Purchases (offline) - Value',
+               'offline_complete_registration_events_value':
+                   'Registrations (offline) - Value',
+               'offline_total_schedule_value':
+                   'Schedules (offline) - Value',
+               'offline_subscribe_events_value':
+                   'Subscriptions (offline) - Value',
+               'offline_crm_event_value': 'CRM event value (offline)'}
     default_config_file_name = 'tikapi.json'
     id_page_size = 100
     campaign_fields = ['campaign_id', 'campaign_name',
