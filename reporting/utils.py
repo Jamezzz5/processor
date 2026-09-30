@@ -7,15 +7,19 @@ import json
 import time
 import codecs
 import shutil
+import signal
 import random
 import base64
+import select
 import zipfile
 import logging
+import subprocess
 import requests
 import pandas as pd
 import numpy as np
 import datetime as dt
 import urllib3.exceptions as url_ex
+from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 from PIL import Image
 import selenium.webdriver as wd
@@ -869,6 +873,66 @@ def poll_until_true(func, func_kwargs=None, attempts=20, sleep=.1,
     return return_val
 
 
+@dataclass(frozen=True)
+class CaptureOptions:
+    """How a ``SeleniumWrapper`` loads and shoots a page; the defaults
+    are the browser every caller already gets."""
+    name: str = 'baseline'
+    page_load_timeout: int = 10
+    shoot_partial: bool = False
+    paint_wait: float = 0
+    challenge_wait: float = 0
+    extra_args: tuple = ()
+    drop_args: tuple = ()
+    profile_dir: str = ''
+    headed: bool = False
+    native_identity: bool = False
+    fresh_cookies: bool = False
+
+
+class VirtualDisplay(object):
+    """An Xvfb screen for a windowed browser, handed to the driver
+    through its own environment only."""
+    command = ('Xvfb', '-displayfd', '1', '-screen', '0', '1920x1080x24',
+               '-nolisten', 'tcp')
+    start_timeout = 5
+    stop_timeout = 5
+
+    def __init__(self):
+        self.process = None
+        self.name = ''
+
+    @classmethod
+    def available(cls):
+        """Whether this box can start one."""
+        return os.name == 'posix' and bool(shutil.which(cls.command[0]))
+
+    def start(self):
+        """Start the server and return its display as ``:<n>``."""
+        self.process = subprocess.Popen(list(self.command),
+                                        stdout=subprocess.PIPE)
+        ready = select.select([self.process.stdout], [], [],
+                              self.start_timeout)[0]
+        number = self.process.stdout.readline().strip() if ready else b''
+        if not number.isdigit():
+            self.stop()
+            raise OSError('Xvfb did not name a display.')
+        self.name = f':{number.decode()}'
+        return self.name
+
+    def stop(self):
+        """Stop the server; one that already died is left alone."""
+        process, self.process, self.name = self.process, None, ''
+        if not process:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=self.stop_timeout)
+            process.stdout.close()
+        except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+            logging.warning(f'Error stopping the virtual display: {e}')
+
+
 class SeleniumWrapper(object):
     driver_path = 'drivers'
     selectize_xpath = 'selectized'
@@ -891,7 +955,7 @@ class SeleniumWrapper(object):
         '.qc-cmp2-summary-buttons button[mode=primary]',
         '.fc-cta-consent', 'button[title="Accept all"]',
         '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-        '.sp_choice_type_11')
+        '.sp_choice_type_11', '.jad_cmp_paywall_button-cookies')
     consent_frame_marks = ('sp_message_iframe', 'consent', 'cmp', 'privacy')
     cookie_wait = 2
     cookie_timeout = 15
@@ -910,24 +974,96 @@ class SeleniumWrapper(object):
     login_paths = ('/login', '/signin', '/sign-in', '/account/login',
                    '/users/sign_in')
     login_body_max = 400
+    mobile_emulation = {
+        'deviceMetrics': {'width': 375, 'height': 812, 'pixelRatio': 3.0,
+                          'mobile': True, 'touch': True},
+        'userAgent': (
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+            'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 '
+            'Mobile/15E148 Safari/604.1')}
+    login_dialog_words = ('log in', 'sign in', 'sign up')
+    error_body_max = 600
     consent_words = ('cookie', 'consent', 'privacy', 'agree', 'partners',
-                     'datenschutz')
+                     'datenschutz', 'choix', 'consentement',
+                     'einwilligung', 'zustimmung', 'consenso',
+                     'share or sell', 'do not sell')
+    consent_cover_min = 0.2
     blank_span = 6
     blank_ratio = 0.995
     retry_settles = {'blank': (3, 8), 'bot_check': (8,),
-                     'consent_wall': (1,)}
+                     'consent_wall': (1,), 'login_wall': (1,)}
     ready_wait = 8
     verdict_budget = 20
+    capture = CaptureOptions()
+    display = None
+    last_nav_error = ''
+    browser_profile = ''
+    slot_settle = 0.2
+    nav_started = 0
+    partial_load = False
+    partial_tag = 'partial load'
+    partial_kinds = ('ok', 'consent_wall')
+    refused_kinds = ('bot_check', 'blocked', 'ssl_error', 'error_page')
+    challenge_poll = 2
+    paint_poll = 0.5
+    profile_arg = '--user-data-dir='
+    profile_cache_arg = '--disk-cache-size=52428800'
+    profile_locked_mark = 'user data directory is already in use'
+    window_size = (1920, 1080)
+    dialog_selector = (
+        '[role=dialog],[aria-modal=true],#onetrust-banner-sdk,'
+        '.qc-cmp2-container,#didomi-host,.fc-consent-root')
+    close_selector = ('[aria-label*=close i], [data-e2e*=close],'
+                      ' button[class*=close]')
+    dismiss_exact = ('skip', 'not now', 'no thanks', 'maybe later',
+                     'close')
     page_state_script = (
+        "const area = e => { const b = e.getBoundingClientRect();"
+        "  return b.width * b.height; };"
+        "const shown = e => e.getBoundingClientRect().height > 0;"
         "const box = [...document.querySelectorAll("
-        "'[role=dialog],[aria-modal=true],#onetrust-banner-sdk,"
-        ".qc-cmp2-container,#didomi-host,.fc-consent-root')]"
-        "  .find(e => e.getBoundingClientRect().height > 0);"
+        f"'{dialog_selector}')]"
+        "  .filter(shown)"
+        "  .sort((a, b) => area(b) - area(a))[0];"
         "const text = document.body ? document.body.innerText : '';"
+        "const nav = performance.getEntriesByType('navigation')[0] || {};"
+        "const r = box ? box.getBoundingClientRect() : null;"
+        "const view = window.innerWidth * window.innerHeight;"
+        "const seen = r ? Math.max(0, Math.min(r.right, window.innerWidth)"
+        "    - Math.max(r.left, 0))"
+        "  * Math.max(0, Math.min(r.bottom, window.innerHeight)"
+        "    - Math.max(r.top, 0)) : 0;"
+        "const buttons = box ? [...box.querySelectorAll("
+        "  'button, a, [role=button], input[type=button],"
+        " input[type=submit]')].filter(shown)"
+        "  .map(e => (e.innerText || e.value || '').trim().slice(0, 40))"
+        "  .filter(t => t).slice(0, 8) : [];"
         "return {title: document.title || '', url: location.href,"
         "  proto: location.protocol, state: document.readyState,"
         "  text: text.slice(0, 2000), len: text.length,"
-        "  dialog: box ? box.innerText.slice(0, 300) : ''};")
+        "  dialog: box ? box.innerText.slice(0, 300) : '',"
+        "  modal: box ? box.getAttribute('aria-modal') === 'true' : false,"
+        "  status: nav.responseStatus || 0,"
+        "  origin: performance.timeOrigin || 0,"
+        "  nodes: document.getElementsByTagName('*').length,"
+        "  cover: view ? Math.round(Math.min(seen / view, 1) * 1000)"
+        "    / 1000 : 0,"
+        "  buttons: buttons};")
+    elem_box_script = (
+        "arguments[0].scrollIntoView({block: 'center',"
+        "  behavior: 'instant'});"
+        "const r = arguments[0].getBoundingClientRect();"
+        "return {x: r.left + window.scrollX, y: r.top + window.scrollY,"
+        "  width: r.width, height: r.height};")
+    scroll_top_script = (
+        "window.scrollTo({top: 0, left: 0, behavior: 'instant'});")
+    scroll_part_script = (
+        "window.scrollTo({top: document.body.scrollHeight * arguments[0],"
+        " left: 0, behavior: 'instant'});")
+    paint_probe_script = (
+        "const v = window.__lqVitals || {};"
+        "return {lcp: v.lcp || 0, state: document.readyState,"
+        "  len: document.body ? document.body.innerText.length : 0};")
     stealth_script = (
         "Object.defineProperty(navigator, 'webdriver',"
         " {get: () => undefined});"
@@ -936,6 +1072,23 @@ class SeleniumWrapper(object):
         " {get: () => [1, 2, 3, 4, 5]});"
         "Object.defineProperty(navigator, 'languages',"
         " {get: () => ['en-US', 'en']});")
+    webdriver_guard_script = (
+        "if (navigator.webdriver) {"
+        "  Object.defineProperty(Navigator.prototype, 'webdriver',"
+        "    {get: () => false, configurable: true});"
+        "}")
+    client_hints_script = (
+        "const done = arguments[arguments.length - 1];"
+        "const data = navigator.userAgentData;"
+        "if (!data) { done(null); return; }"
+        "data.getHighEntropyValues(['architecture', 'bitness', 'model',"
+        "  'platformVersion', 'fullVersionList', 'wow64'])"
+        "  .then(done).catch(() => done(null));")
+    client_hints_page = 'chrome://version/'
+    client_hint_fields = ('brands', 'fullVersionList', 'platform',
+                          'platformVersion', 'architecture', 'bitness',
+                          'wow64', 'model', 'mobile')
+    headless_mark = 'HeadlessChrome'
     ad_vendors = (
         ('doubleclick.net', 'Google'), ('googlesyndication.com', 'Google'),
         ('googleadservices.com', 'Google'), ('2mdn.net', 'Google'),
@@ -1006,6 +1159,77 @@ class SeleniumWrapper(object):
         "}).slice(0, 60).map(a => ({href: a.href,"
         "  text: (a.innerText || a.textContent || '').trim().slice(0, 200)"
         "}));")
+    page_meta_script = (
+        "const abs = h => { try { return new URL(h, document.baseURI).href; }"
+        "  catch (e) { return ''; } };"
+        "const tags = {};"
+        "document.querySelectorAll('meta[property], meta[name]')"
+        "  .forEach(m => {"
+        "    const k = (m.getAttribute('property')"
+        "      || m.getAttribute('name') || '').toLowerCase();"
+        "    const v = (m.getAttribute('content') || '').slice(0, 1000);"
+        "    if (k && v) (tags[k] = tags[k] || []).push(v);"
+        "  });"
+        "const under = p => Object.fromEntries(Object.entries(tags)"
+        "  .filter(([k]) => k.startsWith(p))"
+        "  .map(([k, v]) => [k.slice(p.length), v[0]]));"
+        "const keep = ['@type', 'headline', 'name', 'description', 'image',"
+        "  'datePublished', 'dateModified', 'author', 'articleSection',"
+        "  'keywords', 'url', 'publisher'];"
+        "const ld = [];"
+        "document.querySelectorAll('script[type=\"application/ld+json\"]')"
+        "  .forEach(s => { try {"
+        "    [].concat(JSON.parse(s.textContent)).forEach(n => {"
+        "      if (n) ld.push(...[].concat(n['@graph'] || n));"
+        "    });"
+        "  } catch (e) {} });"
+        "const when = document.querySelector('time[datetime]');"
+        "const canon = document.querySelector('link[rel=canonical]');"
+        "return {"
+        "  ld: ld.filter(n => n && typeof n === 'object').slice(0, 20)"
+        "    .map(n => Object.fromEntries(keep.filter(k => k in n)"
+        "      .map(k => [k, n[k]]))),"
+        "  og: under('og:'), twitter: under('twitter:'),"
+        "  article: Object.assign(under('article:'),"
+        "    {tag: (tags['article:tag'] || []).slice(0, 20)}),"
+        "  meta: {title: document.title || '',"
+        "    description: (tags['description'] || [''])[0],"
+        "    author: (tags['author'] || [''])[0],"
+        "    time: when ? when.getAttribute('datetime') : '',"
+        "    canonical: canon ? abs(canon.getAttribute('href')) : ''},"
+        "  feeds: [...document.querySelectorAll('link[rel=alternate]')]"
+        "    .filter(l => /rss|atom/i.test(l.getAttribute('type') || ''))"
+        "    .map(l => abs(l.getAttribute('href') || ''))"
+        "    .filter(h => h).slice(0, 10)};")
+    article_types = ('newsarticle', 'article', 'blogposting', 'review',
+                     'videogamereview', 'reportagenewsarticle',
+                     'liveblogposting', 'opinionnewsarticle',
+                     'analysisnewsarticle', 'techarticle')
+    meta_places = {
+        'title': (('ld', 'headline'), ('ld', 'name'), ('og', 'title'),
+                  ('twitter', 'title'), ('meta', 'title')),
+        'description': (('ld', 'description'), ('og', 'description'),
+                        ('twitter', 'description'),
+                        ('meta', 'description')),
+        'image': (('ld', 'image'), ('og', 'image'), ('twitter', 'image')),
+        'published': (('ld', 'datePublished'),
+                      ('article', 'published_time'), ('meta', 'time')),
+        'modified': (('ld', 'dateModified'),
+                     ('article', 'modified_time')),
+        'author': (('ld', 'author'), ('meta', 'author')),
+        'section': (('ld', 'articleSection'), ('article', 'section')),
+        'tags': (('ld', 'keywords'), ('article', 'tag')),
+        'canonical': (('ld', 'url'), ('og', 'url'), ('meta', 'canonical')),
+        'site_name': (('ld', 'publisher'), ('og', 'site_name'))}
+    meta_caps = {'title': 300, 'description': 500, 'image': 500,
+                 'published': 40, 'modified': 40, 'author': 120,
+                 'section': 80, 'tags': 80, 'canonical': 500,
+                 'site_name': 120}
+    meta_url_fields = ('image', 'canonical')
+    meta_url_keys = ('url', 'contentUrl', '@id')
+    meta_joined_fields = ('author',)
+    meta_tag_limit = 10
+    meta_feed_limit = 3
     frame_read_script = (
         "return {hrefs: [...document.querySelectorAll('a[href]')]"
         "  .slice(0, 20).map(a => a.href),"
@@ -1064,11 +1288,18 @@ class SeleniumWrapper(object):
         "  third_party_hosts: hosts.size,"
         "  viewport: {w: window.innerWidth, h: window.innerHeight}};")
 
-    def __init__(self, mobile=False, headless=True, page_load_strategy=''):
+    def __init__(self, mobile=False, headless=True, page_load_strategy='',
+                 capture=None):
+        """:param capture: CaptureOptions, the baseline when omitted"""
         self.mobile = mobile
-        self.headless = headless
+        self.capture = capture or self.capture
+        self.headless = self.open_display(headless)
         self.page_load_strategy = page_load_strategy
-        self.browser, self.co = self.init_browser(self.headless)
+        try:
+            self.browser, self.co = self.init_browser(self.headless)
+        except Exception:
+            self.release_display()
+            raise
         self.base_window = self.browser.window_handles[0]
         self.select_id = By.ID
         self.select_class = By.CLASS_NAME
@@ -1157,11 +1388,41 @@ class SeleniumWrapper(object):
         auto-updates past the driver), else whatever is on PATH."""
         local_driver = os.path.join(
             self.driver_path, 'chromedriver-win64', 'chromedriver.exe')
+        service_kwargs = {}
         if os.path.exists(local_driver):
-            service = wd.chrome.service.Service(
-                executable_path=local_driver)
+            service_kwargs['executable_path'] = local_driver
+        if self.display:
+            service_kwargs['env'] = dict(os.environ,
+                                         DISPLAY=self.display.name)
+        if service_kwargs:
+            service = wd.chrome.service.Service(**service_kwargs)
             return wd.Chrome(service=service, options=co)
         return wd.Chrome(options=co)
+
+    def open_display(self, headless):
+        """The headless flag to launch with, starting a virtual display
+        when the capture options ask for a window and the box has one."""
+        if not self.capture.headed:
+            return headless
+        if not VirtualDisplay.available():
+            logging.warning('No virtual display here for a windowed '
+                            'browser, launching headless.')
+            return True
+        self.display = VirtualDisplay()
+        try:
+            self.display.start()
+        except OSError as e:
+            logging.warning(f'Virtual display did not start, launching '
+                            f'headless: {e}')
+            self.display = None
+            return True
+        return False
+
+    def release_display(self):
+        """Stop the virtual display this browser holds, if any."""
+        if self.display:
+            self.display.stop()
+            self.display = None
 
     def launch_browser(self, co):
         """Start chrome, retrying with a growing pause when the
@@ -1177,20 +1438,31 @@ class SeleniumWrapper(object):
                     f'{self.launch_attempts} failed, retrying: {e}')
                 time.sleep(self.launch_pause * attempt)
 
-    def init_browser(self, headless):
-        RemoteConnection.set_timeout(self.command_timeout)
-        download_path = os.path.join(os.getcwd(), 'tmp')
+    def launch_args(self, headless, use_profile=True):
+        """Chrome's shared launch arguments under the capture options'
+        drops, extras and, unless ``use_profile`` is off, profile
+        folder."""
+        args = ['--headless=new',
+                '--window-position=-32000,-32000'] if headless else []
+        width, height = self.window_size
+        args += ['--lang=en-US', f'--window-size={width},{height}',
+                 '--start-maximized', '--no-sandbox', '--disable-gpu',
+                 '--disable-blink-features=AutomationControlled']
+        args = [x for x in args
+                if not x.startswith(self.capture.drop_args)]
+        args += self.capture.extra_args
+        if use_profile and self.capture.profile_dir:
+            args += [f'{self.profile_arg}{self.capture.profile_dir}',
+                     self.profile_cache_arg]
+        return args
+
+    def chrome_options(self, args, download_path):
+        """Chrome options carrying ``args`` and the shared prefs."""
         co = wd.chrome.options.Options()
         if self.page_load_strategy:
             co.page_load_strategy = self.page_load_strategy
-        if headless:
-            co.add_argument('--headless=new')
-            co.add_argument('--window-position=-32000,-32000')
-        co.add_argument('--lang=en-US')
-        co.add_argument('--window-size=1920,1080')
-        co.add_argument('--start-maximized')
-        co.add_argument('--no-sandbox')
-        co.add_argument('--disable-gpu')
+        for arg in args:
+            co.add_argument(arg)
         prefs = {'download.default_directory': download_path,
                  "credentials_enable_service": False,
                  "profile.password_manager_enabled": False
@@ -1198,17 +1470,30 @@ class SeleniumWrapper(object):
         co.add_experimental_option('prefs', prefs)
         co.add_experimental_option('excludeSwitches', ['enable-automation'])
         co.add_experimental_option('useAutomationExtension', False)
-        co.add_argument('--disable-blink-features=AutomationControlled')
         if self.mobile:
-            mobile_emulation = {"deviceName": "iPhone X"}
-            co.add_experimental_option("mobileEmulation", mobile_emulation)
+            co.add_experimental_option('mobileEmulation',
+                                       dict(self.mobile_emulation))
+        return co
+
+    def init_browser(self, headless):
+        RemoteConnection.set_timeout(self.command_timeout)
+        download_path = os.path.join(os.getcwd(), 'tmp')
+        co = self.chrome_options(self.launch_args(headless), download_path)
         try:
             browser = self.launch_browser(co)
         except (ex.SessionNotCreatedException, FileNotFoundError) as e:
             logging.warning(e)
-            chrome_version = self.get_chrome_version()
-            driver_version = self.get_chromedriver_version(chrome_version)
-            self.download_chromedriver(driver_version)
+            if self.capture.profile_dir and self.profile_locked_mark in str(e):
+                logging.warning('Profile folder would not open, launching '
+                                'without it.')
+                co = self.chrome_options(
+                    self.launch_args(headless, use_profile=False),
+                    download_path)
+            else:
+                chrome_version = self.get_chrome_version()
+                driver_version = self.get_chromedriver_version(
+                    chrome_version)
+                self.download_chromedriver(driver_version)
             browser = self.launch_browser(co)
         try:
             self.configure_browser(browser, headless, download_path)
@@ -1235,25 +1520,143 @@ class SeleniumWrapper(object):
         :return: None
         """
         browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
-                                {'source': self.stealth_script})
-        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
                                 {'source': self.vitals_script})
-        browser.execute_script(self.stealth_script)
-        agent = browser.execute_script('return navigator.userAgent;') or ''
-        if not self.mobile and 'HeadlessChrome' in agent:
-            browser.execute_cdp_cmd('Network.setUserAgentOverride', {
-                'userAgent': agent.replace('HeadlessChrome', 'Chrome'),
-                'acceptLanguage': 'en-US,en;q=0.9'})
-        if headless:
-            # maximize_window with no screen shrinks the viewport
-            # below the requested --window-size; pin it instead.
-            browser.set_window_size(1920, 1080)
+        if self.capture.native_identity:
+            self.set_native_identity(browser)
+        else:
+            self.set_patched_identity(browser)
+        if self.capture.profile_dir:
+            browser.execute_cdp_cmd('Network.clearBrowserCache', {})
+        if headless or self.capture.headed:
+            browser.set_window_size(*self.window_size)
         else:
             browser.maximize_window()
         browser.set_script_timeout(10)
-        browser.set_page_load_timeout(10)
+        browser.set_page_load_timeout(min(self.capture.page_load_timeout,
+                                          self.command_timeout - 15))
         self.enable_download_in_headless_chrome(browser, download_path)
+        self.browser_profile = self.profile_of(browser)
 
+    def headful_agent(self, browser):
+        """A headless desktop browser's agent with the headless mark
+        off; '' for a phone or an agent that has none to lose."""
+        agent = browser.execute_script('return navigator.userAgent;') or ''
+        if self.mobile or self.headless_mark not in agent:
+            return ''
+        return agent.replace(self.headless_mark, 'Chrome')
+
+    def set_patched_identity(self, browser):
+        """Script patches over ``navigator`` and the headless mark off
+        a desktop agent: the identity every caller has had."""
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
+                                {'source': self.stealth_script})
+        browser.execute_script(self.stealth_script)
+        agent = self.headful_agent(browser)
+        if agent:
+            browser.execute_cdp_cmd('Network.setUserAgentOverride', {
+                'userAgent': agent, 'acceptLanguage': 'en-US,en;q=0.9'})
+
+    def read_client_hints(self, browser):
+        """Chrome's own client hints over ``client_hint_fields``, read
+        off a secure Chrome page; {} when it names none."""
+        try:
+            browser.get(self.client_hints_page)
+            hints = browser.execute_async_script(self.client_hints_script)
+        except self.browser_errors as e:
+            logging.warning(f'Client hints not read: {e}')
+            return {}
+        hints = hints if isinstance(hints, dict) else {}
+        return {k: hints[k] for k in self.client_hint_fields if k in hints}
+
+    def set_native_identity(self, browser):
+        """Leave the browser saying what Chrome says of itself: only a
+        headless desktop agent loses its mark, keeping its client
+        hints, and the language is left to Chrome's own header order.
+        """
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',
+                                {'source': self.webdriver_guard_script})
+        agent = self.headful_agent(browser)
+        if not agent:
+            return
+        override = {'userAgent': agent}
+        hints = self.read_client_hints(browser)
+        if hints:
+            override['userAgentMetadata'] = hints
+        browser.execute_cdp_cmd('Emulation.setUserAgentOverride', override)
+
+    def profile_of(self, browser):
+        """The profile folder of the Chrome behind ``browser``, which
+        finds that Chrome again once its driver dies."""
+        try:
+            held = (browser.capabilities.get('chrome') or {}).get(
+                'userDataDir')
+        except (AttributeError, TypeError) as e:
+            logging.warning(f'Browser profile not read: {e}')
+            return ''
+        return str(held or self.capture.profile_dir or '')
+
+    @classmethod
+    def chrome_commands(cls):
+        """``[(pid, command line)]`` of the Chrome processes on this
+        box, [] when they cannot be listed."""
+        if os.name == 'nt':
+            return cls.windows_chrome_commands()
+        found = []
+        for pid in [x for x in os.listdir('/proc') if x.isdigit()]:
+            try:
+                with open(f'/proc/{pid}/cmdline', 'rb') as f:
+                    line = f.read().replace(b'\x00', b' ').decode(
+                        'utf-8', 'replace')
+            except OSError:
+                continue
+            if 'chrom' in line:
+                found.append((int(pid), line))
+        return found
+
+    @staticmethod
+    def windows_chrome_commands():
+        """``chrome_commands`` on Windows, which has no ``/proc``."""
+        query = ("Get-CimInstance Win32_Process -Filter "
+                 "\"Name='chrome.exe'\" | ForEach-Object "
+                 "{ \"$($_.ProcessId)|$($_.CommandLine)\" }")
+        try:
+            listed = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', query],
+                capture_output=True, text=True, timeout=60).stdout
+        except (OSError, subprocess.SubprocessError) as e:
+            logging.warning(f'Chrome processes not listed: {e}')
+            return []
+        rows = [x.split('|', 1) for x in listed.splitlines() if '|' in x]
+        return [(int(pid), line) for pid, line in rows if pid.isdigit()]
+
+    @classmethod
+    def profile_pids(cls, profile):
+        """The pids of the browser processes (not their children)
+        running on ``profile``."""
+        folded = os.path.normcase(profile)
+        return [pid for pid, line in cls.chrome_commands()
+                if folded in os.path.normcase(line)
+                and '--type=' not in line]
+
+    def reap_browser(self):
+        """Kill the Chrome a dead driver left behind and drop its
+        throwaway profile; returns how many browsers were killed."""
+        profile, self.browser_profile = self.browser_profile, ''
+        if not profile:
+            return 0
+        killed = 0
+        for pid in self.profile_pids(profile):
+            try:
+                os.kill(pid, signal.SIGTERM)
+                killed += 1
+            except OSError as e:
+                logging.warning(f'Browser {pid} was already gone: {e}')
+        if killed:
+            logging.warning(f'Killed {killed} browser(s) a dead driver '
+                            f'left on {profile}.')
+        if profile != self.capture.profile_dir:
+            shutil.rmtree(profile, ignore_errors=True)
+        return killed
 
     @staticmethod
     def enable_download_in_headless_chrome(driver, download_dir):
@@ -1281,6 +1684,9 @@ class SeleniumWrapper(object):
             self.browser.quit()
         except Exception as e:
             logging.warning('Error during browser quit: {}'.format(e))
+        self.reap_browser()
+        self.release_display()
+        self.headless = self.open_display(self.headless)
         self.browser, self.co = self.init_browser(self.headless)
         self.base_window = self.browser.window_handles[0]
 
@@ -1312,13 +1718,19 @@ class SeleniumWrapper(object):
         :return: whether the url was reached
         """
         logging.info('Going to url {}.'.format(url))
+        self.partial_load = False
+        self.last_nav_error = ''
         for x in range(max_attempts):
+            self.nav_started = time.time()
             try:
                 self.browser.get(url)
                 break
             except self.browser_errors as e:
                 msg = 'Exception attempt: {}, retrying: \n {}'.format(x + 1, e)
                 logging.warning(msg)
+                self.last_nav_error = self.describe_nav_error(e)
+                if self.keep_partial(e):
+                    break
                 dead_session = isinstance(e, url_ex.HTTPError)
                 if not (dead_session or x >= max_attempts - 1):
                     continue
@@ -1330,6 +1742,36 @@ class SeleniumWrapper(object):
         else:
             time.sleep(sleep)
         return True
+
+    @staticmethod
+    def describe_nav_error(error):
+        """A navigation failure as its class and Chrome's own error
+        code, so a timeout reads apart from a refused connection."""
+        code = re.search(r'net::ERR_\w+', str(error))
+        name = type(error).__name__
+        return f'{name} {code.group(0)}' if code else name
+
+    def keep_partial(self, error):
+        """Whether a timed-out navigation left a document of its own
+        worth shooting, noted on ``partial_load``."""
+        if not (self.capture.shoot_partial
+                and isinstance(error, ex.TimeoutException)):
+            return False
+        try:
+            self.browser.execute_script('window.stop();')
+            state = self.browser.execute_script(
+                self.page_state_script) or {}
+        except self.browser_errors as e:
+            logging.warning(f'Partial page not read: {e}')
+            return False
+        born = float(state.get('origin') or 0) / 1000
+        self.partial_load = (
+            not str(state.get('proto') or '').startswith('chrome-error')
+            and not str(state.get('url') or '').startswith(
+                ('about:', 'data:'))
+            and int(state.get('len') or 0) > 0
+            and born >= self.nav_started)
+        return self.partial_load
 
     @staticmethod
     def click_on_elem(elem, sleep=2):
@@ -1404,16 +1846,23 @@ class SeleniumWrapper(object):
 
         Callers run this from a ``finally``, so it must never raise. A
         wedged or already-dead session would otherwise mask the real
-        exception and strand the chrome process this is meant to reap.
+        exception and strand the chrome process this is meant to reap,
+        so a driver that did not answer has its browser killed.
         """
+        answered = True
         try:
             self.browser.close()
         except Exception as e:
+            answered = False
             logging.warning('Error closing: {}'.format(e))
         try:
             self.browser.quit()
         except Exception as e:
+            answered = False
             logging.warning('Error during browser quit: {}'.format(e))
+        if not answered:
+            self.reap_browser()
+        self.release_display()
 
     @staticmethod
     def get_file_as_df(temp_path=None):
@@ -1454,17 +1903,24 @@ class SeleniumWrapper(object):
 
         :return: an xpath string
         """
-        upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        lower = 'abcdefghijklmnopqrstuvwxyz'
+        return cls.control_xpath(cls.accept_exact, cls.accept_contains)
+
+    @classmethod
+    def control_xpath(cls, exact, contains=(), root='//'):
+        """Xpath of the clickable nodes under ``root`` worded as one of
+        ``exact`` or holding one of ``contains``, case and apostrophe
+        folded."""
+        upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ\u2019'
+        lower = "abcdefghijklmnopqrstuvwxyz'"
         conds = []
         for prop in ['normalize-space(.)', 'normalize-space(@value)']:
             text = 'translate({},"{}","{}")'.format(prop, upper, lower)
-            conds += ['{}="{}"'.format(text, x) for x in cls.accept_exact]
+            conds += ['{}="{}"'.format(text, x) for x in exact]
             conds += ['contains({},"{}")'.format(text, x)
-                      for x in cls.accept_contains]
+                      for x in contains]
         cond = ' or '.join(conds)
         tags = ['button', 'a', 'input', '*[@role="button"]']
-        return ' | '.join('//{}[{}]'.format(x, cond) for x in tags)
+        return ' | '.join('{}{}[{}]'.format(root, x, cond) for x in tags)
 
     def find_accept_buttons(self, btn_xpath):
         """Visible consent controls in the current frame: a consent
@@ -1571,6 +2027,36 @@ class SeleniumWrapper(object):
         except ex.WebDriverException as e:
             logging.warning('Could not send Escape: {}'.format(e))
 
+    def find_closers(self, box):
+        """The visible close controls in ``box``, marked ones first."""
+        marked = box.find_elements(By.CSS_SELECTOR, self.close_selector)
+        worded = box.find_elements(
+            By.XPATH, self.control_xpath(self.dismiss_exact, root='.//'))
+        return [x for x in marked + worded if self.elem_visible(x)]
+
+    def dismiss_dialog(self):
+        """Close a sign-up prompt over the page with Escape, then its
+        own close control; a page with no dialog is left untouched."""
+        try:
+            boxes = [x for x in self.browser.find_elements(
+                By.CSS_SELECTOR, self.dialog_selector)
+                if self.elem_visible(x)]
+            if not boxes:
+                return
+            self.browser.find_element(By.TAG_NAME, 'body').send_keys(
+                Keys.ESCAPE)
+            closer = next((x for box in boxes
+                           for x in self.find_closers(box)), None)
+            if closer:
+                self.click_on_xpath(sleep=1, elem=closer)
+        except self.browser_errors + (ClickFailedException,) as e:
+            logging.warning(f'Could not dismiss the dialog: {e}')
+
+    @staticmethod
+    def join_detail(*parts):
+        """The parts of a verdict's detail that say something, spaced."""
+        return ' '.join(str(x) for x in parts if x)
+
     @classmethod
     def is_solid_png(cls, png_bytes):
         """Whether a shot is one colour give or take ``blank_span``
@@ -1608,9 +2094,11 @@ class SeleniumWrapper(object):
         :param png_bytes: the shot, for the solid-colour check
         """
         state = state or {}
+        title = str(state.get('title', '')).lower().replace('\u2019', "'")
         text = f"{state.get('title', '')} {state.get('text', '')}".lower()
         text = text.replace('\u2019', "'")
         url = str(state.get('url') or '')
+        body_length = int(state.get('len') or 0)
         if str(state.get('proto') or '').startswith('chrome-error'):
             kind = ('ssl_error' if cls._marker_hit(text, 'ssl_error')
                     else 'error_page')
@@ -1623,14 +2111,21 @@ class SeleniumWrapper(object):
         login = next((m for m in cls.login_markers if m in text), '')
         if any(path.startswith(p) for p in cls.login_paths):
             return 'login_wall', path[:120]
-        if login and int(state.get('len') or 0) < cls.login_body_max:
+        if login and body_length < cls.login_body_max:
             return 'login_wall', login
         dialog = ' '.join(str(state.get('dialog') or '').lower().split())
-        if any(w in dialog for w in cls.consent_words):
+        cover = state.get('cover')
+        covers = cover is None or float(cover) >= cls.consent_cover_min
+        holds = covers or bool(state.get('modal'))
+        if holds and any(w in dialog for w in cls.login_dialog_words):
+            return 'login_wall', dialog[:120]
+        if covers and any(w in dialog for w in cls.consent_words):
             return 'consent_wall', dialog[:120]
         if png_bytes is not None and cls.is_solid_png(png_bytes):
             return 'blank', 'single-colour page'
-        hit = cls._marker_hit(text, 'error_page')
+        hit = cls._marker_hit(title, 'error_page')
+        if not hit and body_length < cls.error_body_max:
+            hit = cls._marker_hit(text, 'error_page')
         if hit:
             return 'error_page', hit
         return 'ok', ''
@@ -1660,26 +2155,98 @@ class SeleniumWrapper(object):
             time.sleep(.25)
         return False
 
-    def settle_and_reshoot(self, png, kind, detail):
+    def wait_painted(self, seconds):
+        """The first shot that is not one colour within ``seconds``;
+        None when the page never drew."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            try:
+                probe = self.browser.execute_script(
+                    self.paint_probe_script) or {}
+                drawn = (probe.get('lcp') or 0) > 0 or (
+                    probe.get('len') or 0) > 0
+                png = self.browser.get_screenshot_as_png() if drawn else b''
+            except self.browser_errors as e:
+                logging.warning(f'Paint not read: {e}')
+                return None
+            if drawn and not self.is_solid_png(png):
+                return png
+            time.sleep(self.paint_poll)
+        return None
+
+    def forget_visits(self):
+        """Clear the browser's cookies so the next page is a first
+        visit, which some publishers never check; False on failure."""
+        try:
+            self.browser.execute_cdp_cmd('Network.clearBrowserCookies', {})
+        except self.browser_errors as e:
+            logging.warning(f'Cookies not cleared: {e}')
+            return False
+        return True
+
+    def prepare_shot(self, url, scroll_first):
+        """Accept cookies, walk the page when asked and return to the
+        top before a shot."""
+        if url:
+            self.accept_cookies()
+        if scroll_first:
+            self.scroll_through()
+        self.browser.execute_script(self.scroll_top_script)
+
+    def wait_challenge(self):
+        """``(kind, detail, seconds)`` once a bot check clears by itself
+        or ``challenge_wait`` runs out; it is watched, never touched."""
+        start = time.time()
+        kind, detail = 'bot_check', ''
+        while (kind == 'bot_check'
+               and time.time() - start < self.capture.challenge_wait):
+            time.sleep(self.challenge_poll)
+            kind, detail = self.capture_verdict()
+        return kind, detail, int(time.time() - start)
+
+    def clear_interstitial(self, kind):
+        """Give a ``kind`` of interstitial the nudge that clears it."""
+        if kind == 'blank':
+            self.wait_ready(self.ready_wait)
+        elif kind == 'consent_wall':
+            self.dismiss_consent()
+        elif kind == 'login_wall':
+            self.dismiss_dialog()
+
+    def settle_and_reshoot(self, png, kind, detail, url=None,
+                           scroll_first=False):
         """``(png, kind, detail)`` after re-shooting, within
         ``verdict_budget``, an interstitial that time or a click clears:
-        a blank page, a bot check or a consent wall.
+        a blank page, a bot check, a consent wall or a sign-up prompt;
+        under ``challenge_wait`` a bot check is waited out instead.
         """
-        deadline = time.time() + self.verdict_budget
+        wait = self.capture.challenge_wait
+        deadline = time.time() + self.verdict_budget + wait
         settles = {k: list(v) for k, v in self.retry_settles.items()}
+        note = ''
         while settles.get(kind) and time.time() < deadline:
             pause = settles[kind].pop(0)
-            if kind == 'blank':
-                self.wait_ready(self.ready_wait)
-            elif kind == 'consent_wall':
-                self.dismiss_consent()
-            time.sleep(pause)
+            ready = False
+            if kind == 'bot_check' and wait:
+                kind, polled, waited = self.wait_challenge()
+                if kind == 'bot_check':
+                    return png, kind, polled or detail
+                note = f'cleared after {waited}s'
+                ready = kind not in self.refused_kinds
+            else:
+                self.clear_interstitial(kind)
+                time.sleep(pause)
             try:
-                self.browser.execute_script('window.scrollTo(0, 0);')
+                if ready:
+                    self.prepare_shot(url, scroll_first)
+                else:
+                    self.browser.execute_script(self.scroll_top_script)
                 png = self.browser.get_screenshot_as_png()
             except self.browser_errors as e:
                 return png, 'error_page', str(e)[:120]
             kind, detail = self.capture_verdict(png)
+            if kind not in self.refused_kinds:
+                detail = self.join_detail(detail, note)
         return png, kind, detail
 
     def take_screenshot(self, url=None, file_name=None, max_attempts=2,
@@ -1694,24 +2261,31 @@ class SeleniumWrapper(object):
             site should not hold up the rest
         :param scroll_first: walk the page before the shot so lazily
             loaded slots render
-        :param sleep: seconds to let ``url`` settle after loading
+        :param sleep: seconds to let ``url`` settle after loading; the
+            capture options' ``paint_wait`` polls for the paint instead
         :param full_file_name: jpeg path for a capped full-page shot
             of a shown page, reported on ``last_full_shot``
         """
         logging.info('Getting screenshot from {} and '
                      'saving to {}.'.format(url, file_name))
         self.last_full_shot = ('', None)
-        if url and not self.go_to_url(url, sleep=sleep,
+        paint_wait = self.capture.paint_wait
+        if url and self.capture.fresh_cookies:
+            self.forget_visits()
+        if url and not self.go_to_url(url, sleep=0 if paint_wait else sleep,
                                       max_attempts=max_attempts):
-            return 'error_page', 'page unreachable'
-        if url:
-            self.accept_cookies()
-        if scroll_first:
-            self.scroll_through()
-        self.browser.execute_script("window.scrollTo(0, 0)")
+            error = self.last_nav_error
+            return 'error_page', (f'page unreachable: {error}' if error
+                                  else 'page unreachable')
+        if url and paint_wait:
+            self.wait_painted(paint_wait)
+        self.prepare_shot(url, scroll_first)
         png = self.browser.get_screenshot_as_png()
         png, kind, detail = self.settle_and_reshoot(
-            png, *self.capture_verdict(png))
+            png, *self.capture_verdict(png), url=url,
+            scroll_first=scroll_first)
+        if self.partial_load and kind in self.partial_kinds:
+            detail = self.join_detail(self.partial_tag, detail)
         if file_name:
             with open(file_name, 'wb') as f:
                 f.write(png)
@@ -1734,21 +2308,26 @@ class SeleniumWrapper(object):
                 size.get('h') or 0)
             if not width or not page_height:
                 return '', None
-            shot = self.browser.execute_cdp_cmd(
-                'Page.captureScreenshot',
-                {'format': 'jpeg', 'quality': self.full_shot_quality,
-                 'captureBeyondViewport': True,
-                 'clip': {'x': 0, 'y': 0, 'width': width, 'scale': 1,
-                          'height': min(page_height,
-                                        self.full_shot_max_height)}})
-            data = base64.b64decode(shot['data'])
+            height = min(page_height, self.full_shot_max_height)
+            self.write_clip(file_name, {'x': 0, 'y': 0, 'width': width,
+                                        'height': height},
+                            format='jpeg', quality=self.full_shot_quality)
         except (AttributeError, KeyError, ValueError,
                 TypeError) + self.browser_errors as e:
             logging.warning(f'Full-page shot not taken: {e}')
             return '', None
-        with open(file_name, 'wb') as f:
-            f.write(data)
         return file_name, page_height
+
+    def write_clip(self, path, clip, **shot):
+        """Write the page's capture of ``clip`` (page pixels, past the
+        viewport) to ``path``, with ``shot`` as further capture params;
+        raises what the driver or the decode does, writing nothing."""
+        answer = self.browser.execute_cdp_cmd(
+            'Page.captureScreenshot',
+            dict(shot, captureBeyondViewport=True, clip=dict(clip, scale=1)))
+        data = base64.b64decode(answer['data'])
+        with open(path, 'wb') as f:
+            f.write(data)
 
     def scroll_through(self, steps=3, pause=0.7):
         """Walk the page top to bottom and back so lazily loaded ad
@@ -1758,11 +2337,10 @@ class SeleniumWrapper(object):
         :param pause: seconds to settle at each stop
         """
         for i in range(1, steps + 1):
-            self.browser.execute_script(
-                'window.scrollTo(0, document.body.scrollHeight * {} / {});'
-                .format(i, steps))
+            self.browser.execute_script(self.scroll_part_script,
+                                        i / float(steps))
             time.sleep(pause)
-        self.browser.execute_script('window.scrollTo(0, 0);')
+        self.browser.execute_script(self.scroll_top_script)
         time.sleep(pause)
 
     def take_elem_screenshot(self, url=None, xpath=None, file_name=None):
@@ -1854,6 +2432,12 @@ class SeleniumWrapper(object):
 
     @classmethod
     def pick_article_links(cls, links, base_url, limit):
+        """The urls of ``headline_links``, at most ``limit``."""
+        return [x['href']
+                for x in cls.headline_links(links, base_url, limit)]
+
+    @classmethod
+    def headline_links(cls, links, base_url, limit):
         """The article pages among a home page's links: same host as
         ``base_url``, a path deep or long enough to be a story, not a
         section or account page, with a real headline; deduped by path.
@@ -1862,7 +2446,7 @@ class SeleniumWrapper(object):
             ``article_links_script``
         :param base_url: the home page the links were read from
         :param limit: articles to keep
-        :return: list of urls, at most ``limit``
+        :return: list of ``{'href', 'text'}``, at most ``limit``
         """
         base_host = cls.url_host(base_url)
         base_path = urlparse(base_url).path.rstrip('/')
@@ -1882,10 +2466,20 @@ class SeleniumWrapper(object):
                     or any(d in path.lower() for d in cls.deny_paths)):
                 continue
             seen.add(path)
-            picked.append(parsed._replace(fragment='').geturl())
+            picked.append({'href': parsed._replace(fragment='').geturl(),
+                           'text': text})
             if len(picked) >= limit:
                 break
         return picked
+
+    def read_article_links(self):
+        """The shown page's candidate links, or [] on failure."""
+        try:
+            return self.browser.execute_script(
+                self.article_links_script) or []
+        except self.browser_errors as e:
+            logging.warning(f'Article links not read: {e}')
+            return []
 
     def find_article_links(self, base_url, limit=1):
         """Article urls on the shown home page, or [] when the driver
@@ -1894,13 +2488,97 @@ class SeleniumWrapper(object):
         :param base_url: the home page in the browser
         :param limit: articles to keep
         """
+        return self.pick_article_links(self.read_article_links(),
+                                       base_url, limit)
+
+    def read_headlines(self, base_url, limit):
+        """The shown home page's ``headline_links``; [] on failure."""
+        return self.headline_links(self.read_article_links(), base_url,
+                                   limit)
+
+    def read_page_meta(self):
+        """The shown page's ``clean_page_meta``; {} on failure."""
         try:
-            links = self.browser.execute_script(
-                self.article_links_script) or []
+            raw = self.browser.execute_script(self.page_meta_script)
         except self.browser_errors as e:
-            logging.warning(f'Article links not read: {e}')
-            return []
-        return self.pick_article_links(links, base_url, limit)
+            logging.warning(f'Page meta not read: {e}')
+            return {}
+        return self.clean_page_meta(raw)
+
+    @classmethod
+    def article_node(cls, nodes):
+        """The first JSON-LD node typed as an article, or {}."""
+        nodes = nodes if isinstance(nodes, list) else [nodes]
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            kinds = node.get('@type') or ''
+            kinds = kinds if isinstance(kinds, list) else [kinds]
+            if any(str(k).lower() in cls.article_types for k in kinds):
+                return node
+        return {}
+
+    @classmethod
+    def meta_strings(cls, value, keys=('name',)):
+        """Every string a meta value, JSON-LD object (by ``keys``) or
+        list holds, whitespace collapsed."""
+        if isinstance(value, str):
+            text = ' '.join(value.split())
+            return [text] if text else []
+        if isinstance(value, dict):
+            held = next((value[k] for k in keys if value.get(k)), '')
+            return cls.meta_strings(held, keys)[:1]
+        if isinstance(value, list):
+            return [s for item in value
+                    for s in cls.meta_strings(item, keys)]
+        return []
+
+    @classmethod
+    def is_web_url(cls, text):
+        """Whether ``text`` is an http(s) url short enough to keep."""
+        return (urlparse(text).scheme in ('http', 'https')
+                and len(text) <= cls.meta_caps['canonical'])
+
+    @classmethod
+    def meta_value(cls, field, value):
+        """One ``clean_page_meta`` field from one source's raw value;
+        empty when it has nothing usable."""
+        cap = cls.meta_caps[field]
+        if field in cls.meta_url_fields:
+            found = cls.meta_strings(value, cls.meta_url_keys)
+            return next((s for s in found if cls.is_web_url(s)), '')
+        found = cls.meta_strings(value)
+        if field == 'tags':
+            tags = [t.strip() for s in found for t in s.split(',')]
+            return [t[:cap] for t in tags if t][:cls.meta_tag_limit]
+        if field in cls.meta_joined_fields:
+            return ', '.join(found)[:cap].strip()
+        return found[0][:cap].strip() if found else ''
+
+    @classmethod
+    def clean_page_meta(cls, raw):
+        """A page's editorial fields from ``page_meta_script``'s read,
+        each from the best source in ``meta_places`` order, with
+        ``sources`` naming where each came from."""
+        raw = raw if isinstance(raw, dict) else {}
+        found = dict(raw, ld=cls.article_node(raw.get('ld') or []))
+        out, sources = {}, {}
+        for field, places in cls.meta_places.items():
+            for source, key in places:
+                held = found.get(source)
+                value = cls.meta_value(
+                    field, held.get(key) if isinstance(held, dict) else '')
+                if value:
+                    out[field], sources[field] = value, source
+                    break
+        feeds = [s for s in cls.meta_strings(raw.get('feeds') or [])
+                 if cls.is_web_url(s)]
+        feeds = list(dict.fromkeys(feeds))[:cls.meta_feed_limit]
+        if feeds:
+            out['feeds'] = feeds
+        if sources:
+            out['sources'] = sources
+        return out
 
     @classmethod
     def landing_domain(cls, hrefs):
@@ -1953,11 +2631,17 @@ class SeleniumWrapper(object):
         return found
 
     def shoot_elem(self, elem, path):
-        """Screenshot one element to ``path``; '' when the driver
-        could not."""
+        """Screenshot one element to ``path`` as a clip of the page's
+        capture, since the driver's element shot blanks later pages;
+        '' when the driver could not."""
         try:
-            elem.screenshot(path)
-        except ex.WebDriverException as e:
+            box = self.browser.execute_script(self.elem_box_script,
+                                              elem) or {}
+            if not (box.get('width') and box.get('height')):
+                return ''
+            time.sleep(self.slot_settle)
+            self.write_clip(path, box, format='png')
+        except (KeyError, TypeError, ValueError) + self.browser_errors as e:
             logging.warning('Could not shoot ad slot: {}'.format(e))
             return ''
         return path

@@ -332,11 +332,14 @@ class GsApi(object):
         return presentation_id
 
     def _copy_template(self, template_id, name):
-        """Copy the template and load recognized layouts; return None if
-        unusable."""
+        """Copy the template into the caller's own Drive and load
+        recognized layouts; return None if unusable. Without a parent
+        the copy stays beside the template, and a template kept on a
+        shared drive would hand every deck to that drive's members."""
         response = self.client.post(
             '{}/{}/copy'.format(self.files_url, template_id),
-            params={'supportsAllDrives': 'true'}, json={'name': name})
+            params={'supportsAllDrives': 'true'},
+            json={'name': name, 'parents': ['root']})
         if getattr(response, 'status_code', 0) != 200:
             logging.warning('Deck template %s could not be copied: %s',
                             template_id,
@@ -382,10 +385,13 @@ class GsApi(object):
         """POST a single Drive permission and return the response.
 
         Shared by the domain-wide and per-user share helpers so the
-        request + warning-log path lives in one place."""
+        request + warning-log path lives in one place. Drive answers
+        404 for a file on a shared drive unless the call says it
+        supports them."""
         url = '{}/{}/permissions'.format(self.files_url, file_id)
         response = self.client.post(
-            url=url, params=params or {}, json=body)
+            url=url, params=dict(params or {}, supportsAllDrives='true'),
+            json=body)
         if response.status_code not in (200, 204):
             logging.warning(
                 'Failed to set permission on {}: {} (Status {})'.format(

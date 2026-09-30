@@ -1,18 +1,25 @@
 import io
 import os
+import re
 import sys
 import json
+import time
 import yaml
 import types
+import socket
 import string
 import pytest
 import logging
+import threading
+import subprocess
+import http.server
 import numpy as np
 import pandas as pd
 import datetime as dt
 from unittest.mock import Mock
 import urllib3.exceptions as url_ex
 from PIL import Image, ImageDraw
+import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
 from processor.main import main
 import processor.reporting.utils as utl
@@ -33,6 +40,7 @@ import processor.reporting.amzapi as amzapi
 import processor.reporting.gaapi as gaapi
 import processor.reporting.fbapi as fbapi
 import processor.reporting.ssapi as ssapi
+import processor.reporting.pmapi as pmapi
 import processor.reporting.samapi as samapi
 import processor.reporting.criapi as criapi
 import processor.reporting.rsapi as rsapi
@@ -72,7 +80,6 @@ requires_local_browser = pytest.mark.skipif(
 def _raise_read_timeout(*args, **kwargs):
     """Stand in for a driver that stopped answering its socket."""
     raise url_ex.ReadTimeoutError(None, 'url', 'Read timed out.')
-
 
 
 COOKIE_DECOYS = (
@@ -129,15 +136,22 @@ STORY_PARAGRAPH = ('<p style="font-size:40px;color:#000">The quick brown '
 LONG_ARTICLE = ('<html><head><title>Story</title></head>'
                 f'<body style="margin:0">{STORY_PARAGRAPH * 120}'
                 '</body></html>')
+SMOOTH_PAGE = (
+    '<html style="scroll-behavior:smooth"><body style="margin:0">'
+    '<h1 style="font-size:90px;margin:0">Top of the page</h1>'
+    f'{STORY_PARAGRAPH * 200}<script>window.deepest = 0;'
+    "window.addEventListener('scroll', () => {"
+    ' window.deepest = Math.max(window.deepest, window.scrollY); });'
+    '</script></body></html>')
 CF_INTERSTITIAL = (
     '<html><head><title>Just a moment...</title></head><body>'
-    '<h1>www.gamespot.com</h1><p>Performing security verification</p>'
+    '<h1>games.example.net</h1><p>Performing security verification</p>'
     '<p>This website uses a security service to protect itself.</p>'
     '</body></html>')
 BLOCKED_PAGE = (
     '<html><head><title>Attention Required!</title></head><body>'
     '<h1>Sorry, you have been blocked</h1>'
-    '<p>You are unable to access giantbomb.com</p></body></html>')
+    '<p>You are unable to access example.com</p></body></html>')
 LOGIN_PAGE = (
     '<html><head><title>Log in</title></head><body>'
     '<h1>Log in to continue</h1><input type="password"></body></html>')
@@ -149,12 +163,97 @@ CONSENT_MODAL = (
     '<button id="onetrust-accept-btn-handler" onclick="window.picked='
     '\'cmp\';document.getElementById(\'onetrust-banner-sdk\').remove()">'
     'Accept all</button></div></body></html>')
+PAY_OR_CONSENT = (
+    f'<html><body><h1>Real news</h1>{"<p>An article paragraph.</p>" * 20}'
+    '<style>.jad_cmp_paywall_button-cookies::after '
+    '{content: "J\\2019 accepte"}</style>'
+    '<div role="dialog" id="wall" style="position:fixed;inset:0;'
+    'background:#fff"><p>Exprimez vos choix. Accéder au site '
+    'gratuitement en acceptant les cookies publicitaires.</p>'
+    '<button class="jad_cmp_paywall_button '
+    'jad_cmp_paywall_button-subscription" onclick="window.picked='
+    '\'subscribe\'"></button>'
+    '<button class="jad_cmp_paywall_button jad_cmp_paywall_button-cookies"'
+    ' style="width:120px;height:40px" onclick="window.picked=\'cookies\';'
+    'document.getElementById(\'wall\').remove()"></button></div>'
+    '</body></html>')
 LATE_PAINT = (
     '<html><body style="margin:0;background:#eef2f7"><script>'
     "setTimeout(() => { document.body.innerHTML = `<h1 style=\"font-size:"
     "120px;color:#000\">Painted at last</h1><p>${'words '.repeat(200)}"
     "</p>`; }, 1500);"
     '</script></body></html>')
+CLEARING_CHECK = (
+    '<html><head><title>Just a moment...</title></head><body>'
+    '<h1>games.example.net</h1><p>Performing security verification</p>'
+    '<script>window.touched = 0;'
+    "['click', 'keydown'].forEach(t => document.addEventListener(t,"
+    ' () => { window.touched += 1; }));'
+    "setTimeout(() => { document.title = 'Example Games';"
+    ' document.body.innerHTML = `<h1 style="font-size:120px;color:#000">'
+    "Real news</h1><p>${'words '.repeat(200)}</p>`; }, 3000);"
+    '</script></body></html>')
+PARTIAL_HEAD = (
+    '<html><head><title>Slow news</title></head><body style="margin:0">'
+    '<h1 style="font-size:120px;color:#000">Partly here</h1>'
+    f'{STORY_PARAGRAPH * 5}')
+THIN_BANNER = (
+    f'<html><body style="margin:0"><h1>Real news</h1>{STORY_PARAGRAPH * 5}'
+    '<div role="dialog" style="position:fixed;left:0;right:0;bottom:0;'
+    'height:60px;background:#eee"><p>We use cookies on this site.</p>'
+    '</div></body></html>')
+SIGNUP_PROMPT = (
+    f'<html><body style="margin:0"><h1>Real news</h1>{STORY_PARAGRAPH * 5}'
+    '<div role="dialog" style="position:fixed;inset:20%;background:#fff;'
+    'border:2px solid #000"><p>Sign up to keep reading</p>'
+    '<button onclick="window.picked=\'account\'">Continue with Google'
+    '</button><button aria-label="Close" onclick="window.picked=\'closed\';'
+    'this.parentNode.remove()">x</button></div></body></html>')
+SKIP_PROMPT = (
+    f'<html><body style="margin:0"><h1>Real news</h1>{STORY_PARAGRAPH * 5}'
+    '<div role="dialog" style="position:fixed;left:10px;top:10px;'
+    'width:80px;height:30px;background:#eee">Unmute</div>'
+    '<div role="dialog" aria-modal="true" style="position:fixed;left:40%;'
+    'top:30%;width:20%;height:40%;background:#fff;border:2px solid #000">'
+    '<div role="button" onclick="window.picked=\'skipped\';'
+    'this.parentNode.remove()">Skip</div><h2>Log in to TikTok</h2>'
+    '<button onclick="window.picked=\'account\'">Continue with Google'
+    '</button></div></body></html>')
+ARTICLE_PAGE = (
+    '<html><head><base href="https://www.example.com/news/">'
+    '<title>Tab title | Example</title>'
+    '<meta property="og:title" content="Open graph title">'
+    '<meta property="og:description" content="Open   graph summary">'
+    '<meta property="og:image" content="https://cdn.example.com/og.jpg">'
+    '<meta property="og:site_name" content="Example Site">'
+    '<meta name="twitter:title" content="Twitter title">'
+    '<meta property="article:section" content="Reviews">'
+    '<meta property="article:tag" content="rpg">'
+    '<meta property="article:tag" content="indie">'
+    '<meta name="description" content="Plain summary">'
+    '<meta name="author" content="Meta Author">'
+    '<link rel="canonical" href="/news/big-story">'
+    '<link rel="alternate" type="application/rss+xml" href="/feed.xml">'
+    '<link rel="alternate" type="application/atom+xml"'
+    ' href="https://www.example.com/atom.xml">'
+    '<link rel="alternate" hreflang="fr" href="/fr/news/big-story">'
+    '<script type="application/ld+json">{not json</script>'
+    '<script type="application/ld+json">{"@context": "https://schema.org",'
+    ' "@graph": [{"@type": "WebSite", "name": "Example"},'
+    ' {"@type": "NewsArticle", "headline": "Structured headline",'
+    ' "datePublished": "2026-09-01T08:00:00Z",'
+    ' "author": [{"@type": "Person", "name": "Ada Writer"},'
+    ' {"@type": "Person", "name": "Bo Editor"}],'
+    ' "articleBody": "never read"}]}</script>'
+    '</head><body><h1>Structured headline</h1>'
+    '<time datetime="2026-08-30">30 August</time>'
+    f'{STORY_PARAGRAPH}</body></html>')
+HOME_PAGE = (
+    '<html><head><base href="https://www.example.com/"></head><body>'
+    '<h2><a href="/articles/big-story">The biggest   story of the day</a>'
+    '</h2><h2><a href="/tag/rpg">Every role playing game</a></h2>'
+    '<h3><a href="/articles/second-story#comments">A second story worth '
+    'reading</a></h3></body></html>')
 
 
 def _write_page(tmp_path, name, html):
@@ -162,6 +261,168 @@ def _write_page(tmp_path, name, html):
     page = tmp_path / name
     page.write_text(html, encoding='utf-8')
     return page.as_uri()
+
+
+class _StallingHandler(http.server.BaseHTTPRequestHandler):
+    """Sends ``body`` then holds the connection open, as a stalled
+    origin does."""
+
+    body = PARTIAL_HEAD.encode('utf-8')
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(self.body)
+        self.wfile.flush()
+        self.server.release.wait(60)
+
+    def log_message(self, format, *args):
+        pass
+
+
+class _SilentHandler(_StallingHandler):
+    """Holds the connection open without answering at all."""
+
+    def do_GET(self):
+        self.server.release.wait(60)
+
+
+class _EchoHandler(_StallingHandler):
+    """Answers with a page and keeps each request's headers on
+    ``seen``."""
+
+    seen = []
+
+    def do_GET(self):
+        _EchoHandler.seen.append(dict(self.headers))
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b'<html><body><h1>Seen</h1></body></html>')
+
+
+def _start_server(handler):
+    """A local http server on a free port, serving from a thread."""
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+    server.daemon_threads = True
+    server.release = threading.Event()
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def _stop_server(server):
+    server.release.set()
+    server.shutdown()
+    server.server_close()
+
+
+def _server_url(server):
+    return f'http://127.0.0.1:{server.server_address[1]}/'
+
+
+def _closed_port_url():
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        return f'http://127.0.0.1:{sock.getsockname()[1]}/'
+
+
+class _ScriptedBrowser(object):
+    """Driver answering every script with ``answer`` and every shot
+    with ``png``; it has nothing to click."""
+
+    def __init__(self, answer, png=b''):
+        self.answer = answer
+        self.png = png
+        self.scripts = []
+        self.shots = 0
+
+    def execute_script(self, script, *args):
+        self.scripts.append(script)
+        return self.answer
+
+    def get_screenshot_as_png(self):
+        self.shots += 1
+        return self.png
+
+
+class _IdentityBrowser(object):
+    """Driver answering ``agent`` and ``hints``, keeping every devtools
+    command and page it was sent."""
+
+    def __init__(self, agent, hints=None):
+        self.agent = agent
+        self.hints = hints
+        self.commands = []
+        self.pages = []
+        self.capabilities = {}
+
+    def execute_cdp_cmd(self, name, params):
+        self.commands.append((name, params))
+        return {}
+
+    def execute_script(self, script, *args):
+        return self.agent
+
+    def execute_async_script(self, script, *args):
+        if isinstance(self.hints, Exception):
+            raise self.hints
+        return self.hints
+
+    def get(self, url):
+        self.pages.append(url)
+
+    def named(self, name):
+        return [params for sent, params in self.commands if sent == name]
+
+
+LOCKED_PROFILE = ('session not created: probably user data directory is '
+                  'already in use, please specify a unique value for '
+                  '--user-data-dir argument')
+
+
+class _ProfileLauncher(object):
+    """``launch_browser`` refusing with ``error`` the first ``refusals``
+    launches that name a profile folder."""
+
+    def __init__(self, browser, error=LOCKED_PROFILE, refusals=2):
+        self.browser = browser
+        self.error = error
+        self.refusals = refusals
+        self.launches = []
+
+    def __call__(self, co):
+        self.launches.append(list(co.arguments))
+        named = any(x.startswith('--user-data-dir=') for x in co.arguments)
+        if named and self.refusals:
+            self.refusals -= 1
+            raise ex.SessionNotCreatedException(self.error)
+        return self.browser
+
+
+def _bare_wrapper(**attrs):
+    """A ``SeleniumWrapper`` that never launched a browser, carrying
+    ``attrs`` over its class defaults."""
+    sw = utl.SeleniumWrapper.__new__(utl.SeleniumWrapper)
+    vars(sw).update(attrs)
+    return sw
+
+
+class _FakeProcess(object):
+    """Xvfb stand-in printing a display number and recording stops."""
+
+    def __init__(self, line=b'99\n', error=None):
+        self.stdout = io.BytesIO(line)
+        self.error = error
+        self.stops = []
+
+    def terminate(self):
+        self.stops.append('terminate')
+        if self.error:
+            raise self.error
+
+    def wait(self, timeout=None):
+        self.stops.append('wait')
 
 
 class _DeadBrowser(object):
@@ -237,6 +498,7 @@ class _FakeSweepBrowser(object):
 
     def __init__(self, *args, **kwargs):
         self.mobile = kwargs.get('mobile', False)
+        self.capture = kwargs.get('capture')
         self.browser_errors = (ValueError,)
         self.shots = []
         _FakeSweepBrowser.instances.append(self)
@@ -294,6 +556,52 @@ class _FakeWalkingBrowser(_FakeSweepBrowser):
     def find_article_links(base_url, limit):
         return [f'{base_url}/articles/story-{n}'
                 for n in range(1, limit + 1)]
+
+
+class _FakeEditorialBrowser(_FakeWalkingBrowser):
+    """The walking browser that also reads page meta and headlines."""
+
+    @staticmethod
+    def read_page_meta():
+        return {'title': 'Structured headline', 'author': 'Ada Writer',
+                'feeds': ['https://www.example.org/feed.xml'],
+                'sources': {'title': 'ld', 'author': 'ld'}}
+
+    @staticmethod
+    def read_headlines(base_url, limit):
+        return [{'href': f'{base_url}/articles/lead-{n}',
+                 'text': f'The lead story of the day, part {n}'}
+                for n in range(1, limit + 1)]
+
+
+class _FakeRetryBrowser(_FakeSweepBrowser):
+    """The sweep browser writing its verdict as the shot, and no shot
+    for an unreachable page."""
+
+    def take_screenshot(self, url=None, file_name=None, max_attempts=2,
+                        scroll_first=False, sleep=5, full_file_name=None):
+        self.shots.append((url, file_name, scroll_first))
+        self.last_full_shot = ('', None)
+        queue = _FakeSweepBrowser.verdicts
+        kind, detail = queue.pop(0) if queue else ('ok', '')
+        if not detail.startswith('page unreachable'):
+            with open(file_name, 'wb') as f:
+                f.write(f'{kind} {detail}'.encode('utf-8'))
+        return kind, detail
+
+
+class _FailingBrowser(_FakeSweepBrowser):
+    """The sweep browser whose driver never answers."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.restarts = 0
+
+    def take_screenshot(self, *args, **kwargs):
+        raise ValueError('driver went away')
+
+    def restart_browser(self):
+        self.restarts += 1
 
 
 class _FakeS3(object):
@@ -476,7 +784,7 @@ class TestUtils:
 
     def test_selenium_wrapper(self):
         sw = utl.SeleniumWrapper()
-        test_url = 'https://www.google.com/'
+        test_url = 'https://example.com/'
         sw.go_to_url(test_url, sleep=1)
         assert test_url in sw.browser.current_url
         assert sw.headless is True
@@ -485,7 +793,7 @@ class TestUtils:
     @requires_local_browser
     def test_screenshot(self):
         sw = utl.SeleniumWrapper(headless=False)
-        test_url = 'https://www.google.com/'
+        test_url = 'https://example.com/'
         file_name = 'test.png'
         sw.take_screenshot(test_url, file_name=file_name)
         assert os.path.isfile(file_name)
@@ -513,7 +821,7 @@ class TestUtils:
         first_browser = sw.browser
         monkeypatch.setattr(sw.browser, 'get', _raise_read_timeout)
         try:
-            assert sw.go_to_url('https://www.google.com/', sleep=1)
+            assert sw.go_to_url('https://example.com/', sleep=1)
             assert sw.browser is not first_browser
         finally:
             sw.quit()
@@ -524,8 +832,97 @@ class TestUtils:
         A driver that stopped answering would otherwise mask the real
         exception and strand the chrome process it meant to reap.
         """
-        sw = types.SimpleNamespace(browser=_DeadBrowser())
-        assert utl.SeleniumWrapper.quit(sw) is None
+        assert _bare_wrapper(browser=_DeadBrowser()).quit() is None
+
+    @staticmethod
+    def _idle_process():
+        return subprocess.Popen(
+            [sys.executable, '-c', 'import time; time.sleep(60)'])
+
+    def test_a_dead_driver_has_its_browser_killed(self, tmp_path,
+                                                  monkeypatch):
+        """Only the browser on the wrapper's own profile is killed, not
+        its renderers or another profile's, and the folder goes."""
+        child, other = self._idle_process(), self._idle_process()
+        profile = tmp_path / 'scoped_dir1'
+        (profile / 'Default').mkdir(parents=True)
+        lines = [
+            (child.pid, f'chrome.exe --user-data-dir="{profile}"'),
+            (999999991, f'chrome.exe --type=renderer '
+                        f'--user-data-dir="{profile}"'),
+            (other.pid, 'chrome.exe --user-data-dir="C:\\elsewhere"')]
+        monkeypatch.setattr(utl.SeleniumWrapper, 'chrome_commands',
+                            staticmethod(lambda: lines))
+        sw = _bare_wrapper(browser=_DeadBrowser(),
+                           browser_profile=str(profile))
+        try:
+            assert sw.quit() is None
+            child.wait(timeout=10)
+            time.sleep(0.5)
+            assert other.poll() is None
+        finally:
+            child.kill()
+            other.kill()
+        assert not profile.exists() and sw.browser_profile == ''
+        assert sw.reap_browser() == 0
+
+    def test_a_kept_profile_outlives_its_browser(self, tmp_path,
+                                                 monkeypatch):
+        child = self._idle_process()
+        profile = tmp_path / 'kept'
+        profile.mkdir()
+        monkeypatch.setattr(
+            utl.SeleniumWrapper, 'chrome_commands', staticmethod(
+                lambda: [(child.pid, f'chrome --user-data-dir={profile}')]))
+        sw = _bare_wrapper(
+            browser_profile=str(profile),
+            capture=utl.CaptureOptions(profile_dir=str(profile)))
+        try:
+            assert sw.reap_browser() == 1
+            child.wait(timeout=10)
+        finally:
+            child.kill()
+        assert profile.is_dir()
+
+    def test_a_driver_that_quits_kills_nothing(self, monkeypatch):
+        monkeypatch.setattr(
+            utl.SeleniumWrapper, 'chrome_commands', staticmethod(
+                lambda: pytest.fail('looked for a browser to kill')))
+        closer = Mock()
+        _bare_wrapper(
+            browser=types.SimpleNamespace(close=closer, quit=closer),
+            browser_profile='C:\\scoped_dir9').quit()
+        assert closer.call_count == 2
+
+    def test_a_browser_already_gone_is_not_an_error(self, tmp_path,
+                                                    monkeypatch):
+        child = self._idle_process()
+        child.kill()
+        child.wait(timeout=10)
+        monkeypatch.setattr(
+            utl.SeleniumWrapper, 'chrome_commands', staticmethod(
+                lambda: [(child.pid, f'chrome --user-data-dir={tmp_path}')]))
+        sw = _bare_wrapper(browser_profile=str(tmp_path))
+        assert sw.reap_browser() == 0
+        assert _bare_wrapper().reap_browser() == 0
+
+    @requires_local_browser
+    def test_a_killed_driver_leaves_no_chrome(self):
+        """A driver killed under a live browser still leaves no Chrome
+        and no profile behind once quit."""
+        sw = utl.SeleniumWrapper()
+        profile = sw.browser_profile
+        try:
+            assert len(utl.SeleniumWrapper.profile_pids(profile)) == 1
+            sw.browser.service.process.kill()
+            sw.browser.service.process.wait(timeout=10)
+        finally:
+            sw.quit()
+        for _ in range(40):
+            if not utl.SeleniumWrapper.profile_pids(profile):
+                break
+            time.sleep(0.25)
+        assert utl.SeleniumWrapper.profile_pids(profile) == []
 
     def test_scrape_quits_browser_on_error(self, monkeypatch):
         """A scrape that raises mid-run still reaps its browser.
@@ -541,7 +938,7 @@ class TestUtils:
                             _FakeSeleniumWrapper)
         with pytest.raises(ValueError):
             fbapi.FacebookScreenshots.take_screenshots(
-                {'ad_id': 'https://www.google.com/'})
+                {'ad_id': 'https://example.com/'})
         assert len(_FakeSeleniumWrapper.instances) == 1
         assert _FakeSeleniumWrapper.instances[0].quit_calls == 1
 
@@ -558,6 +955,22 @@ class TestUtils:
         with pytest.raises(ValueError):
             utl.SeleniumWrapper()
         assert fake.quit_calls == 1
+
+    def test_mobile_emulation_names_no_device(self, monkeypatch):
+        """Mobile spells out its metrics rather than naming a device.
+
+        chromedriver prunes its device list; 154 dropped "iPhone X" and
+        refused every mobile session that named it.
+        """
+        launched = []
+        monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser',
+                            lambda self, co: launched.append(co) or 1 / 0)
+        with pytest.raises(ZeroDivisionError):
+            utl.SeleniumWrapper(mobile=True)
+        emulation = launched[0].experimental_options['mobileEmulation']
+        assert 'deviceName' not in emulation
+        assert emulation['deviceMetrics']['mobile']
+        assert 'iPhone' in emulation['userAgent']
 
     @pytest.mark.parametrize('extra', [-1, 0])
     def test_launch_retries_until_its_attempts_run_out(self, monkeypatch,
@@ -622,6 +1035,25 @@ class TestUtils:
         finally:
             sw.quit()
 
+    @requires_local_browser
+    def test_accept_cookies_reads_a_typeset_apostrophe(self, tmp_path):
+        """A typeset apostrophe still matches, and subscribe is not
+        pressed."""
+        html = ('<html><body><button onclick="window.picked=\'pay\'">'
+                'Je m’abonne</button><button onclick="window.picked='
+                '\'accept\'">J’accepte</button></body></html>')
+        url = _write_page(tmp_path, 'french.html', html)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            found = sw.find_accept_buttons(sw.get_accept_xpath())
+            assert [x.text for x in found] == ['J’accepte']
+            sw.accept_cookies()
+            assert sw.browser.execute_script('return window.picked;') == (
+                'accept')
+        finally:
+            sw.quit()
+
     def test_accept_cookies_ignores_decoys(self, tmp_path):
         """Body copy and a settings control are not consent buttons.
 
@@ -666,6 +1098,51 @@ class TestUtils:
             assert sw.browser.execute_script('return window.clicked;') == 0
         finally:
             sw.quit()
+
+    def test_slot_shot_is_the_slot_and_leaves_the_browser_well(
+            self, tmp_path):
+        """A slot's shot is the slot below the fold, creative drawn, and
+        the browser still shoots the next page."""
+        _write_page(tmp_path, 'creative.html', (
+            '<html><body style="margin:0;background:#b00020">'
+            '<h1 style="color:#fff">Buy Game X</h1></body></html>'))
+        url = _write_page(tmp_path, 'adpage.html', AD_PAGE)
+        after = _write_page(tmp_path, 'article.html', LONG_ARTICLE)
+        shot = tmp_path / 'slot.png'
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=1)
+            frame = sw.browser.find_element(By.ID, 'google_ads_iframe_1')
+            assert sw.shoot_elem(frame, str(shot)) == str(shot)
+            hidden = sw.browser.find_element(By.ID, 'div-gpt-ad-1')
+            assert sw.shoot_elem(hidden, str(tmp_path / 'no.png')) == ''
+            verdict = sw.take_screenshot(after,
+                                         str(tmp_path / 'after.png'))
+        finally:
+            sw.quit()
+        with Image.open(shot) as img:
+            assert img.size == (300, 250)
+            red, green, blue = img.convert('RGB').getpixel((290, 240))
+        assert red > 150 and green < 40 and blue < 60
+        assert not utl.SeleniumWrapper.is_solid_png(shot.read_bytes())
+        assert not (tmp_path / 'no.png').exists()
+        assert verdict == ('ok', '')
+        assert not utl.SeleniumWrapper.is_solid_png(
+            (tmp_path / 'after.png').read_bytes())
+
+    def test_slot_shot_survives_a_driver_that_cannot(self, tmp_path):
+        shot = tmp_path / 'slot.png'
+        dead = types.SimpleNamespace(
+            browser=types.SimpleNamespace(
+                execute_script=_raise_read_timeout),
+            elem_box_script='', browser_errors=(url_ex.HTTPError,))
+        assert utl.SeleniumWrapper.shoot_elem(dead, None, str(shot)) == ''
+        mute = _bare_wrapper(slot_settle=0, browser=types.SimpleNamespace(
+            execute_script=lambda script, elem: {
+                'x': 0, 'y': 0, 'width': 10, 'height': 10},
+            execute_cdp_cmd=lambda name, args: {}))
+        assert mute.shoot_elem(None, str(shot)) == ''
+        assert not shot.exists()
 
     def test_page_vitals_reads_the_shown_page(self, tmp_path):
         """A page loaded after the browser started answers every lab
@@ -717,17 +1194,39 @@ class TestUtils:
         finally:
             sw.quit()
 
+    @requires_local_browser
+    def test_the_shot_is_of_the_top_of_a_smooth_scrolling_page(
+            self, tmp_path):
+        """``scroll-behavior: smooth`` does not leave the shot mid-way;
+        the walk still reaches the bottom."""
+        url = _write_page(tmp_path, 'smooth.html', SMOOTH_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            sw.browser.execute_script(sw.scroll_part_script, 0.8)
+            far = sw.browser.execute_script('return window.scrollY;')
+            sw.prepare_shot(None, False)
+            back = sw.browser.execute_script('return window.scrollY;')
+            sw.scroll_through(steps=2, pause=0.1)
+            walked = sw.browser.execute_script(
+                'return [window.scrollY, window.deepest,'
+                ' document.body.scrollHeight - window.innerHeight];')
+        finally:
+            sw.quit()
+        assert far > 5000 and back == 0
+        assert walked[0] == 0 and walked[1] >= walked[2] - 1
+
     def test_landing_domain_parsing(self):
         ld = utl.SeleniumWrapper.landing_domain
         assert ld(['https://ad.doubleclick.net/ddm/clk/1;2;adurl='
-                   'https%3A%2F%2Fwww.game.com%2Fbuy']) == 'game.com'
+                   'https%3A%2F%2Fwww.shop.example%2Fbuy']) == 'shop.example'
         assert ld(['https://www.googleadservices.com/pagead/aclk?sa=L&ai=x'
                    '&adurl=https://store.example.org/x']) == (
             'store.example.org')
         assert ld(['https://securepubads.g.doubleclick.net/pcs/click?x=1']
                   ) == ''
-        assert ld(['https://www.rival.com/landing', 'https://other.com']
-                  ) == 'rival.com'
+        assert ld(['https://www.rival.example/landing',
+                   'https://other.example']) == 'rival.example'
         assert ld([]) == ''
 
     def test_slot_evidence_rules(self):
@@ -775,31 +1274,36 @@ class TestUtils:
         """Only deep same-host stories with a headline survive; section,
         account and off-site links are dropped and paths dedupe."""
         pick = utl.SeleniumWrapper.pick_article_links
-        base = 'https://www.ign.com'
+        base = 'https://www.example.org'
         links = [
-            {'href': 'https://www.ign.com/', 'text': 'Home page of IGN'},
-            {'href': 'https://www.ign.com/tag/rpg', 'text': 'Role playing'},
-            {'href': 'https://www.ign.com/login', 'text': 'Log in to IGN'},
-            {'href': 'https://www.ign.com/reviews', 'text': 'All reviews'},
-            {'href': 'https://twitter.com/ign/status/1', 'text': 'x' * 30},
-            {'href': 'https://www.ign.com/articles/big-story', 'text': 'x'},
-            {'href': 'https://www.ign.com/articles/big-story#c',
+            {'href': 'https://www.example.org/',
+             'text': 'Home page of Example News'},
+            {'href': 'https://www.example.org/tag/rpg',
+             'text': 'Role playing'},
+            {'href': 'https://www.example.org/login',
+             'text': 'Log in to Example News'},
+            {'href': 'https://www.example.org/reviews', 'text': 'All reviews'},
+            {'href': 'https://social.example.net/news/status/1',
+             'text': 'x' * 30},
+            {'href': 'https://www.example.org/articles/big-story',
+             'text': 'x'},
+            {'href': 'https://www.example.org/articles/big-story#c',
              'text': 'The biggest story of the day'},
-            {'href': 'https://www.ign.com/articles/big-story/',
+            {'href': 'https://www.example.org/articles/big-story/',
              'text': 'The biggest story of the day again'},
-            {'href': 'https://www.ign.com/games/another-long-slug-here-x',
+            {'href': 'https://www.example.org/games/another-long-slug-here-x',
              'text': 'Another long story headline'},
-            {'href': 'https://uk.ign.com/articles/third-story',
+            {'href': 'https://uk.example.org/articles/third-story',
              'text': 'A third story from the uk edition'},
-            {'href': 'https://www.ign.com/videos/trailer-drop',
+            {'href': 'https://www.example.org/videos/trailer-drop',
              'text': 'Watch the trailer drop'},
-            {'href': 'mailto:tips@ign.com', 'text': 'Send us your tips'}]
+            {'href': 'mailto:tips@example.org', 'text': 'Send us your tips'}]
         assert pick(links, base, 5) == [
-            'https://www.ign.com/articles/big-story',
-            'https://www.ign.com/games/another-long-slug-here-x',
-            'https://uk.ign.com/articles/third-story']
+            'https://www.example.org/articles/big-story',
+            'https://www.example.org/games/another-long-slug-here-x',
+            'https://uk.example.org/articles/third-story']
         assert pick(links, base, 1) == [
-            'https://www.ign.com/articles/big-story']
+            'https://www.example.org/articles/big-story']
         assert pick([], base, 3) == []
 
     def test_scan_ad_slots_finds_native_widget(self, tmp_path):
@@ -847,34 +1351,72 @@ class TestUtils:
 
     @pytest.mark.parametrize('state, expected', [
         ({'title': 'Just a moment...', 'text': 'Performing security '
-          'verification', 'url': 'https://www.gamespot.com/', 'len': 60},
+          'verification', 'url': 'https://games.example.net/', 'len': 60},
          ('bot_check', 'performing security verification')),
         ({'title': 'x', 'text': "You've been blocked by network security",
-          'url': 'https://www.reddit.com/r/gaming', 'len': 40},
+          'url': 'https://forum.example.com/r/gaming', 'len': 40},
          ('blocked', 'blocked by network security')),
         ({'title': 'Privacy error', 'text': 'Your connection is not '
-          'private NET::ERR_CERT_DATE_INVALID', 'url': 'https://hitek.fr/',
+          'private NET::ERR_CERT_DATE_INVALID', 'url': 'https://example.net/',
           'proto': 'chrome-error:', 'len': 80},
          ('ssl_error', 'your connection is not private')),
         ({'title': 'Log in', 'text': 'Log in to continue',
-          'url': 'https://x.com/', 'len': 18}, ('login_wall', 'log in')),
+          'url': 'https://social.example.net/', 'len': 18},
+         ('login_wall', 'log in')),
         ({'title': 'Home', 'text': f'Sign in {"news " * 200}',
-          'url': 'https://www.ign.com/', 'len': 1000}, ('ok', '')),
+          'url': 'https://www.example.org/', 'len': 1000}, ('ok', '')),
         ({'title': 'Account', 'text': 'x' * 900,
-          'url': 'https://www.twitch.tv/login?next=/', 'len': 900},
+          'url': 'https://stream.example.com/login?next=/', 'len': 900},
          ('login_wall', '/login')),
         ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
           'dialog': 'We and our partners use cookies', 'len': 900},
          ('consent_wall', 'we and our partners use cookies')),
         ({'title': 'Oops', 'text': 'Something went wrong. Try again.',
-          'url': 'https://www.funimation.com/', 'len': 32},
+          'url': 'https://video.example.com/', 'len': 32},
          ('error_page', 'something went wrong')),
         ({'title': 'Site', 'text': f'Something went wrong {"x" * 900}',
-          'url': 'https://a.com/', 'len': 920},
+          'url': 'https://a.com/', 'len': 920}, ('ok', '')),
+        ({'title': 'Site', 'text': f'Something went wrong {"x" * 500}',
+          'url': 'https://a.com/', 'len': 520},
          ('error_page', 'something went wrong')),
+        ({'title': '502 Bad Gateway', 'text': 'x' * 900,
+          'url': 'https://a.com/', 'len': 900},
+         ('error_page', '502 bad gateway')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'Sign up  to keep reading. We use cookies.',
+          'cover': 0.36, 'len': 900},
+         ('login_wall', 'sign up to keep reading. we use cookies.')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'Continue with recommended cookies', 'cover': 0.5,
+          'len': 900},
+         ('consent_wall', 'continue with recommended cookies')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'Sign up for our newsletter', 'cover': 0.05,
+          'len': 900}, ('ok', '')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'We and our partners use cookies', 'cover': 0.08,
+          'len': 900, 'status': 200, 'nodes': 40, 'buttons': ['Accept']},
+         ('ok', '')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'We and our partners use cookies', 'cover': 0.2,
+          'len': 900}, ('consent_wall', 'we and our partners use cookies')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://example.net/',
+          'dialog': 'Nous respectons vos choix', 'cover': 0.6, 'len': 900},
+         ('consent_wall', 'nous respectons vos choix')),
+        ({'title': 'Clips', 'text': 'x' * 900, 'len': 900,
+          'url': 'https://clips.example.com/', 'cover': 0.13, 'modal': True,
+          'dialog': 'Skip Log in to Clips Use QR code'},
+         ('login_wall', 'skip log in to clips use qr code')),
+        ({'title': 'Clips', 'text': 'x' * 900, 'len': 900,
+          'url': 'https://clips.example.com/', 'cover': 0.13, 'modal': False,
+          'dialog': 'Skip Log in to Clips Use QR code'}, ('ok', '')),
+        ({'title': 'Site', 'text': 'x' * 900, 'url': 'https://a.com/',
+          'dialog': 'We and our partners use cookies', 'cover': 0.08,
+          'modal': True, 'len': 900}, ('ok', '')),
     ])
     def test_classify_page_names_each_interstitial(self, state, expected):
-        """A header's "Sign in" link on a long page is not a login wall."""
+        """Header sign-in links, error phrases deep in a long page and
+        thin cookie banners are not walls."""
         assert utl.SeleniumWrapper.classify_page(state) == expected
 
     @staticmethod
@@ -907,9 +1449,9 @@ class TestUtils:
                       'tpc.googlesyndication.com') == 'Google'
         assert vendor(['www.landing.example'],
                       'aax-us-east.amazon-adsystem.com') == 'Amazon DSP'
-        assert vendor(['cdn.taboola.com'], 'www.ign.com') == 'Taboola'
+        assert vendor(['cdn.taboola.com'], 'www.example.org') == 'Taboola'
         assert vendor([], '', ['marker div-gpt-ad']) == 'Google'
-        assert vendor(['www.ign.com'], 'www.ign.com') == 'Site direct'
+        assert vendor(['www.example.org'], 'www.example.org') == 'Site direct'
         assert vendor([], '') == ''
 
     def test_capture_verdict_reads_fixture_pages(self, tmp_path):
@@ -919,6 +1461,8 @@ class TestUtils:
                  ('blocked.html', BLOCKED_PAGE, 'blocked'),
                  ('login.html', LOGIN_PAGE, 'login_wall'),
                  ('consent.html', CONSENT_MODAL, 'consent_wall'),
+                 ('signup.html', SIGNUP_PROMPT, 'login_wall'),
+                 ('thin.html', THIN_BANNER, 'ok'),
                  ('banner.html', COOKIE_BANNER, 'ok'))
         sw = utl.SeleniumWrapper()
         try:
@@ -964,6 +1508,602 @@ class TestUtils:
             assert sw.capture_verdict()[0] == 'ok'
         finally:
             sw.quit()
+
+    @requires_local_browser
+    def test_a_button_with_no_text_is_found_by_its_class(self, tmp_path):
+        """A label drawn by CSS is found by class, and subscribe is not
+        pressed."""
+        url = _write_page(tmp_path, 'wall.html', PAY_OR_CONSENT)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            assert sw.capture_verdict()[0] == 'consent_wall'
+            sw.accept_cookies()
+            assert sw.browser.execute_script('return window.picked;') == (
+                'cookies')
+            assert sw.capture_verdict()[0] == 'ok'
+        finally:
+            sw.quit()
+
+    def test_launch_args_follow_the_capture_options(self):
+        """Options drop by prefix, add extras and bring a profile's cache
+        cap; a phone is spelled out, never a named device."""
+        shared = ['--lang=en-US', '--window-size=1920,1080',
+                  '--start-maximized', '--no-sandbox', '--disable-gpu',
+                  '--disable-blink-features=AutomationControlled']
+        sw = _bare_wrapper(mobile=False, page_load_strategy='')
+        assert sw.launch_args(True) == [
+            '--headless=new', '--window-position=-32000,-32000'] + shared
+        assert sw.launch_args(False) == shared
+        co = sw.chrome_options(sw.launch_args(True), 'tmp')
+        assert co.arguments == sw.launch_args(True)
+        assert 'mobileEmulation' not in co.experimental_options
+        sw.mobile = True
+        phone = sw.chrome_options([], 'tmp').experimental_options[
+            'mobileEmulation']
+        assert 'deviceName' not in phone and 'iPhone' in phone['userAgent']
+        sw.capture = utl.CaptureOptions(
+            extra_args=('--disable-http2',),
+            drop_args=('--disable-gpu', '--window-position'),
+            profile_dir='profiles/desktop')
+        assert sw.launch_args(True) == [
+            '--headless=new', *shared[:4], shared[5], '--disable-http2',
+            '--user-data-dir=profiles/desktop',
+            '--disk-cache-size=52428800']
+
+    HEADLESS_AGENT = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) HeadlessChrome/154.0.0.0 '
+                      'Safari/537.36')
+    HINTS = {'brands': [{'brand': 'Google Chrome', 'version': '154'}],
+             'platform': 'Linux', 'mobile': False}
+    OVERRIDE = 'Emulation.setUserAgentOverride'
+    ON_NEW_DOCUMENT = 'Page.addScriptToEvaluateOnNewDocument'
+
+    @staticmethod
+    def _identity(browser, mobile=False, native=True):
+        sw = _bare_wrapper(mobile=mobile)
+        if native:
+            sw.set_native_identity(browser)
+        else:
+            sw.set_patched_identity(browser)
+        return browser
+
+    def test_native_identity_keeps_the_client_hints(self):
+        """Only the headless mark comes off; the hints Chrome would send
+        go with the agent and no script patches ``navigator``."""
+        hints = dict(self.HINTS, secure=True)
+        browser = self._identity(
+            _IdentityBrowser(self.HEADLESS_AGENT, hints))
+        assert browser.pages == [utl.SeleniumWrapper.client_hints_page]
+        assert browser.named(self.OVERRIDE) == [{
+            'userAgent': self.HEADLESS_AGENT.replace('HeadlessChrome',
+                                                     'Chrome'),
+            'userAgentMetadata': self.HINTS}]
+        assert browser.named(self.ON_NEW_DOCUMENT) == [
+            {'source': utl.SeleniumWrapper.webdriver_guard_script}]
+        assert browser.named('Network.setUserAgentOverride') == []
+
+    def test_native_identity_leaves_a_true_agent_alone(self):
+        """A windowed agent and a phone are not overridden, and unread
+        hints cost only the hints."""
+        windowed = self.HEADLESS_AGENT.replace('HeadlessChrome', 'Chrome')
+        for agent, mobile in ((windowed, False),
+                              (self.HEADLESS_AGENT, True)):
+            browser = self._identity(_IdentityBrowser(agent, self.HINTS),
+                                     mobile=mobile)
+            assert browser.named(self.OVERRIDE) == [] and not browser.pages
+        for hints in (None, ex.WebDriverException('no such page')):
+            sent = self._identity(_IdentityBrowser(
+                self.HEADLESS_AGENT, hints)).named(self.OVERRIDE)
+            assert len(sent) == 1 and 'userAgentMetadata' not in sent[0]
+
+    def test_patched_identity_is_what_every_caller_had(self):
+        browser = self._identity(_IdentityBrowser(self.HEADLESS_AGENT),
+                                 native=False)
+        assert browser.commands == [
+            (self.ON_NEW_DOCUMENT,
+             {'source': utl.SeleniumWrapper.stealth_script}),
+            ('Network.setUserAgentOverride', {
+                'userAgent': self.HEADLESS_AGENT.replace(
+                    'HeadlessChrome', 'Chrome'),
+                'acceptLanguage': 'en-US,en;q=0.9'})]
+        phone = self._identity(_IdentityBrowser(self.HEADLESS_AGENT),
+                               mobile=True, native=False)
+        assert [name for name, _ in phone.commands] == [
+            self.ON_NEW_DOCUMENT]
+
+    def test_configure_browser_follows_the_options(self, monkeypatch):
+        """The options pick the identity and the page load timeout, held
+        under the command timeout; a kept profile starts cache-empty."""
+        monkeypatch.setattr(
+            utl.SeleniumWrapper, 'enable_download_in_headless_chrome',
+            Mock())
+        sw = _bare_wrapper(mobile=False)
+        plain = Mock()
+        plain.execute_script.return_value = self.HEADLESS_AGENT
+        sw.configure_browser(plain, False, 'tmp')
+        plain.maximize_window.assert_called_once_with()
+        plain.set_page_load_timeout.assert_called_once_with(10)
+        sent = [c.args[0] for c in plain.execute_cdp_cmd.call_args_list]
+        assert 'Network.setUserAgentOverride' in sent
+        assert 'Network.clearBrowserCache' not in sent
+        sw.capture = utl.CaptureOptions(native_identity=True,
+                                        page_load_timeout=90,
+                                        profile_dir='profiles/desktop')
+        kept = _IdentityBrowser(self.HEADLESS_AGENT, self.HINTS)
+        kept.set_window_size, kept.set_script_timeout = Mock(), Mock()
+        kept.set_page_load_timeout = Mock()
+        sw.configure_browser(kept, True, 'tmp')
+        kept.set_window_size.assert_called_once_with(1920, 1080)
+        kept.set_page_load_timeout.assert_called_once_with(45)
+        assert len(kept.named(self.OVERRIDE)) == 1
+        assert kept.named('Network.clearBrowserCache') == [{}]
+        assert sw.browser_profile == 'profiles/desktop'
+
+    @requires_local_browser
+    def test_native_identity_reads_as_an_ordinary_chrome(self):
+        """Agent, hints and header order agree with Chrome's own, and
+        ``navigator`` carries no patches."""
+        _EchoHandler.seen = []
+        server = _start_server(_EchoHandler)
+        sw = utl.SeleniumWrapper(capture=ssapi.SsApi.page_capture())
+        try:
+            sw.go_to_url(_server_url(server), sleep=0)
+            seen = sw.browser.execute_script(
+                "return {agent: navigator.userAgent,"
+                " brands: navigator.userAgentData.brands.map(b => b.brand),"
+                " webdriver: navigator.webdriver,"
+                " own: Object.getOwnPropertyNames(navigator)};")
+        finally:
+            sw.quit()
+            _stop_server(server)
+        headers = {k.lower(): v for k, v in _EchoHandler.seen[0].items()}
+        assert headers['user-agent'] == seen['agent']
+        assert 'Headless' not in seen['agent']
+        assert all(b in headers['sec-ch-ua'] for b in seen['brands'])
+        assert list(headers)[-1] == 'accept-language'
+        assert seen['webdriver'] is False and seen['own'] == []
+
+    def test_fresh_cookies_are_cleared_before_the_page_loads(self):
+        """Cookies go before each navigation, never for a shot of the
+        page already shown, and a failed clear costs nothing else."""
+        sw = _bare_wrapper(browser=_IdentityBrowser('Chrome'))
+        sw.go_to_url = lambda url, **kwargs: sw.browser.pages.append(
+            (url, len(sw.browser.commands))) and False
+        assert sw.take_screenshot('https://a.example')[0] == 'error_page'
+        assert sw.browser.commands == []
+        sw.capture = utl.CaptureOptions(fresh_cookies=True)
+        sw.take_screenshot('https://a.example')
+        assert sw.browser.commands == [('Network.clearBrowserCookies', {})]
+        assert sw.browser.pages[-1] == ('https://a.example', 1)
+        sw.browser = types.SimpleNamespace(
+            execute_cdp_cmd=_raise_read_timeout)
+        assert sw.forget_visits() is False
+        sw.browser = _ScriptedBrowser({}, png=self._png((9, 9, 9)))
+        sw.forget_visits = Mock()
+        sw.retry_settles = {}
+        assert sw.take_screenshot()[0] == 'blank'
+        assert not sw.forget_visits.called
+
+    def test_describe_nav_error_names_class_and_code(self):
+        describe = utl.SeleniumWrapper.describe_nav_error
+        assert describe(ex.TimeoutException('timed out')) == (
+            'TimeoutException')
+        assert describe(ex.WebDriverException(
+            'unknown error: net::ERR_CONNECTION_RESET\n  (Session info)')
+        ) == 'WebDriverException net::ERR_CONNECTION_RESET'
+
+    def test_keep_partial_needs_a_timeout_and_a_document(self):
+        """Only a timed-out navigation over its own real document is
+        kept, and only when the options ask."""
+        timeout = ex.TimeoutException('timed out')
+        page = {'proto': 'http:', 'url': 'http://a.com/', 'len': 40,
+                'origin': 1000500}
+        sw = _bare_wrapper(browser=_ScriptedBrowser(page))
+        assert not sw.keep_partial(timeout)
+        sw.capture = utl.CaptureOptions(shoot_partial=True)
+        assert not sw.keep_partial(ex.WebDriverException('net::ERR_FAILED'))
+        assert sw.browser.scripts == []
+        sw.nav_started = 1000
+        assert sw.keep_partial(timeout) and sw.partial_load
+        assert sw.browser.scripts[0] == 'window.stop();'
+        for change in ({'proto': 'chrome-error:'}, {'url': 'about:blank'},
+                       {'len': 0}, {'origin': 999500}):
+            sw.browser = _ScriptedBrowser({**page, **change})
+            assert not sw.keep_partial(timeout), change
+
+    @requires_local_browser
+    def test_go_to_url_keeps_a_partial_page(self, tmp_path):
+        server = _start_server(_StallingHandler)
+        shot = tmp_path / 'partial.png'
+        sw = utl.SeleniumWrapper(
+            page_load_strategy='eager', capture=utl.CaptureOptions(
+                page_load_timeout=3, shoot_partial=True))
+        try:
+            verdict = sw.take_screenshot(_server_url(server), str(shot))
+        finally:
+            sw.quit()
+            _stop_server(server)
+        assert verdict == ('ok', 'partial load')
+        assert sw.last_nav_error == 'TimeoutException'
+        assert not utl.SeleniumWrapper.is_solid_png(shot.read_bytes())
+
+    @requires_local_browser
+    def test_unreachable_page_stays_error_page(self, tmp_path):
+        """A page that sent nothing leaves the one before it, which is
+        not kept; a refused host and an unasked stall are unreachable."""
+        stalled, silent = (_start_server(_StallingHandler),
+                           _start_server(_SilentHandler))
+        sw = utl.SeleniumWrapper(
+            page_load_strategy='eager', capture=utl.CaptureOptions(
+                page_load_timeout=2, shoot_partial=True))
+        try:
+            sw.browser.get(_write_page(tmp_path, 'story.html', LONG_ARTICLE))
+            assert not sw.go_to_url(_server_url(silent), sleep=0,
+                                    max_attempts=1)
+            assert not sw.partial_load
+            assert sw.take_screenshot(_closed_port_url()) == (
+                'error_page', 'page unreachable: WebDriverException '
+                'net::ERR_CONNECTION_REFUSED')
+            sw.capture = utl.CaptureOptions(page_load_timeout=2)
+            assert sw.take_screenshot(_server_url(stalled)) == (
+                'error_page', 'page unreachable: TimeoutException')
+        finally:
+            sw.quit()
+            _stop_server(stalled)
+            _stop_server(silent)
+
+    def test_wait_painted_gives_up_without_paint(self):
+        """No text and no paint is never shot; text over a blank shot is
+        polled to the deadline; a drawn shot is returned."""
+        sw = _bare_wrapper(paint_poll=0.01,
+                           browser=_ScriptedBrowser({'lcp': 0, 'len': 0}))
+        assert sw.wait_painted(0.1) is None and sw.browser.shots == 0
+        sw.browser = _ScriptedBrowser({'lcp': 0, 'len': 40},
+                                      png=self._png((255, 255, 255)))
+        assert sw.wait_painted(0.1) is None and sw.browser.shots > 1
+        drawn = self._png((255, 255, 255), mark=(0, 0, 63, 3))
+        sw.browser = _ScriptedBrowser({'lcp': 120, 'len': 0}, png=drawn)
+        assert sw.wait_painted(0.1) == drawn
+
+    @requires_local_browser
+    def test_take_screenshot_waits_for_paint_when_asked(self, tmp_path):
+        """The paint wait replaces the fixed settle and the first shot is
+        already drawn."""
+        url = _write_page(tmp_path, 'late.html', LATE_PAINT)
+        sw = utl.SeleniumWrapper(capture=utl.CaptureOptions(paint_wait=10))
+        sw.capture_verdict = Mock(return_value=('ok', ''))
+        sw.accept_cookies = Mock()
+        try:
+            start = time.time()
+            sw.take_screenshot(url, str(tmp_path / 'late.png'), sleep=30)
+            png = sw.capture_verdict.call_args.args[0]
+        finally:
+            sw.quit()
+        assert time.time() - start < 20
+        assert sw.capture_verdict.call_count == 1
+        assert not utl.SeleniumWrapper.is_solid_png(png)
+
+    @requires_local_browser
+    def test_take_screenshot_tags_a_cleared_check(self, tmp_path):
+        """A check that clears by itself is waited out, never touched,
+        and the page behind it is shot."""
+        url = _write_page(tmp_path, 'check.html', CLEARING_CHECK)
+        shot = tmp_path / 'check.png'
+        sw = utl.SeleniumWrapper(
+            capture=utl.CaptureOptions(challenge_wait=20))
+        sw.accept_cookies = Mock()
+        try:
+            kind, detail = sw.take_screenshot(url, str(shot), sleep=0)
+            title = sw.browser.title
+            touched = sw.browser.execute_script('return window.touched;')
+        finally:
+            sw.quit()
+        assert kind == 'ok' and title == 'Example Games' and touched == 0
+        assert re.fullmatch(r'cleared after \d+s', detail)
+        assert sw.accept_cookies.call_count == 2
+        assert not utl.SeleniumWrapper.is_solid_png(shot.read_bytes())
+
+    def test_wait_challenge_gives_up_at_the_deadline(self):
+        state = {'title': 'Just a moment...', 'len': 60,
+                 'text': 'Performing security verification',
+                 'url': 'https://games.example.net/'}
+        first = self._png((255, 255, 255), mark=(0, 0, 63, 3))
+        sw = _bare_wrapper(
+            capture=utl.CaptureOptions(challenge_wait=0.2),
+            challenge_poll=0.05,
+            browser=_ScriptedBrowser(state, png=b'later shot'))
+        assert sw.wait_challenge() == (
+            'bot_check', 'performing security verification', 0)
+        assert set(sw.browser.scripts) == {sw.page_state_script}
+        sw.browser = _ScriptedBrowser(state, png=b'later shot')
+        assert sw.settle_and_reshoot(first, 'bot_check', 'just a moment') == (
+            first, 'bot_check', 'performing security verification')
+        assert set(sw.browser.scripts) == {sw.page_state_script}
+
+    def test_settle_keeps_the_fixed_wait_without_a_challenge_wait(
+            self, monkeypatch):
+        state = {'title': 'Just a moment...', 'len': 60, 'text': '',
+                 'url': 'https://games.example.net/'}
+        sleeps = Mock()
+        monkeypatch.setattr(utl.time, 'sleep', sleeps)
+        sw = _bare_wrapper(wait_challenge=Mock(), browser=_ScriptedBrowser(
+            state, png=b'second shot'))
+        assert sw.settle_and_reshoot(b'first', 'bot_check', 'x') == (
+            b'second shot', 'bot_check', 'just a moment')
+        assert [c.args for c in sleeps.call_args_list] == [(8,)]
+        assert not sw.wait_challenge.called
+
+    def test_locked_profile_falls_back(self, monkeypatch, tmp_path):
+        """A profile another Chrome holds costs the profile, not the
+        capture, and never fetches a new driver; a driver Chrome refuses
+        is still replaced with the profile kept."""
+        browser = types.SimpleNamespace(window_handles=['w0'])
+        launcher = _ProfileLauncher(browser)
+        recovery = Mock(return_value='1.2.3.4')
+        monkeypatch.setattr(utl.SeleniumWrapper, 'launch_browser',
+                            launcher)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'configure_browser',
+                            Mock())
+        monkeypatch.setattr(utl.SeleniumWrapper, 'get_chrome_version',
+                            recovery)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'get_chromedriver_version',
+                            recovery)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'download_chromedriver',
+                            recovery)
+        profile = str(tmp_path / 'profile')
+        options = utl.CaptureOptions(profile_dir=profile)
+        sw = utl.SeleniumWrapper(capture=options)
+        assert sw.browser is browser and not recovery.called
+        assert f'--user-data-dir={profile}' in launcher.launches[0]
+        assert launcher.launches[1] == _bare_wrapper().launch_args(True)
+        stale = _ProfileLauncher(
+            browser, 'session not created: This version of ChromeDriver '
+                     'only supports Chrome version 150', refusals=1)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'launch_browser', stale)
+        utl.SeleniumWrapper(capture=options)
+        assert recovery.call_count == 3
+        assert [f'--user-data-dir={profile}' in x
+                for x in stale.launches] == [True, True]
+
+    def test_virtual_display_absent_is_none(self, monkeypatch):
+        monkeypatch.setattr(utl.shutil, 'which', Mock(return_value=None))
+        launches = Mock(return_value=(
+            types.SimpleNamespace(window_handles=['w0']), None))
+        monkeypatch.setattr(utl.SeleniumWrapper, 'init_browser', launches)
+        sw = utl.SeleniumWrapper(headless=False,
+                                 capture=utl.CaptureOptions(headed=True))
+        assert sw.display is None and sw.headless is True
+        assert launches.call_args_list[0].args[0] is True
+        assert utl.SeleniumWrapper(headless=False).headless is False
+
+    def test_virtual_display_rides_the_driver_environment(
+            self, monkeypatch):
+        """The display reaches Chrome through the driver's environment
+        only, and is given up on quit."""
+        stops, service = Mock(), Mock(return_value='service')
+        chrome = Mock(return_value=types.SimpleNamespace(
+            window_handles=['w0'], close=Mock(), quit=Mock()))
+        monkeypatch.setattr(utl.VirtualDisplay, 'available',
+                            Mock(return_value=True))
+        monkeypatch.setattr(utl.VirtualDisplay, 'start',
+                            lambda self: setattr(self, 'name', ':99'))
+        monkeypatch.setattr(utl.VirtualDisplay, 'stop', stops)
+        monkeypatch.setattr(utl.wd.chrome.service, 'Service', service)
+        monkeypatch.setattr(utl.wd, 'Chrome', chrome)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'configure_browser',
+                            Mock())
+        before = os.environ.get('DISPLAY')
+        sw = utl.SeleniumWrapper(capture=utl.CaptureOptions(headed=True))
+        assert sw.headless is False
+        assert '--headless=new' not in sw.co.arguments
+        assert service.call_args.kwargs['env']['DISPLAY'] == ':99'
+        assert os.environ.get('DISPLAY') == before
+        sw.quit()
+        assert stops.call_count == 1 and sw.display is None
+
+    def test_virtual_display_reads_its_number(self, monkeypatch):
+        """The display is the number Xvfb prints; one that prints none
+        is stopped, and stopping a dead one is quiet."""
+        process = _FakeProcess()
+        monkeypatch.setattr(utl.subprocess, 'Popen',
+                            Mock(return_value=process))
+        monkeypatch.setattr(utl.select, 'select',
+                            lambda r, w, x, t: (r, [], []))
+        display = utl.VirtualDisplay()
+        assert display.start() == ':99'
+        display.stop()
+        display.stop()
+        assert process.stops == ['terminate', 'wait'] and not display.name
+        dead = _FakeProcess(error=ProcessLookupError('no such process'))
+        monkeypatch.setattr(utl.subprocess, 'Popen',
+                            Mock(return_value=dead))
+        display.start()
+        assert display.stop() is None
+        silent = _FakeProcess()
+        monkeypatch.setattr(utl.subprocess, 'Popen',
+                            Mock(return_value=silent))
+        monkeypatch.setattr(utl.select, 'select',
+                            lambda r, w, x, t: ([], [], []))
+        with pytest.raises(OSError):
+            display.start()
+        assert silent.stops == ['terminate', 'wait']
+
+    @requires_local_browser
+    def test_page_state_measures_the_dialog(self, tmp_path):
+        states = []
+        sw = utl.SeleniumWrapper()
+        try:
+            for name, html in (('cmp.html', CONSENT_MODAL),
+                               ('thin.html', THIN_BANNER),
+                               ('story.html', LONG_ARTICLE)):
+                sw.go_to_url(_write_page(tmp_path, name, html), sleep=0)
+                states.append(sw.browser.execute_script(
+                    sw.page_state_script))
+        finally:
+            sw.quit()
+        wall, thin, bare = states
+        assert wall['cover'] == 1 and wall['buttons'] == ['Accept all']
+        assert 0 < thin['cover'] < 0.2 and thin['buttons'] == []
+        assert bare['cover'] == 0 and bare['nodes'] > 120
+
+    @requires_local_browser
+    def test_login_dialog_is_dismissed(self, tmp_path):
+        """A sign-up prompt is closed by its close control, never its
+        account button; a page with no dialog gets no key press."""
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(_write_page(tmp_path, 'check.html',
+                                     CLEARING_CHECK), sleep=0)
+            sw.dismiss_dialog()
+            assert sw.browser.execute_script(
+                'return window.touched;') == 0
+            sw.go_to_url(_write_page(tmp_path, 'signup.html',
+                                     SIGNUP_PROMPT), sleep=0)
+            assert sw.capture_verdict()[0] == 'login_wall'
+            verdict = sw.take_screenshot(
+                file_name=str(tmp_path / 'signup.png'))
+            picked = sw.browser.execute_script('return window.picked;')
+        finally:
+            sw.quit()
+        assert verdict == ('ok', '') and picked == 'closed'
+
+    @requires_local_browser
+    def test_a_modal_prompt_is_read_past_a_tooltip(self, tmp_path):
+        """The largest dialog counts; a modal sign-in prompt is a wall at
+        any size, left by the control worded as the way out."""
+        url = _write_page(tmp_path, 'skip.html', SKIP_PROMPT)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            state = sw.browser.execute_script(sw.page_state_script)
+            first = sw.capture_verdict()
+            verdict = sw.take_screenshot(file_name=str(tmp_path / 'a.png'))
+            picked = sw.browser.execute_script('return window.picked;')
+        finally:
+            sw.quit()
+        assert state['modal'] is True and 0.05 < state['cover'] < 0.2
+        assert first[0] == 'login_wall'
+        assert verdict == ('ok', '') and picked == 'skipped'
+
+    def test_headline_links_returns_text_with_hrefs(self):
+        links = [
+            {'href': 'https://www.example.org/tag/rpg',
+             'text': 'Role playing'},
+            {'href': 'https://www.example.org/articles/big-story#c',
+             'text': ' The biggest   story\nof the day '},
+            {'href': 'https://www.example.org/articles/short', 'text': 'x'},
+            {'href': 'https://www.example.org/articles/second-story',
+             'text': 'A second story worth reading'}]
+        found = utl.SeleniumWrapper.headline_links(
+            links, 'https://www.example.org', 5)
+        assert found == [
+            {'href': 'https://www.example.org/articles/big-story',
+             'text': 'The biggest story of the day'},
+            {'href': 'https://www.example.org/articles/second-story',
+             'text': 'A second story worth reading'}]
+        assert utl.SeleniumWrapper.pick_article_links(
+            links, 'https://www.example.org', 1) == [found[0]['href']]
+
+    def test_clean_page_meta_takes_the_best_source(self):
+        """JSON-LD outranks Open Graph, Twitter and plain meta, a field
+        only a lesser source names still lands, and ``sources`` says
+        where each came from."""
+        raw = {
+            'ld': [{'@type': 'WebSite', 'name': 'Site node'},
+                   {'@type': ['Thing', 'NewsArticle'],
+                    'headline': 'Structured  headline',
+                    'publisher': {'name': 'Example Media'},
+                    'author': [{'name': 'Ada Writer'}, 'Bo Editor'],
+                    'image': [{'url': 'https://cdn.example.com/ld.jpg'}],
+                    'keywords': 'rpg, indie ,, launch'}],
+            'og': {'title': 'Open graph title',
+                   'description': 'Open graph summary'},
+            'article': {'published_time': '2026-09-01T08:00:00Z'},
+            'meta': {'title': 'Tab title', 'time': '2026-08-30',
+                     'canonical': 'https://www.example.com/big-story'},
+            'feeds': ['https://www.example.com/feed.xml']}
+        assert utl.SeleniumWrapper.clean_page_meta(raw) == {
+            'title': 'Structured headline',
+            'description': 'Open graph summary',
+            'image': 'https://cdn.example.com/ld.jpg',
+            'published': '2026-09-01T08:00:00Z',
+            'author': 'Ada Writer, Bo Editor',
+            'tags': ['rpg', 'indie', 'launch'],
+            'canonical': 'https://www.example.com/big-story',
+            'site_name': 'Example Media',
+            'feeds': ['https://www.example.com/feed.xml'],
+            'sources': {'title': 'ld', 'description': 'og', 'image': 'ld',
+                        'published': 'article', 'author': 'ld',
+                        'tags': 'ld', 'canonical': 'meta',
+                        'site_name': 'ld'}}
+        lesser = {'twitter': {'title': 'Twitter title'},
+                  'ld': [{'@type': 'WebSite', 'headline': 'Not a story'}]}
+        assert utl.SeleniumWrapper.clean_page_meta(lesser) == {
+            'title': 'Twitter title', 'sources': {'title': 'twitter'}}
+
+    @pytest.mark.parametrize('raw, expected', [
+        (None, {}),
+        ({'ld': 'junk', 'og': ['junk'], 'meta': {'title': '  '},
+          'feeds': 'junk'}, {}),
+        ({'og': {'title': 'x' * 400}},
+         {'title': 'x' * 300, 'sources': {'title': 'og'}}),
+        ({'article': {'tag': [f'{n}{"t" * 100}' for n in range(15)]}},
+         {'tags': [f'{n}{"t" * 79}' for n in range(10)],
+          'sources': {'tags': 'article'}}),
+        ({'og': {'image': 'data:image/png;base64,AAAA'},
+          'twitter': {'image': 'https://cdn.example.com/t.jpg'},
+          'feeds': ['file:///feed.xml', 'https://a.com/1',
+                    'https://a.com/1', 'http://a.com/2',
+                    'https://a.com/3', 'https://a.com/4']},
+         {'image': 'https://cdn.example.com/t.jpg',
+          'feeds': ['https://a.com/1', 'http://a.com/2',
+                    'https://a.com/3'],
+          'sources': {'image': 'twitter'}}),
+    ])
+    def test_clean_page_meta_caps_and_drops(self, raw, expected):
+        assert utl.SeleniumWrapper.clean_page_meta(raw) == expected
+
+    @requires_local_browser
+    def test_read_page_meta_reads_a_fixture_article(self, tmp_path):
+        """A real page's JSON-LD is found inside a graph past a broken
+        block, with its tags and absolute feed urls."""
+        url = _write_page(tmp_path, 'article.html', ARTICLE_PAGE)
+        home = _write_page(tmp_path, 'home.html', HOME_PAGE)
+        sw = utl.SeleniumWrapper()
+        try:
+            sw.go_to_url(url, sleep=0)
+            meta = sw.read_page_meta()
+            sw.go_to_url(home, sleep=0)
+            headlines = sw.read_headlines('https://www.example.com', 5)
+        finally:
+            sw.quit()
+        assert meta == {
+            'title': 'Structured headline',
+            'description': 'Open graph summary',
+            'image': 'https://cdn.example.com/og.jpg',
+            'published': '2026-09-01T08:00:00Z',
+            'author': 'Ada Writer, Bo Editor', 'section': 'Reviews',
+            'tags': ['rpg', 'indie'],
+            'canonical': 'https://www.example.com/news/big-story',
+            'site_name': 'Example Site',
+            'feeds': ['https://www.example.com/feed.xml',
+                      'https://www.example.com/atom.xml'],
+            'sources': {'title': 'ld', 'description': 'og', 'image': 'og',
+                        'published': 'ld', 'author': 'ld',
+                        'section': 'article', 'tags': 'article',
+                        'canonical': 'meta', 'site_name': 'og'}}
+        assert [x['href'] for x in headlines] == [
+            'https://www.example.com/articles/big-story',
+            'https://www.example.com/articles/second-story']
+
+    def test_read_page_meta_survives_a_dead_driver(self):
+        sw = _bare_wrapper(browser=types.SimpleNamespace(
+            execute_script=_raise_read_timeout,
+            find_elements=_raise_read_timeout))
+        assert sw.read_page_meta() == {}
+        assert sw.read_headlines('https://www.example.org', 5) == []
+        assert sw.dismiss_dialog() is None
 
     def test_ad_clickers_are_gone(self):
         """The old frame walk clicked live ads to learn their landing
@@ -1040,7 +2180,8 @@ class TestSsApi:
     @staticmethod
     def _api(tmp_path, monkeypatch, **kwargs):
         monkeypatch.chdir(tmp_path)
-        return ssapi.SsApi(sites=[{'url': 'ign.com', 'partner': 'IGN'}],
+        return ssapi.SsApi(sites=[{'url': 'example.org',
+                                   'partner': 'Example News'}],
                            s3=_FakeS3(), ss_file_path_date='260101_08',
                            **kwargs)
 
@@ -1048,22 +2189,22 @@ class TestSsApi:
         api = self._api(tmp_path, monkeypatch)
         rows = list(api.config.values())
         assert sorted(r['device'] for r in rows) == ['Desktop', 'Mobile']
-        assert all(r['site'] == 'ign.com' for r in rows)
-        assert all(r['partner'] == 'IGN' for r in rows)
-        assert api.get_site(0).name == 'ign.com'
-        assert api.get_site(0).url == 'https://www.ign.com'
+        assert all(r['site'] == 'example.org' for r in rows)
+        assert all(r['partner'] == 'Example News' for r in rows)
+        assert api.get_site(0).name == 'example.org'
+        assert api.get_site(0).url == 'https://www.example.org'
 
     def test_default_constructor_reads_csv_and_leaves_s3_unset(
             self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / 'config').mkdir()
         csv = tmp_path / 'config' / 'site_config.csv'
-        csv.write_text('url\ngamespot.com\n')
+        csv.write_text('url\ngames.example.net\n')
         api = ssapi.SsApi(ss_file_path_date='260101_08')
         assert api.s3 is None
         assert api.ss_file_path == 'screenshots'
         assert [r['site'] for r in api.config.values()] == (
-            ['gamespot.com'] * 2)
+            ['games.example.net'] * 2)
         # The import loop builds one per processor, list or no list.
         csv.unlink()
         assert ssapi.SsApi(ss_file_path_date='260101_08').config == {}
@@ -1120,18 +2261,18 @@ class TestSsApi:
         assert df['ad_count'].tolist() == [1, 1]
         assert set(df['ad_domains']) == {'landing.example.com'}
         run = 'screenshots/plans/7/260101_08/'
-        for name in ('ign_Desktop.png', 'ign_Desktop_ad0.png',
-                     'ign_Mobile.png', 'manifest.json'):
+        for name in ('example_Desktop.png', 'example_Desktop_ad0.png',
+                     'example_Mobile.png', 'manifest.json'):
             assert run + name in api.s3.uploads
         rows = json.loads(api.s3.uploads[run + 'manifest.json'])
         row = rows[0]
         assert (row['partner'], row['run'], row['device']) == (
-            'IGN', '260101_08', 'Desktop')
+            'Example News', '260101_08', 'Desktop')
         assert row['captured_at'] == '2026-01-01T08:00:00'
-        assert row['url'] == 'https://www.ign.com'
-        assert row['img_url'].endswith(run + 'ign_Desktop.png')
-        assert row['shot_key'] == run + 'ign_Desktop.png'
-        assert row['ads'][0]['shot_url'].endswith('ign_Desktop_ad0.png')
+        assert row['url'] == 'https://www.example.org'
+        assert row['img_url'].endswith(run + 'example_Desktop.png')
+        assert row['shot_key'] == run + 'example_Desktop.png'
+        assert row['ads'][0]['shot_url'].endswith('example_Desktop_ad0.png')
         assert row['ads'][0]['evidence'] == ['marker google_ads_iframe']
         assert 'shot_path' not in row['ads'][0]
         assert os.path.isfile(tmp_path / 'screenshots' / 'plans' / '7'
@@ -1150,25 +2291,26 @@ class TestSsApi:
         the home shot with the article ordinal before the device."""
         api = self._api(tmp_path, monkeypatch)
         api.config[0]['ad_count'] = 3
-        story = 'https://www.ign.com/articles/big-story'
+        story = 'https://www.example.org/articles/big-story'
         row, site = api.article_row(0, story, 1)
         assert (row['page_kind'], row['parent_url']) == (
-            'article', 'https://www.ign.com')
+            'article', 'https://www.example.org')
         assert (row['url'], row['site'], row['partner'], row['device']) == (
-            story, 'ign.com', 'IGN', 'Desktop')
+            story, 'example.org', 'Example News', 'Desktop')
         assert row['pages_walked'] == 0 and 'ad_count' not in row
         assert site.url == story
         assert site.file_name == os.path.join(
-            'screenshots', '260101_08', 'ign_a1_Desktop.png')
+            'screenshots', '260101_08', 'example_a1_Desktop.png')
         _, mobile = api.article_row(1, story, 2)
-        assert mobile.file_name.endswith('ign_a2_Mobile.png')
+        assert mobile.file_name.endswith('example_a2_Mobile.png')
 
     def test_write_config_to_df_drops_walk_columns(self, tmp_path,
                                                    monkeypatch):
         """The walk fields ride the manifest only; the sheet and the db
         frame keep their columns, section included."""
         monkeypatch.chdir(tmp_path)
-        api = ssapi.SsApi(sites=[{'url': 'ign.com', 'partner': 'IGN',
+        api = ssapi.SsApi(sites=[{'url': 'example.org',
+                                  'partner': 'Example News',
                                   'section': 'gaming'}],
                           s3=_FakeS3(), ss_file_path_date='260101_08')
         monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper',
@@ -1202,17 +2344,18 @@ class TestSsApi:
                                    ('home', 'Mobile', 1),
                                    ('article', 'Mobile', 0)]
         article = rows[2]
-        assert article['url'] == 'https://www.ign.com/articles/story-1'
-        assert article['parent_url'] == 'https://www.ign.com'
-        assert article['site'] == 'ign.com' and article['partner'] == 'IGN'
-        assert article['shot_key'] == run + 'ign_a1_Mobile.png'
-        assert article['full_shot_key'] == run + 'ign_a1_Mobile_full.jpg'
+        assert article['url'] == 'https://www.example.org/articles/story-1'
+        assert article['parent_url'] == 'https://www.example.org'
+        assert (article['site'], article['partner']) == (
+            'example.org', 'Example News')
+        assert article['shot_key'] == run + 'example_a1_Mobile.png'
+        assert article['full_shot_key'] == run + 'example_a1_Mobile_full.jpg'
         assert article['page_height'] == 5000
-        assert rows[1]['full_shot_key'] == run + 'ign_Mobile_full.jpg'
-        assert rows[1]['full_shot_url'].endswith('ign_Mobile_full.jpg')
+        assert rows[1]['full_shot_key'] == run + 'example_Mobile_full.jpg'
+        assert rows[1]['full_shot_url'].endswith('example_Mobile_full.jpg')
         assert (rows[0]['full_shot_key'], rows[0]['page_height']) == ('', '')
-        assert run + 'ign_a1_Mobile_full.jpg' in api.s3.uploads
-        assert len(df) == 3 and df['site'].eq('ign.com').all()
+        assert run + 'example_a1_Mobile_full.jpg' in api.s3.uploads
+        assert len(df) == 3 and df['site'].eq('example.org').all()
         assert 'page_kind' not in df.columns
 
     def test_get_data_writes_capture_status_to_manifest_not_csv(
@@ -1263,7 +2406,283 @@ class TestSsApi:
         assert (rows[0]['capture_status'], rows[0]['capture_detail']) == (
             'ok', 'via old.reddit.com')
         assert rows[1]['capture_status'] == 'ok'
-        assert ssapi.SsApi.fallback_url('https://ign.com/news') == ''
+        assert ssapi.SsApi.fallback_url('https://example.org/news') == ''
+
+    @staticmethod
+    def _sweep(api, monkeypatch, browser, verdicts):
+        """The frame and bucket manifest of ``api`` run on ``browser``
+        fakes answering ``verdicts`` in turn."""
+        monkeypatch.setattr(ssapi.utl, 'SeleniumWrapper', browser)
+        _FakeSweepBrowser.instances = []
+        _FakeSweepBrowser.verdicts = list(verdicts)
+        df = api.get_data(None, None, None)
+        key = f'{api.ss_file_path}/{api.run_id}/manifest.json'
+        return df, json.loads(api.s3.uploads[key])
+
+    @staticmethod
+    def _csv_api(tmp_path, text, **kwargs):
+        """An SsApi reading ``text`` as its site config csv."""
+        (tmp_path / 'config').mkdir(exist_ok=True)
+        (tmp_path / 'config' / 'site_config.csv').write_text(text)
+        return ssapi.SsApi(ss_file_path_date='260101_09', **kwargs)
+
+    def test_driver_failure_names_the_exception(self, tmp_path,
+                                                monkeypatch):
+        api = self._api(tmp_path, monkeypatch)
+        browser = _FailingBrowser()
+        assert ssapi.SsApi.screenshot_site(browser, api.get_site(0)) == (
+            [], ('error_page', 'browser stopped answering: ValueError'))
+        assert browser.restarts == 1
+
+    def test_second_pass_rescues_and_tags(self, tmp_path, monkeypatch):
+        """A home page that shows on the second pass replaces its row,
+        tagged, retried on fresh browsers desktop first."""
+        monkeypatch.chdir(tmp_path)
+        api = ssapi.SsApi(
+            sites=[{'url': 'example.org'}, {'url': 'games.example.net'}],
+            s3=_FakeS3(), ss_file_path_date='260101_08', second_pass=True)
+        first = [('bot_check', 'just a moment'), ('ok', ''),
+                 ('ok', ''), ('blank', 'single-colour page')]
+        retry = [('ok', ''), ('consent_wall', 'we use cookies')]
+        _, rows = self._sweep(api, monkeypatch, _FakeRetryBrowser,
+                              first + retry)
+        assert [(r['capture_status'], r['capture_detail'])
+                for r in rows] == [
+            ('ok', 'second pass'), ('ok', ''), ('ok', ''),
+            ('consent_wall', 'we use cookies second pass')]
+        assert [r['ad_count'] for r in rows] == [1, 1, 1, 1]
+        assert [b.mobile for b in _FakeSweepBrowser.instances] == [
+            False, True, False, True]
+        shot = tmp_path / 'screenshots' / '260101_08' / 'example_Desktop.png'
+        assert shot.read_bytes() == b'ok '
+
+    def test_second_pass_keeps_first_verdict(self, tmp_path, monkeypatch):
+        """A retry that is no better leaves the first verdict and shot,
+        or no shot where the first had none."""
+        api = self._api(tmp_path, monkeypatch, second_pass=True)
+        first = [('bot_check', 'just a moment'),
+                 ('error_page', 'page unreachable: TimeoutException')]
+        retry = [('blocked', 'access denied'), ('login_wall', 'log in')]
+        _, rows = self._sweep(api, monkeypatch, _FakeRetryBrowser,
+                              first + retry)
+        assert [(r['capture_status'], r['capture_detail'])
+                for r in rows] == first
+        folder = tmp_path / 'screenshots' / '260101_08'
+        assert (folder / 'example_Desktop.png').read_bytes() == (
+            b'bot_check just a moment')
+        assert not (folder / 'example_Mobile.png').exists()
+        api = ssapi.SsApi(sites=[{'url': 'example.org'}], s3=_FakeS3(),
+                          ss_file_path_date='260101_10', second_pass=True)
+        api.retry_budget_s = -1
+        self._sweep(api, monkeypatch, _FakeRetryBrowser,
+                    [('bot_check', 'just a moment'), ('ok', ''), ('ok', '')])
+        assert _FakeSweepBrowser.verdicts == [('ok', '')]
+
+    def test_second_pass_off_for_handed_rows(self, tmp_path, monkeypatch):
+        """Handed-in rows are shot once; the csv sweep retries only the
+        home rows worth it."""
+        api = self._api(tmp_path, monkeypatch)
+        assert api.second_pass is False
+        self._sweep(api, monkeypatch, _FakeRetryBrowser,
+                    [('bot_check', 'just a moment'), ('ok', ''), ('ok', '')])
+        assert len(_FakeSweepBrowser.instances) == 2
+        swept = self._csv_api(tmp_path, 'url\ngames.example.net\n')
+        assert swept.second_pass is True
+        swept.config[0].update(capture_status='blocked')
+        swept.config[1].update(capture_status='blank')
+        swept.config[2] = dict(swept.config[0], page_kind='article',
+                               capture_status='error_page')
+        assert swept.retry_indices() == [1]
+        swept.config[0].update(capture_status='error_page',
+                               device='Mobile')
+        swept.config[1].update(device='Desktop')
+        assert swept.retry_indices() == [1, 0]
+
+    def test_ssl_error_toggles_www(self, tmp_path, monkeypatch):
+        """A certificate error is retried on the host's www twin either
+        way round, and the row names the host shot."""
+        twin = ssapi.SsApi.fallback_url
+        assert twin('https://www.example.net/news?p=1', 'ssl_error') == (
+            'https://example.net/news?p=1')
+        assert twin('https://example.net/news', 'ssl_error') == (
+            'https://www.example.net/news')
+        assert twin('https://www.example.net/news', 'blocked') == ''
+        assert twin('https://www.reddit.com/r/gaming', 'blocked') == (
+            'https://old.reddit.com/r/gaming')
+        assert twin('not a url', 'ssl_error') == ''
+        monkeypatch.chdir(tmp_path)
+        api = ssapi.SsApi(sites=[{'url': 'https://www.example.net'}],
+                          s3=_FakeS3(), ss_file_path_date='260101_08')
+        _, rows = self._sweep(
+            api, monkeypatch, _FakeSweepBrowser,
+            [('ssl_error', 'your connection is not private'), ('ok', ''),
+             ('blank', 'single-colour page')])
+        shots = [s for b in _FakeSweepBrowser.instances for s in b.shots]
+        assert [s[0] for s in shots[:2]] == [
+            'https://www.example.net', 'https://example.net']
+        assert shots[0][1] == shots[1][1]
+        assert [r['capture_detail'] for r in rows] == [
+            'via example.net', 'single-colour page']
+
+    def test_existing_manifest_skips_the_run(self, tmp_path, monkeypatch):
+        """A second run in the same hour shoots nothing and leaves the
+        first run's manifest as it was."""
+        self._sweep(self._api(tmp_path, monkeypatch), monkeypatch,
+                    _FakeSweepBrowser, [])
+        manifest = tmp_path / 'screenshots' / '260101_08' / 'manifest.json'
+        written = manifest.read_bytes()
+        again = self._api(tmp_path, monkeypatch)
+        _FakeSweepBrowser.instances = []
+        assert again.get_data(None, None, None).empty
+        assert _FakeSweepBrowser.instances == [] and not again.s3.uploads
+        assert manifest.read_bytes() == written
+
+    def test_device_capture_keeps_a_profile_per_device(
+            self, tmp_path, monkeypatch):
+        """The csv sweep's profile folder splits by device, and rows
+        handed in by a caller use none."""
+        options = ssapi.utl.CaptureOptions(name='trial', paint_wait=6,
+                                           profile_dir='profiles')
+        api = self._api(tmp_path, monkeypatch, capture=options)
+        assert api.device_capture(False) == ssapi.utl.CaptureOptions(
+            name='trial', paint_wait=6)
+        self._sweep(api, monkeypatch, _FakeSweepBrowser, [])
+        assert [b.capture.paint_wait
+                for b in _FakeSweepBrowser.instances] == [6, 6]
+        swept = self._csv_api(tmp_path, 'url\ngames.example.net\n',
+                              capture=options)
+        assert [swept.device_capture(m).profile_dir
+                for m in (False, True)] == [
+            os.path.join('profiles', 'desktop'),
+            os.path.join('profiles', 'mobile')]
+
+    def test_second_pass_waits_longer(self, tmp_path, monkeypatch):
+        """The second pass lengthens each wait the run has on and turns
+        on none it left off."""
+        api = self._api(tmp_path, monkeypatch, second_pass=True)
+        retry = api.retry_capture()
+        for wait, seconds in ssapi.SsApi.retry_waits.items():
+            assert getattr(retry, wait) == seconds > getattr(api.capture,
+                                                             wait)
+        self._sweep(api, monkeypatch, _FakeRetryBrowser,
+                    [('bot_check', 'just a moment'), ('ok', ''),
+                     ('ok', '')])
+        assert _FakeSweepBrowser.instances[-1].capture == retry
+        quiet = ssapi.utl.CaptureOptions(page_load_timeout=60)
+        assert self._api(tmp_path, monkeypatch,
+                         capture=quiet).retry_capture() == quiet
+
+    def test_editorial_fields_ride_the_manifest_only(
+            self, tmp_path, monkeypatch):
+        """Headlines, feeds and article meta land on the manifest, never
+        the frame or sheet; the article walked is the first headline."""
+        monkeypatch.chdir(tmp_path)
+        api = ssapi.SsApi(
+            sites=[{'url': 'example.org', 'partner': 'Example News',
+                    'feed': 'https://www.example.org/rss'}],
+            s3=_FakeS3(), ss_file_path_date='260101_08',
+            articles_per_site=1, headlines_per_site=2)
+        assert api.config[0]['headlines'] is not api.config[1]['headlines']
+        df, rows = self._sweep(
+            api, monkeypatch, _FakeEditorialBrowser,
+            [('bot_check', 'just a moment'), ('ok', ''), ('ok', '')])
+        hidden = set(ssapi.SsApi.editorial_fields) | {'feed'}
+        assert not hidden & set(df.columns)
+        assert not hidden & set(pd.read_csv(tmp_path / 'sites.csv').columns)
+        blocked, home, article = rows
+        assert (blocked['headlines'], blocked['article'],
+                blocked['feeds']) == ([], {}, [])
+        assert [x['href'] for x in home['headlines']] == [
+            'https://www.example.org/articles/lead-1',
+            'https://www.example.org/articles/lead-2']
+        assert home['feeds'] == ['https://www.example.org/feed.xml']
+        assert home['article'] == {}
+        assert article['url'] == 'https://www.example.org/articles/lead-1'
+        assert article['article'] == {
+            'title': 'Structured headline', 'author': 'Ada Writer',
+            'sources': {'title': 'ld', 'author': 'ld'}}
+        assert (article['headlines'], article['feeds']) == ([], [])
+        assert all(r['feed'] == 'https://www.example.org/rss' for r in rows)
+
+    def test_headlines_kept_without_an_article_walk(self, tmp_path,
+                                                    monkeypatch):
+        """Headlines are read whether or not an article is walked;
+        handed-in rows keep none unless asked, the csv sweep 40."""
+        api = self._api(tmp_path, monkeypatch, headlines_per_site=3)
+        _, rows = self._sweep(api, monkeypatch, _FakeEditorialBrowser, [])
+        assert [len(r['headlines']) for r in rows] == [3, 3]
+        assert [r['page_kind'] for r in rows] == ['home', 'home']
+        quiet = ssapi.SsApi(sites=[{'url': 'example.org'}], s3=_FakeS3(),
+                            ss_file_path_date='260101_10')
+        _, rows = self._sweep(quiet, monkeypatch, _FakeEditorialBrowser,
+                              [])
+        assert [r['headlines'] for r in rows] == [[], []]
+        assert rows[0]['feeds'] == ['https://www.example.org/feed.xml']
+        swept = self._csv_api(tmp_path, 'url,feed\ngames.example.net,\n')
+        assert swept.headlines_per_site == 40
+        assert swept.config[0]['feed'] == ''
+
+    def test_walk_falls_back_to_the_page_when_no_headline_was_kept(
+            self, tmp_path, monkeypatch):
+        api = self._api(tmp_path, monkeypatch, articles_per_site=1)
+        _, rows = self._sweep(api, monkeypatch, _FakeEditorialBrowser, [])
+        assert [r['url'] for r in rows if r['page_kind'] == 'article'] == [
+            'https://www.example.org/articles/story-1'] * 2
+
+
+class TestPmApi:
+    def test_pick_brand_takes_only_the_named_brand(self):
+        """A fuzzy neighbour never wins; a brand beats an advertiser of
+        the same name, then the bigger spender."""
+        brands = [
+            {'id': 1, 'name': 'Harbor City Raiders', 'type': 'brand',
+             'spend': {'value': 900}},
+            {'id': 2, 'name': 'Game A Raiders', 'type': 'advertiser',
+             'spend': {'value': 500}},
+            {'id': 3, 'name': 'Game a  Raiders!', 'type': 'brand',
+             'spend': {'value': 10}},
+            {'id': 4, 'name': 'GAME A RAIDERS', 'type': 'brand',
+             'spend': {'value': 50}}]
+        api = pmapi.PmApi()
+        assert api.pick_brand('Game A Raiders', brands)['id'] == 4
+        assert api.pick_brand('Game A Raiders', brands[:3])['id'] == 3
+        assert api.pick_brand('Game A Raiders', brands[:2])['id'] == 2
+        assert api.pick_brand('Game B', brands) is None
+        assert api.pick_brand('', brands) is None
+
+    def test_series_rows_are_dollars_per_channel_day(self):
+        answer = {'currency': {'unit': 'cent'}, 'channels': [
+            {'channel': 'youtube', 'timeseries': [
+                {'date': '2026-09-01T00:00:00Z', 'spend': 12345,
+                 'impressions': 7},
+                {'date': '2026-09-02T00:00:00Z', 'spend': 0,
+                 'impressions': 0}]},
+            {'channel': 'new_channel', 'timeseries': [
+                {'date': '2026-09-01', 'spend': 100, 'impressions': 1}]}]}
+        assert pmapi.PmApi.series_rows(answer) == [
+            {'Date': '2026-09-01', 'Environment-variable': 'YouTube ($)',
+             'Environment-value': 123.45, 'Impressions': 7},
+            {'Date': '2026-09-01',
+             'Environment-variable': 'new_channel ($)',
+             'Environment-value': 1.0, 'Impressions': 1}]
+        with pytest.raises(ValueError):
+            pmapi.PmApi.series_rows({'currency': {'unit': 'yen'}})
+
+    def test_get_file_as_df_appends_creatives(self):
+        """Spend and creatives share one frame, a creative dated at the
+        window's end; nothing pulled is an empty frame with the
+        columns."""
+        api = pmapi.PmApi()
+        ed = dt.datetime(2026, 9, 2)
+        assert list(api.get_file_as_df(ed=ed).columns) == pmapi.FRAME_COLS
+        api.frame = pd.DataFrame(pmapi.PmApi.series_rows(
+            {'currency': {'unit': 'dollar'}, 'channels': [
+                {'channel': 'ott', 'timeseries': [
+                    {'date': '2026-09-01', 'spend': 5}]}]}))
+        creatives = pd.DataFrame({'Creative': ['https://a.com/ad.png']})
+        df = api.get_file_as_df(api.temp_path, creatives, ed)
+        assert list(df[pmapi.DATE_COL]) == ['2026-09-01', ed]
+        assert list(df[pmapi.SPEND_COL].fillna(0)) == [5, 0]
 
 
 @requires_api_configs
@@ -2391,14 +3810,14 @@ class TestAnalyze:
         return vm_df
 
     def test_check_flat(self):
-        pn = '28091057_IMGN_US_All_0_0_0_Flat_0_44768_Click Tracker_0.013_0_'
+        pn = '28091057_Ven1_US_All_0_0_0_Flat_0_44768_Click Tracker_0.013_0_'
         pn += 'CPE_Brand Page_Brand_0.1_0_V_Cross Device_1080x1080_Video '
         pn += 'SK_IG In-Feed_Social Post_Social_All'
         df = pd.DataFrame({
             vmc.clicks: [1],
             vmc.date: [44755],
             vmc.cost: [0],
-            vmc.vendorkey: ['API_DCM_PoT2022BrandCampaign'],
+            vmc.vendorkey: ['API_DCM_GameA2022BrandCampaign'],
             dctc.PN: [pn],
             dctc.BM: ['Flat'],
             dctc.BR: [0],
@@ -2406,7 +3825,7 @@ class TestAnalyze:
             dctc.COU: ['US'],
             dctc.PKD: ['Social Post'],
             dctc.PD: [44767],
-            dctc.VEN: ['IMGN'],
+            dctc.VEN: ['Ven1'],
             cal.NCF: [0]})
         df = utl.data_to_type(df, date_col=[vmc.date, dctc.PD])
         cfs = az.CheckFlatSpends(az.Analyze())
@@ -2437,10 +3856,10 @@ class TestAnalyze:
             })
             translation.write(translation.df, dctc.filename_tran_config)
         df = pd.DataFrame({
-            dctc.VEN: ['IMGN'],
+            dctc.VEN: ['Ven1'],
             dctc.COU: ['US'],
             dctc.PN: [
-                '28091057_IMGN_US_All_0_0_0_Flat_0_44768_Click '
+                '28091057_Ven1_US_All_0_0_0_Flat_0_44768_Click '
                 'Tracker_0.013_0_CPE_Brand Page_Brand_0.1_0_V_'
                 'Cross Device_1080x1080_Video SK_IG '
                 'In-Feed_Social Post_Social_All'],
@@ -3836,9 +5255,9 @@ class TestGamesDb:
     @staticmethod
     def _wide_row():
         return pd.Series({
-            'appid': 292030, 'app_detail_name': 'The Witcher 3',
-            'publishers': ['CD PROJEKT RED'],
-            'developers': ['CD PROJEKT RED'],
+            'appid': 400030, 'app_detail_name': 'Game C',
+            'publishers': ['Example Studio'],
+            'developers': ['Example Studio'],
             'genres': [{'id': '3', 'description': 'RPG'}],
             'release_date': {'coming_soon': False,
                              'date': 'May 18, 2015'},
@@ -3853,9 +5272,9 @@ class TestGamesDb:
     def test_upsert_game_and_fact_idempotent(self):
         s = self._session()
         row = self._wide_row()
-        game = gdb.upsert_game(s, 'The Witcher 3',
+        game = gdb.upsert_game(s, 'Game C',
                                **gamesw.game_fields(row))
-        assert game.gameid and game.steam_appid == 292030
+        assert game.gameid and game.steam_appid == 400030
         assert game.primary_genre == 'RPG'
         assert game.release_date == 'May 18, 2015'
         key = {'gameid': game.gameid,
@@ -3868,7 +5287,7 @@ class TestGamesDb:
         assert float(event.price) == 39.99
         assert event.review_score_desc == 'Overwhelmingly Positive'
         # Rerun matches by appid + natural key: update, not insert.
-        again = gdb.upsert_game(s, 'The Witcher 3',
+        again = gdb.upsert_game(s, 'Game C',
                                 **gamesw.game_fields(row))
         assert again.gameid == game.gameid
         assert gdb.upsert_fact(s, gmdl.GameEvent, key,
@@ -3879,22 +5298,22 @@ class TestGamesDb:
 
     def test_upsert_game_fills_without_clobbering(self):
         s = self._session()
-        seeded = gdb.upsert_game(s, 'Halo Infinite',
-                                 registry_slug='halo-infinite',
-                                 publisher='Xbox')
-        merged = gdb.upsert_game(s, 'Halo Infinite',
-                                 registry_slug='halo-infinite',
-                                 opencritic_id=42, developer='343')
+        seeded = gdb.upsert_game(s, 'Game A Prime',
+                                 registry_slug='game-a-prime',
+                                 publisher='Example Publisher')
+        merged = gdb.upsert_game(s, 'Game A Prime',
+                                 registry_slug='game-a-prime',
+                                 opencritic_id=42, developer='Example Dev')
         assert merged.gameid == seeded.gameid
-        assert merged.publisher == 'Xbox'  # filled value kept
-        assert merged.opencritic_id == 42 and merged.developer == '343'
+        assert merged.publisher == 'Example Publisher'  # filled value kept
+        assert merged.opencritic_id == 42 and merged.developer == 'Example Dev'
         assert s.query(gmdl.Game).count() == 1
 
     def test_writer_field_helpers(self):
         row = self._wide_row()
         fields = gamesw.game_fields(row)
-        assert fields['steam_appid'] == 292030
-        assert fields['publisher'] == 'CD PROJEKT RED'
+        assert fields['steam_appid'] == 400030
+        assert fields['publisher'] == 'Example Studio'
         assert fields['primary_genre'] == 'RPG'
         events = gamesw.event_fields(row)
         assert events['price'] == 39.99
@@ -3916,36 +5335,36 @@ class TestGamesDb:
         s = self._session()
         # Registry seeds first; the Steam writer's name match lands on
         # the same dim row and adds its identity.
-        reg = gdb.upsert_game(s, 'Halo Infinite',
-                              registry_slug='halo-infinite')
-        steam = gdb.upsert_game(s, 'Halo Infinite', match_name=True,
-                                steam_appid=1240440)
+        reg = gdb.upsert_game(s, 'Game A Prime',
+                              registry_slug='game-a-prime')
+        steam = gdb.upsert_game(s, 'Game A Prime', match_name=True,
+                                steam_appid=400010)
         assert steam.gameid == reg.gameid
-        assert steam.registry_slug == 'halo-infinite'
-        assert steam.steam_appid == 1240440
+        assert steam.registry_slug == 'game-a-prime'
+        assert steam.steam_appid == 400010
         # The reverse order knits too (case-insensitive).
-        first = gdb.upsert_game(s, 'ELDEN RING', match_name=True,
-                                steam_appid=1245620)
-        second = gdb.upsert_game(s, 'Elden Ring', match_name=True,
-                                 registry_slug='elden-ring')
+        first = gdb.upsert_game(s, 'GAME B', match_name=True,
+                                steam_appid=400020)
+        second = gdb.upsert_game(s, 'Game B', match_name=True,
+                                 registry_slug='game-b')
         assert second.gameid == first.gameid
         assert s.query(gmdl.Game).count() == 2
         # A name collision carrying a conflicting identity is a
         # different game (remake/re-release): new row, no clobber.
-        clash = gdb.upsert_game(s, 'Elden Ring', match_name=True,
+        clash = gdb.upsert_game(s, 'Game B', match_name=True,
                                 steam_appid=999)
         assert clash.gameid != first.gameid
-        assert first.steam_appid == 1245620
+        assert first.steam_appid == 400020
         # Without match_name, a bare name never matches (old behavior).
-        other = gdb.upsert_game(s, 'Halo Infinite', opencritic_id=7)
+        other = gdb.upsert_game(s, 'Game A Prime', opencritic_id=7)
         assert other.gameid != reg.gameid
 
     def test_title_score_upsert_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         day = dt.date(2026, 7, 17)
-        key = {'score_date': day, 'title': 'Halo Infinite'}
+        key = {'score_date': day, 'title': 'Game A Prime'}
         fields = {'gameid': game.gameid, 'influence': 1.2,
                   'engagement': -0.4, 'momentum': 0.3, 'composite': 1.1,
                   'headline_metric': 'Player Share', 'current': 0.5,
@@ -3965,7 +5384,7 @@ class TestGamesDb:
         s.commit()
         assert s.query(gmdl.TitleScore).count() == 2
         row = s.query(gmdl.TitleScore).filter_by(
-            title='Halo Infinite').one()
+            title='Game A Prime').one()
         assert float(row.share) == 0.64
         assert row.gameid == game.gameid
         assert row.movement == 'Rising'
@@ -3974,10 +5393,10 @@ class TestGamesDb:
 
     def test_new_games_facts_use_full_natural_keys(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         spend = {'spend_date': dt.date(2025, 9, 10),
-                 'brand': 'Borderlands 4', 'channel': 'ALL',
+                 'brand': 'Game E', 'channel': 'ALL',
                  'country': 'US', 'buy_type': 'Direct'}
         for channel in ('ALL', 'YouTube'):
             gdb.upsert_fact(s, gmdl.AdSpend,
@@ -3994,16 +5413,16 @@ class TestGamesDb:
 
     def test_attention_facts_upsert_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         week = dt.date(2026, 8, 10)
-        si_key = {'title': 'Halo Infinite', 'week_start': week,
+        si_key = {'title': 'Game A Prime', 'week_start': week,
                   'geo': 'GLOBAL'}
         assert gdb.upsert_fact(
             s, gmdl.SearchInterest, si_key,
             {'gameid': game.gameid, 'interest': 40, 'raw_interest': 20,
-             'anchor': 'Stardew Valley', 'anchor_value': 50}) == 1
-        share_key = {'week_start': week, 'title': 'Halo Infinite'}
+             'anchor': 'Game F', 'anchor_value': 50}) == 1
+        share_key = {'week_start': week, 'title': 'Game A Prime'}
         assert gdb.upsert_fact(
             s, gmdl.AttentionShare, share_key,
             {'gameid': game.gameid, 'attention_share': 0.4,
@@ -4028,13 +5447,13 @@ class TestGamesDb:
         assert float(row.interest) == 44
         assert row.gameid == game.gameid
         share = s.query(gmdl.AttentionShare).filter_by(
-            title='Halo Infinite').one()
+            title='Game A Prime').one()
         assert float(share.attention_share) == 0.38
 
     def test_youtube_video_upsert_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         video = gmdl.YoutubeVideo(
             video_id='abc123', gameid=game.gameid, kind='official',
             source='igdb', label='Launch Trailer')
@@ -4061,9 +5480,9 @@ class TestGamesDb:
 
     def test_descriptor_neighbour_alias_upserts_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
-        rival = gdb.upsert_game(s, 'Destiny 2', registry_slug='destiny-2')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
+        rival = gdb.upsert_game(s, 'Game D', registry_slug='game-d')
         desc_key = {'gameid': game.gameid}
         assert gdb.upsert_fact(
             s, gmdl.GameDescriptor, desc_key,
@@ -4071,8 +5490,8 @@ class TestGamesDb:
              'similar_igdb_ids': '2, 3',
              'first_release_date': dt.date(2021, 12, 8)}) == 1
         assert gdb.upsert_fact(
-            s, gmdl.GameAlias, {'alias_key': 'halo'},
-            {'gameid': game.gameid, 'alias': 'Halo',
+            s, gmdl.GameAlias, {'alias_key': 'game a'},
+            {'gameid': game.gameid, 'alias': 'Game A',
              'source': 'test'}) == 1
         s.add(gmdl.GameNeighbour(
             gameid=game.gameid, neighbour_gameid=rival.gameid, rank=1,
@@ -4084,11 +5503,11 @@ class TestGamesDb:
         s.commit()
         assert gdb.upsert_fact(s, gmdl.GameDescriptor, desc_key,
                                {'themes': 'Sci-fi, War'}) == 0
-        assert gdb.upsert_fact(s, gmdl.GameAlias, {'alias_key': 'halo'},
-                               {'alias': 'HALO'}) == 0
+        assert gdb.upsert_fact(s, gmdl.GameAlias, {'alias_key': 'game a'},
+                               {'alias': 'GAME A'}) == 0
         s.commit()
         assert s.query(gmdl.GameDescriptor).one().themes == 'Sci-fi, War'
-        assert s.query(gmdl.GameAlias).one().alias == 'HALO'
+        assert s.query(gmdl.GameAlias).one().alias == 'GAME A'
         edge = s.query(gmdl.GameNeighbour).one()
         assert edge.components['genre']['shared'] == ['Shooter']
         s.add(gmdl.GameNeighbour(
@@ -4100,8 +5519,8 @@ class TestGamesDb:
 
     def test_pulse_and_price_upserts_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         video = gmdl.YoutubeVideo(
             video_id='abc123', gameid=game.gameid, kind='official',
             source='igdb', label='Launch Trailer')
@@ -4119,7 +5538,7 @@ class TestGamesDb:
             s, gmdl.StreamFlag,
             {'gameid': game.gameid, 'sampled_at': slot,
              'channel': 'streamer_one'},
-            {'title': 'Halo w/ sponsor #ad', 'token': '#ad',
+            {'title': 'Game A w/ sponsor #ad', 'token': '#ad',
              'viewer_count': 1200}) == 1
         assert gdb.upsert_fact(s, gmdl.YoutubeVideoPulse, video_key,
                                {'views': 1000, 'likes': 10,
@@ -4160,8 +5579,8 @@ class TestGamesDb:
 
     def test_store_asset_upsert_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         key = {'gameid': game.gameid,
                'checked_at': dt.date(2026, 9, 1),
                'asset_kind': 'screenshots'}
@@ -4182,14 +5601,14 @@ class TestGamesDb:
         """A re-fetch restamps the row in place, and an unscored
         review is legal."""
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         key = {'review_id': '9001'}
         stamp = dt.datetime(2026, 9, 4, 8, 0)
         assert gdb.upsert_fact(
             s, gmdl.CriticReview, key,
             {'gameid': game.gameid, 'opencritic_id': 42,
-             'outlet': 'IGN', 'score': 90,
+             'outlet': 'Example Outlet', 'score': 90,
              'published_date': dt.date(2026, 9, 1),
              'fetched_at': stamp}) == 1
         s.commit()
@@ -4200,7 +5619,7 @@ class TestGamesDb:
         s.commit()
         row = s.query(gmdl.CriticReview).one()
         assert row.score is None and row.fetched_at == later
-        assert row.outlet == 'IGN' and row.gameid == game.gameid
+        assert row.outlet == 'Example Outlet' and row.gameid == game.gameid
 
     def test_critic_review_id_unique_constraint(self):
         """The natural key is OpenCritic's review id, so a second row
@@ -4226,7 +5645,7 @@ class TestGamesDb:
                 {'id': 1, 'path_full': 'https://cdn/ss_b.jpg?t=2'}],
             'movies': [{'id': 256, 'name': 'Launch Trailer',
                         'webm': {'max': 'https://cdn/m.webm?t=3'}}],
-            'short_description': '  Fight   the\nBanished.  '}
+            'short_description': '  Fight   the\ninvaders.  '}
         rows = dict(gamesw.store_asset_fields(data))
         assert list(rows) == list(gamesw.ASSET_KINDS)
         restamped = dict(gamesw.store_asset_fields({
@@ -4239,7 +5658,7 @@ class TestGamesDb:
         assert rows['header']['sample'] == 'https://cdn/header.jpg'
         assert rows['screenshots']['item_count'] == 2
         assert rows['movies']['sample'] == 'Launch Trailer'
-        assert rows['description']['sample'] == 'Fight the Banished.'
+        assert rows['description']['sample'] == 'Fight the invaders.'
         swapped = dict(gamesw.store_asset_fields({
             **data, 'header_image': 'https://cdn/header_v2.jpg'}))
         assert swapped['header']['digest'] != rows['header']['digest']
@@ -4249,8 +5668,8 @@ class TestGamesDb:
 
     def test_review_text_and_theme_upsert_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite',
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
         text_key = {'recommendationid': 900001}
         assert gdb.upsert_fact(
             s, gmdl.ReviewText, text_key,
@@ -4289,14 +5708,14 @@ class TestGamesDb:
 
     def test_game_release_upsert_idempotent(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'Halo Infinite', igdb_id=1105,
-                               registry_slug='halo-infinite')
+        game = gdb.upsert_game(s, 'Game A Prime', igdb_id=1105,
+                               registry_slug='game-a-prime')
         assert game.igdb_id == 1105
         key = {'igdb_id': 1105}
-        fields = {'gameid': game.gameid, 'title': 'Halo Infinite',
-                  'slug': 'halo-infinite',
+        fields = {'gameid': game.gameid, 'title': 'Game A Prime',
+                  'slug': 'game-a-prime',
                   'release_date': dt.date(2026, 11, 15), 'hypes': 320,
-                  'genres': 'Shooter', 'platforms': 'PC, Xbox'}
+                  'genres': 'Shooter', 'platforms': 'PC, Console'}
         assert gdb.upsert_fact(s, gmdl.GameRelease, key, fields) == 1
         # Unmatched titles land too, with a NULL gameid.
         assert gdb.upsert_fact(
@@ -4317,14 +5736,14 @@ class TestGamesDb:
         s = self._session()
         # igdb_id is an identity: matches find the row, name fallback
         # knits it onto an existing dim row and adds the identity.
-        reg = gdb.upsert_game(s, 'Halo Infinite',
-                              registry_slug='halo-infinite')
-        knit = gdb.upsert_game(s, 'Halo Infinite', match_name=True,
+        reg = gdb.upsert_game(s, 'Game A Prime',
+                              registry_slug='game-a-prime')
+        knit = gdb.upsert_game(s, 'Game A Prime', match_name=True,
                                igdb_id=1105)
         assert knit.gameid == reg.gameid and knit.igdb_id == 1105
         assert gdb.find_game(s, igdb_id=1105).gameid == reg.gameid
         # A name collision carrying a different igdb_id is a new row.
-        clash = gdb.upsert_game(s, 'Halo Infinite', match_name=True,
+        clash = gdb.upsert_game(s, 'Game A Prime', match_name=True,
                                 igdb_id=9999)
         assert clash.gameid != reg.gameid
         assert reg.igdb_id == 1105
@@ -4332,10 +5751,10 @@ class TestGamesDb:
 
     def test_upsert_game_stamps_provenance(self):
         s = self._session()
-        game = gdb.upsert_game(s, 'The Witcher 3', steam_appid=292030)
+        game = gdb.upsert_game(s, 'Game C', steam_appid=400030)
         assert game.first_seen_at is not None
         first_seen = game.first_seen_at
-        again = gdb.upsert_game(s, 'The Witcher 3', steam_appid=292030)
+        again = gdb.upsert_game(s, 'Game C', steam_appid=400030)
         assert again.first_seen_at == first_seen
         assert again.updated_at is not None
 
@@ -4399,7 +5818,7 @@ class TestNzApi:
     (the REST engagement endpoint was retired with a 410)."""
 
     @staticmethod
-    def _api(titles='Fortnite', country_filter=None):
+    def _api(titles='Game A', country_filter=None):
         api = nzapi.NzApi()
         api.game_title = titles
         api.api_key = 'k'
@@ -4410,8 +5829,8 @@ class TestNzApi:
         months = nzapi.NzApi.month_span(dt.datetime(2026, 5, 15),
                                         dt.datetime(2026, 7, 2))
         assert months == {'2026-05', '2026-06', '2026-07'}
-        assert nzapi.NzApi.slugify("Tom Clancy's Rainbow Six") == \
-            'tom-clancy-s-rainbow-six'
+        assert nzapi.NzApi.slugify("The Captain's Game 2") == \
+            'the-captain-s-game-2'
 
     def test_select_files_window(self):
         api = self._api()
@@ -4428,15 +5847,15 @@ class TestNzApi:
         assert self._api().market_codes() == []
 
     def test_shape_df_titles_aliases_and_markets(self):
-        api = self._api(titles='Fortnite,Roblox')
+        api = self._api(titles='Game A,Game C')
         df = pd.DataFrame({
-            'title': ['Fortnite', 'Minecraft', 'Roblox'],
+            'title': ['Game A', 'Game B', 'Game C'],
             'date': [dt.date(2026, 6, 1)] * 3,
             'country_code': ['ZZ', 'ZZ', 'US'],
             'mau': [1, 2, 3],
             'source': [['b', 'a'], None, ['c']]})
         out = api.shape_df(df)
-        assert list(out['title']) == ['Fortnite', 'Roblox']
+        assert list(out['title']) == ['Game A', 'Game C']
         assert list(out['game']) == list(out['game_title']) == \
             list(out['title'])
         assert list(out['market']) == ['Worldwide', 'United States']
