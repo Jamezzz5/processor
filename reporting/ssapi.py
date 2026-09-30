@@ -3,6 +3,7 @@ import io
 import json
 import time
 import logging
+import dataclasses
 import pandas as pd
 import datetime as dt
 from urllib.parse import urlparse
@@ -29,6 +30,10 @@ class SsApi(object):
     full_shot_url = 'full_shot_url'
     page_height = 'page_height'
     section = 'section'
+    headlines = 'headlines'
+    article = 'article'
+    feeds = 'feeds'
+    feed = 'feed'
     kind_home = 'home'
     kind_article = 'article'
     vitals_fields = ('lab_lcp_ms', 'lab_cls', 'lab_ttfb_ms',
@@ -36,11 +41,28 @@ class SsApi(object):
                      ad_viewport_density)
     walk_fields = (page_kind, parent_url, pages_walked, full_shot_key,
                    full_shot_url, page_height, section)
+    editorial_fields = (headlines, article, feeds)
     manifest_only = ((capture_status, capture_detail) + vitals_fields
-                     + walk_fields)
+                     + walk_fields + editorial_fields + (feed,))
     articles_per_site = 1
+    headlines_per_site = 40
     site_budget_s = 150
     walk_budget_s = 2.5 * 3600
+    in_process_args = ('--disable-site-isolation-trials',
+                       '--disable-features=IsolateOrigins,site-per-process')
+    capture = utl.CaptureOptions(
+        name='sweep', page_load_timeout=25, shoot_partial=True,
+        paint_wait=15, challenge_wait=30, headed=True, native_identity=True,
+        fresh_cookies=True,
+        extra_args=in_process_args + ('--disable-dev-shm-usage',
+                                      '--screen-info={1920x1080}'),
+        drop_args=('--window-position',))
+    retry_waits = {'page_load_timeout': 45, 'challenge_wait': 45,
+                   'paint_wait': 20}
+    retry_kinds = ('error_page', 'blank', 'bot_check')
+    retry_budget_s = 30 * 60
+    second_pass_tag = 'second pass'
+    toggle_kinds = ('ssl_error',)
     full_shot_suffix = '_full.jpg'
     date = 'date'
     hour = 'hour'
@@ -57,7 +79,8 @@ class SsApi(object):
     scan_kinds = ('ok', 'consent_wall')
 
     def __init__(self, file_name='site_config.csv', ss_file_path_date=None,
-                 sites=None, s3=None, prefix=None, articles_per_site=None):
+                 sites=None, s3=None, prefix=None, articles_per_site=None,
+                 capture=None, second_pass=None, headlines_per_site=None):
         """Site list from the config csv, or from ``sites`` when a
         caller drives the sweep in-process.
 
@@ -71,6 +94,11 @@ class SsApi(object):
         :param articles_per_site: article pages walked off each home
             page; None means the class default for the csv sweep and
             none at all for handed-in rows, which name exact pages
+        :param capture: utl.CaptureOptions every browser is built with
+        :param second_pass: re-shoot the home pages that did not show;
+            None means only for the csv sweep
+        :param headlines_per_site: headlines kept off each home page,
+            defaulted like ``articles_per_site``
         """
         logging.info('Getting config from {}.'.format(file_name))
         self.file_name = os.path.join(utl.config_path, file_name)
@@ -79,10 +107,18 @@ class SsApi(object):
         self.slots = {}
         self.full_shots = {}
         self.run_id = None
+        self.from_csv = sites is None
+        self.capture = capture or self.capture
+        self.second_pass = (self.from_csv if second_pass is None
+                            else second_pass)
         if articles_per_site is None:
             articles_per_site = 0 if sites is not None else \
                 self.articles_per_site
         self.articles_per_site = articles_per_site
+        if headlines_per_site is None:
+            headlines_per_site = (self.headlines_per_site if self.from_csv
+                                  else 0)
+        self.headlines_per_site = headlines_per_site
         self.config = (self.rows_to_config(sites) if sites is not None
                        else self.import_config())
         self.ss_file_path_date = self.add_file_path(ss_file_path_date)
@@ -159,16 +195,36 @@ class SsApi(object):
             row[self.full_shot_url] = ''
             row[self.page_height] = ''
             row[self.section] = self.clean_value(row.get(self.section, ''))
+            row[self.feed] = self.clean_value(row.get(self.feed, ''))
+            row.update(self.empty_editorial())
+
+    @classmethod
+    def empty_editorial(cls):
+        """Fresh editorial fields for a page nothing was read off."""
+        return {cls.headlines: [], cls.article: {}, cls.feeds: []}
 
     @classmethod
     def full_shot_name(cls, file_name):
         """The jpeg path of a page shot's full-page companion."""
         return file_name[:-4] + cls.full_shot_suffix
 
+    @staticmethod
+    def toggle_www(url):
+        """``url`` with ``www.`` taken off or put on its host."""
+        parts = urlparse(url)
+        host = parts.netloc
+        if not host:
+            return ''
+        twin = host[4:] if host.lower().startswith('www.') else f'www.{host}'
+        return parts._replace(netloc=twin).geturl()
+
     @classmethod
-    def fallback_url(cls, url):
+    def fallback_url(cls, url, kind=''):
         """``url`` on the stand-in ``host_fallbacks`` names for its host
-        or a parent of it, else ''."""
+        or a parent of it, or on its ``www.`` twin when ``kind`` is one
+        of ``toggle_kinds``; else ''."""
+        if kind in cls.toggle_kinds:
+            return cls.toggle_www(url)
         host = utl.SeleniumWrapper.url_host(url)
         for domain, alt in cls.host_fallbacks.items():
             if utl.SeleniumWrapper.host_under(host, domain):
@@ -178,17 +234,16 @@ class SsApi(object):
     @classmethod
     def fallback_shot(cls, browser, url, verdict, file_name=None,
                       **shot_kwargs):
-        """Re-shoot a blocked page at its stand-in host, returning the
-        new verdict with that host named: reddit's new front end refuses
-        the browser where old.reddit.com still serves the page.
-        """
-        alt = cls.fallback_url(url)
-        if verdict[0] not in cls.fallback_kinds or not alt or alt == url:
+        """Re-shoot a refused page at its stand-in host or ``www.``
+        twin, returning the new verdict with that host named."""
+        alt = cls.fallback_url(url, verdict[0])
+        kinds = cls.fallback_kinds + cls.toggle_kinds
+        if verdict[0] not in kinds or not alt or alt == url:
             return verdict
         kind, detail = browser.take_screenshot(alt, file_name,
                                                scroll_first=True,
                                                **shot_kwargs)
-        via = f'via {utl.SeleniumWrapper.url_host(alt)}'
+        via = f'via {urlparse(alt).netloc.lower()}'
         return kind, f'{detail} {via}' if detail else via
 
     @classmethod
@@ -207,6 +262,7 @@ class SsApi(object):
             are [] when not asked, not shown or the site failed
         """
         full = cls.full_shot_name(site.file_name)
+        error = None
         for attempt in range(attempts):
             try:
                 verdict = browser.take_screenshot(site.url, site.file_name,
@@ -220,13 +276,15 @@ class SsApi(object):
                         shot_prefix=site.file_name[:-4]), verdict
                 return [], verdict
             except browser.browser_errors as e:
+                error = e
                 logging.warning(
                     'Failed to screenshot {} on attempt {}. {}'.format(
                         site.url, attempt + 1, e))
                 if attempt < attempts - 1:
                     browser.restart_browser()
         logging.error('Could not screenshot {}.'.format(site.url))
-        return [], ('error_page', 'page unreachable')
+        return [], ('error_page',
+                    f'browser stopped answering: {type(error).__name__}')
 
     @staticmethod
     def viewport_density(slots, viewport):
@@ -273,38 +331,176 @@ class SsApi(object):
             out[cls.ad_viewport_density] = density
         return out
 
+    def page_editorial(self, browser, site, verdict, kind):
+        """A shown home page's headlines and feeds, or an article's own
+        meta; {} for a page that was not shown."""
+        if verdict[0] not in self.scan_kinds:
+            return {}
+        read = getattr(browser, 'read_page_meta', None)
+        meta = dict(read() or {}) if read else {}
+        feeds = meta.pop(self.feeds, [])
+        if kind == self.kind_article:
+            return {self.article: meta}
+        read = getattr(browser, 'read_headlines', None)
+        found = (read(site.url, self.headlines_per_site)
+                 if read and self.headlines_per_site else [])
+        return {self.headlines: found, self.feeds: feeds}
+
+    def manifest_path(self):
+        """Where this run's manifest sits on this box."""
+        return os.path.join(self.ss_file_path_date, self.manifest_name)
+
+    @classmethod
+    def page_capture(cls):
+        """The sweep's capture options without its profile folder, for
+        a caller shooting pages of its own."""
+        return dataclasses.replace(cls.capture, profile_dir='')
+
+    def retry_capture(self):
+        """The run's capture options with each wait it has on raised to
+        ``retry_waits``, for the second pass."""
+        waits = {k: max(v, getattr(self.capture, k))
+                 for k, v in self.retry_waits.items()
+                 if getattr(self.capture, k)}
+        return dataclasses.replace(self.capture, **waits)
+
+    def device_capture(self, mobile, retry=False):
+        """One device's capture options: the csv sweep's profile folder
+        splits per device, and handed-in rows use none."""
+        options = self.retry_capture() if retry else self.capture
+        if not options.profile_dir:
+            return options
+        leaf = 'mobile' if mobile else 'desktop'
+        folder = (os.path.join(options.profile_dir, leaf)
+                  if self.from_csv else '')
+        return dataclasses.replace(options, profile_dir=folder)
+
+    def new_browser(self, mobile, retry=False):
+        """A browser for one device under ``device_capture``."""
+        return utl.SeleniumWrapper(
+            mobile=mobile, page_load_strategy='eager',
+            capture=self.device_capture(mobile, retry))
+
+    def browser_for(self, browser, site, retry=False):
+        """``browser``, or a mobile one in its place when ``site`` is
+        the first mobile row."""
+        if site.device != self.device_mobile or browser.mobile:
+            return browser
+        browser.quit()
+        return self.new_browser(True, retry)
+
     def get_data(self, sd, ed, fields):
         """Shoot every listed page, walking articles off each shown
-        home page while the budgets hold; home pages always finish."""
+        home page while the budgets hold; a run whose manifest already
+        exists is skipped."""
         if not self.config:
             logging.warning('No sites to screenshot.')
             return pd.DataFrame()
-        browser = utl.SeleniumWrapper(page_load_strategy='eager')
+        if os.path.isfile(self.manifest_path()):
+            logging.warning(f'Run {self.run_id} already has a manifest '
+                            f'at {self.manifest_path()}, skipping.')
+            return pd.DataFrame()
         walk_deadline = time.time() + self.walk_budget_s
+        browser = self.new_browser(False)
         try:
-            for index in list(self.config):
-                site = self.get_site(index)
-                if site.device == self.device_mobile and not browser.mobile:
-                    browser.quit()
-                    browser = utl.SeleniumWrapper(
-                        mobile=True, page_load_strategy='eager')
-                site_deadline = time.time() + self.site_budget_s
-                slots, verdict = self.screenshot_site(browser, site,
-                                                      scan_ads=True)
-                self.record_capture(browser, index, site, slots, verdict)
-                if (self.articles_per_site and verdict[0] in self.scan_kinds
-                        and time.time() < min(site_deadline,
-                                              walk_deadline)):
-                    self.walk_articles(browser, index, site, site_deadline)
+            browser = self.shoot_rows(browser, list(self.config),
+                                      walk_deadline)
         finally:
             browser.quit()
+        self.run_second_pass(walk_deadline)
         self.write_config_to_df()
         df = self.upload_screenshots()
         return df
 
+    def shoot_rows(self, browser, indices, walk_deadline, retry=False):
+        """Shoot the rows at ``indices`` in order and return the browser
+        left for the caller to quit; ``walk_deadline`` stops walks."""
+        first = browser
+        try:
+            for index in indices:
+                if retry and time.time() > walk_deadline:
+                    logging.warning('Second pass budget spent.')
+                    break
+                site = self.get_site(index)
+                browser = self.browser_for(browser, site, retry)
+                if retry:
+                    self.retry_row(browser, index, site)
+                else:
+                    self.shoot_row(browser, index, site, walk_deadline)
+        except BaseException:
+            if browser is not first:
+                browser.quit()
+            raise
+        return browser
+
+    def shoot_row(self, browser, index, site, walk_deadline):
+        """Shoot one page onto its row, then walk its articles while
+        the site's and the run's budgets hold."""
+        site_deadline = time.time() + self.site_budget_s
+        slots, verdict = self.screenshot_site(browser, site, scan_ads=True)
+        self.record_capture(browser, index, site, slots, verdict)
+        if (self.articles_per_site and verdict[0] in self.scan_kinds
+                and time.time() < min(site_deadline, walk_deadline)):
+            self.walk_articles(browser, index, site, site_deadline)
+
+    def retry_indices(self):
+        """The home rows in ``retry_kinds``, desktop first."""
+        rows = [i for i, row in self.config.items()
+                if row.get(self.page_kind) == self.kind_home
+                and row.get(self.capture_status) in self.retry_kinds]
+        return sorted(rows, key=lambda i: self.config[i].get(
+            self.device) == self.device_mobile)
+
+    def run_second_pass(self, walk_deadline):
+        """Re-shoot the home pages that did not show on fresh, more
+        patient browsers until ``retry_budget_s`` or ``walk_deadline``."""
+        indices = self.retry_indices() if self.second_pass else []
+        deadline = min(time.time() + self.retry_budget_s, walk_deadline)
+        if not indices or time.time() > deadline:
+            return
+        mobile = self.get_site(indices[0]).device == self.device_mobile
+        browser = self.new_browser(mobile, retry=True)
+        try:
+            browser = self.shoot_rows(browser, indices, deadline,
+                                      retry=True)
+        finally:
+            browser.quit()
+
+    @staticmethod
+    def read_shot(path):
+        """A shot's bytes, or None when there is no such file."""
+        try:
+            with open(path, 'rb') as f:
+                return f.read()
+        except OSError:
+            return None
+
+    @staticmethod
+    def restore_shot(path, data):
+        """Put back the first shot a retry wrote over, or remove it."""
+        if data is not None:
+            with open(path, 'wb') as f:
+                f.write(data)
+        elif os.path.isfile(path):
+            os.remove(path)
+
+    def retry_row(self, browser, index, site):
+        """Shoot a page again, once: a retry that shows replaces the
+        row, tagged; one that does not leaves the first verdict and shot.
+        """
+        first = self.read_shot(site.file_name)
+        slots, (kind, detail) = self.screenshot_site(
+            browser, site, attempts=1, scan_ads=True)
+        if kind not in self.scan_kinds:
+            self.restore_shot(site.file_name, first)
+            return
+        tag = self.second_pass_tag
+        self.record_capture(browser, index, site, slots,
+                            (kind, f'{detail} {tag}' if detail else tag))
+
     def record_capture(self, browser, index, site, slots, verdict):
-        """Land one page's shot, slots, verdict, lab reading and
-        full-page companion on its row."""
+        """Land one page's shot, slots, verdict, lab reading, editorial
+        fields and full-page companion on its row."""
         row = self.config[index]
         self.slots[index] = slots
         row[self.file_name] = site.file_name
@@ -314,15 +510,21 @@ class SsApi(object):
         row[self.capture_status] = verdict[0]
         row[self.capture_detail] = verdict[1]
         row.update(self.page_vitals(browser, slots, verdict))
+        row.update(self.page_editorial(browser, site, verdict,
+                                       row.get(self.page_kind)))
         path, height = getattr(browser, 'last_full_shot', None) or ('', None)
         self.full_shots[index] = path
         row[self.page_height] = height if height is not None else ''
 
     def walk_articles(self, browser, index, site, deadline):
-        """Shoot the articles linked off one shown home page, each as
-        its own row beside the home row, until ``deadline``."""
+        """Shoot the articles linked off one shown home page, the home
+        row's own headlines first, each as its own row, until
+        ``deadline``."""
+        found = self.config[index].get(self.headlines) or []
+        links = [x['href'] for x in found[:self.articles_per_site]]
         read = getattr(browser, 'find_article_links', None)
-        links = read(site.url, self.articles_per_site) if read else []
+        if not links and read:
+            links = read(site.url, self.articles_per_site)
         for n, url in enumerate(links, 1):
             if time.time() > deadline:
                 logging.warning(f'Site budget spent on {site.url}; '
@@ -345,12 +547,14 @@ class SsApi(object):
                 self.img_url, self.shot_key, self.pages_walked,
                 *self.vitals_fields, self.capture_status,
                 self.capture_detail, self.full_shot_key,
-                self.full_shot_url, self.page_height}
+                self.full_shot_url, self.page_height,
+                *self.editorial_fields}
         row = {k: v for k, v in home.items() if k not in skip}
         row.update({self.url: url, self.page_kind: self.kind_article,
                     self.parent_url: self.get_site(index).url,
                     self.pages_walked: 0, self.full_shot_key: '',
                     self.full_shot_url: '', self.page_height: ''})
+        row.update(self.empty_editorial())
         stem = os.path.basename(self.get_site(index).file_name)[:-4]
         device = str(home.get(self.device) or '')
         stem = stem.removesuffix(f'_{device}') if device else stem
@@ -425,8 +629,7 @@ class SsApi(object):
         the bucket, so a reader that cannot see this box still gets
         every capture with its ad slots."""
         body = json.dumps(self.manifest_rows(), default=str)
-        local = os.path.join(self.ss_file_path_date, self.manifest_name)
-        with open(local, 'w', encoding='utf-8') as f:
+        with open(self.manifest_path(), 'w', encoding='utf-8') as f:
             f.write(body)
         key = '/'.join([self.ss_file_path.replace('\\', '/'),
                         self.run_id, self.manifest_name])
