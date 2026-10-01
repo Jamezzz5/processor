@@ -64,6 +64,35 @@ class RedApi(object):
     }
     campaign_col = cols['campaign']
     password_symbols = set('!@#$%^&*()={}[]<>?~`"\\;,')
+    date_col = 'date'
+    no_reach_field = 'No Reach'
+    api_field_options = (
+        (no_reach_field,
+         'Skip the whole range campaign and ad group reach and the daily '
+         'account reach'),)
+    daily_breakdowns = ['AD_ID', 'DATE']
+    daily_fields = [
+        'IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_STARTED',
+        'VIDEO_WATCHED_25_PERCENT', 'VIDEO_WATCHED_50_PERCENT',
+        'VIDEO_WATCHED_75_PERCENT', 'VIDEO_WATCHED_100_PERCENT',
+        'VIDEO_WATCHED_3_SECONDS', 'VIDEO_WATCHED_5_SECONDS',
+        'VIDEO_WATCHED_10_SECONDS',
+        'VIDEO_VIEW_RATE', 'VIDEO_VIEWABLE_IMPRESSIONS',
+        'VIDEO_PLAYS_EXPANDED', 'CONVERSION_PAGE_VISIT_CLICKS',
+        'CONVERSION_PAGE_VISIT_ECPA', 'CONVERSION_PAGE_VISIT_VIEWS',
+        'CONVERSION_VIEW_CONTENT_CLICKS', 'CONVERSION_VIEW_CONTENT_ECPA',
+        'CONVERSION_VIEW_CONTENT_VIEWS']
+    action_sources = ['WEBSITE', 'APP', 'PHYSICAL_STORE', 'OTHER']
+    conversion_fields = [
+        'CONVERSION_PURCHASE_CLICKS', 'CONVERSION_PURCHASE_VIEWS',
+        'CONVERSION_SIGN_UP_CLICKS', 'CONVERSION_SIGN_UP_VIEWS']
+    reach_metrics = {'reach': 'Reach', 'frequency': 'Frequency'}
+    reach_reports = [
+        {'breakdown': 'CAMPAIGN_ID', 'id_col': 'campaign_id',
+         'suffix': ' - no_date - campaign_report'},
+        {'breakdown': 'AD_GROUP_ID', 'id_col': 'ad_group_id',
+         'suffix': ' - no_date - ad_group_report'},
+        {'breakdown': 'DATE', 'id_col': '', 'suffix': ' - vendor_report'}]
 
     def __init__(self, headless=True):
         self.headless = headless
@@ -222,7 +251,7 @@ class RedApi(object):
             ed = dt.datetime.today()
         if fields:
             for val in fields:
-                if str(val) != 'nan':
+                if str(val) != 'nan' and val != self.no_reach_field:
                     self.account = val
         return sd, ed
 
@@ -697,57 +726,70 @@ class RedApi(object):
         dt_utc = dt_local.astimezone(pytz.utc)
         return dt_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    def get_report(self, account_id, sd, ed):
+    def report_body(self, sd, ed, breakdowns, fields,
+                    conversion_metrics=None):
         """
-        Given an account_id requests a report for the start and end dates.
+        Builds a report request in the account's time zone.  Leaving DATE
+        out of the breakdowns makes Reddit total the range in one row per
+        object, which is what a whole range reach report needs; DATE on
+        its own gives the account one row per day.
+
+        :param sd: Start date to pull from
+        :param ed: End date to pull to
+        :param breakdowns: Report breakdowns, one row per combination
+        :param fields: Report fields, in the api's upper case names
+        :param conversion_metrics: Conversion fields with their action
+            sources, left off a reach report
+        :return: The request body
+        """
+        data = {'starts_at': self.timezone_to_utc(sd, self.time_zone_id),
+                'ends_at': self.timezone_to_utc(ed, self.time_zone_id),
+                'breakdowns': breakdowns,
+                'fields': fields,
+                'time_zone_id': self.time_zone_id}
+        if conversion_metrics:
+            data['conversion_metrics'] = conversion_metrics
+        return {'data': data}
+
+    def daily_body(self, sd, ed):
+        """
+        The daily ad report: every delivery, video and conversion field,
+        one row per ad per day.
+
+        :param sd: Start date to pull from
+        :param ed: End date to pull to
+        :return: The request body
+        """
+        fields = self.daily_fields + list(self.custom_events_dict())
+        conversion_metrics = [
+            {'conversion_field': x, 'action_sources': self.action_sources}
+            for x in self.conversion_fields]
+        return self.report_body(sd, ed, self.daily_breakdowns, fields,
+                                conversion_metrics)
+
+    def get_report(self, account_id, sd, ed, body=None):
+        """
+        Given an account_id requests a report for the start and end dates,
+        following the pages until the last.
 
         :param account_id: Account ID to pull as a str
         :param sd: Start date to pull from
-        :param ed: End date to pull from
-        :return:
+        :param ed: End date to pull to
+        :param body: The request body, the daily ad report's by default
+        :return: List of the report's rows as dicts
         """
         response_list = []
-        next_url = '{}ad_accounts/{}/reports'.format(self.base_api_url, account_id)
-        breakdowns = ['AD_ID', 'DATE']
-        starts_at = self.timezone_to_utc(sd, timezone=self.time_zone_id)
-        ends_at = self.timezone_to_utc(ed, timezone=self.time_zone_id)
-        fields = ['IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_STARTED',
-                  'VIDEO_WATCHED_25_PERCENT', 'VIDEO_WATCHED_50_PERCENT',
-                  'VIDEO_WATCHED_75_PERCENT', 'VIDEO_WATCHED_100_PERCENT',
-                  'VIDEO_WATCHED_3_SECONDS', 'VIDEO_WATCHED_5_SECONDS',
-                  'VIDEO_WATCHED_10_SECONDS',
-                  'VIDEO_VIEW_RATE', 'VIDEO_VIEWABLE_IMPRESSIONS',
-                  'VIDEO_PLAYS_EXPANDED', 'CONVERSION_PAGE_VISIT_CLICKS',
-                  'CONVERSION_PAGE_VISIT_ECPA', 'CONVERSION_PAGE_VISIT_VIEWS',
-                  'CONVERSION_VIEW_CONTENT_CLICKS', 'CONVERSION_VIEW_CONTENT_ECPA',
-                  'CONVERSION_VIEW_CONTENT_VIEWS']
-        extra_fields = self.custom_events_dict()
-        fields += extra_fields
-        action_sources = ['WEBSITE', 'APP', 'PHYSICAL_STORE', 'OTHER']
-        conversion_metrics = [
-            {'conversion_field': 'CONVERSION_PURCHASE_CLICKS',
-            'action_sources': action_sources},
-            {'conversion_field': 'CONVERSION_PURCHASE_VIEWS',
-             'action_sources': action_sources},
-            {'conversion_field': 'CONVERSION_SIGN_UP_CLICKS',
-             'action_sources': action_sources},
-            {'conversion_field': 'CONVERSION_SIGN_UP_VIEWS',
-             'action_sources': action_sources}
-        ]
-        data = {'starts_at': starts_at,
-                'ends_at': ends_at,
-                'breakdowns': breakdowns,
-                'fields': fields,
-                'time_zone_id': self.time_zone_id,
-                'conversion_metrics': conversion_metrics}
-        data = {'data': data}
+        next_url = '{}ad_accounts/{}/reports'.format(self.base_api_url,
+                                                     account_id)
+        if body is None:
+            body = self.daily_body(sd, ed)
         params = {'page.size': 1000}
         for attempt in range(1000):
             msg = ('Getting account {} data from {} to {} {}.  '
                    'Attempt {}').format(
                 account_id, sd, ed, self.time_zone_id, attempt + 1)
             logging.info(msg)
-            r = requests.post(next_url, headers=self.headers, json=data,
+            r = requests.post(next_url, headers=self.headers, json=body,
                               params=params)
             try:
                 response = r.json()
@@ -812,18 +854,22 @@ class RedApi(object):
         df = pd.merge(df, tdf, on=col, how='left')
         return df
 
-    def add_names_to_df(self, df):
+    def add_names_to_df(self, df, level_col='ad_id'):
         """
-        Takes a dataframe with ad_id, adds names for ad, adgroup and campaign
+        Takes a dataframe with an object id, adds names for that object
+        and each one above it up to the campaign
 
-        :param df: Dataframe with ad_id
+        :param df: Dataframe with ad_id, ad_group_id or campaign_id
+        :param level_col: The id column the rows carry, the ad's for the
+            daily report
         :return: Dataframe with names added
         """
         object_types = [
             ('ad_id', 'ad_group_id'),
             ('ad_group_id', 'campaign_id'),
             ('campaign_id', '')]
-        for object_type in object_types:
+        id_cols = [x[0] for x in object_types]
+        for object_type in object_types[id_cols.index(level_col):]:
             col = object_type[0]
             new_col = object_type[1]
             df = self.get_object_names_from_df(df, col=col, new_col=new_col)
@@ -867,20 +913,107 @@ class RedApi(object):
         account_id = self.get_ad_accounts_by_business(business_ids)
         return account_id
 
-    def get_data_api(self, sd, ed):
+    def get_data_api(self, sd, ed, fields=None):
         """
-        Pulls data for specified start and end date from api using requests.
+        Pulls data for specified start and end date from api using requests,
+        then adds the whole range reach rows under the daily rows.
 
         :param sd: The start date to pull from
         :param ed: The end date to pull to
+        :param fields: The API_FIELDS values from the vendor matrix
         :return: df The dataframe of data from the platform
         """
         df = pd.DataFrame()
         account_id = self.get_account_id()
-        if account_id:
-            r = self.get_report(account_id, sd, ed)
-            df = self.report_to_df(r)
+        if not account_id:
+            return df
+        r = self.get_report(account_id, sd, ed)
+        df = self.report_to_df(r)
+        if self.pull_reach(fields):
+            df = pd.concat([df, self.request_reach(account_id, sd, ed)],
+                           ignore_index=True)
         return df
+
+    def pull_reach(self, fields):
+        """
+        Whether the card takes the whole range reach rows.
+
+        :param fields: The API_FIELDS values from the vendor matrix
+        :return: Boolean, False when the card carries No Reach
+        """
+        return self.no_reach_field not in (fields or [])
+
+    def reach_names(self, suffix):
+        """
+        One reach report's measures, named apart from the other level's.
+        The suffix follows dcapi's reach report columns.
+
+        :param suffix: The report's column suffix
+        :return: Dict of response key to suffixed column name
+        """
+        return {x: '{}{}'.format(name, suffix)
+                for x, name in self.reach_metrics.items()}
+
+    @property
+    def reach_cols(self):
+        """
+        Every column a reach row fills, so importhandler can find the reach
+        rows a merged raw file already holds and replace them.
+
+        :return: List of suffixed reach and frequency column names
+        """
+        return [x for report in self.reach_reports
+                for x in self.reach_names(report['suffix']).values()]
+
+    def request_reach(self, account_id, sd, ed):
+        """
+        Pulls one row per campaign and per ad group for the whole range,
+        so Reddit counts each person once across it, and one row per day
+        for the account, each day's people counted once across every
+        campaign.  Reddit answers any range in one report, so none is
+        skipped, but it only holds reach from June 2024.  It cannot narrow
+        an account row to the card's campaigns, so a card with a campaign
+        filter gets no daily account reach rather than the whole account's.
+
+        :param account_id: Account ID to pull as a str
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :return: df of reach rows, their measures suffixed per level
+        """
+        fields = [x.upper() for x in self.reach_metrics]
+        df = pd.DataFrame()
+        for report in self.reach_reports:
+            if not report['id_col'] and self.campaign_filter:
+                logging.warning(
+                    'Skipping daily account reach: Reddit cannot narrow it '
+                    'to the campaign filter.')
+                continue
+            body = self.report_body(sd, ed, [report['breakdown']], fields)
+            rows = self.get_report(account_id, sd, ed, body)
+            df = pd.concat([df, self.reach_to_df(rows, report, sd)],
+                           ignore_index=True)
+        return df
+
+    def reach_to_df(self, response_list, report, sd):
+        """
+        Names one reach report's objects, suffixes its measures and dates
+        its rows: a whole range row to the start of the range, so a merge
+        keeps it, and a daily account row to its own day.
+
+        :param response_list: The report's rows as dicts
+        :param report: The reach_reports entry pulled
+        :param sd: The start date the reach covers
+        :return: The rows named, renamed and dated
+        """
+        df = pd.DataFrame(response_list)
+        if df.empty:
+            return df
+        if report['id_col']:
+            df = self.add_names_to_df(df, level_col=report['id_col'])
+        df = df.rename(columns=self.reach_names(report['suffix']))
+        if self.date_col not in df.columns:
+            df[self.date_col] = sd.strftime('%Y-%m-%d')
+        return self.rename_columns(df)
 
     def get_data(self, sd=None, ed=None, fields=None):
         """
@@ -893,11 +1026,33 @@ class RedApi(object):
         """
         sd, ed = self.get_data_default_check(sd, ed, fields)
         if self.api:
-            df = self.get_data_api(sd, ed)
+            df = self.get_data_api(sd, ed, fields)
         else:
             df = self.get_data_selenium(sd, ed)
         df = self.filter_df_on_campaign(df)
         return df
+
+    def get_reach(self, sd=None, ed=None, fields=None):
+        """
+        Only the reach rows, the whole range campaign and ad group rows
+        and the daily account rows, for a caller whose delivery range is
+        shorter than the range reach has to cover: importhandler trims a
+        merge card's delivery to its merge window but pulls reach from the
+        card's start date.
+
+        :param sd: Start of the reach range
+        :param ed: End of the reach range
+        :param fields: The card's api fields, read only for No Reach
+        :return: df of reach rows, their measures suffixed per level
+        """
+        if not self.pull_reach(fields):
+            return pd.DataFrame()
+        sd, ed = self.get_data_default_check(sd, ed, fields)
+        account_id = self.get_account_id()
+        if not account_id:
+            return pd.DataFrame()
+        df = self.request_reach(account_id, sd, ed)
+        return self.filter_df_on_campaign(df)
 
     def get_data_selenium(self, sd, ed):
         self.sw = utl.SeleniumWrapper(headless=self.headless)

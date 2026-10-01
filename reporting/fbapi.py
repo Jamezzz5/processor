@@ -55,6 +55,24 @@ ad_status_enabled = ['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'DISAPPROVED',
                      'PREAPPROVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED',
                      'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']
 ad_status_disabled = ['DELETED', 'ARCHIVED']
+campaign_status = ['ACTIVE', 'PAUSED', 'DELETED', 'ARCHIVED', 'IN_PROCESS',
+                   'WITH_ISSUES']
+adset_status = campaign_status + ['CAMPAIGN_PAUSED']
+level_status = {AdsInsights.Level.campaign: campaign_status,
+                AdsInsights.Level.adset: adset_status}
+
+campaign_params = ['campaign_name', 'campaign_id']
+adset_params = campaign_params + ['adset_name', 'adset_id']
+account_params = ['account_name', 'account_id']
+level_params = {AdsInsights.Level.campaign: campaign_params,
+                AdsInsights.Level.adset: adset_params,
+                AdsInsights.Level.account: account_params}
+
+reach_metrics = ['reach', 'frequency']
+reach_reports = [
+    (AdsInsights.Level.campaign, ' - no_date - campaign_report', 'all_days'),
+    (AdsInsights.Level.adset, ' - no_date - adset_report', 'all_days'),
+    (AdsInsights.Level.account, ' - vendor_report', 1)]
 
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
@@ -92,6 +110,9 @@ class FbApi(object):
         ('Total', 'One row for the whole range, not one per day'),
         ('Adset', 'Ad set level'),
         ('Campaign', 'Campaign level'),
+        ('No Reach',
+         'Skip the whole range campaign and ad set reach and the daily '
+         'account reach'),
         ('Screenshots', 'Capture ad screenshots'))
     default_config_file_name = 'fbconfig.json'
 
@@ -167,7 +188,8 @@ class FbApi(object):
         breakdowns = []
         action_breakdowns = []
         attribution_window = []
-        fields = def_fields
+        reports = reach_reports
+        fields = def_fields[:]
         time_breakdown = 1
         screenshots = False
         level = AdsInsights.Level.ad
@@ -204,8 +226,74 @@ class FbApi(object):
                 level = AdsInsights.Level.campaign
             if item == 'Screenshots':
                 screenshots = True
+            if item == 'No Reach':
+                reports = []
         return fields, breakdowns, action_breakdowns, attribution_window,\
-            time_breakdown, level, screenshots
+            time_breakdown, level, screenshots, reports
+
+    @staticmethod
+    def level_fields(fields, level):
+        """
+        Swaps the ad names and ids for the ones a row at level owns, so a
+        campaign or ad set row carries its id and two same named objects
+        stay apart.
+
+        :param fields: Requested fields, led by the ad level def_params
+        :param level: AdsInsights level of the request
+        :return: The fields to request at that level
+        """
+        if level not in level_params:
+            return fields
+        return level_params[level] + [x for x in fields
+                                      if x not in def_params]
+
+    @staticmethod
+    def status_filters(level):
+        """
+        Delivery status filters, one request each.  Ad rows keep the split
+        between live and deleted ads.  A campaign or ad set is requested
+        once across every status on its own object, and the account once
+        across every ad status, because reach split over two requests is
+        two overlapping audiences that cannot be added back together.
+
+        :param level: AdsInsights level of the request
+        :return: List of (filter field, statuses) tuples
+        """
+        if level == AdsInsights.Level.account:
+            return [('ad.effective_status',
+                     ad_status_enabled + ad_status_disabled)]
+        if level in level_status:
+            return [('{}.effective_status'.format(level),
+                     level_status[level])]
+        return [('ad.effective_status', x)
+                for x in (ad_status_enabled, ad_status_disabled)]
+
+    @property
+    def reach_cols(self):
+        """
+        Every column a reach row fills, so importhandler can find the reach
+        rows a merged raw file already holds and replace them.
+
+        :return: List of suffixed reach and frequency column names
+        """
+        return ['{}{}'.format(col_name_dic[x], report[1])
+                for report in reach_reports for x in reach_metrics]
+
+    @staticmethod
+    def suffix_reach(df, suffix):
+        """
+        Names a reach report's measures apart from the delivery rows so
+        neither overwrites the other.  The suffix follows dcapi's reach
+        report columns.
+
+        :param df: One completed async job's rows
+        :param suffix: The reach report's column suffix, blank for delivery
+        :return: The rows with reach and frequency renamed
+        """
+        if not suffix:
+            return df
+        return df.rename(columns={
+            x: '{}{}'.format(col_name_dic[x], suffix) for x in reach_metrics})
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):
@@ -231,11 +319,14 @@ class FbApi(object):
         self.df = pd.DataFrame()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
         (fields, breakdowns, action_breakdowns, attr, time_breakdown, level,
-         screenshots) = self.parse_fields(fields)
+         screenshots, reports) = self.parse_fields(fields)
+        fields = self.level_fields(fields, level)
         sd, ed = self.date_check(sd, ed)
         self.date_lists = self.set_full_date_lists(sd, ed)
         self.make_all_requests(fields, breakdowns, action_breakdowns, attr,
                                time_breakdown, level)
+        for reach_level, suffix, increment in reports:
+            self.request_reach(sd, ed, reach_level, suffix, increment)
         self.check_and_get_async_jobs(self.async_requests)
         for col in nested_col:
             try:
@@ -250,6 +341,28 @@ class FbApi(object):
             previews = FacebookScreenshots(df=self.df)
             previews.get_and_take_screenshots()
         return self.df
+
+    def get_reach(self, sd=None, ed=None, fields=None):
+        """
+        Only the reach rows, the whole range campaign and ad set rows and
+        the daily account rows, for a caller whose delivery range is
+        shorter than the range reach has to cover: importhandler trims a
+        merge card's delivery to its merge window but pulls reach from the
+        card's start date.
+
+        :param sd: Start of the reach range
+        :param ed: End of the reach range
+        :param fields: The card's api fields, read only for No Reach
+        :return: df of reach rows, their measures suffixed per level
+        """
+        self.df = pd.DataFrame()
+        sd, ed, fields = self.get_data_default_check(sd, ed, fields)
+        reports = self.parse_fields(fields)[-1]
+        sd, ed = self.date_check(sd, ed)
+        for reach_level, suffix, increment in reports:
+            self.request_reach(sd, ed, reach_level, suffix, increment)
+        self.check_and_get_async_jobs(self.async_requests)
+        return self.rename_cols()
 
     def make_all_requests(self, fields, breakdowns, action_breakdowns, attr,
                           time_breakdown, level):
@@ -268,16 +381,36 @@ class FbApi(object):
                                         action_breakdowns, attr,
                                         time_breakdown, level)
 
+    def request_reach(self, sd, ed, level, suffix, time_breakdown):
+        """
+        Requests reach at one level: a row per campaign or ad set for the
+        whole range, so Facebook counts each person once across it, or a
+        row per day for the account, each day's people counted once across
+        every campaign the card's filter keeps.  No date_list is passed,
+        which stops a too much data error from splitting the range into
+        halves whose reach could not be added.
+
+        :param sd: Start of the range
+        :param ed: End of the range
+        :param level: AdsInsights level to deduplicate reach at
+        :param suffix: Column suffix naming the report
+        :param time_breakdown: 'all_days' for one row, 1 for a row a day
+        """
+        self.request_for_fields(
+            sd, ed, None, level_params[level] + reach_metrics, [], [], [],
+            time_breakdown, level, reach_suffix=suffix)
+
     def request_for_fields(self, sd, ed, date_list, fields, breakdowns,
-                           action_breakdowns, attr, time_breakdown, level):
+                           action_breakdowns, attr, time_breakdown, level,
+                           reach_suffix=''):
         self.field_lists = [fields]
         for field_list in self.field_lists:
-            for ad_status in [ad_status_enabled, ad_status_disabled]:
+            for status_filter in self.status_filters(level):
                 for x in range(10):
                     success = self.make_request(
                         sd, ed, date_list, field_list, breakdowns,
-                        action_breakdowns, attr, ad_status,
-                        time_breakdown, level)
+                        action_breakdowns, attr, status_filter,
+                        time_breakdown, level, reach_suffix=reach_suffix)
                     if success:
                         break
                     else:
@@ -304,17 +437,18 @@ class FbApi(object):
         return insights
 
     def make_request(self, sd, ed, date_list, field_list, breakdowns,
-                     action_breakdowns, attribution_window, ad_status,
+                     action_breakdowns, attribution_window, status_filter,
                      time_breakdown=1, level=AdsInsights.Level.ad,
-                     times_requested=1):
+                     times_requested=1, reach_suffix=''):
         logging.info('Making FB request for {} to {}'.format(sd, ed))
+        status_field, statuses = status_filter
         params = {'level': level,
                   'breakdowns': breakdowns,
                   'time_range': {'since': str(sd), 'until': str(ed), },
                   'time_increment': time_breakdown,
-                  'filtering': [{'field': 'ad.effective_status',
+                  'filtering': [{'field': status_field,
                                  'operator': 'IN',
-                                 'value': ad_status}]
+                                 'value': statuses}]
                   }
         if action_breakdowns:
             params['action_breakdowns'] = action_breakdowns
@@ -335,9 +469,10 @@ class FbApi(object):
                 'field_list': field_list, 'breakdowns': breakdowns,
                 'action_breakdowns': action_breakdowns,
                 'attribution_window': attribution_window,
-                'ad_status': ad_status,
+                'status_filter': status_filter,
                 'time_breakdown': time_breakdown, 'level': level,
-                'insights': insights, 'times_requested': times_requested}
+                'insights': insights, 'times_requested': times_requested,
+                'reach_suffix': reach_suffix}
             fb_request = FacebookRequest(init_dict=init_dict)
             self.async_requests.append(fb_request)
             return True
@@ -370,9 +505,9 @@ class FbApi(object):
             fb_request.sd, fb_request.ed, fb_request.date_list,
             fb_request.field_list, fb_request.breakdowns,
             fb_request.action_breakdowns,
-            fb_request.attribution_window, fb_request.ad_status,
+            fb_request.attribution_window, fb_request.status_filter,
             fb_request.time_breakdown, fb_request.level,
-            fb_request.times_requested + 1)
+            fb_request.times_requested + 1, fb_request.reach_suffix)
 
     def check_and_get_async_jobs(self, async_jobs):
         self.async_requests = []
@@ -417,8 +552,9 @@ class FbApi(object):
                     complete_job = None
                     time.sleep(30)
                 if complete_job:
-                    self.df = pd.concat([self.df, pd.DataFrame(complete_job)],
-                                        ignore_index=True)
+                    tdf = self.suffix_reach(pd.DataFrame(complete_job),
+                                            fb_request.reach_suffix)
+                    self.df = pd.concat([self.df, tdf], ignore_index=True)
                     fb_request.complete = True
             else:
                 self.async_requests.append(fb_request)
@@ -635,9 +771,10 @@ class FacebookRequest(object):
         self.breakdowns = None
         self.action_breakdowns = None
         self.attribution_window = None
-        self.ad_status = None
+        self.status_filter = None
         self.time_breakdown = None
         self.times_requested = 1
+        self.reach_suffix = ''
         self.insights = None
         self.level = None
         self.complete = False
