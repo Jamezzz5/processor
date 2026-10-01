@@ -6147,6 +6147,71 @@ class TestDcApiCampaignFilter:
         assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']
 
 
+class TestDcApiReachWindows:
+    """CM360 refuses a reach report over 93 days, which used to lose every
+    reach figure for a longer processor."""
+
+    @staticmethod
+    def get_ranges(start, end, no_date=False, reach_report=True):
+        api = dcapi.DcApi()
+        api.date_range = {'startDate': start, 'endDate': end}
+        return api.report_date_ranges(reach_report, no_date)
+
+    def test_dated_reach_reports_cover_every_day(self):
+        """A day's reach is the same in any window, so the dated reports
+        split the range and lose nothing."""
+        ranges = self.get_ranges('2026-01-01', '2026-06-30')
+        assert ranges == [
+            {'startDate': '2026-01-01', 'endDate': '2026-04-03'},
+            {'startDate': '2026-04-04', 'endDate': '2026-06-30'}]
+
+    def test_reach_totals_ask_for_the_last_93_days(self):
+        """A total counts people once across its window and cannot be
+        split, so it asks for the most CM360 allows, ending on the last
+        day."""
+        assert self.get_ranges('2026-01-01', '2026-06-30', no_date=True) == [
+            {'startDate': '2026-03-30', 'endDate': '2026-06-30'}]
+
+    def test_ranges_cm360_accepts_are_sent_unchanged(self):
+        assert self.get_ranges('2026-04-01', '2026-07-02') == [
+            {'startDate': '2026-04-01', 'endDate': '2026-07-02'}]
+        assert self.get_ranges('2026-01-01', '2026-06-30',
+                               reach_report=False) == [
+            {'startDate': '2026-01-01', 'endDate': '2026-06-30'}]
+        api = dcapi.DcApi()
+        api.date_range = {'relativeDateRange': 'LAST_60_DAYS'}
+        assert api.report_date_ranges(True, True) == [api.date_range]
+
+    def test_relative_year_is_split_from_yesterday(self):
+        api = dcapi.DcApi()
+        api.date_range = {'kind': 'dfareporting#dateRange',
+                          'relativeDateRange': 'LAST_365_DAYS'}
+        ranges = api.report_date_ranges(True, False)
+        yesterday = dt.date.today() - dt.timedelta(days=1)
+        assert len(ranges) == 4
+        assert ranges[-1]['endDate'] == str(yesterday)
+        assert ranges[0]['startDate'] == str(
+            yesterday - dt.timedelta(days=364))
+
+    def test_each_report_names_its_own_window(self):
+        """The import stamps each report's own window beside its figures,
+        so a capped total says which days it counts."""
+        api = dcapi.DcApi()
+        api.date_range = {'startDate': '2026-01-01', 'endDate': '2026-06-30'}
+        api.advertiser_id = '1'
+        window = api.report_date_ranges(True, True)[0]
+        criteria = api.create_report_criteria(
+            True, True, campaign_report=True, date_range=window)
+        assert criteria['dateRange'] == window
+        renamed = api.rename_cols(pd.DataFrame({
+            'Unique Reach: Impression Reach': [123]}), {
+                'reach_report': True, 'no_date': True,
+                'campaign_report': True, 'vendor_report': False,
+                'date_range': window})
+        suffix = ' - no_date - campaign_report'
+        assert renamed[f'CM360 startDate{suffix}'].iloc[0] == '2026-03-30'
+
+
 class TestTikApiAdIds:
     """A TikTok report only carries ad ids, so the ad and campaign names
     are pulled separately and joined on, and that pull can come back

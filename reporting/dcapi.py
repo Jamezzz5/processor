@@ -4,6 +4,7 @@ import sys
 import json
 import time
 import logging
+import datetime as dt
 import requests
 import numpy as np
 import pandas as pd
@@ -71,6 +72,7 @@ class DcApi(object):
     report_path = 'reports/'
     ad_path = 'advertisers/'
     camp_path = 'campaigns/'
+    reach_max_days = 93
     default_config_file_name = 'dcapi.json'
     campaign_col = 'Campaign'
     campaign_id_col = 'Campaign ID'
@@ -226,6 +228,52 @@ class DcApi(object):
                 elif field == '30':
                     self.date_range['relativeDateRange'] = 'LAST_30_DAYS'
 
+    def report_date_ranges(self, reach_report=False, no_date=False):
+        """
+        The date ranges one report type is requested over.
+
+        :param reach_report: Whether the report is a reach report
+        :param no_date: Whether the report drops the date dimension
+        :return: List of CM360 dateRange dicts, one report each
+        """
+        bounds = self.explicit_date_range() if reach_report else None
+        if not bounds or (bounds[1] - bounds[0]).days < self.reach_max_days:
+            return [self.date_range]
+        start, end = bounds
+        span = dt.timedelta(days=self.reach_max_days - 1)
+        if no_date:
+            return [self.format_date_range(end - span, end)]
+        ranges = []
+        while start <= end:
+            stop = min(start + span, end)
+            ranges.append(self.format_date_range(start, stop))
+            start = stop + dt.timedelta(days=1)
+        return ranges
+
+    def explicit_date_range(self):
+        """
+        The first and last day of the report date range. A relative
+        range is read as the days ending yesterday, since CM360's
+        LAST_N_DAYS counts only complete days.
+
+        :return: Tuple of start and end dates, or None when unreadable
+        """
+        date_range = self.date_range or {}
+        if 'startDate' in date_range and 'endDate' in date_range:
+            return tuple(dt.date.fromisoformat(date_range[x])
+                         for x in ('startDate', 'endDate'))
+        days = re.fullmatch(r'LAST_(\d+)_DAYS',
+                            date_range.get('relativeDateRange', ''))
+        if not days:
+            return None
+        end = dt.date.today() - dt.timedelta(days=1)
+        return end - dt.timedelta(days=int(days.group(1)) - 1), end
+
+    @staticmethod
+    def format_date_range(start, end):
+        return {'startDate': start.strftime('%Y-%m-%d'),
+                'endDate': end.strftime('%Y-%m-%d')}
+
     def parse_campaign_filter(self):
         """
         Splits the campaign filter into ids to send and values to match.
@@ -261,11 +309,13 @@ class DcApi(object):
             no_date = report_type[1]
             campaign_report = report_type[2]
             vendor_report = report_type[3]
-            single_report_created = self.create_report(
-                reach_report=reach_report, no_date=no_date,
-                campaign_report=campaign_report, vendor_report=vendor_report)
-            if single_report_created:
-                report_created = True
+            for date_range in self.report_date_ranges(reach_report, no_date):
+                single_report_created = self.create_report(
+                    reach_report=reach_report, no_date=no_date,
+                    campaign_report=campaign_report,
+                    vendor_report=vendor_report, date_range=date_range)
+                if single_report_created:
+                    report_created = True
         if not report_created:
             logging.warning('Report not created returning blank df.')
             return df
@@ -456,11 +506,13 @@ class DcApi(object):
         logging.warning('Unknown error: {}'.format(self.r.text))
 
     def create_report(self, reach_report=False, no_date=False,
-                      campaign_report=False, vendor_report=False):
+                      campaign_report=False, vendor_report=False,
+                      date_range=None):
         if self.original_report_id:
             return True
         report = self.create_report_params(reach_report, no_date,
-                                           campaign_report, vendor_report)
+                                           campaign_report, vendor_report,
+                                           date_range)
         full_url = self.create_url('')
         self.r = self.make_request(full_url, method='post', body=report)
         if not self.r:
@@ -470,7 +522,8 @@ class DcApi(object):
         report_params = {'reach_report': reach_report,
                          'no_date': no_date,
                          'campaign_report': campaign_report,
-                         'vendor_report': vendor_report}
+                         'vendor_report': vendor_report,
+                         'date_range': date_range}
         self.report_id_dict[report_id] = report_params
         return True
 
@@ -496,7 +549,8 @@ class DcApi(object):
         return fl_ids
 
     def create_report_params(self, reach_report=False, no_date=False,
-                             campaign_report=False, vendor_report=False):
+                             campaign_report=False, vendor_report=False,
+                             date_range=None):
         report_name = ''
         for name in [self.advertiser_id, self.campaign_id]:
             name = re.sub(r'\W+', '', name)
@@ -518,7 +572,8 @@ class DcApi(object):
         if vendor_report:
             report['name'] = '{}_vendor'.format(report['name'])
         criteria = self.create_report_criteria(reach_report, no_date,
-                                               campaign_report, vendor_report)
+                                               campaign_report, vendor_report,
+                                               date_range)
         criteria_str = 'criteria'
         if reach_report:
             criteria_str = 'reachCriteria'
@@ -526,7 +581,8 @@ class DcApi(object):
         return report
 
     def create_report_criteria(self, reach_report=False, no_date=False,
-                               campaign_report=False, vendor_report=False):
+                               campaign_report=False, vendor_report=False,
+                               date_range=None):
         metrics = self.default_metrics
         dimensions = self.default_fields
         if reach_report:
@@ -541,7 +597,7 @@ class DcApi(object):
             dimensions = [x for x in dimensions
                           if x in ('campaign', 'site', 'date')]
         criteria = {
-            'dateRange': self.date_range,
+            'dateRange': date_range or self.date_range,
             'dimensions': [{'kind': 'dfareporting#sortedDimension', 'name': x}
                            for x in dimensions],
             'metricNames': metrics,
@@ -584,10 +640,10 @@ class DcApi(object):
             if col_str:
                 for k, v in self.reach_metrics.items():
                     rename_dict[v] = '{}{}'.format(v, col_str)
+            date_range = report_param.get('date_range') or self.date_range
             for boundary in ('startDate', 'endDate'):
-                if boundary in (self.date_range or {}):
-                    tdf[f'CM360 {boundary}{col_str}'] = (
-                        self.date_range[boundary])
+                if boundary in (date_range or {}):
+                    tdf[f'CM360 {boundary}{col_str}'] = date_range[boundary]
         tdf.rename(columns=rename_dict, inplace=True)
         return tdf
 
