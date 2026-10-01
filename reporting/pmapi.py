@@ -1,11 +1,12 @@
 import os
+import re
 import sys
 import json
 import time
-import shutil
 import logging
 import pandas as pd
 import datetime as dt
+from urllib.parse import urlencode
 import reporting.utils as utl
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.keys import Keys
@@ -21,23 +22,46 @@ SITE_DEFAULTS = {
     'password_id': 'password',
     'otp_name': 'user[otp_attempt]',
     'submit_xpath': '//*[@id="new_user"]//*[@type="submit"]',
-    'signed_in_id': 'omnibox-text',
-    'omnibox_id': 'omnibox-text',
-    'omnibox_menu_xpath': '//*[@id="omnibox-text-menu"]/div/div/div[{}]',
-    'entity_xpath': "//*[@class='entity-name']",
+    'signed_in_id': 'NavSearch',
+    'omnibox_id': 'NavSearch',
     'popup_close_xpath': '//*[@id="pendo-close-guide-8643dd7a"]',
-    'calendar_popup_xpath': '//*[@id="pendo-close-guide-768f0d44"]',
-    'dates_button_xpath': '//*[@id="dates-filter-button"]/a',
-    'custom_date_xpath': '//*[@id="date-filter-menu"]/div/div[1]/div[10]',
-    'date_picker_xpath': '//*[@id="date-filter-menu-date-picker-container"]',
-    'date_done_xpath': '//*[@id="date-filter-menu-date-picker-button"]'
-                       '/a/span',
-    'export_button_xpath': '//*[@id="export-button"]',
-    'export_xlsx_xpath': '//*[@id="export-menu-options"]/div[1]',
-    'export_download_xpath': '//*[@id="pick-export-options"]',
-    'sheet_daily': 'Daily Spend',
-    'sheet_publishers': 'Top Publishers',
+    'csrf_selector': 'meta[name=csrf-token]',
+    'search_path': '/api/ads/search',
+    'series_path': '/api/ads/brand/{}/timeseries/channels',
+    'country': 'US',
 }
+
+CHANNELS = {
+    'desktop_display': 'Desktop Display',
+    'desktop_video': 'Desktop Video',
+    'facebook': 'Facebook',
+    'mobile_display': 'Mobile Display',
+    'mobile_video': 'Mobile Video',
+    'ott': 'OTT',
+    'reddit': 'Reddit',
+    'tiktok': 'TikTok',
+    'youtube': 'YouTube',
+}
+ENTITY_TYPES = ('brand', 'advertiser')
+CURRENCY_UNITS = {'cent': 100.0, 'dollar': 1.0}
+DATE_COL = 'Date'
+CHANNEL_COL = 'Environment-variable'
+SPEND_COL = 'Environment-value'
+IMPRESSIONS_COL = 'Impressions'
+SPEND_SUFFIX = ' ($)'
+FRAME_COLS = [DATE_COL, CHANNEL_COL, SPEND_COL, IMPRESSIONS_COL]
+
+REQUEST_SCRIPT = """
+const done = arguments[arguments.length - 1];
+const [verb, url, body, selector] = arguments;
+const meta = document.querySelector(selector);
+fetch(url, {method: verb, credentials: 'same-origin',
+            headers: {'Content-type': 'application/json',
+                      'X-CSRF-Token': meta ? meta.content : ''},
+            body: body ? JSON.stringify(body) : undefined})
+  .then(r => r.text().then(t => done({status: r.status, text: t})))
+  .catch(e => done({status: 0, text: String(e)}));
+"""
 
 
 class OtpRequired(ex.WebDriverException):
@@ -52,6 +76,7 @@ class PmApi(object):
     temp_path = 'tmp'
     sign_in_attempts = 300
     otp_poll_seconds = 2
+    request_timeout = 60
 
     def __init__(self, headless=True):
         self.sw = None
@@ -67,6 +92,9 @@ class PmApi(object):
         self.publisher = None
         self.ispot_title = None
         self.brand_tracker = False
+        self.brand = None
+        self.window = None
+        self.frame = None
         self.site = dict(SITE_DEFAULTS)
 
     @property
@@ -124,8 +152,30 @@ class PmApi(object):
             return False
         return any(f.is_displayed() for f in fields)
 
+    def type_into(self, elem_id, value):
+        """Replace one field's contents with ``value``."""
+        elem = self.find_elem(self.sw.get_xpath_from_id(elem_id))
+        elem.clear()
+        elem.send_keys(value)
+
+    def reveal_password(self):
+        """Press Next past the email when the password is still hidden;
+        a form showing both fields is left alone."""
+        password_id = self.site['password_id']
+        if self.sw.wait_for_elem_load(
+                password_id, attempts=1, sleep_time=.1, visible=True,
+                raise_exception=False):
+            return
+        self.sw.click_on_xpath(self.site['submit_xpath'], sleep=1)
+        if not self.sw.wait_for_elem_load(
+                password_id, attempts=self.sign_in_attempts,
+                sleep_time=.1, visible=True, raise_exception=False):
+            raise ex.NoSuchElementException(
+                'The password field ({}) never appeared after the '
+                'email step.'.format(password_id))
+
     def sign_in(self, otp_wait=0):
-        """Fill the sign in form and submit it once.
+        """Fill the sign in form, one step or two, and submit it.
 
         :param otp_wait: Seconds to wait for a human to type a
             one-time passcode into the (visible) browser when the site
@@ -146,12 +196,9 @@ class PmApi(object):
                 'Neither the sign in form ({}) nor the signed in app '
                 '({}) loaded.'.format(self.site['username_id'],
                                       signed_in_id))
-        user_pass = [(self.username, self.site['username_id']),
-                     (self.password, self.site['password_id'])]
-        for value, elem_id in user_pass:
-            elem = self.find_elem(self.sw.get_xpath_from_id(elem_id))
-            elem.clear()
-            elem.send_keys(value)
+        self.type_into(self.site['username_id'], self.username)
+        self.reveal_password()
+        self.type_into(self.site['password_id'], self.password)
         self.sw.click_on_xpath(self.site['submit_xpath'], sleep=5)
         if self.sw.wait_for_elem_load(
                 signed_in_id, attempts=self.sign_in_attempts,
@@ -182,70 +229,109 @@ class PmApi(object):
             logging.info('No pop-ups found. Continuing')
 
 
-    def search_title(self, title):
-        self.browser.implicitly_wait(10)
-        title_bar = self.browser.find_element_by_xpath(
-            self.sw.get_xpath_from_id(self.site['omnibox_id']))
-        title_bar.send_keys(title)
-        time.sleep(10)
-        title_result = self.site['omnibox_menu_xpath'].format(
-            self.publisher)
-        self.sw.click_on_xpath(title_result)
-        title_result = self.browser.find_element_by_xpath(
-            self.site['entity_xpath'])
-        logging.info('Getting data for {}.'.format(title_result.text))
-        return title_result.text
-
-    def open_calendar(self):
-        cal_button_xpath = self.site['dates_button_xpath']
-        pop_up_xpath = self.site['calendar_popup_xpath']
+    def request_json(self, verb, path, body=None):
+        """The parsed JSON of one app request, sent from inside the
+        signed in page so it rides that session and CSRF token; raises
+        WebDriverException on anything but HTTP 200 JSON."""
+        self.browser.set_script_timeout(self.request_timeout)
+        answer = self.browser.execute_async_script(
+            REQUEST_SCRIPT, verb, path, body, self.site['csrf_selector'])
+        endpoint = path.split('?')[0]
+        if (status := answer.get('status')) != 200:
+            raise ex.WebDriverException(
+                f'{endpoint} answered HTTP {status}.')
         try:
-            self.sw.click_on_xpath(pop_up_xpath)
-        except ex.NoSuchElementException:
-            pass
-        self.sw.click_on_xpath(cal_button_xpath)
-        custom_date_xpath = self.site['custom_date_xpath']
-        self.sw.click_on_xpath(custom_date_xpath)
+            return json.loads(answer.get('text') or '')
+        except ValueError:
+            raise ex.WebDriverException(
+                f'{endpoint} did not answer with JSON.')
 
-    def delete_contents(self, date_path):
-        elem = self.find_elem(date_path)
-        elem.send_keys(Keys.CONTROL + "a")
-        elem.send_keys(Keys.DELETE)
+    @staticmethod
+    def name_key(name):
+        """A brand name reduced to what has to match: letters and
+        digits, case folded."""
+        return re.sub(r'[^0-9a-z]', '', str(name or '').casefold())
 
-    def change_dates(self, date, date_path):
-        self.delete_contents(date_path)
-        self.find_elem(date_path).send_keys(date)
+    def pick_brand(self, title, brands):
+        """The listed brand named ``title`` (search is fuzzy), a brand
+        before an advertiser, then the bigger spender; None if none."""
+        key = self.name_key(title)
+        named = [b for b in brands
+                 if key and self.name_key(b.get('name')) == key]
+        if not named:
+            return None
+        return min(named, key=lambda b: (
+            ENTITY_TYPES.index(b.get('type'))
+            if b.get('type') in ENTITY_TYPES else len(ENTITY_TYPES),
+            -((b.get('spend') or {}).get('value') or 0)))
 
-    def set_dates(self, sd, ed):
-        logging.info('Getting data from {} to {}.'.format(sd, ed))
-        self.open_calendar()
-        base_path = self.site['date_picker_xpath']
-        sd_path = base_path + '/div[1]/div[1]/input'
-        ed_path = base_path + '/div[1]/div[3]/input'
-        start_end = [[sd.date().__str__(), sd_path],
-                     [ed.date().__str__(), ed_path]]
-        for date_info in start_end:
-            self.change_dates(date_info[0], date_info[1])
-        done_path = self.site['date_done_xpath']
-        self.sw.click_on_xpath(done_path)
+    def search_title(self, title):
+        """Remember and return the brand named ``title``.
+
+        :raises LookupError: when no listed brand has that name
+        """
+        query = [('entity_types[]', kind) for kind in ENTITY_TYPES]
+        query.append(('search_terms', title))
+        found = self.request_json(
+            'GET', '{}?{}'.format(self.site['search_path'],
+                                  urlencode(query)))
+        brand = self.pick_brand(title, found.get('brands') or [])
+        if brand is None:
+            raise LookupError(
+                'Sensor Tower lists no brand named {}.'.format(title))
+        self.brand = brand
+        logging.info('Getting data for {}.'.format(brand['name']))
+        return brand['name']
 
     def create_report(self, sd, ed, title):
+        """Resolve ``title`` to its brand and remember the window the
+        next :func:`export_to_csv` pulls."""
+        self.frame = None
         resp_title = self.search_title(title)
-        self.set_dates(sd, ed)
+        self.window = (sd, ed)
         return resp_title
 
+    @staticmethod
+    def series_rows(answer):
+        """The by-channel answer as one row per channel per day with
+        spend, in dollars. Days nothing was spent on are left out."""
+        unit = (answer.get('currency') or {}).get('unit')
+        if unit not in CURRENCY_UNITS:
+            raise ValueError(
+                'Spend came back in an unknown unit ({}).'.format(unit))
+        rows = []
+        for channel in answer.get('channels') or []:
+            label = CHANNELS.get(channel.get('channel'),
+                                 channel.get('channel'))
+            for point in channel.get('timeseries') or []:
+                spend = point.get('spend') or 0
+                if not label or spend <= 0:
+                    continue
+                rows.append({
+                    DATE_COL: str(point.get('date'))[:10],
+                    CHANNEL_COL: '{}{}'.format(label, SPEND_SUFFIX),
+                    SPEND_COL: round(spend / CURRENCY_UNITS[unit], 2),
+                    IMPRESSIONS_COL: point.get('impressions')})
+        return rows
+
     def export_to_csv(self):
-        export_xpath = self.site['export_button_xpath']
-        try:
-            self.sw.click_on_xpath(export_xpath)
-        except ex.NoSuchElementException:
-            logging.error('No data for title. Aborting.')
-            return False
-        xlsx_path = self.site['export_xlsx_xpath']
-        self.sw.click_on_xpath(xlsx_path)
-        download_xpath = self.site['export_download_xpath']
-        self.sw.click_on_xpath(download_xpath)
-        return True
+        """Pull the remembered brand's daily spend by channel; False when
+        it spent nothing in the window."""
+        sd, ed = self.window
+        query = urlencode([('category_id', 0), ('date_granularity', 'daily'),
+                           ('start_date', sd.date().isoformat()),
+                           ('end_date', ed.date().isoformat()),
+                           ('sort_by', 'spend')])
+        path = self.site['series_path'].format(self.brand['id'])
+        body = [{'country_code': self.site['country'],
+                 'channels': list(CHANNELS)}]
+        rows = self.series_rows(
+            self.request_json('POST', f'{path}?{query}', body))
+        self.frame = pd.DataFrame(rows, columns=FRAME_COLS)
+        if not rows:
+            logging.warning('No spend for {} in the window.'.format(
+                self.brand['name']))
+        return bool(rows)
 
     @staticmethod
     def get_url(html):
@@ -368,47 +454,27 @@ class PmApi(object):
                           creatives.index.max() + 1] = new_row
         return creatives
 
-    @staticmethod
-    def clean_date_df(df):
-        metric_names = ['Desktop Display ($)',
-                        'Mobile Display ($)', 'Mobile Video ($)',
-                        'Desktop Video ($)', 'Facebook ($)']
-        df = df.melt(
-            id_vars=[x for x in df.columns if x not in metric_names],
-            value_vars=[x for x in metric_names if x in df.columns],
-            var_name='Environment-variable',
-            value_name='Environment-value')
+    def get_file_as_df(self, temp_path=None, creative_df=None, ed=None):
+        """The last pull as a frame, creatives appended; ``temp_path``
+        is unused and kept for callers."""
+        frames = [df for df in (self.frame, creative_df)
+                  if df is not None and not df.empty]
+        if not frames:
+            return pd.DataFrame(columns=FRAME_COLS)
+        df = pd.concat(frames, ignore_index=True)
+        df[DATE_COL] = df[DATE_COL].fillna(value=ed)
         return df
 
-    def get_file_as_df(self, temp_path=None, creative_df=None, ed=None):
-        pd.DataFrame()
-        file_path = None
-        for x in range(1, 101):
-            try:
-                file = os.listdir(temp_path)
-                file_path = os.path.join(temp_path, file[0])
-            except (IndexError, FileNotFoundError):
-                logging.warning('Data not downloaded. Waiting. Attempt {}.'
-                                .format(x))
-                time.sleep(10)
-            else:
-                logging.info('Data downloaded.')
-                break
-        sheet_names = {'Date': self.site['sheet_daily'],
-                       'Target': self.site['sheet_publishers']}
-        date_df = pd.read_excel(file_path, sheet_name=sheet_names['Date'],
-                                parse_dates=True)
-        target_df = pd.read_excel(file_path, sheet_name=sheet_names['Target'],
-                                  parse_dates=True)
-        date_df = self.clean_date_df(date_df)
-        df = pd.concat([date_df, target_df, creative_df], ignore_index=True)
-        df['Date'].fillna(value=ed, inplace=True)
-        df.to_csv('tmp/output.csv', encoding='utf-8')
-        temp_file = os.path.join(temp_path, 'output.csv')
-        time.sleep(5)
-        df = utl.import_read_csv(temp_file)
-        shutil.rmtree(temp_path)
-        return df
+    def read_creatives(self):
+        """The creatives frame for a pull that asked for one; a failed
+        read costs the creatives, never the spend."""
+        if self.brand_tracker:
+            return pd.DataFrame()
+        try:
+            return self.create_creatives_df()
+        except ex.WebDriverException as e:
+            logging.warning('Creatives not read: {}'.format(e))
+            return pd.DataFrame()
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed, fields)
@@ -422,14 +488,15 @@ class PmApi(object):
             df = pd.DataFrame()
             title_list = self.pm_title.split(',')
             for title in title_list:
-                resp_title = self.create_report(sd, ed, title)
+                try:
+                    resp_title = self.create_report(sd, ed, title.strip())
+                except LookupError as e:
+                    logging.warning('{} Skipping it.'.format(e))
+                    continue
                 export_success = self.export_to_csv()
                 if not export_success:
                     continue
-                if self.brand_tracker:
-                    creative_df = pd.DataFrame()
-                else:
-                    creative_df = self.create_creatives_df()
+                creative_df = self.read_creatives()
                 tdf = self.get_file_as_df(self.temp_path, creative_df, ed)
                 tdf['Title'] = resp_title
                 df = pd.concat([df, tdf], ignore_index=True)
