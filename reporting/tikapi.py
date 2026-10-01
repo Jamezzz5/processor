@@ -42,6 +42,7 @@ class TikApi(object):
                'likes': 'ad_like',
                'shares': 'ad_share',
                'follows': 'ad_follows',
+               'reach': 'reach',
                'frequency': 'frequency',
                'real_time_app_install': 'real_time_app_install',
                'app_install': 'app_install',
@@ -65,6 +66,9 @@ class TikApi(object):
                'offline_subscribe_events': 'Subscriptions (offline)'}
     default_config_file_name = 'tikapi.json'
     id_page_size = 100
+    request_timeout = 120
+    request_attempts = 100
+    retry_pause = 60
     campaign_fields = ['campaign_id', 'campaign_name',
                        'campaign_automation_type']
     buying_type_groups = [['AUCTION', 'RESERVATION_RF'],
@@ -72,6 +76,24 @@ class TikApi(object):
     ad_id_col = 'ad_id'
     campaign_col = 'campaign_name'
     campaign_id_col = 'campaign_id'
+    api_field_options = (
+        ('No Reach',
+         'Skip the whole range campaign and ad group reach and the daily '
+         'advertiser reach'),)
+    reach_metrics = ['reach', 'frequency']
+    reach_max_days = 365
+    daily_reach_max_days = 30
+    reach_reports = [
+        {'data_level': 'AUCTION_CAMPAIGN', 'dimensions': ['campaign_id'],
+         'status': 'campaign_status', 'names': ['campaign_name'],
+         'suffix': ' - no_date - campaign_report'},
+        {'data_level': 'AUCTION_ADGROUP', 'dimensions': ['adgroup_id'],
+         'status': 'adgroup_status',
+         'names': ['campaign_name', 'campaign_id', 'adgroup_name'],
+         'suffix': ' - no_date - adgroup_report'},
+        {'data_level': 'AUCTION_ADVERTISER',
+         'dimensions': ['advertiser_id', 'stat_time_day'], 'status': '',
+         'names': [], 'suffix': ' - vendor_report', 'daily': True}]
 
     def __init__(self):
         self.config = None
@@ -130,34 +152,43 @@ class TikApi(object):
         self.headers = {'Access-Token': self.access_token,
                         'Content-Type': 'application/json'}
 
-    def make_request(self, url, method, headers=None, json_body=None, data=None,
-                     params=None, attempt=1):
-        if not json_body:
-            json_body = {}
-        if not headers:
-            headers = {}
-        if not data:
-            data = {}
-        if not params:
-            params = {}
-        if method == 'POST':
-            request_method = requests.post
-        else:
-            request_method = requests.get
-        try:
-            r = request_method(url, headers=headers, json=json_body, data=data,
-                               params=params)
-        except requests.exceptions.ConnectionError as e:
-            attempt += 1
-            if attempt > 100:
-                logging.warning('Could not connection with error: {}'.format(e))
-                r = None
-            else:
-                logging.warning('Connection error, pausing for 60s '
-                                'and retrying: {}'.format(e))
-                time.sleep(60)
-                r = self.make_request(url, method, headers, json_body, attempt)
-        return r
+    def make_request(self, url, method, headers=None, json_body=None,
+                     data=None, params=None):
+        """
+        Sends one request, retrying a dropped or unanswered connection.
+
+        A timeout is retried like a refused socket: TikTok answering
+        nothing for two minutes and TikTok refusing the connection both
+        used to end the whole import, since only the latter was caught.
+        Every retry resends the same params, so a report page is never
+        re-requested without them.
+
+        :param url: endpoint to request
+        :param method: 'GET' or 'POST'
+        :param headers: request headers
+        :param json_body: json body of a POST
+        :param data: form data of a POST
+        :param params: query params
+        :returns: the response, None once every attempt failed
+        """
+        request_method = requests.post if method == 'POST' else requests.get
+        kwargs = {'headers': headers or {}, 'json': json_body or {},
+                  'data': data or {}, 'params': params or {},
+                  'timeout': self.request_timeout}
+        for attempt in range(1, self.request_attempts + 1):
+            try:
+                return request_method(url, **kwargs)
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                logging.warning(
+                    'Connection error on attempt {} of {}, pausing for {}s '
+                    'and retrying: {}'.format(attempt, self.request_attempts,
+                                              self.retry_pause, e))
+                if attempt < self.request_attempts:
+                    time.sleep(self.retry_pause)
+        logging.warning('No response from {} after {} attempts.'.format(
+            url, self.request_attempts))
+        return None
 
     @staticmethod
     def date_check(sd, ed):
@@ -293,6 +324,158 @@ class TikApi(object):
             pattern, '', regex=True)
         return df
 
+    @property
+    def reach_cols(self):
+        """
+        Every column a reach row fills, so importhandler can find the reach
+        rows a merged raw file already holds and replace them.
+
+        :returns: list of suffixed reach and frequency column names
+        """
+        return ['{}{}'.format(x, report['suffix'])
+                for report in self.reach_reports for x in self.reach_metrics]
+
+    @staticmethod
+    def status_filter(status_field):
+        """
+        A filter keeping deleted objects, which a synchronous basic report
+        otherwise drops by defaulting the status to STATUS_NOT_DELETE.
+
+        :param status_field: ad_status, adgroup_status or campaign_status
+        :returns: the filtering param as a json string
+        """
+        return json.dumps([{'field_name': status_field,
+                            'filter_type': 'IN',
+                            'filter_value': json.dumps(['STATUS_ALL'])}])
+
+    def request_pages(self, sd, ed, params):
+        """
+        Requests every page of one report.
+
+        :param sd: start date, for logging
+        :param ed: end date, for logging
+        :param params: report params, whose page is set in place
+        :returns: dataframe of every page with dimensions and metrics
+            unpacked into columns
+        """
+        url = self.base_url + self.version + self.ad_report_url
+        df = pd.DataFrame()
+        for x in range(1, 1000):
+            logging.info('Getting data from {} to {}.  Page #{}.'
+                         ''.format(sd, ed, x))
+            params['page'] = x
+            r = self.make_request(url=url, method='GET', headers=self.headers,
+                                  params=params)
+            if not r:
+                logging.warning('No response for page #{}.'.format(x))
+                break
+            if ('data' not in r.json() or 'list' not in r.json()['data'] or
+                    not r.json()['data']['list']):
+                logging.warning('Data not in response as follows:\n'
+                                '{}'.format(r.json()))
+                break
+            tdf = pd.DataFrame(r.json()['data']['list'])
+            tdf = self.unpack_nested_dataframe(tdf)
+            df = pd.concat([df, tdf], ignore_index=True)
+            page_rem = r.json()['data']['page_info']['total_page']
+            if x >= page_rem:
+                break
+            logging.info('Data retrieved {} pages remaining'
+                         ''.format(page_rem - x))
+        return df
+
+    def request_reach(self, sd, ed):
+        """
+        Requests reach at every level: one row per campaign and per ad
+        group for the whole range, and one row per day for the advertiser.
+
+        :param sd: start date as YYYY-MM-DD
+        :param ed: end date as YYYY-MM-DD
+        :returns: dataframe of reach rows, their measures suffixed per level
+        """
+        frames = [self.request_reach_report(sd, ed, report)
+                  for report in self.reach_reports]
+        return pd.concat(frames, ignore_index=True)
+
+    def request_reach_report(self, sd, ed, report):
+        """
+        Requests one reach report and dates its rows so a date merge keeps
+        them: a whole range row to the start of the range, a daily row to
+        its own day.
+
+        Leaving the day dimension out is what makes TikTok count each
+        user once across the range, and it lifts the report's cap from
+        30 days to 365.  A longer range is skipped rather than split,
+        since the reach of two halves cannot be added back together.  The
+        daily advertiser report counts people once within each day, so
+        its 30 day blocks stack.  TikTok cannot narrow an advertiser row
+        to the card's campaigns, so a card with a campaign filter gets no
+        daily advertiser reach rather than the whole account's.
+
+        :param sd: start date as YYYY-MM-DD
+        :param ed: end date as YYYY-MM-DD
+        :param report: the reach_reports entry to pull
+        :returns: dataframe of the report's rows, their measures suffixed
+        """
+        start = dt.datetime.strptime(sd, '%Y-%m-%d')
+        end = dt.datetime.strptime(ed, '%Y-%m-%d')
+        if report.get('daily'):
+            if self.parse_campaign_filter():
+                logging.warning(
+                    'Skipping daily advertiser reach: TikTok cannot narrow '
+                    'it to the campaign filter {}.'.format(
+                        self.campaign_name_filter))
+                return pd.DataFrame()
+            blocks = utl.date_blocks(start, end, self.daily_reach_max_days)
+        else:
+            days = (end - start).days + 1
+            if days > self.reach_max_days:
+                logging.warning(
+                    'Skipping reach: TikTok counts each user once only '
+                    'within a single request of at most {} days, and {} to '
+                    '{} is {} days.'.format(self.reach_max_days, sd, ed,
+                                            days))
+                return pd.DataFrame()
+            blocks = [(start, end)]
+        frames = []
+        for block_sd, block_ed in blocks:
+            params = self.reach_params(block_sd.strftime('%Y-%m-%d'),
+                                       block_ed.strftime('%Y-%m-%d'), report)
+            frames.append(self.request_pages(params['start_date'],
+                                             params['end_date'], params))
+        df = pd.concat(frames, ignore_index=True)
+        df = df.rename(columns={
+            x: '{}{}'.format(x, report['suffix']) for x in self.reach_metrics})
+        if df.empty:
+            return df
+        if report.get('daily'):
+            return df.rename(columns={self.new_date: self.old_date})
+        df[self.old_date] = '{} 00:00:00'.format(sd)
+        return df
+
+    def reach_params(self, sd, ed, report):
+        """
+        The request params of one reach report.  A status filter keeps
+        deleted objects in a campaign or ad group report; the advertiser
+        level accepts no status filter and counts every ad.
+
+        :param sd: start date as YYYY-MM-DD
+        :param ed: end date as YYYY-MM-DD
+        :param report: the reach_reports entry to request
+        :returns: dict of request params
+        """
+        params = {'advertiser_id': self.advertiser_id,
+                  'report_type': 'BASIC',
+                  'data_level': report['data_level'],
+                  'dimensions': json.dumps(report['dimensions']),
+                  'metrics': json.dumps(report['names'] + self.reach_metrics),
+                  'start_date': sd,
+                  'end_date': ed,
+                  'page_size': 1000}
+        if report['status']:
+            params['filtering'] = self.status_filter(report['status'])
+        return params
+
     def request_and_get_data(self, sd, ed):
         """
         Requests data from TikTok Ads API and returns a dataframe.
@@ -302,35 +485,11 @@ class TikApi(object):
 
         :returns: dataframe
         """
-        url = self.base_url + self.version + self.ad_report_url
         self.params['start_date'] = sd
         self.params['end_date'] = ed
-        filters = [{'field_name': 'ad_status',
-                    'filter_type': 'IN',
-                    'filter_value': "[\"STATUS_ALL\"]"}]
-        self.params['filtering'] = json.dumps(filters)
-        for x in range(1, 1000):
-            logging.info('Getting data from {} to {}.  Page #{}.'
-                         ''.format(sd, ed, x))
-            self.params['page'] = x
-            r = self.make_request(url=url, method='GET', headers=self.headers,
-                                  params=self.params)
-            if not r:
-                logging.warning('No response for page #{}.'.format(x))
-                break
-            if ('data' not in r.json() or 'list' not in r.json()['data'] or
-                    not r.json()['data']['list']):
-                logging.warning('Data not in response as follows:\n'
-                                '{}'.format(r.json()))
-                break
-            df = pd.DataFrame(r.json()['data']['list'])
-            df = self.unpack_nested_dataframe(df)
-            self.df = pd.concat([self.df, df], ignore_index=True)
-            page_rem = r.json()['data']['page_info']['total_page']
-            if x >= page_rem:
-                break
-            logging.info('Data retrieved {} pages remaining'
-                         ''.format(page_rem - x))
+        self.params['filtering'] = self.status_filter('ad_status')
+        self.df = pd.concat([self.df, self.request_pages(sd, ed, self.params)],
+                            ignore_index=True)
         self.df = self.merge_ad_ids(self.df)
         self.df = self.clean_ad_name(self.df)
         cols = self.metrics.copy()
@@ -396,8 +555,30 @@ class TikApi(object):
             self.get_ids(ad_url=ad_url['ad_url'],
                          campaign_id=ad_url['campaign_id'])
         self.df = self.request_and_get_data(sd, ed)
+        if 'No Reach' not in (fields or []):
+            self.df = pd.concat([self.df, self.request_reach(sd, ed)],
+                                ignore_index=True)
         self.df = self.filter_df_on_campaign(self.df)
         return self.df
+
+    def get_reach(self, sd=None, ed=None, fields=None):
+        """
+        Only the reach rows, the whole range campaign and ad group rows
+        and the daily advertiser rows, for a caller whose delivery range
+        is shorter than the range reach has to cover: importhandler trims
+        a merge card's delivery to its merge window but pulls reach from
+        the card's start date.
+
+        :param sd: start of the reach range
+        :param ed: end of the reach range
+        :param fields: the card's api fields, read only for No Reach
+        :returns: dataframe of reach rows, their measures suffixed per level
+        """
+        if 'No Reach' in (fields or []):
+            return pd.DataFrame()
+        sd, ed = self.get_data_default_check(sd, ed)
+        self.set_headers()
+        return self.filter_df_on_campaign(self.request_reach(sd, ed))
 
     def request_campaigns(self, buying_types):
         """
