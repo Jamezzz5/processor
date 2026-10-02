@@ -1255,9 +1255,28 @@ class Analyze(object):
                     kwargs['only_new_files'] = False
                     kwargs['new_file_list'] = []
                 if is_pre_run or first_run or is_new_file:
-                    analysis_class(self).do_and_fix_analysis(**kwargs)
+                    self.do_and_fix_one_analysis(analysis_class, kwargs)
                     self.matrix = vm.VendorMatrix(display_log=False)
         return self.fixes_to_run
+
+    def do_and_fix_one_analysis(self, analysis_class, kwargs):
+        """
+        Run one check and its auto-fix, logging a failure instead of
+        raising it. Every fix is an optional repair of the processor's
+        config ahead of the run; one that trips on a data source's shape
+        must cost only that repair, not the import and export after it.
+
+        :param analysis_class: The AnalyzeBase subclass to run
+        :param kwargs: do_and_fix_analysis keyword arguments
+        :return: True when the check and its fix completed
+        """
+        try:
+            analysis_class(self).do_and_fix_analysis(**kwargs)
+        except Exception:
+            logging.exception('Skipped analysis fix {}; the run continues '
+                              'without it.'.format(analysis_class.name))
+            return False
+        return True
 
 
 class AnalyzeBase(object):
@@ -3238,7 +3257,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         :param df: The df to check media plan names from
         :return:
         """
-        if df.empty or vmc.vendorkey not in df.columns:
+        if df.empty or not set(self.cols).issubset(df.columns):
             return pd.DataFrame(columns=self.cols)
         df = df.groupby(self.cols).size()
         df = df.reset_index().rename(columns={0: self.tmp_col})
@@ -3364,7 +3383,7 @@ class CheckPlanPartnersNotDelivered(AnalyzeBase):
         :return: df of pending partners, one row per mpVendor
         """
         cols = [dctc.VEN]
-        if df.empty or vmc.vendorkey not in df.columns:
+        if df.empty or not {vmc.vendorkey, *cols}.issubset(df.columns):
             return pd.DataFrame(columns=cols)
         mp_vendors = df.loc[
             df[vmc.vendorkey] == vmc.api_mp_key, cols].drop_duplicates()
