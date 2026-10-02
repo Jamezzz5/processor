@@ -22,9 +22,19 @@ LINE_LEADING_PT = 3
 GLYPH_WIDTH_RATIO = .6
 MIN_ROW_EMU = 360000
 TILE_PAD_EMU = 100000
+TILE_VALUE_PT = 26
 TILE_VALUE_H_EMU = 450000
+TILE_HERO_PT = 36
+TILE_HERO_VALUE_H_EMU = 600000
 TILE_MIN_H_EMU = 1370000
 TILE_TEXT_PT = (11, 9, 8)
+
+
+def _hero_fits(tiles, width):
+    """Whether every tile value sets on one line at ``TILE_HERO_PT``."""
+    advance = TILE_HERO_PT * EMU_PER_PT * GLYPH_WIDTH_RATIO
+    return all(len(str(tile.get('value') or '')) * advance
+               <= width - TEXT_INSET_EMU for tile in tiles)
 
 
 def _tile_text_height(text, width, font_pt):
@@ -503,6 +513,9 @@ class GsApi(object):
     DECK_RULE_DARK = {'red': 0.290, 'green': 0.361, 'blue': 0.510}
     CONTENT_TOP_EMU = 980000
     CONTENT_TOP_DARK_EMU = 1180000
+    SUPPORTS_SUBHEAD = True
+    SUBHEAD_H_EMU = 380000
+    SUBHEAD_H_LIGHT_EMU = 220000
     TEMPLATE_LAYOUT_STEM = 'CUSTOM_14'
     TITLE_BLOCK_Y_EMU = 3950000
     TITLE_BLOCK_W_EMU = 5900000
@@ -525,6 +538,14 @@ class GsApi(object):
                 'ink': brand.get('ink') or self.DECK_INK,
                 'muted': brand.get('muted') or self.DECK_MUTED,
                 'card': brand.get('card') or self.DECK_CARD}
+
+    CONTINUED_SUFFIX = ' (continued)'
+
+    def _continued(self, title):
+        """``title`` marked as a continuation once, never twice."""
+        title = str(title or '')
+        return title if title.endswith(self.CONTINUED_SUFFIX) \
+            else f'{title}{self.CONTINUED_SUFFIX}'
 
     def content_top(self):
         """Where a content slide's body starts, below the chrome."""
@@ -766,7 +787,7 @@ class GsApi(object):
 
     def add_narrative_slide(self, presentation_id, slide_id, title, text,
                             brand=None, footer=None, page=None, rich=None,
-                            eyebrow=None):
+                            eyebrow=None, subhead=None):
         """Build a native text slide with optional bold and bullet ranges."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
@@ -775,7 +796,7 @@ class GsApi(object):
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title or '', colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         top = self.content_top()
         reqs += self._text_box_reqs(
             slide_id, body_id, body_text, cx, top,
@@ -808,14 +829,15 @@ class GsApi(object):
     def add_chart_slide(self, presentation_id, slide_id, title=None,
                         image_url=None, caption=None, notes=None,
                         img_w=None, img_h=None, brand=None, footer=None,
-                        page=None, caption_h=CAPTION_H_EMU, eyebrow=None):
+                        page=None, caption_h=CAPTION_H_EMU, eyebrow=None,
+                        subhead=None):
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         caption_y = self.PAGE_H_EMU - self.CAPTION_FOOT_EMU - caption_h
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         if image_url:
             box_y = self.content_top() if title else 300000
             box_h = (caption_y - box_y - self.CAPTION_GAP_EMU if caption
@@ -847,7 +869,7 @@ class GsApi(object):
                                caption=None, notes=None, brand=None,
                                footer=None, page=None,
                                linking_mode='NOT_LINKED_IMAGE',
-                               eyebrow=None):
+                               eyebrow=None, subhead=None):
         """Embed a native Sheets chart with the deck's content styling and
         optional caption."""
         colors = self._brand_colors(brand)
@@ -855,7 +877,7 @@ class GsApi(object):
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         box_y = self.content_top() if title else 300000
         box_h = self.PAGE_H_EMU - box_y - (800000 if caption else 420000)
         reqs.append({'createSheetsChart': {
@@ -964,8 +986,9 @@ class GsApi(object):
         return response.content
 
     def _content_chrome_reqs(self, slide_id, title, colors, footer=None,
-                             page=None, eyebrow=None):
-        """Build the heading and footer for light or dark content layouts."""
+                             page=None, eyebrow=None, subhead=None):
+        """Build the heading and footer for light or dark content layouts;
+        a ``subhead`` sits under a one-line title, above ``content_top``."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = []
         if title and self.is_dark:
@@ -975,14 +998,27 @@ class GsApi(object):
                     120000, cw, 220000, font_pt=8, bold=True,
                     align='START', color=colors['muted'],
                     font=self.DECK_EYEBROW_FONT)
+            title_h = 420000 if subhead else 780000
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}t', title, cx, 330000, cw, 780000,
+                slide_id, f'{slide_id}t', title, cx, 330000, cw, title_h,
                 font_pt=22, bold=True, align='START', color=colors['ink'])
+            if subhead:
+                reqs += self._text_box_reqs(
+                    slide_id, f'{slide_id}sh', subhead, cx, 330000 + title_h,
+                    cw, self.SUBHEAD_H_EMU, font_pt=12, align='START',
+                    color=colors['ink'])
         elif title:
+            title_h = 320000 if subhead else 520000
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}t', title, cx, 228600, cw, 520000,
+                slide_id, f'{slide_id}t', title, cx, 228600, cw, title_h,
                 font_pt=20, bold=True, align='START', color=colors['ink'])
-            reqs += self._rect_reqs(slide_id, f'{slide_id}rule', cx, 800100,
+            if subhead:
+                reqs += self._text_box_reqs(
+                    slide_id, f'{slide_id}sh', subhead, cx, 228600 + title_h,
+                    cw, self.SUBHEAD_H_LIGHT_EMU, font_pt=11, align='START',
+                    color=colors['ink'])
+            rule_y = 850000 if subhead else 800100
+            reqs += self._rect_reqs(slide_id, f'{slide_id}rule', cx, rule_y,
                                     cw, 22860, colors['accent'])
         if footer:
             reqs += self._text_box_reqs(
@@ -1033,15 +1069,15 @@ class GsApi(object):
 
     def add_stat_tile_slide(self, presentation_id, slide_id, title, tiles,
                             brand=None, footer=None, page=None,
-                            eyebrow=None):
+                            eyebrow=None, subhead=None):
         """Draw up to nine native KPI cards, continuing dense grids before
-        text would overlap."""
+        text would overlap; a single row sits centred, set larger."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         tiles = list(tiles or [])[:9]
         if tiles:
             cols = (3 if len(tiles) in (5, 6, 9)
@@ -1053,26 +1089,32 @@ class GsApi(object):
             cell_w = (cw - gap * (cols - 1)) // cols
             cell_h = (grid_h - gap * (n_rows - 1)) // n_rows
             pad, text_w = TILE_PAD_EMU, cell_w - 2 * TILE_PAD_EMU
+            value_pt, value_h = (
+                (TILE_HERO_PT, TILE_HERO_VALUE_H_EMU)
+                if n_rows == 1 and _hero_fits(tiles, text_w)
+                else (TILE_VALUE_PT, TILE_VALUE_H_EMU))
             blocks = [_tile_block_heights(tile, text_w) for tile in tiles]
-            required = max(2 * pad + TILE_VALUE_H_EMU + sum(block)
+            required = max(2 * pad + value_h + sum(block)
                            for block in blocks)
             if required > cell_h and n_rows > 1:
                 for start in range(0, len(tiles), cols):
                     self.add_stat_tile_slide(
                         presentation_id,
                         f'{slide_id}part{start}' if start else slide_id,
-                        f'{title} (continued)' if start else title,
+                        self._continued(title) if start else title,
                         tiles[start:start + cols], brand, footer, page,
-                        eyebrow)
+                        eyebrow, subhead=subhead)
                 return slide_id
             cell_h = min(cell_h, max(TILE_MIN_H_EMU, required))
+            if n_rows == 1:
+                grid_y += (grid_h - cell_h) // 2
             for i, tile in enumerate(tiles):
                 r, c = divmod(i, cols)
                 reqs += self._tile_reqs(
                     slide_id, f'{slide_id}c{i}', tile,
                     cx + c * (cell_w + gap), grid_y + r * (cell_h + gap),
-                    cell_w, cell_h, colors, pad, (26, *TILE_TEXT_PT),
-                    (TILE_VALUE_H_EMU, *blocks[i]))
+                    cell_w, cell_h, colors, pad, (value_pt, *TILE_TEXT_PT),
+                    (value_h, *blocks[i]))
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -1083,7 +1125,7 @@ class GsApi(object):
 
     def add_tile_rows_slide(self, presentation_id, slide_id, title, rows,
                             brand=None, footer=None, page=None,
-                            eyebrow=None):
+                            eyebrow=None, subhead=None):
         """Draw up to three labeled bands of six tiles, with captions and
         driver notes."""
         colors = self._brand_colors(brand)
@@ -1091,7 +1133,7 @@ class GsApi(object):
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         rows = [row for row in list(rows or [])[:self.TILE_ROW_MAX]
                 if row.get('tiles')]
         if not rows:
@@ -1135,7 +1177,8 @@ class GsApi(object):
     def add_chart_story_slide(self, presentation_id, slide_id, title,
                               image_url=None, img_w=None, img_h=None,
                               narrative=None, stats=None, brand=None,
-                              footer=None, page=None, eyebrow=None):
+                              footer=None, page=None, eyebrow=None,
+                              subhead=None):
         """Place a chart beside its narrative and above a stat bar. Without
         narrative, use the full width."""
         colors = self._brand_colors(brand)
@@ -1143,7 +1186,7 @@ class GsApi(object):
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         gap = 182880
         top = self.content_top()
         body_h = self.PAGE_H_EMU - top - 420000
@@ -1180,14 +1223,15 @@ class GsApi(object):
         return slide_id
 
     def add_columns_slide(self, presentation_id, slide_id, title, columns,
-                          brand=None, footer=None, page=None, eyebrow=None):
+                          brand=None, footer=None, page=None, eyebrow=None,
+                          subhead=None):
         """Draw up to four narrative cards with toned headings."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         columns = list(columns or [])[:4]
         if columns:
             gap, pad = 137160, 100000
@@ -1289,7 +1333,7 @@ class GsApi(object):
 
     def add_table_slide(self, presentation_id, slide_id, title, header,
                         body_rows, brand=None, caption=None, footer=None,
-                        page=None, eyebrow=None):
+                        page=None, eyebrow=None, subhead=None):
         """Build a native table, continuing rows across slides before
         wrapped text overflows."""
         colors = self._brand_colors(brand)
@@ -1297,7 +1341,7 @@ class GsApi(object):
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow)
+                                          eyebrow=eyebrow, subhead=subhead)
         ty = self.content_top()
         th = self.PAGE_H_EMU - ty - (800000 if caption else 420000)
         head_h = _table_row_height(header, cw, 11)
@@ -1308,8 +1352,9 @@ class GsApi(object):
                 self.add_table_slide(
                     presentation_id,
                     slide_id + (f'part{index}' if index else ''),
-                    f'{title} (continued)' if index else title, header,
-                    rows, brand, caption, footer, page, eyebrow)
+                    self._continued(title) if index else title, header,
+                    rows, brand, caption, footer, page, eyebrow,
+                    subhead=subhead)
             return slide_id
         th = min(th, head_h + sum(heights))
         reqs += self._table_reqs(slide_id, f'{slide_id}tbl', cx, ty, cw, th,
