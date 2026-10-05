@@ -402,6 +402,32 @@ class VendorMatrix(object):
                 'PercentDecode', 'PriceCalculate', 'StringReplaceAll']
 
 
+def raw_file_path(file_name, folder=utl.raw_path):
+    """Where a matrix file cell lives on disk, as ``set_full_filename``
+    reads it: under ``folder`` unless it carries a directory, sheet
+    suffix dropped."""
+    file_name = '' if pd.isna(file_name) else str(file_name)
+    file_name = file_name.split(utl.sheet_name_splitter)[0]
+    if not file_name or '/' in file_name:
+        return file_name
+    return os.path.join(folder, file_name)
+
+
+def move_named_file(old_path, new_path):
+    """Moves a renamed card's file with its row; an existing destination
+    is left alone so a rename never overwrites another card's data."""
+    if not old_path or not new_path or old_path == new_path:
+        return False
+    if not os.path.isfile(old_path):
+        return False
+    if os.path.exists(new_path):
+        logging.warning('%s already exists; leaving %s where it is.',
+                        new_path, old_path)
+        return False
+    shutil.move(old_path, new_path)
+    return True
+
+
 class ImportConfig(object):
     key = 'Key'
     config_file = vmc.apifile
@@ -467,6 +493,43 @@ class ImportConfig(object):
         else:
             file_name = search_val
         return file_name
+
+    @staticmethod
+    def replace_name_tail(value, old_name, new_name):
+        """Swaps a card's name only at the tail of a vendor key or file
+        stem, where ``str.replace`` also rewrote the API type of
+        ``API_Facebook_Facebook``."""
+        value = '' if pd.isna(value) else str(value)
+        stem, dot, ext = value.partition('.')
+        if not old_name:
+            stem = f'{stem}_{new_name}' if stem else new_name
+        elif stem == old_name:
+            stem = new_name
+        elif stem.endswith(f'_{old_name}'):
+            stem = f'{stem[:-len(old_name)]}{new_name}'
+        return f'{stem}{dot}{ext}'
+
+    def vendor_key_taken(self, vendor_key, own_idx=None):
+        """Whether a row other than ``own_idx`` already holds the key."""
+        if not vendor_key:
+            return False
+        rows = self.matrix_df[vmc.vendorkey] == vendor_key
+        if own_idx is not None:
+            rows &= self.matrix_df.index != own_idx
+        return bool(rows.any())
+
+    def rename_row_files(self, idx, old_name, new_name):
+        """Renames the row's raw and dictionary file cells at the tail and
+        moves each file that exists with it."""
+        for col, folder in [(vmc.filename, utl.raw_path),
+                            (vmc.filenamedict, utl.dict_path)]:
+            if col not in self.matrix_df.columns:
+                continue
+            old_file = self.matrix_df.loc[idx, col]
+            new_file = self.replace_name_tail(old_file, old_name, new_name)
+            self.matrix_df.loc[idx, col] = new_file
+            move_named_file(raw_file_path(old_file, folder),
+                            raw_file_path(new_file, folder))
 
     @staticmethod
     def get_config_file_value(config_file, name, nest=None):
@@ -642,33 +705,52 @@ class ImportConfig(object):
                             key_name)
         return vk
 
+    @staticmethod
+    def matching_import_dict(cur_import, import_dicts):
+        """The posted card carrying ``cur_import``'s vendor key, or None."""
+        vk = cur_import.get(vmc.vendorkey)
+        if not vk:
+            return None
+        matches = [x for x in import_dicts if x.get(vmc.vendorkey) == vk]
+        return matches[0] if matches else None
+
+    def drop_import_row(self, cur_import):
+        """Drops the matrix row of a card the page no longer posts."""
+        key_name = cur_import.get(vmc.vendorkey) or (
+            f'API_{cur_import[self.key]}_{cur_import[self.name]}')
+        drop_idx = self.matrix_df.index[
+            self.matrix_df[vmc.vendorkey] == key_name]
+        if not drop_idx.empty:
+            self.matrix_df = self.matrix_df.drop(drop_idx[0])
+
     def add_and_remove_from_vm(self, import_dicts, matrix=None):
+        """Aligns the API rows with the posted cards: a changed row updates
+        in place, a removed row drops, a new card adds. The key an update
+        answers is written back into its card first, or the add pass
+        misses the renamed row and grows a ``_1`` twin."""
         current_imports = self.get_current_imports(matrix=matrix)
         for cur_import in current_imports:
-            if cur_import not in import_dicts:
-                if (vmc.vendorkey in cur_import and (
-                        cur_import[vmc.vendorkey] in
-                        [x[vmc.vendorkey] for x in import_dicts])):
-                    import_dict = [x for x in import_dicts if x[vmc.vendorkey]
-                                   == cur_import[vmc.vendorkey]][0]
-                    self.update_import(import_dict, cur_import)
-                else:
-                    key_name = 'API_{}_{}'.format(cur_import[self.key],
-                                                  cur_import[self.name])
-                    drop_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
-                                              key_name].copy()
-                    drop_idx = drop_idx.index.values
-                    if drop_idx.tolist():
-                        drop_idx = drop_idx[0]
-                        self.matrix_df = self.matrix_df.drop(drop_idx)
-                        self.matrix_df.reset_index()
+            if cur_import in import_dicts:
+                continue
+            import_dict = self.matching_import_dict(cur_import, import_dicts)
+            if import_dict is None:
+                self.drop_import_row(cur_import)
+                continue
+            import_dict[vmc.vendorkey] = self.update_import(
+                import_dict, cur_import)
         self.add_imports_to_vm(import_dicts)
 
     def add_imports_to_vm(self, import_dicts):
+        """Adds a row for every posted card the matrix has no row for and
+        writes the matrix; a card whose key is already a row is skipped."""
         vks = []
         for import_dict in import_dicts:
             current_imports = self.get_current_imports(matrix=self.matrix)
             if import_dict in current_imports:
+                continue
+            if self.vendor_key_taken(import_dict.get(vmc.vendorkey)):
+                logging.warning('%s is already in the vendormatrix, not '
+                                'adding it again.', import_dict[vmc.vendorkey])
                 continue
             import_key = import_dict[self.key]
             account_id = import_dict[self.account_id]
@@ -684,16 +766,26 @@ class ImportConfig(object):
         return vks
 
     def update_import(self, import_dict, old_import_dict):
-        up_idx = self.matrix_df[self.matrix_df[vmc.vendorkey] ==
-                                import_dict[vmc.vendorkey]].copy()
-        up_idx = up_idx.index.values[0]
+        """Rewrites one matrix row from its card and returns the vendor key
+        it carries afterwards: a rename moves the name at the tail of the
+        key and file cells, and a name another row holds is refused."""
+        old_vk = import_dict[vmc.vendorkey]
+        up_idx = self.matrix_df.index[
+            self.matrix_df[vmc.vendorkey] == old_vk][0]
         for col in [vmc.startdate, vmc.apifields]:
             self.matrix_df.loc[up_idx, col] = import_dict[col]
-        if import_dict[self.name] != old_import_dict[self.name]:
-            for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
-                self.matrix_df.loc[up_idx, col] = \
-                    self.matrix_df.loc[up_idx, col].replace(
-                        old_import_dict[self.name], import_dict[self.name])
+        new_vk = old_vk
+        old_name = old_import_dict[self.name]
+        new_name = import_dict[self.name]
+        if new_name != old_name:
+            new_vk = self.replace_name_tail(old_vk, old_name, new_name)
+            if self.vendor_key_taken(new_vk, up_idx):
+                logging.warning('%s is already in the vendormatrix; keeping '
+                                'the name %s.', new_vk, old_name)
+                new_vk = old_vk
+            else:
+                self.rename_row_files(up_idx, old_name, new_name)
+                self.matrix_df.loc[up_idx, vmc.vendorkey] = new_vk
         file_name = self.matrix_df.loc[up_idx, vmc.apifile]
         if not ((import_dict[self.account_id] ==
                  old_import_dict[self.account_id]) and
@@ -704,6 +796,7 @@ class ImportConfig(object):
                 self.make_new_config(params, file_name,
                                      import_dict[self.account_id],
                                      import_dict[self.filter])
+        return new_vk
 
     def get_datasource(self, api_key):
         df = self.matrix_df[self.matrix_df[vmc.vendorkey] == api_key].copy()

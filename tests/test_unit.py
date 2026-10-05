@@ -77,6 +77,22 @@ requires_local_browser = pytest.mark.skipif(
     reason='headed browser unavailable on CI')
 
 
+class _RaisingFix(az.AnalyzeBase):
+    name = 'raising_fix'
+
+    def do_and_fix_analysis(self, only_new_files=False,
+                            new_file_list=None):
+        raise KeyError('mpPlacement Name')
+
+
+class _PassingFix(az.AnalyzeBase):
+    name = 'passing_fix'
+
+    def do_and_fix_analysis(self, only_new_files=False,
+                            new_file_list=None):
+        return None
+
+
 def _raise_read_timeout(*args, **kwargs):
     """Stand in for a driver that stopped answering its socket."""
     raise url_ex.ReadTimeoutError(None, 'url', 'Read timed out.')
@@ -3311,6 +3327,44 @@ class TestGaApi:
         assert api.r is None
 
 
+IMPORT_CONFIG_ROWS = ('Key,API_FILE,ID Parent,ID,ID Pre,Filter\n'
+                      'Facebook,fbconfig.json,,act_id,act_,campaign_filter\n')
+IMPORT_ROW_COLS = [vmc.vendorkey, vmc.filename, vmc.filenamedict,
+                   vmc.apifile, vmc.startdate, vmc.apifields]
+
+
+def _import_config(tmp_path, monkeypatch, rows):
+    """An ImportConfig over an in-memory matrix inside an empty processor
+    folder, so a rename can touch nothing but ``tmp_path``."""
+    os.makedirs(os.path.join(tmp_path, utl.config_path))
+    with open(os.path.join(tmp_path, vm.csv_full_file), 'w') as f:
+        f.write('')
+    ic_file = os.path.join(tmp_path, utl.config_path,
+                           vm.ImportConfig.file_name)
+    with open(ic_file, 'w') as f:
+        f.write(IMPORT_CONFIG_ROWS)
+    monkeypatch.chdir(tmp_path)
+    ic = vm.ImportConfig()
+    ic.matrix_df = pd.DataFrame(rows, columns=IMPORT_ROW_COLS)
+    ic.matrix.write = lambda: None
+    return ic
+
+
+def _import_row(vk, name):
+    """A Facebook matrix row named the way ``add_to_vm`` names one."""
+    tail = f'_{name}' if name else ''
+    return [vk, f'facebook{tail}.csv', f'facebook_dictionary{tail}.csv',
+            f'fbconfig{tail}.json', None, '']
+
+
+def _card(name, vk, key=vmc.api_fb_key, start_date=None):
+    """A posted Import card, spelt as ``get_import_processor_dict``."""
+    return {vm.ImportConfig.key: key, vm.ImportConfig.account_id: '',
+            vm.ImportConfig.filter: '', vmc.startdate: start_date,
+            vmc.apifields: '', vm.ImportConfig.name: name,
+            vmc.vendorkey: vk}
+
+
 class TestVendormatrix:
     def test_ad_cost_calculation(self):
         clicks = 10
@@ -3438,6 +3492,86 @@ class TestVendormatrix:
         })
         result = ic.get_default_vm_value('DBM', 'API')
         assert len(result) == 1
+
+    @pytest.mark.parametrize('value, old, new, expected', [
+        ('API_Facebook_Facebook', 'Facebook', 'Meta', 'API_Facebook_Meta'),
+        ('facebook_foo.csv', 'foo', 'bar', 'facebook_bar.csv'),
+        ('facebook_foo_1.csv', 'foo_1', 'bar', 'facebook_bar.csv'),
+        ('API_Facebook', '', 'bar', 'API_Facebook_bar'),
+        ('facebook.csv', '', 'bar', 'facebook_bar.csv'),
+        ('facebook_other.csv', 'foo', 'bar', 'facebook_other.csv'),
+        (np.nan, '', 'bar', 'bar'),
+    ])
+    def test_replace_name_tail(self, value, old, new, expected):
+        assert vm.ImportConfig.replace_name_tail(value, old, new) == expected
+
+    @pytest.mark.parametrize('old_vk, old_name, new_name, new_vk', [
+        ('API_Facebook_foo', 'foo', 'bar', 'API_Facebook_bar'),
+        ('API_Facebook_Facebook', 'Facebook', 'Meta', 'API_Facebook_Meta'),
+        ('API_Facebook', '', 'bar', 'API_Facebook_bar'),
+    ])
+    def test_rename_keeps_one_row_with_the_new_key(
+            self, tmp_path, monkeypatch, old_vk, old_name, new_name, new_vk):
+        """A renamed card posts its old vendor key, and the add pass used
+        to miss the renamed row and grow a ``_1`` twin."""
+        ic = _import_config(tmp_path, monkeypatch,
+                            [_import_row(old_vk, old_name)])
+        cards = [_card(new_name, old_vk)]
+        ic.add_and_remove_from_vm(cards, matrix=ic.matrix)
+        assert ic.matrix_df[vmc.vendorkey].tolist() == [new_vk]
+        assert cards[0][vmc.vendorkey] == new_vk
+        row = ic.matrix_df.iloc[0]
+        assert row[vmc.filename] == f'facebook_{new_name}.csv'
+        assert row[vmc.filenamedict] == f'facebook_dictionary_{new_name}.csv'
+        assert row[vmc.apifile] == _import_row(old_vk, old_name)[3]
+
+    def test_rename_refuses_a_collision(self, tmp_path, monkeypatch, caplog):
+        ic = _import_config(tmp_path, monkeypatch,
+                            [_import_row('API_Facebook_foo', 'foo'),
+                             _import_row('API_Facebook_bar', 'bar')])
+        cards = [_card('bar', 'API_Facebook_foo'),
+                 _card('bar', 'API_Facebook_bar')]
+        with caplog.at_level(logging.WARNING):
+            ic.add_and_remove_from_vm(cards, matrix=ic.matrix)
+        assert ic.matrix_df[vmc.vendorkey].tolist() == ['API_Facebook_foo',
+                                                        'API_Facebook_bar']
+        assert cards[0][vmc.vendorkey] == 'API_Facebook_foo'
+        assert 'API_Facebook_bar' in caplog.text
+
+    def test_add_imports_to_vm_skips_a_key_already_in_the_matrix(
+            self, tmp_path, monkeypatch):
+        ic = _import_config(tmp_path, monkeypatch,
+                            [_import_row('API_Facebook_foo', 'foo')])
+        card = _card('foo', 'API_Facebook_foo', start_date=dt.date(2024, 1, 1))
+        assert ic.add_imports_to_vm([card]) == []
+        assert ic.matrix_df[vmc.vendorkey].tolist() == ['API_Facebook_foo']
+
+    def test_rename_moves_the_raw_and_dictionary_files(self, tmp_path,
+                                                       monkeypatch, caplog):
+        ic = _import_config(tmp_path, monkeypatch,
+                            [_import_row('API_Facebook_foo', 'foo')])
+        raw = os.path.join(tmp_path, utl.raw_path)
+        dictionaries = os.path.join(tmp_path, utl.dict_path)
+        for folder, name in [(raw, 'facebook_foo.csv'),
+                             (dictionaries, 'facebook_dictionary_foo.csv')]:
+            os.makedirs(folder)
+            with open(os.path.join(folder, name), 'w') as f:
+                f.write('a,b\n')
+        vk = ic.update_import(_card('bar', 'API_Facebook_foo'),
+                              _card('foo', 'API_Facebook_foo'))
+        assert vk == 'API_Facebook_bar'
+        assert os.path.isfile(os.path.join(raw, 'facebook_bar.csv'))
+        assert not os.path.isfile(os.path.join(raw, 'facebook_foo.csv'))
+        assert os.path.isfile(
+            os.path.join(dictionaries, 'facebook_dictionary_bar.csv'))
+        with open(os.path.join(raw, 'facebook_baz.csv'), 'w') as f:
+            f.write('c,d\n')
+        with caplog.at_level(logging.WARNING):
+            ic.update_import(_card('baz', 'API_Facebook_bar'),
+                             _card('bar', 'API_Facebook_bar'))
+        assert os.path.isfile(os.path.join(raw, 'facebook_bar.csv'))
+        assert os.path.isfile(os.path.join(raw, 'facebook_baz.csv'))
+        assert 'facebook_baz.csv' in caplog.text
 
     def test_get_config_file_value_without_the_section(self):
         """An Adwords config that has lost its `adwords:` section reads
@@ -4078,6 +4212,27 @@ class TestAnalyze:
         place_analyze.do_analysis()
         rdf = place_analyze.fix_analysis(rdf, write=False)
         assert new_place in rdf[dctc.DICT_COL_VALUE].values
+
+    def test_placement_not_in_mp_without_plan_columns(self):
+        """Output that carries vendor keys but no placement column
+        (a processor whose dictionaries are not built yet) has nothing
+        to compare against the plan, rather than a KeyError."""
+        df = self.get_output_as_df(with_plan=True).drop(columns=[dctc.PN])
+        place_analyze = az.CheckPlacementsNotInMp(az.Analyze())
+        rdf = place_analyze.find_placements_not_in_mp(df)
+        assert rdf.empty
+        assert list(rdf.columns) == place_analyze.cols
+        df = df.drop(columns=[dctc.VEN])
+        partner_analyze = az.CheckPlanPartnersNotDelivered(az.Analyze())
+        assert partner_analyze.find_plan_partners_not_delivered(df).empty
+
+    def test_failed_analysis_fix_does_not_stop_the_run(self, caplog):
+        """A pre-run fix that raises is logged and skipped rather than
+        ending the processor run; one that completes reports so."""
+        aly = az.Analyze()
+        assert not aly.do_and_fix_one_analysis(_RaisingFix, {})
+        assert _RaisingFix.name in caplog.text
+        assert aly.do_and_fix_one_analysis(_PassingFix, {})
 
     def test_placement_not_in_mp_combine_underscore(self):
         """CombineColumnsUnderscore joins with underscore before
@@ -6145,6 +6300,71 @@ class TestDcApiCampaignFilter:
             df, api.campaign_name_filter, dcapi.DcApi.campaign_col,
             dcapi.DcApi.campaign_id_col)
         assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']
+
+
+class TestDcApiReachWindows:
+    """CM360 refuses a reach report over 93 days, which used to lose every
+    reach figure for a longer processor."""
+
+    @staticmethod
+    def get_ranges(start, end, no_date=False, reach_report=True):
+        api = dcapi.DcApi()
+        api.date_range = {'startDate': start, 'endDate': end}
+        return api.report_date_ranges(reach_report, no_date)
+
+    def test_dated_reach_reports_cover_every_day(self):
+        """A day's reach is the same in any window, so the dated reports
+        split the range and lose nothing."""
+        ranges = self.get_ranges('2026-01-01', '2026-06-30')
+        assert ranges == [
+            {'startDate': '2026-01-01', 'endDate': '2026-04-03'},
+            {'startDate': '2026-04-04', 'endDate': '2026-06-30'}]
+
+    def test_reach_totals_ask_for_the_last_93_days(self):
+        """A total counts people once across its window and cannot be
+        split, so it asks for the most CM360 allows, ending on the last
+        day."""
+        assert self.get_ranges('2026-01-01', '2026-06-30', no_date=True) == [
+            {'startDate': '2026-03-30', 'endDate': '2026-06-30'}]
+
+    def test_ranges_cm360_accepts_are_sent_unchanged(self):
+        assert self.get_ranges('2026-04-01', '2026-07-02') == [
+            {'startDate': '2026-04-01', 'endDate': '2026-07-02'}]
+        assert self.get_ranges('2026-01-01', '2026-06-30',
+                               reach_report=False) == [
+            {'startDate': '2026-01-01', 'endDate': '2026-06-30'}]
+        api = dcapi.DcApi()
+        api.date_range = {'relativeDateRange': 'LAST_60_DAYS'}
+        assert api.report_date_ranges(True, True) == [api.date_range]
+
+    def test_relative_year_is_split_from_yesterday(self):
+        api = dcapi.DcApi()
+        api.date_range = {'kind': 'dfareporting#dateRange',
+                          'relativeDateRange': 'LAST_365_DAYS'}
+        ranges = api.report_date_ranges(True, False)
+        yesterday = dt.date.today() - dt.timedelta(days=1)
+        assert len(ranges) == 4
+        assert ranges[-1]['endDate'] == str(yesterday)
+        assert ranges[0]['startDate'] == str(
+            yesterday - dt.timedelta(days=364))
+
+    def test_each_report_names_its_own_window(self):
+        """The import stamps each report's own window beside its figures,
+        so a capped total says which days it counts."""
+        api = dcapi.DcApi()
+        api.date_range = {'startDate': '2026-01-01', 'endDate': '2026-06-30'}
+        api.advertiser_id = '1'
+        window = api.report_date_ranges(True, True)[0]
+        criteria = api.create_report_criteria(
+            True, True, campaign_report=True, date_range=window)
+        assert criteria['dateRange'] == window
+        renamed = api.rename_cols(pd.DataFrame({
+            'Unique Reach: Impression Reach': [123]}), {
+                'reach_report': True, 'no_date': True,
+                'campaign_report': True, 'vendor_report': False,
+                'date_range': window})
+        suffix = ' - no_date - campaign_report'
+        assert renamed[f'CM360 startDate{suffix}'].iloc[0] == '2026-03-30'
 
 
 class TestTikApiAdIds:
