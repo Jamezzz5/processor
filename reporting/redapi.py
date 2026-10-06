@@ -184,31 +184,17 @@ class RedApi(object):
         """
         Filters the df down to the campaigns matching the campaign filter.
 
-        Matching is a literal (non regex) substring check.  When the filter
-        matches nothing the unfiltered df is returned instead, so a stale or
-        mistyped value surfaces as a warning rather than as empty data.
+        Hands the work to the shared helper, which keeps the unfiltered df
+        when nothing matches and records the match so the app can flag the
+        card, the same as the other apis.
 
         :param df: The dataframe of reporting data to filter
         :return: The filtered dataframe
         """
-        if not self.campaign_filter or df.empty:
+        if not self.campaign_filter:
             return df
-        if self.campaign_col not in df.columns:
-            logging.warning('{} not in df, not filtering on campaign.'.format(
-                self.campaign_col))
-            return df
-        campaigns = df[self.campaign_col].astype('U')
-        tdf = df[campaigns.str.contains(self.campaign_filter, regex=False)]
-        if tdf.empty:
-            logging.warning(
-                'Campaign filter did not match any of the {} campaigns '
-                'pulled, returning unfiltered data.  Campaigns: {}'.format(
-                    df[self.campaign_col].nunique(),
-                    sorted(df[self.campaign_col].dropna().unique().tolist())))
-            return df
-        logging.info('Filtered to {} of {} rows on campaign filter.'.format(
-            len(tdf), len(df)))
-        return tdf.reset_index(drop=True)
+        return utl.filter_df_on_campaign(df, [self.campaign_filter],
+                                         self.campaign_col)
 
     def check_config(self):
         for item in self.config_list:

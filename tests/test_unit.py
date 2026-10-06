@@ -6075,6 +6075,18 @@ class TestRedditCampaignFilter:
         api.campaign_filter = 'NoSuchCampaign'
         assert len(api.filter_df_on_campaign(self.get_df())) == 3
 
+    def test_filter_df_no_match_records_kept_all(self):
+        """The app flags the card from this record, so a no match has to
+        leave one behind."""
+        api = redapi.RedApi()
+        api.campaign_filter = 'NoSuchCampaign'
+        api.filter_df_on_campaign(self.get_df())
+        # Drain the utils module redapi itself holds, see
+        # test_scrape_quits_browser_on_error.
+        stat = redapi.utl.drain_campaign_filter_stats()
+        assert stat['kept_all']
+        assert stat['total'] == 3
+
     def test_filter_df_missing_column(self):
         api = redapi.RedApi()
         api.campaign_filter = 'GameA'
