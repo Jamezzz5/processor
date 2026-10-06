@@ -1897,7 +1897,7 @@ class TestUtils:
             self, monkeypatch):
         """The display reaches Chrome through the driver's environment
         only, and is given up on quit."""
-        stops, service = Mock(), Mock(return_value='service')
+        stops = Mock()
         chrome = Mock(return_value=types.SimpleNamespace(
             window_handles=['w0'], close=Mock(), quit=Mock()))
         monkeypatch.setattr(utl.VirtualDisplay, 'available',
@@ -1905,7 +1905,6 @@ class TestUtils:
         monkeypatch.setattr(utl.VirtualDisplay, 'start',
                             lambda self: setattr(self, 'name', ':99'))
         monkeypatch.setattr(utl.VirtualDisplay, 'stop', stops)
-        monkeypatch.setattr(utl.wd.chrome.service, 'Service', service)
         monkeypatch.setattr(utl.wd, 'Chrome', chrome)
         monkeypatch.setattr(utl.SeleniumWrapper, 'configure_browser',
                             Mock())
@@ -1913,10 +1912,33 @@ class TestUtils:
         sw = utl.SeleniumWrapper(capture=utl.CaptureOptions(headed=True))
         assert sw.headless is False
         assert '--headless=new' not in sw.co.arguments
-        assert service.call_args.kwargs['env']['DISPLAY'] == ':99'
+        service = chrome.call_args.kwargs['service']
+        assert service.env['DISPLAY'] == ':99'
         assert os.environ.get('DISPLAY') == before
         sw.quit()
         assert stops.call_count == 1 and sw.display is None
+
+    def test_chrome_service_waits_on_the_driver_not_its_port(
+            self, monkeypatch):
+        """Shutdown waits for chromedriver's process to exit and never
+        re-dials the port; a driver that will not exit is left for
+        ``stop()`` to terminate, and one already gone is not waited on."""
+        opened = Mock()
+        monkeypatch.setattr(utl.urllib.request, 'urlopen', opened)
+        service = utl.ChromeService()
+        service.is_connectable = Mock(side_effect=AssertionError)
+        service.process = Mock()
+        service.send_remote_shutdown_command()
+        assert opened.call_args.args[0].endswith('/shutdown')
+        service.process.wait.assert_called_once_with(
+            timeout=service.shutdown_timeout)
+        service.process.wait.side_effect = subprocess.TimeoutExpired(
+            'chromedriver', service.shutdown_timeout)
+        service.send_remote_shutdown_command()
+        opened.side_effect = OSError('refused')
+        service.process.wait.reset_mock()
+        service.send_remote_shutdown_command()
+        service.process.wait.assert_not_called()
 
     def test_virtual_display_reads_its_number(self, monkeypatch):
         """The display is the number Xvfb prints; one that prints none

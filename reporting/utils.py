@@ -14,6 +14,7 @@ import select
 import zipfile
 import logging
 import subprocess
+import urllib.request
 import requests
 import pandas as pd
 import numpy as np
@@ -933,6 +934,31 @@ class VirtualDisplay(object):
             logging.warning(f'Error stopping the virtual display: {e}')
 
 
+class ChromeService(wd.chrome.service.Service):
+    """chromedriver's service, waiting on its process to exit after
+    ``/shutdown`` rather than polling its port.
+
+    selenium 4.2 re-dials ``localhost`` with one-second sleeps between
+    tries, and on Windows each refused dial stalls a further second per
+    address, so every quit cost one to two seconds of waiting on a
+    driver that is gone in milliseconds. ``stop()`` still terminates
+    the process afterwards, so a driver that never exits is killed
+    exactly as before.
+    """
+    shutdown_timeout = 10
+
+    def send_remote_shutdown_command(self):
+        try:
+            urllib.request.urlopen(f'{self.service_url}/shutdown',
+                                   timeout=self.shutdown_timeout)
+        except OSError:
+            return
+        try:
+            self.process.wait(timeout=self.shutdown_timeout)
+        except subprocess.TimeoutExpired:
+            logging.warning('chromedriver did not exit after /shutdown.')
+
+
 class SeleniumWrapper(object):
     driver_path = 'drivers'
     selectize_xpath = 'selectized'
@@ -1394,10 +1420,8 @@ class SeleniumWrapper(object):
         if self.display:
             service_kwargs['env'] = dict(os.environ,
                                          DISPLAY=self.display.name)
-        if service_kwargs:
-            service = wd.chrome.service.Service(**service_kwargs)
-            return wd.Chrome(service=service, options=co)
-        return wd.Chrome(options=co)
+        return wd.Chrome(service=ChromeService(**service_kwargs),
+                         options=co)
 
     def open_display(self, headless):
         """The headless flag to launch with, starting a virtual display
