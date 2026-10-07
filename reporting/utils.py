@@ -657,6 +657,25 @@ def filter_df_on_col(df, col_name, col_val, exclude=False):
     return df
 
 
+def date_blocks(sd, ed, max_days):
+    """
+    Splits a range into consecutive blocks of at most max_days days, for
+    a report that answers one block at a time and whose rows are each a
+    single day's figure, so the blocks stack without double counting.
+
+    :param sd: Start of the range, a date or datetime
+    :param ed: End of the range, the same type as sd
+    :param max_days: Longest block, in days, the report answers at once
+    :return: List of (start, end) tuples covering sd to ed in order
+    """
+    blocks = []
+    for offset in range(0, (ed - sd).days + 1, max_days):
+        block_sd = sd + dt.timedelta(days=offset)
+        block_ed = min(block_sd + dt.timedelta(days=max_days - 1), ed)
+        blocks.append((block_sd, block_ed))
+    return blocks
+
+
 def parse_campaign_filter(campaign_filter):
     """
     Splits a campaign filter into ids to send to an api and values to match
@@ -678,7 +697,7 @@ def parse_campaign_filter(campaign_filter):
 
 
 def filter_df_on_campaign(df, values, name_col, id_col='',
-                          keep_on_no_match=True):
+                          keep_on_no_match=True, keep_cols=None):
     """
     Narrows a report to the campaigns a filter names.
 
@@ -686,7 +705,9 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
     on the name column, so a value only has to be right about the campaign
     and not about which of the two it is.  When the filter matches nothing
     the unfiltered df is kept, so a stale or mistyped value surfaces as a
-    warning rather than as empty data.
+    warning rather than as empty data.  A row filled in any of keep_cols
+    is measured above the campaign, so no campaign names it: it is kept
+    whatever the filter says and left out of the match stats.
 
     :param df: The downloaded report
     :param values: The filter values to match
@@ -696,6 +717,8 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
         unfiltered df.  False where the caller already knows the filter names
         a campaign in the report, so a non match means the campaign did not
         deliver rather than that the filter is wrong
+    :param keep_cols: Columns of the rows the filter never drops, such as
+        an account's daily reach
     :return: The filtered dataframe
     """
     if not values or df.empty:
@@ -707,6 +730,9 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
             'filter.  The report type may not support the campaign '
             'grouping.'.format(name_col, id_col))
         return df
+    keep = pd.Series(False, index=df.index)
+    for col in [x for x in (keep_cols or []) if x in df.columns]:
+        keep |= df[col].notna()
     mask = pd.Series(False, index=df.index)
     if name_col in cols:
         names = df[name_col].astype('U')
@@ -716,8 +742,9 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
         ids = df[id_col].astype('U').str.strip().str.replace(
             r'\.0$', '', regex=True)
         mask |= ids.isin(values)
+    mask &= ~keep
     tdf = df[mask]
-    record_campaign_filter_stats(values, tdf, df, cols[0],
+    record_campaign_filter_stats(values, tdf, df[~keep], cols[0],
                                  keep_on_no_match)
     if tdf.empty:
         logging.warning(
@@ -726,10 +753,10 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
                 values, df[cols[0]].nunique(),
                 'unfiltered' if keep_on_no_match else 'empty',
                 sorted(df[cols[0]].dropna().unique().tolist())))
-        return df if keep_on_no_match else tdf
+        return df if keep_on_no_match else df[keep].reset_index(drop=True)
     logging.info('Filtered to {} of {} rows on campaign filter.'.format(
         len(tdf), len(df)))
-    return tdf.reset_index(drop=True)
+    return df[mask | keep].reset_index(drop=True)
 
 
 campaign_filter_stats_file = 'campaign_filter_stats.json'

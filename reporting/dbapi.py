@@ -14,11 +14,17 @@ base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 
 
 class DbApi(object):
+    no_reach_field = 'No Reach'
     api_field_options = (
-        ('YOUTUBE', 'YouTube groupings and metrics'),)
+        ('YOUTUBE', 'YouTube groupings and metrics'),
+        (no_reach_field,
+         'Skip the whole range campaign, insertion order and line item '
+         'reach and the daily advertiser reach'))
     campaign_groups = ['FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME']
     campaign_col = 'Campaign'
     campaign_id_col = 'Campaign ID'
+    advertiser_id_col = 'Advertiser ID'
+    date_col = 'Date'
     base_groups = [
         'FILTER_ADVERTISER', 'FILTER_ADVERTISER_NAME',
         'FILTER_ADVERTISER_CURRENCY',
@@ -56,6 +62,33 @@ class DbApi(object):
         'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
         'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
         'METRIC_ACTIVE_VIEW_UNVIEWABLE_IMPRESSIONS']
+    reach_query_type = 'REACH'
+    reach_max_days = 93
+    reach_metrics = {
+        'METRIC_UNIQUE_REACH_IMPRESSION_REACH':
+            'Unique Reach: Impression Reach',
+        'METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY':
+            'Unique Reach: Average Impression Frequency',
+        'METRIC_UNIQUE_REACH_CLICK_REACH': 'Unique Reach: Click Reach',
+        'METRIC_UNIQUE_REACH_TOTAL_REACH': 'Unique Reach: Total Reach',
+        'METRIC_UNIQUE_REACH_VIEWABLE_IMPRESSION_REACH':
+            'Unique Reach: Viewable Impression Reach',
+        'METRIC_UNIQUE_REACH_AVERAGE_VIEWABLE_IMPRESSION_FREQUENCY':
+            'Unique Reach: Average Viewable Impression Frequency'}
+    reach_groups = ['FILTER_ADVERTISER', 'FILTER_ADVERTISER_NAME']
+    insertion_order_groups = ['FILTER_INSERTION_ORDER',
+                              'FILTER_INSERTION_ORDER_NAME']
+    line_item_groups = ['FILTER_LINE_ITEM', 'FILTER_LINE_ITEM_NAME']
+    reach_reports = [
+        {'groups': campaign_groups,
+         'suffix': ' - no_date - campaign_report'},
+        {'groups': campaign_groups + insertion_order_groups,
+         'suffix': ' - no_date - insertion_order_report'},
+        {'groups': (campaign_groups + insertion_order_groups +
+                    line_item_groups),
+         'suffix': ' - no_date - line_item_report'},
+        {'groups': ['FILTER_DATE'], 'suffix': ' - vendor_report',
+         'daily': True}]
     default_groups = base_groups
     default_metrics = base_metrics
 
@@ -133,7 +166,9 @@ class DbApi(object):
         Sets the report window, groupings and metrics from the api fields.
 
         The lists are rebuilt from the class level templates on each call so
-        a second api object does not inherit the last one's groupings.
+        a second api object does not inherit the last one's groupings.  The
+        query type is reset too, since one api object serves every DV360
+        card in an import and a reach pull leaves it on REACH.
 
         :param sd: The start date to pull from
         :param ed: The end date to pull to
@@ -146,11 +181,14 @@ class DbApi(object):
                               .total_seconds() * 1000)
         groups = list(self.base_groups)
         metrics = list(self.base_metrics)
+        self.query_type = 'STANDARD'
         if fields and 'YOUTUBE' in fields:
             groups = list(self.youtube_groups) + list(self.campaign_groups)
             metrics = list(self.youtube_metrics)
             self.query_type = 'YOUTUBE'
-        if fields and fields != ['nan']:
+        report_fields = [x for x in (fields or [])
+                         if x not in ('nan', self.no_reach_field)]
+        if report_fields:
             metrics += list(self.view_metrics)
         self.default_groups = groups
         self.default_metrics = metrics
@@ -174,6 +212,8 @@ class DbApi(object):
     def filter_df_on_campaign(self, keep_on_no_match=True):
         """
         Filters the downloaded report down to the campaigns filtered on.
+        The advertiser's daily reach rows name no campaign, so they are
+        kept.
 
         :param keep_on_no_match: Whether a filter that matches nothing keeps
             the unfiltered df
@@ -181,7 +221,8 @@ class DbApi(object):
         """
         self.df = utl.filter_df_on_campaign(
             self.df, self.campaign_name_filter, self.campaign_col,
-            self.campaign_id_col, keep_on_no_match=keep_on_no_match)
+            self.campaign_id_col, keep_on_no_match=keep_on_no_match,
+            keep_cols=self.daily_reach_cols)
         return self.df
 
     def refresh_client_token(self, extra):
@@ -225,7 +266,8 @@ class DbApi(object):
 
     def get_data(self, sd=None, ed=None, fields=None):
         """
-        Pulls the report, retrying once when a campaign id filter empties it.
+        Pulls the report, retrying once when a campaign id filter empties
+        it, then adds the whole range and daily reach rows under it.
 
         :param sd: The start date to pull from
         :param ed: The end date to pull to
@@ -244,6 +286,11 @@ class DbApi(object):
             self.query_id = None
             self.report_id = None
             self.get_report_df(sd, ed, fields)
+        df = self.df
+        if self.pull_reach(fields):
+            df = pd.concat([df, self.request_reach(sd, ed)],
+                           ignore_index=True)
+        self.df = df
         self.filter_df_on_campaign(keep_on_no_match=not retried)
         return self.df
 
@@ -261,10 +308,23 @@ class DbApi(object):
         if not report_created:
             logging.warning('Report was not created, check for errors.')
             return self.df
-        self.run_report()
+        self.download_report()
+        self.remove_footer()
+        return self.df
+
+    def download_report(self):
+        """
+        Runs the created query and downloads the report it produces.
+
+        :return: The downloaded dataframe, empty when the run or the
+            download failed
+        """
+        self.df = pd.DataFrame()
+        if not self.run_report():
+            logging.warning('Report did not run, check for errors.')
+            return self.df
         self.get_raw_data()
         self.check_empty_df()
-        self.remove_footer()
         return self.df
 
     def check_empty_df(self):
@@ -366,16 +426,57 @@ class DbApi(object):
         return self.r
 
     def run_report(self):
+        """
+        Runs the query, waiting out rate limits but not a rejection.
+
+        :return: Boolean of whether the api started a report
+        """
         run_url = self.create_run_url()
         for x in range(1, 101):
             self.r = self.make_request(run_url, method='post')
-            if 'metadata' in self.r.json().keys():
-                self.report_id = self.r.json()['key']['reportId']
-                break
-            else:
-                logging.warning('Rate limit exceeded. Pausing. '
-                                'Response: {}'.format(self.r.json()))
-                time.sleep(60)
+            response = self.r.json()
+            if 'metadata' in response:
+                self.report_id = response['key']['reportId']
+                return True
+            if self.request_rejected(response):
+                return False
+            logging.warning('Rate limit exceeded. Pausing. '
+                            'Response: {}'.format(response))
+            time.sleep(60)
+        return False
+
+    @staticmethod
+    def request_rejected(response):
+        """
+        Whether a response is an error no retry will fix, so a query the
+        api rejects does not hold the import for the whole retry budget.
+
+        :param response: The decoded json response
+        :return: Boolean of whether the request was rejected
+        """
+        error = response.get('error') if isinstance(response, dict) else None
+        if not error or error.get('code') not in (400, 404):
+            return False
+        logging.warning('Request rejected: {}'.format(error))
+        return True
+
+    def report_failed(self, response):
+        """
+        Whether a report will never produce a file to download.
+
+        :param response: The decoded json response for the report
+        :return: Boolean of whether the report failed
+        """
+        if self.request_rejected(response):
+            return True
+        if not isinstance(response, dict):
+            return False
+        metadata = response.get('metadata') or {}
+        status = metadata.get('status') or {}
+        if status.get('state') != 'FAILED':
+            return False
+        logging.warning('Report failed: {}'.format(metadata))
+        return True
 
     def get_raw_data(self):
         for x in range(1, 101):
@@ -388,6 +489,8 @@ class DbApi(object):
                 logging.info('Found report url, downloading.')
                 self.df = utl.import_read_csv(report_url, file_check=False,
                                               error_bad='warn')
+                return self.df
+            if self.report_failed(response):
                 return self.df
             logging.info('Report unavailable.  Attempt {}.  '
                          'Response: {}'.format(x, self.r.json()))
@@ -407,9 +510,19 @@ class DbApi(object):
             params['filters'].extend(campaign_filters)
         return params
 
-    def create_report_metadata(self, sd, ed):
-        report_name = '{}_{}_report'.format(
-            self.advertiser_id, self.campaign_id)
+    def create_report_metadata(self, sd, ed, name='report'):
+        """
+        Builds the query metadata: a custom date range, csv output and a
+        title naming the advertiser, the campaign filter and the report.
+
+        :param sd: The start date to pull from
+        :param ed: The end date to pull to
+        :param name: The report's name, telling a reach report's title
+            apart from the daily report's
+        :return: The metadata dict
+        """
+        report_name = '{}_{}_{}'.format(
+            self.advertiser_id, self.campaign_id, name)
         metadata = {
             'dataRange': {
                 "range": "CUSTOM_DATES",
@@ -427,3 +540,183 @@ class DbApi(object):
             'format': 'CSV',
             'title': report_name}
         return metadata
+
+    def pull_reach(self, fields):
+        """
+        Whether the card takes the whole range reach rows.
+
+        :param fields: The API_FIELDS values from the vendor matrix
+        :return: Boolean, False when the card carries No Reach
+        """
+        return self.no_reach_field not in (fields or [])
+
+    @property
+    def reach_cols(self):
+        """
+        Every column a reach row fills, so importhandler can find the reach
+        rows a merged raw file already holds and replace them.
+
+        :return: List of suffixed reach column names
+        """
+        return ['{}{}'.format(name, report['suffix'])
+                for report in self.reach_reports
+                for name in self.reach_metrics.values()]
+
+    @property
+    def daily_reach_cols(self):
+        """
+        The columns only an advertiser's daily reach row fills, which the
+        campaign filter has to leave alone.
+
+        :return: List of suffixed reach column names
+        """
+        return ['{}{}'.format(name, report['suffix'])
+                for report in self.reach_reports if report.get('daily')
+                for name in self.reach_metrics.values()]
+
+    def get_reach(self, sd=None, ed=None, fields=None):
+        """
+        Only the reach rows, the whole range rows and the daily advertiser
+        rows, for a caller whose delivery range is shorter than the range
+        reach has to cover: importhandler trims a merge card's delivery to
+        its merge window but pulls reach from the card's start date.
+
+        :param sd: Start of the reach range
+        :param ed: End of the reach range
+        :param fields: The card's api fields, read only for No Reach
+        :return: df of reach rows, their measures suffixed per level
+        """
+        if not self.pull_reach(fields):
+            return pd.DataFrame()
+        self.parse_campaign_filter()
+        self.df = self.request_reach(sd, ed)
+        return self.filter_df_on_campaign()
+
+    def request_reach(self, sd, ed):
+        """
+        Pulls one row per campaign, insertion order and line item for the
+        whole range, so DV360 counts each person once across it, and one
+        row per day for the advertiser.  The daily STANDARD report cannot
+        carry these metrics, which is why each level is a REACH query of
+        its own.
+
+        :param sd: Start of the range
+        :param ed: End of the range
+        :return: df of reach rows, their measures suffixed per level
+        """
+        sd, ed, _ = self.get_data_default_check(sd, ed, None)
+        df = pd.DataFrame()
+        for report in self.reach_reports:
+            tdf = self.request_reach_report(sd, ed, report)
+            df = pd.concat([df, tdf], ignore_index=True)
+        return df
+
+    def request_reach_report(self, sd, ed, report):
+        """
+        Pulls one level's reach, in as many queries as DV360 answers.
+
+        DV360 only deduplicates reach within 93 days and two blocks cannot
+        be added back together, so a longer range skips a whole range
+        report; the daily advertiser rows each cover one day, so they are
+        pulled in 93 day blocks whatever the range.  DV360 narrows the
+        advertiser's reach to the card's campaigns only when the filter
+        gives their ids, so a filter of names gets no daily advertiser
+        reach rather than the whole advertiser's.
+
+        :param sd: Start of the range
+        :param ed: End of the range
+        :param report: The reach_reports entry to pull
+        :return: df of the level's rows, their measures suffixed
+        """
+        days = (ed - sd).days + 1
+        if report.get('daily'):
+            if self.campaign_name_filter and not self.campaign_ids:
+                logging.warning(
+                    'Skipping daily advertiser reach: DV360 cannot narrow '
+                    'it to the campaign filter {}, which names campaigns '
+                    'rather than giving their ids.'.format(
+                        self.campaign_name_filter))
+                return pd.DataFrame()
+            blocks = utl.date_blocks(sd, ed, self.reach_max_days)
+        elif days > self.reach_max_days:
+            logging.warning(
+                'DV360 only counts people once within {} days, skipping '
+                'whole range reach for the {} day range.'.format(
+                    self.reach_max_days, days))
+            return pd.DataFrame()
+        else:
+            blocks = [(sd, ed)]
+        df = pd.DataFrame()
+        for block_sd, block_ed in blocks:
+            tdf = self.get_reach_report_df(block_sd, block_ed, report)
+            df = pd.concat([df, tdf], ignore_index=True)
+        return df
+
+    def get_reach_report_df(self, sd, ed, report):
+        """
+        Creates, runs and downloads one reach report.
+
+        A rejected query is skipped rather than retried without its
+        groupings, since the level is the point of the report.
+
+        :param sd: Start of the range
+        :param ed: End of the range
+        :param report: The reach_reports entry to pull
+        :return: The report's rows, empty when it failed
+        """
+        self.query_id = None
+        self.report_id = None
+        self.query_type = self.reach_query_type
+        self.default_groups = list(self.reach_groups) + list(report['groups'])
+        self.default_metrics = list(self.reach_metrics)
+        name = 'reach{}'.format(report['suffix'].replace(' - ', '_'))
+        metadata = self.create_report_metadata(sd, ed, name)
+        if not self.request_query(metadata):
+            logging.warning('Reach report {} was not created, check for '
+                            'errors.'.format(name))
+            return pd.DataFrame()
+        self.download_report()
+        self.remove_reach_footer()
+        if report.get('daily'):
+            return self.suffix_reach(self.df, report['suffix'])
+        return self.suffix_reach(self.df, report['suffix'], sd)
+
+    def remove_reach_footer(self):
+        """
+        Drops the footer under a reach report: the report time, date
+        range, groupings, notes and filters DV360 writes beneath the rows,
+        whose partner ids spill into the data columns.  Every reach report
+        is grouped by advertiser first, so a row is kept on its advertiser
+        id cell being a number rather than on every cell being filled,
+        since DV360 leaves a reach figure it cannot model blank instead of
+        writing 0.
+
+        :return: The rows of the advertiser
+        """
+        if self.advertiser_id_col not in self.df.columns:
+            return self.df
+        ids = self.df[self.advertiser_id_col].astype(str).str.strip()
+        ids = ids.str.replace(r'\.0$', '', regex=True)
+        self.df = self.df[ids.str.isdigit()].reset_index(drop=True)
+        return self.df
+
+    def suffix_reach(self, df, suffix, sd=None):
+        """
+        Names a reach report's measures apart from any other level's and
+        dates a whole range row to the start of the range, so a merge
+        keeps it; a daily row keeps its own day.  The suffix follows
+        dcapi's reach report columns.
+
+        :param df: One reach report's rows
+        :param suffix: The report's column suffix
+        :param sd: Start of the range the reach covers, None for a daily
+            report whose rows carry their day
+        :return: The rows renamed and dated
+        """
+        if df.empty:
+            return df
+        df = df.rename(columns={
+            x: '{}{}'.format(x, suffix) for x in self.reach_metrics.values()})
+        if sd is not None:
+            df[self.date_col] = sd.strftime('%Y/%m/%d')
+        return df
