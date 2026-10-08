@@ -250,6 +250,8 @@ class ImportHandler(object):
         df = pd.DataFrame()
         for vk in key_list:
             data_source = self.matrix.get_data_source(vk=vk)
+            if import_config.config_file not in data_source.params:
+                continue
             config_name = str(data_source.params[import_config.config_file])
             api_type = vk.split('_')[1]
             api_class = self.class_list[api_type]()
