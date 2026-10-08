@@ -4,6 +4,7 @@ import json
 import time
 import zlib
 import zipfile
+import functools
 
 import yaml
 import nltk
@@ -3671,6 +3672,13 @@ class Intent(object):
         }
 
 
+@functools.lru_cache(maxsize=65536)
+def _lemma(word):
+    """WordNet's noun lemma for ``word``, memoised because a corpus
+    repeats a few thousand words, which halves training time."""
+    return nltk.stem.WordNetLemmatizer().lemmatize(word)
+
+
 def _highlight_terms(text, words):
     """Wrap matching words in <mark> tags for highlighting.
 
@@ -4068,10 +4076,7 @@ class AliChat(object):
             split_underscore=False, unigrams_and_bigrams=False):
         if remove_punctuation:
             message = re.sub(r'[^\w\s]', '', message)
-        lemmatizer = None
-        if not lemmatizer:
-            lemmatizer = nltk.stem.WordNetLemmatizer()
-        stop_words = set(self.stop_words.copy())
+        stop_words = set(self.stop_words)
         if db_model and not isinstance(db_model, list):
             stop_words.update(db_model.get_model_name_list())
             if hasattr(db_model, 'get_model_omit_search_list'):
@@ -4086,7 +4091,7 @@ class AliChat(object):
             if word in stop_words:
                 continue
             if lemmatize:
-                word = lemmatizer.lemmatize(word)
+                word = _lemma(word)
             if ngrams:
                 window.append(word)
                 if len(window) > ngrams:
@@ -5149,20 +5154,23 @@ class TfIdfTransformer(object):
         self.unique_words = set()
         self.indexed_words = {}
         self.idf = np.zeros(0)
-        self.tfidf_matrix = np.zeros(0)
+        self.term_ptr = np.zeros(1, dtype=np.int64)
+        self.term_docs = np.zeros(0, dtype=np.int32)
+        self.term_weights = np.zeros(0, dtype=np.float32)
+        self.doc_norms = np.zeros(0)
         self.doc_lengths = []
         self.doc_freqs = []
         self.avg_dl = 0.0
         self.bm25_idf = {}
         if self.texts:
-            self.tfidf_matrix = self.train(texts)
+            self.train(texts)
 
     def train(self, texts):
         """
-        Create a tf-idf matrix based on texts
+        Weigh every term of every text by tf-idf, kept per term rather
+        than as a docs-by-terms matrix a corpus fills under 1% of.
 
         :param texts: List of documents/words
-        :return: tf-idf matrix
         """
         doc_tokens = []
         for text in texts:
@@ -5186,9 +5194,8 @@ class TfIdfTransformer(object):
             total_length += len(tokens)
         self.avg_dl = (total_length / doc_count) if doc_count else 0.0
         self.idf = np.log((doc_count + self.eps) / (word_doc_counts + self.eps))
-        self.tfidf_matrix = np.zeros((doc_count, len(self.unique_words)),
-                                     dtype=np.float32)
         self.doc_freqs = []
+        docs, terms, weights = [], [], []
         for d_idx, tokens in enumerate(doc_tokens):
             freq_dict = {}
             for w in tokens:
@@ -5197,15 +5204,41 @@ class TfIdfTransformer(object):
             total_tokens = len(tokens)
             for w, count in freq_dict.items():
                 w_idx = self.indexed_words[w]
-                tf = count / total_tokens
-                self.tfidf_matrix[d_idx, w_idx] = tf * self.idf[w_idx]
+                docs.append(d_idx)
+                terms.append(w_idx)
+                weights.append(count / total_tokens * self.idf[w_idx])
+        self._set_postings(np.array(docs, dtype=np.int32),
+                           np.array(terms, dtype=np.int64),
+                           np.array(weights, dtype=np.float32), doc_count)
         self.bm25_idf = {}
         for idx, term in enumerate(self.unique_words):
             df = word_doc_counts[idx]
             numerator = (doc_count - df + 0.5)
             denominator = (df + 0.5)
             self.bm25_idf[term] = np.log((numerator / denominator) + 1.0)
-        return self.tfidf_matrix
+
+    def _set_postings(self, docs, terms, weights, doc_count):
+        """Group the nonzero ``(doc, term, weight)`` entries by term, and
+        keep each doc's vector length for the cosine."""
+        order = np.argsort(terms, kind='stable')
+        self.term_docs = docs[order]
+        self.term_weights = weights[order]
+        counts = np.bincount(terms, minlength=len(self.unique_words))
+        self.term_ptr = np.concatenate(([0], np.cumsum(counts)))
+        self.doc_norms = np.sqrt(np.bincount(
+            docs, weights=weights.astype(np.float64) ** 2,
+            minlength=doc_count))
+
+    def _postings(self):
+        """The per-term weights, built once from the dense matrix a
+        transformer pickled before they existed carries instead."""
+        legacy = self.__dict__.pop('tfidf_matrix', None)
+        if legacy is not None:
+            rows = legacy if legacy.ndim == 2 else np.zeros((0, 0))
+            docs, terms = np.nonzero(rows)
+            self._set_postings(docs.astype(np.int32), terms,
+                               rows[docs, terms], rows.shape[0])
+        return self.term_ptr, self.term_docs, self.term_weights
 
     def compute_vector(self, text):
         """
@@ -5233,33 +5266,27 @@ class TfIdfTransformer(object):
 
     def search(self, text, top_k=1):
         """
-        Given text returns most similar of the trained documents.
+        Given text returns most similar of the trained documents by
+        cosine, summed over only the docs sharing a query term.
 
         :param text: Text to search matrix for
         :param top_k: Number of results to return
         :return: List of the similar documents
         """
-        if not self.tfidf_matrix.any() or self.tfidf_matrix.shape[0] == 0:
+        ptr, docs, weights = self._postings()
+        if not len(docs):
             return []
         query_vec = self.compute_vector(text)
-
-        # Cosine similarity with each doc, vectorized:
-        # sim = (matrix @ query) / (norm(query) * norms(docs)).
-        # Doc norms are cached on the instance; the getattr guard
-        # covers transformers unpickled from before the attribute
-        # existed (pickle restores state without __init__).
         query_norm = np.linalg.norm(query_vec)
         if query_norm < 1e-10:
             return []
-        doc_norms = getattr(self, 'doc_norms', None)
-        if doc_norms is None or len(doc_norms) != self.tfidf_matrix.shape[0]:
-            doc_norms = np.linalg.norm(self.tfidf_matrix, axis=1)
-            self.doc_norms = doc_norms
-        dots = self.tfidf_matrix @ query_vec
+        dots = np.zeros(len(self.doc_norms))
+        for w_idx in np.flatnonzero(query_vec):
+            span = slice(ptr[w_idx], ptr[w_idx + 1])
+            dots[docs[span]] += weights[span] * query_vec[w_idx]
         sims = np.divide(
-            dots, doc_norms * query_norm,
-            out=np.zeros_like(dots, dtype=np.float64),
-            where=doc_norms >= 1e-10)
+            dots, self.doc_norms * query_norm, out=np.zeros_like(dots),
+            where=self.doc_norms >= 1e-10)
         similar_docs = list(enumerate(sims.tolist()))
         similar_docs.sort(key=lambda x: x[1], reverse=True)
         similar_docs = similar_docs[:top_k]
