@@ -6495,19 +6495,28 @@ class TestTikApiAdIds:
         assert api.ad_id_list == []
 
 
-def test_slides_sparse_table_height_and_caption(monkeypatch):
-    """Sparse tables stay compact; dense tables continue onto more
-    slides before reaching the footer, each inside the page."""
+def _slides_api(monkeypatch):
+    """A ``GsApi`` and the list its Slides requests land in."""
     api = gsapi.GsApi.__new__(gsapi.GsApi)
     captured = []
     monkeypatch.setattr(api, 'slides_batch_update',
                         lambda pid, reqs: captured.extend(reqs))
+    return api, captured
+
+def test_slides_sparse_table_height_and_caption(monkeypatch):
+    """Sparse tables stay compact; dense tables continue onto more
+    slides before reaching the footer, each inside the page."""
+    api, captured = _slides_api(monkeypatch)
     api.add_table_slide('p', 'compact', 'Summary', ['Metric', 'Value'],
                         [['Cost', '$10']], caption='Evidence')
     table = next(req['createTable'] for req in captured
                  if 'createTable' in req)
     height = table['elementProperties']['size']['height']['magnitude']
-    assert height == 720000
+    width = table['elementProperties']['size']['width']['magnitude']
+    assert height == (gsapi._table_row_height(['Metric', 'Value'], width, 11)
+                      + gsapi._table_row_height(['Cost', '$10'], width, 10,
+                                                2))
+    assert height < gsapi.TILE_MIN_H_EMU
     caption = next(req['createShape'] for req in captured
                    if req.get('createShape', {}).get('objectId') == 'compactc')
     assert caption['elementProperties']['transform']['translateY'] == (
