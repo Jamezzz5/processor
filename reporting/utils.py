@@ -602,6 +602,8 @@ def db_df_translation(columns=None, proc_dir='', reverse=False):
 
 
 def rename_duplicates(old):
+    if not old:
+        return
     seen = []
     root_dict = {}
     for x in old:
