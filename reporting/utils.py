@@ -427,13 +427,34 @@ def first_last_adj(df, first_row, last_row):
     return df
 
 
+def normalize_ts_to_datetime(val, target_tz=None):
+    """
+    Normalize val to midnight. When target_tz is given, also matches val to the
+    provided timezone.
+
+    :param val:Value to modify
+    :param target_tz:Timezone to normalize val to, if any
+    :returns:Normalized datetime version of val
+    """
+    if isinstance(val, pd.Timestamp):
+        val = string_to_date(str(val))
+        val = pd.to_datetime(val, errors='coerce').normalize()
+    if target_tz is not None:
+        val = val.tz_convert(target_tz) if val.tzinfo \
+            else val.tz_localize(target_tz)
+    return val
+
+
 def date_removal(df, date_col_name, start_date, end_date):
     df = data_to_type(df, date_col=date_col_name)
+    tz = df[date_col_name].dt.tz
     if (end_date.date() is not pd.NaT and
             end_date.date() != dt.date.today()):
+        end_date = normalize_ts_to_datetime(end_date, tz)
         df = df[df[date_col_name] <= end_date]
     if (start_date.date() is not pd.NaT and
             start_date.date() != dt.date.today()):
+        start_date = normalize_ts_to_datetime(start_date, tz)
         df = df[df[date_col_name] >= start_date]
     return df
 

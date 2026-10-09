@@ -205,7 +205,9 @@ class SamApi(object):
                 results.append(row)
                 return pd.DataFrame(data=results, columns=vmc.r_cols)
             df = self.get_raw_data(report_id)
-            if int(camp_id) in df['Campaign ID'].to_list():
+            df_camp_ids = df['Campaign ID'].to_list() \
+                if 'Campaign ID' in df.columns else []
+            if int(camp_id) in df_camp_ids:
                 row = [acc_col, ' '.join([success_msg, str(camp_id)]), True]
                 results.append(row)
             else:
