@@ -89,6 +89,8 @@ def clicks_by_place_date(df):
 
 
 def net_cost(df, cost_col=vmc.cost, bm_col=dctc.BM, br_col=dctc.BR):
+    if br_col not in df:
+        df[br_col] = 0.0
     if df[bm_col] == BM_CPM or df[bm_col] == BM_AV:
         return df[br_col] * (df[vmc.impressions] / 1000)
     elif df[bm_col] == BM_CPC:
