@@ -1006,7 +1006,8 @@ class DataSource(object):
             return df
         delim_cols = self.get_delim_cols() \
             if 'StringReplaceAll' in str(self.p[vmc.transform]) else []
-        df = df_transform(df, self.p[vmc.transform], [], delim_cols)
+        df = df_transform(df, self.p[vmc.transform], [], delim_cols,
+                          vendor_key=self.key)
         df = full_placement_creation(df, self.key, dctc.FPN,
                                      self.p[vmc.fullplacename])
         return df
@@ -1178,17 +1179,20 @@ def vm_update_rule_check(vm, vm_col):
     return vm
 
 
-def df_transform(df, transform, skip_transforms=[], delim_cols=None):
+def df_transform(df, transform, skip_transforms=(), delim_cols=None,
+                 vendor_key=None):
+    """Apply transforms with optional source identity for raw translations."""
     if str(transform) == 'nan':
         return df
     split_transform = transform.split(':::')
     for t in split_transform:
         if t.split('::')[0] not in skip_transforms:
-            df = df_single_transform(df, t, delim_cols)
+            df = df_single_transform(df, t, delim_cols, vendor_key)
     return df
 
 
-def df_single_transform(df, transform, delim_cols=None):
+def df_single_transform(df, transform, delim_cols=None, vendor_key=None):
+    """Keep source identity out of the frame except during translation."""
     if str(transform) == 'nan':
         return df
     transform = transform.split('::')
@@ -1238,7 +1242,8 @@ def df_single_transform(df, transform, delim_cols=None):
                                         skip_transforms=['Merge',
                                                          'MergeReplace',
                                                          'MergeReplaceExclude'],
-                                        delim_cols=delim_cols)
+                                        delim_cols=delim_cols,
+                                        vendor_key=ds.key)
         if merge_df is None or merge_df.empty:
             logging.error('Unable to execute merge transform. Requested merge '
                           'source {} returned empty dataframe.'
@@ -1343,7 +1348,16 @@ def df_single_transform(df, transform, delim_cols=None):
     elif transform_type == vmc.transform_raw_translate:
         tc = dct.DictTranslationConfig()
         tc.read(dctc.filename_tran_config)
-        df = tc.apply_translation_to_dict(df)
+        if vendor_key is None:
+            df = tc.apply_translation_to_dict(df)
+        else:
+            original = df.get(vmc.vendorkey)
+            df[vmc.vendorkey] = vendor_key
+            df = tc.apply_translation_to_dict(df)
+            if original is None:
+                df = df.drop(columns=vmc.vendorkey)
+            else:
+                df[vmc.vendorkey] = original
     elif transform_type == 'AddColumn':
         if len(transform) < 3:
             logging.warning('Not formed correctly: {}'.format(transform))

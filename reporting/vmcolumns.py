@@ -357,8 +357,16 @@ api_partner_name_translation = {
     api_azu_key: ['Azure'],
     api_pix_key: ['Pixalate'],
     api_ias_key: ['Integral'],
-    api_asa_key: ['Apple Search Ads', 'ASA', 'Apple']
+    api_asa_key: ['Apple Search Ads', 'ASA', 'Apple'],
+    api_rawx_key: ['Xbox', 'XBL'],
+    api_ytd_key: ['YouTube'],
+    api_ste_key: ['Steam']
 }
+
+unconstrained_translate_keys = (
+    api_dc_key, api_szk_key, api_ga_key, api_af_key, api_aj_key,
+    api_dv_key, api_ias_key, api_pix_key, api_mp_key, api_ss_key,
+)
 
 top_apis = [
     api_aw_key,

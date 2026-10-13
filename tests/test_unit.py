@@ -4233,7 +4233,7 @@ class TestAnalyze:
         place_analyze.aly.df = df
         place_analyze.do_analysis()
         rdf = place_analyze.fix_analysis(rdf, write=False)
-        assert new_place in rdf[dctc.DICT_COL_VALUE].values
+        assert rdf.empty, 'An unlabelled Rawfile has no safe plan partner.'
 
     def test_placement_not_in_mp_without_plan_columns(self):
         """Output that carries vendor keys but no placement column

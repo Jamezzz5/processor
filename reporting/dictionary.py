@@ -472,6 +472,7 @@ class Dict(object):
                     logging.warning(msg)
 
     def write(self, df=None):
+        """Persist dictionary rows and report a refused filesystem write."""
         logging.debug('Writing {}'.format(self.filename))
         if df is None:
             df = self.data_dict
@@ -480,6 +481,8 @@ class Dict(object):
         except IOError:
             logging.warning('{} could not be opened.  This dictionary'
                             'was not saved.'.format(self.filename))
+            return False
+        return True
 
     def clean(self):
         self.data_dict = utl.data_to_type(self.data_dict, dctc.floatcol,
@@ -499,6 +502,7 @@ class RelationalConfig(object):
         self.key_list = []
 
     def write(self, df, configfile):
+        """Persist relation configuration, returning whether it was saved."""
         logging.debug('Writing {}'.format(configfile))
         try:
             df.to_csv(os.path.join(self.csv_path, configfile), index=False,
@@ -506,6 +510,8 @@ class RelationalConfig(object):
         except IOError:
             logging.warning('{} could not be opened.  This dictionary'
                             'was not saved.'.format(configfile))
+            return False
+        return True
 
     def read(self, configfile):
         self.df = utl.import_read_csv(configfile, self.csv_path)
@@ -612,6 +618,7 @@ class DictRelational(object):
         return tdf
 
     def write(self, df):
+        """Persist relation rows and report a refused filesystem write."""
         logging.debug('Writing {}'.format(self.filename))
         if df is None:
             df = self.df
@@ -620,6 +627,8 @@ class DictRelational(object):
         except IOError:
             logging.warning('{} could not be opened.  This dictionary '
                             'was not saved.'.format(self.filename))
+            return False
+        return True
 
     def apply_to_dict(self, data_dict):
         if self.key not in data_dict.columns:
@@ -695,6 +704,8 @@ class DictConstantConfig(object):
         except IOError:
             logging.warning('{} could not be opened.  This dictionary'
                             'was not saved.'.format(configfile))
+            return False
+        return True
 
     def filter_df(self):
         self.df[dctc.DICT_COL_DICTNAME] = (self.df[dctc.DICT_COL_DICTNAME]
@@ -736,6 +747,7 @@ class DictTranslationConfig(object):
                                 self.df[col])
 
     def write(self, df, configfile):
+        """Persist translations, returning whether the write succeeded."""
         logging.debug('Writing {}'.format(configfile))
         try:
             df.to_csv(os.path.join(self.csv_path, configfile), index=False,
@@ -743,6 +755,8 @@ class DictTranslationConfig(object):
         except IOError:
             logging.warning('{} could not be opened.  This dictionary '
                             'was not saved.'.format(configfile))
+            return False
+        return True
 
     def get(self):
         return self.df
