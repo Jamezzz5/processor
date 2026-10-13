@@ -68,11 +68,13 @@ level_params = {AdsInsights.Level.campaign: campaign_params,
                 AdsInsights.Level.adset: adset_params,
                 AdsInsights.Level.account: account_params}
 
+vendor_name = 'Meta'
 reach_metrics = ['reach', 'frequency']
 reach_reports = [
-    (AdsInsights.Level.campaign, ' - no_date - campaign_report', 'all_days'),
-    (AdsInsights.Level.adset, ' - no_date - adset_report', 'all_days'),
-    (AdsInsights.Level.account, ' - vendor_report', 1)]
+    (AdsInsights.Level.campaign, utl.reach_suffix('campaign'), 'all_days'),
+    (AdsInsights.Level.adset, utl.reach_suffix('adset'), 'all_days'),
+    (AdsInsights.Level.account,
+     utl.reach_suffix(utl.platform_report_level, daily=True), 1)]
 
 col_name_dic = {'date_start': 'Reporting Starts',
                 'date_stop': 'Reporting Ends',
@@ -110,7 +112,7 @@ class FbApi(object):
         ('Total', 'One row for the whole range, not one per day'),
         ('Adset', 'Ad set level'),
         ('Campaign', 'Campaign level'),
-        ('No Reach',
+        (utl.no_reach_field,
          'Skip the whole range campaign and ad set reach and the daily '
          'account reach'),
         ('Screenshots', 'Capture ad screenshots'))
@@ -126,6 +128,8 @@ class FbApi(object):
         self.access_token = None
         self.act_id = None
         self.campaign_filter = None
+        self.placement = utl.placement_spec(col_name_dic['ad_name'],
+                                            vendor_name)
         self.config_list = []
         self.date_lists = None
         self.field_lists = None
@@ -226,7 +230,7 @@ class FbApi(object):
                 level = AdsInsights.Level.campaign
             if item == 'Screenshots':
                 screenshots = True
-            if item == 'No Reach':
+            if item == utl.no_reach_field:
                 reports = []
         return fields, breakdowns, action_breakdowns, attribution_window,\
             time_breakdown, level, screenshots, reports
@@ -276,24 +280,29 @@ class FbApi(object):
 
         :return: List of suffixed reach and frequency column names
         """
-        return ['{}{}'.format(col_name_dic[x], report[1])
-                for report in reach_reports for x in reach_metrics]
+        return utl.reach_columns([col_name_dic[x] for x in reach_metrics],
+                                 [report[1] for report in reach_reports])
 
-    @staticmethod
-    def suffix_reach(df, suffix):
+    def suffix_reach(self, df, suffix):
         """
         Names a reach report's measures apart from the delivery rows so
-        neither overwrites the other.  The suffix follows dcapi's reach
-        report columns.
+        neither overwrites the other, and gives its rows the card's
+        placement, in the card's placement column under the key the api
+        reports it by.  The filter the request was narrowed to stands
+        in while the card's campaign is not known.
 
         :param df: One completed async job's rows
         :param suffix: The reach report's column suffix, blank for delivery
-        :return: The rows with reach and frequency renamed
+        :return: The rows with reach and frequency renamed and placed
         """
         if not suffix:
             return df
-        return df.rename(columns={
-            x: '{}{}'.format(col_name_dic[x], suffix) for x in reach_metrics})
+        df = utl.suffix_reach(
+            df, {x: col_name_dic[x] for x in reach_metrics}, suffix)
+        raw_cols = {v: k for k, v in col_name_dic.items()}
+        column = self.placement['column']
+        spec = dict(self.placement, column=raw_cols.get(column, column))
+        return utl.name_reach_rows(df, spec, self.campaign_filter or '')
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):

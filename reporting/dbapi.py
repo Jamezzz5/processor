@@ -14,7 +14,8 @@ base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 
 
 class DbApi(object):
-    no_reach_field = 'No Reach'
+    no_reach_field = utl.no_reach_field
+    vendor_name = 'DV360'
     api_field_options = (
         ('YOUTUBE', 'YouTube groupings and metrics'),
         (no_reach_field,
@@ -81,14 +82,14 @@ class DbApi(object):
     line_item_groups = ['FILTER_LINE_ITEM', 'FILTER_LINE_ITEM_NAME']
     reach_reports = [
         {'groups': campaign_groups,
-         'suffix': ' - no_date - campaign_report'},
+         'suffix': utl.reach_suffix('campaign')},
         {'groups': campaign_groups + insertion_order_groups,
-         'suffix': ' - no_date - insertion_order_report'},
+         'suffix': utl.reach_suffix('insertion_order')},
         {'groups': (campaign_groups + insertion_order_groups +
                     line_item_groups),
-         'suffix': ' - no_date - line_item_report'},
-        {'groups': ['FILTER_DATE'], 'suffix': ' - vendor_report',
-         'daily': True}]
+         'suffix': utl.reach_suffix('line_item')},
+        {'groups': ['FILTER_DATE'], 'daily': True,
+         'suffix': utl.reach_suffix(utl.platform_report_level, daily=True)}]
     default_groups = base_groups
     default_metrics = base_metrics
 
@@ -103,6 +104,7 @@ class DbApi(object):
         self.advertiser_id = None
         self.campaign_id = None
         self.campaign_ids = []
+        self.placement = utl.placement_spec('Creative', self.vendor_name)
         self.campaign_name_filter = []
         self.query_id = None
         self.report_id = None
@@ -287,7 +289,7 @@ class DbApi(object):
             self.report_id = None
             self.get_report_df(sd, ed, fields)
         df = self.df
-        if self.pull_reach(fields):
+        if utl.pull_reach(fields):
             df = pd.concat([df, self.request_reach(sd, ed)],
                            ignore_index=True)
         self.df = df
@@ -541,15 +543,6 @@ class DbApi(object):
             'title': report_name}
         return metadata
 
-    def pull_reach(self, fields):
-        """
-        Whether the card takes the whole range reach rows.
-
-        :param fields: The API_FIELDS values from the vendor matrix
-        :return: Boolean, False when the card carries No Reach
-        """
-        return self.no_reach_field not in (fields or [])
-
     @property
     def reach_cols(self):
         """
@@ -558,9 +551,8 @@ class DbApi(object):
 
         :return: List of suffixed reach column names
         """
-        return ['{}{}'.format(name, report['suffix'])
-                for report in self.reach_reports
-                for name in self.reach_metrics.values()]
+        return utl.reach_columns(list(self.reach_metrics.values()),
+                                 [x['suffix'] for x in self.reach_reports])
 
     @property
     def daily_reach_cols(self):
@@ -570,9 +562,9 @@ class DbApi(object):
 
         :return: List of suffixed reach column names
         """
-        return ['{}{}'.format(name, report['suffix'])
-                for report in self.reach_reports if report.get('daily')
-                for name in self.reach_metrics.values()]
+        return utl.reach_columns(
+            list(self.reach_metrics.values()),
+            [x['suffix'] for x in self.reach_reports if x.get('daily')])
 
     def get_reach(self, sd=None, ed=None, fields=None):
         """
@@ -586,7 +578,7 @@ class DbApi(object):
         :param fields: The card's api fields, read only for No Reach
         :return: df of reach rows, their measures suffixed per level
         """
-        if not self.pull_reach(fields):
+        if not utl.pull_reach(fields):
             return pd.DataFrame()
         self.parse_campaign_filter()
         self.df = self.request_reach(sd, ed)
@@ -628,21 +620,16 @@ class DbApi(object):
         :param report: The reach_reports entry to pull
         :return: df of the level's rows, their measures suffixed
         """
-        days = (ed - sd).days + 1
         if report.get('daily'):
-            if self.campaign_name_filter and not self.campaign_ids:
-                logging.warning(
-                    'Skipping daily advertiser reach: DV360 cannot narrow '
-                    'it to the campaign filter {}, which names campaigns '
-                    'rather than giving their ids.'.format(
-                        self.campaign_name_filter))
+            names = [] if self.campaign_ids else self.campaign_name_filter
+            if utl.platform_reach_blocked(
+                    self.vendor_name, names, level='advertiser',
+                    reason=', which names campaigns rather than giving '
+                           'their ids'):
                 return pd.DataFrame()
             blocks = utl.date_blocks(sd, ed, self.reach_max_days)
-        elif days > self.reach_max_days:
-            logging.warning(
-                'DV360 only counts people once within {} days, skipping '
-                'whole range reach for the {} day range.'.format(
-                    self.reach_max_days, days))
+        elif not utl.reach_range_fits(sd, ed, self.reach_max_days,
+                                      self.vendor_name):
             return pd.DataFrame()
         else:
             blocks = [(sd, ed)]
@@ -702,21 +689,20 @@ class DbApi(object):
 
     def suffix_reach(self, df, suffix, sd=None):
         """
-        Names a reach report's measures apart from any other level's and
-        dates a whole range row to the start of the range, so a merge
-        keeps it; a daily row keeps its own day.  The suffix follows
-        dcapi's reach report columns.
+        Names a reach report's measures apart from any other level's,
+        dates a whole range row to the start of the range so a merge
+        keeps it, and gives the rows the card's placement, the campaign
+        ids the report was narrowed to standing in while the card's
+        campaign is not known.
 
         :param df: One reach report's rows
         :param suffix: The report's column suffix
         :param sd: Start of the range the reach covers, None for a daily
             report whose rows carry their day
-        :return: The rows renamed and dated
+        :return: The rows renamed, dated and placed
         """
-        if df.empty:
-            return df
-        df = df.rename(columns={
-            x: '{}{}'.format(x, suffix) for x in self.reach_metrics.values()})
-        if sd is not None:
-            df[self.date_col] = sd.strftime('%Y/%m/%d')
-        return df
+        date = sd.strftime('%Y/%m/%d') if sd is not None else ''
+        df = utl.suffix_reach(df, list(self.reach_metrics.values()), suffix,
+                              self.date_col, date)
+        return utl.name_reach_rows(df, self.placement,
+                                   ','.join(self.campaign_ids))

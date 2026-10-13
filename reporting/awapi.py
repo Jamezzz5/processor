@@ -144,7 +144,7 @@ class AwApiReportBuilder(object):
 
 
 class AwApi(object):
-    no_reach_field = 'No Reach'
+    no_reach_field = utl.no_reach_field
     api_field_options = (
         ('Conversions', 'Conversion metrics in place of the defaults'),
         ('Campaign', 'Campaign level report'),
@@ -159,10 +159,11 @@ class AwApi(object):
     refresh_url = 'https://www.googleapis.com/oauth2/v3/token'
     access_url = '{}:listAccessibleCustomers'.format(base_url[:-1])
     default_config_file_name = 'awconfig.yaml'
+    vendor_name = 'Google Ads'
     reach_report_type = 'campaign'
     reach_max_days = 92
-    reach_suffix = ' - no_date - campaign_report'
-    daily_reach_suffix = ' - campaign_report'
+    reach_suffix = utl.reach_suffix(reach_report_type)
+    daily_reach_suffix = utl.reach_suffix(reach_report_type, daily=True)
 
     def __init__(self):
         self.df = pd.DataFrame()
@@ -180,6 +181,8 @@ class AwApi(object):
         self.access_token = None
         self.login_customer_id = ''
         self.rb = AwApiReportBuilder()
+        self.placement = utl.placement_spec(self.rb.ad.display_name,
+                                            self.vendor_name)
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -423,7 +426,7 @@ class AwApi(object):
         logging.info('Getting Adwords data from {} until {}'.format(sd, ed))
         report = self.get_report_request_dict(sd, ed, api_fields)
         self.df = self.request_report_df(report, api_fields)
-        if self.pull_reach(fields):
+        if utl.pull_reach(fields):
             self.df = pd.concat([self.df, self.request_reach(sd, ed)],
                                 ignore_index=True)
         return self.df
@@ -446,15 +449,6 @@ class AwApi(object):
             return pd.DataFrame()
         return self.report_to_df(r, fields)
 
-    def pull_reach(self, fields):
-        """
-        Whether the card takes the whole range reach rows.
-
-        :param fields: The API_FIELDS values from the vendor matrix
-        :return: Boolean, False when the card carries No Reach
-        """
-        return self.no_reach_field not in (fields or [])
-
     @property
     def reach_cols(self):
         """
@@ -465,9 +459,9 @@ class AwApi(object):
 
         :return: List of the suffixed reach and frequency column names
         """
-        return ['{}{}'.format(x.display_name, suffix)
-                for suffix in (self.reach_suffix, self.daily_reach_suffix)
-                for x in self.rb.reach_metrics]
+        return utl.reach_columns(
+            [x.display_name for x in self.rb.reach_metrics],
+            [self.reach_suffix, self.daily_reach_suffix])
 
     def get_reach(self, sd=None, ed=None, fields=None):
         """
@@ -481,7 +475,7 @@ class AwApi(object):
         :param fields: The card's api fields, read only for No Reach
         :return: df of reach rows
         """
-        if not self.pull_reach(fields):
+        if not utl.pull_reach(fields):
             return pd.DataFrame()
         sd, ed = self.date_range(sd, ed)
         self.df = self.request_reach(sd, ed)
@@ -504,13 +498,8 @@ class AwApi(object):
         :return: df of reach rows, their measures suffixed per report
         """
         frames = []
-        days = (ed - sd).days + 1
-        if days > self.reach_max_days:
-            logging.warning(
-                'Google Ads only counts people once within {} days, '
-                'skipping whole range reach for the {} day range.'.format(
-                    self.reach_max_days, days))
-        else:
+        if utl.reach_range_fits(sd, ed, self.reach_max_days,
+                                self.vendor_name):
             frames.append(self.request_reach_rows(
                 sd, ed, self.rb.reach_fields, self.reach_suffix, sd))
         for block_sd, block_ed in utl.date_blocks(sd, ed,
@@ -540,23 +529,24 @@ class AwApi(object):
         """
         Names a reach report's measures apart from the other report's,
         dates a whole range row to the start of its range so a merge keeps
-        it, and drops a campaign type without the metrics (Search,
-        Shopping), which comes back with both blank.
+        it, gives the rows the card's placement, and drops a campaign
+        type without the metrics (Search, Shopping), which comes back
+        with both blank.
 
         :param df: The reach report's rows
         :param suffix: Column suffix naming the report
         :param date: Day to date every row to, None to keep the row's own
-        :return: The rows renamed and dated
+        :return: The rows renamed, dated and placed
         """
         metrics = [x.display_name for x in self.rb.reach_metrics
                    if x.display_name in df.columns]
         if not metrics:
             return pd.DataFrame()
         df = df.dropna(subset=metrics, how='all').reset_index(drop=True)
-        if date is not None:
-            df[self.rb.date.display_name] = date.strftime('%Y-%m-%d')
-        return df.rename(columns={
-            x: '{}{}'.format(x, suffix) for x in metrics})
+        df = utl.suffix_reach(
+            df, metrics, suffix, self.rb.date.display_name,
+            date.strftime('%Y-%m-%d') if date is not None else '')
+        return utl.name_reach_rows(df, self.placement)
 
     def get_report_url(self):
         cid = self.client_customer_id.replace('-', '')

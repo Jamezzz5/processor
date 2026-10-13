@@ -197,6 +197,7 @@ class ImportHandler(object):
             # Clear records a previous key's failure left behind,
             # so nothing is attributed to the wrong card.
             utl.drain_campaign_filter_stats()
+            utl.set_card_placement(api_class, params)
             start_check = self.date_check(params[vmc.startdate])
             end_check = self.date_check(params[vmc.enddate])
             if params[vmc.apifields] == ['nan']:

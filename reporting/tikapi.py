@@ -105,23 +105,25 @@ class TikApi(object):
     campaign_col = 'campaign_name'
     campaign_id_col = 'campaign_id'
     api_field_options = (
-        ('No Reach',
+        (utl.no_reach_field,
          'Skip the whole range campaign and ad group reach and the daily '
          'advertiser reach'),)
+    vendor_name = 'TikTok'
     reach_metrics = ['reach', 'frequency']
     reach_max_days = 365
     daily_reach_max_days = 30
     reach_reports = [
         {'data_level': 'AUCTION_CAMPAIGN', 'dimensions': ['campaign_id'],
          'status': 'campaign_status', 'names': ['campaign_name'],
-         'suffix': ' - no_date - campaign_report'},
+         'suffix': utl.reach_suffix('campaign')},
         {'data_level': 'AUCTION_ADGROUP', 'dimensions': ['adgroup_id'],
          'status': 'adgroup_status',
          'names': ['campaign_name', 'campaign_id', 'adgroup_name'],
-         'suffix': ' - no_date - adgroup_report'},
+         'suffix': utl.reach_suffix('adgroup')},
         {'data_level': 'AUCTION_ADVERTISER',
          'dimensions': ['advertiser_id', 'stat_time_day'], 'status': '',
-         'names': [], 'suffix': ' - vendor_report', 'daily': True}]
+         'names': [], 'daily': True,
+         'suffix': utl.reach_suffix(utl.platform_report_level, daily=True)}]
 
     def __init__(self):
         self.config = None
@@ -131,6 +133,7 @@ class TikApi(object):
         self.campaign_id = None
         self.campaign_ids = []
         self.campaign_name_filter = []
+        self.placement = utl.placement_spec('ad_name', self.vendor_name)
         self.ad_id_list = []
         self.campaign_id_list = []
         self.config_list = None
@@ -360,8 +363,8 @@ class TikApi(object):
 
         :returns: list of suffixed reach and frequency column names
         """
-        return ['{}{}'.format(x, report['suffix'])
-                for report in self.reach_reports for x in self.reach_metrics]
+        return utl.reach_columns(
+            self.reach_metrics, [x['suffix'] for x in self.reach_reports])
 
     @staticmethod
     def status_filter(status_field):
@@ -448,22 +451,15 @@ class TikApi(object):
         start = dt.datetime.strptime(sd, '%Y-%m-%d')
         end = dt.datetime.strptime(ed, '%Y-%m-%d')
         if report.get('daily'):
-            if self.parse_campaign_filter():
-                logging.warning(
-                    'Skipping daily advertiser reach: TikTok cannot narrow '
-                    'it to the campaign filter {}.'.format(
-                        self.campaign_name_filter))
+            if utl.platform_reach_blocked(
+                    self.vendor_name, self.parse_campaign_filter(),
+                    level='advertiser'):
                 return pd.DataFrame()
             blocks = utl.date_blocks(start, end, self.daily_reach_max_days)
+        elif not utl.reach_range_fits(start, end, self.reach_max_days,
+                                      self.vendor_name):
+            return pd.DataFrame()
         else:
-            days = (end - start).days + 1
-            if days > self.reach_max_days:
-                logging.warning(
-                    'Skipping reach: TikTok counts each user once only '
-                    'within a single request of at most {} days, and {} to '
-                    '{} is {} days.'.format(self.reach_max_days, sd, ed,
-                                            days))
-                return pd.DataFrame()
             blocks = [(start, end)]
         frames = []
         for block_sd, block_ed in blocks:
@@ -472,14 +468,13 @@ class TikApi(object):
             frames.append(self.request_pages(params['start_date'],
                                              params['end_date'], params))
         df = pd.concat(frames, ignore_index=True)
-        df = df.rename(columns={
-            x: '{}{}'.format(x, report['suffix']) for x in self.reach_metrics})
-        if df.empty:
-            return df
+        date = '{} 00:00:00'.format(sd)
         if report.get('daily'):
-            return df.rename(columns={self.new_date: self.old_date})
-        df[self.old_date] = '{} 00:00:00'.format(sd)
-        return df
+            df = df.rename(columns={self.new_date: self.old_date})
+            date = ''
+        df = utl.suffix_reach(df, self.reach_metrics, report['suffix'],
+                              self.old_date, date)
+        return utl.name_reach_rows(df, self.placement)
 
     def reach_params(self, sd, ed, report):
         """
@@ -583,7 +578,7 @@ class TikApi(object):
             self.get_ids(ad_url=ad_url['ad_url'],
                          campaign_id=ad_url['campaign_id'])
         self.df = self.request_and_get_data(sd, ed)
-        if 'No Reach' not in (fields or []):
+        if utl.pull_reach(fields):
             self.df = pd.concat([self.df, self.request_reach(sd, ed)],
                                 ignore_index=True)
         self.df = self.filter_df_on_campaign(self.df)
@@ -602,7 +597,7 @@ class TikApi(object):
         :param fields: the card's api fields, read only for No Reach
         :returns: dataframe of reach rows, their measures suffixed per level
         """
-        if 'No Reach' in (fields or []):
+        if not utl.pull_reach(fields):
             return pd.DataFrame()
         sd, ed = self.get_data_default_check(sd, ed)
         self.set_headers()

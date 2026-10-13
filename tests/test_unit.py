@@ -731,6 +731,173 @@ class TestUtils:
         keep = 'API_Amazon_2026'
         assert utl.remove_date_suffix(keep) == keep
 
+    def test_reach_suffix(self):
+        """The grammar the CM360 import set, now shared by every adapter."""
+        assert utl.reach_suffix('campaign') == ' - no_date - campaign_report'
+        assert utl.reach_suffix('campaign', True) == ' - campaign_report'
+        assert utl.reach_suffix(utl.platform_report_level, True) == (
+            ' - vendor_report')
+        assert utl.reach_suffix() == ' - no_date'
+        assert utl.reach_suffix(daily=True) == ''
+
+    def test_reach_columns(self):
+        cols = utl.reach_columns(
+            ['Reach', 'Frequency'],
+            [utl.reach_suffix('campaign'), utl.reach_suffix('vendor', True)])
+        assert cols == ['Reach - no_date - campaign_report',
+                        'Frequency - no_date - campaign_report',
+                        'Reach - vendor_report', 'Frequency - vendor_report']
+
+    def test_suffix_reach(self):
+        """A whole range report's rows are dated to its start, a daily
+        row keeps its day, and a dict names the measure a row reports."""
+        df = pd.DataFrame({'reach': [10], 'frequency': [1.5], 'day': ['x']})
+        whole = utl.suffix_reach(df.copy(), ['reach', 'frequency'],
+                                 ' - no_date - campaign_report', 'day',
+                                 '2026-01-01')
+        assert list(whole.columns) == [
+            'reach - no_date - campaign_report',
+            'frequency - no_date - campaign_report', 'day']
+        assert whole['day'].iloc[0] == '2026-01-01'
+        daily = utl.suffix_reach(df.copy(), {'reach': 'Reach'},
+                                 ' - vendor_report', 'day')
+        assert daily['day'].iloc[0] == 'x'
+        assert 'Reach - vendor_report' in daily.columns
+        assert utl.suffix_reach(pd.DataFrame(), ['reach'], ' - x').empty
+
+    def test_placement_layout(self):
+        """A card's dictionary order says where its placements keep the
+        vendor and campaign; a card with none uses CM360's slots."""
+        assert utl.placement_layout() == (16, 1, 15)
+        assert utl.placement_layout(['nan']) == (16, 1, 15)
+        order = ['mpVendor', 'mpAgency', 'mpCampaign:::0:::_', 'mpMisc',
+                 'mpMisc']
+        assert utl.placement_layout(order) == (5, 0, 2)
+        assert utl.placement_layout(['mpAgency', 'mpCampaign']) == (2, 1, 1)
+        assert utl.placement_layout(['mpAgency']) == (1, None, None)
+
+    def test_placement_name(self):
+        """Vendor and campaign in the card's slots, every other part
+        blank, CM360's sixteen parts by default; an underscore inside a
+        part becomes a space so a part never splits in two."""
+        name = utl.placement_name('Meta', 'Launch')
+        parts = name.split('_')
+        assert len(parts) == utl.placement_parts == 16
+        assert parts[utl.placement_vendor_part] == 'Meta'
+        assert parts[utl.placement_campaign_part] == 'Launch'
+        assert name == '_Meta' + '_' * 14 + 'Launch'
+        assert utl.placement_name().count('_') == 15
+        spaced = utl.placement_name('Meta', 'US_Launch_Video')
+        assert len(spaced.split('_')) == 16
+        assert spaced.split('_')[-1] == 'US Launch Video'
+        layout = utl.placement_layout(['mpAgency', 'mpVendor', 'mpMisc',
+                                       'mpCampaign', 'mpSize', 'mpMisc'])
+        assert utl.placement_name('Reddit', 'Pre Order', layout) == (
+            '_Reddit__Pre Order__')
+        assert utl.placement_name('Reddit', 'Pre Order',
+                                  (1, None, None)) == ''
+
+    def test_placement_spec_and_name_reach_rows(self):
+        """Every reach row gets the card's vendor and campaign in the
+        card's placement column where it is blank; a row already naming
+        an object there keeps it, and the campaign given stands in while
+        the card's is unknown."""
+        spec = utl.placement_spec('Ad Name', 'Reddit')
+        assert spec == {'column': 'Ad Name', 'vendor': 'Reddit',
+                        'campaign': '', 'layout': (16, 1, 15)}
+        df = pd.DataFrame({'Ad Name': ['Real ad', '', float('nan')],
+                           'reach': [1, 2, 3]})
+        df = utl.name_reach_rows(df, spec, 'Filter')
+        assert df['Ad Name'].tolist() == [
+            'Real ad', utl.placement_name('Reddit', 'Filter'),
+            utl.placement_name('Reddit', 'Filter')]
+        card = utl.placement_spec('ad_name', 'Reddit', 'Pre Order',
+                                  ['mpAgency', 'mpVendor', 'mpMisc',
+                                   'mpCampaign', 'mpSize', 'mpMisc'])
+        rows = utl.name_reach_rows(pd.DataFrame({'reach': [1]}), card,
+                                   'Filter')
+        assert rows['ad_name'].iloc[0] == '_Reddit__Pre Order__', (
+            'the card\'s campaign beats the filter')
+        assert utl.name_reach_rows(pd.DataFrame(), card).empty
+
+    def test_card_placement_tokens(self):
+        """The vendor and campaign a card's placements map to are the
+        values its dictionary carries most often; a missing or blank
+        dictionary gives nothing and is never created."""
+        name = 'test_reach_tokens.csv'
+        utl.dir_check(utl.dict_path)
+        path = os.path.join(utl.dict_path, name)
+        assert utl.card_placement_tokens(name) == ('', '')
+        assert not os.path.isfile(path)
+        assert utl.card_placement_tokens('nan') == ('', '')
+        assert utl.card_placement_tokens(None) == ('', '')
+        pd.DataFrame({
+            dctc.FPN: ['a', 'b', 'c'],
+            dctc.VEN: ['Reddit', 'Reddit', 'reddit'],
+            dctc.CAM: ['Pre Order', None, 'Pre Order']}).to_csv(
+            path, index=False)
+        try:
+            assert utl.card_placement_tokens(name) == ('Reddit', 'Pre Order')
+            pd.DataFrame({dctc.FPN: ['a']}).to_csv(path, index=False)
+            assert utl.card_placement_tokens(name) == ('', '')
+        finally:
+            os.remove(path)
+
+    def test_set_card_placement(self):
+        """The importhandler hands a reach-capable api the card's placement
+        column, dictionary order and tokens; a blank value keeps the api's
+        own default for that part and an api without reach rows is left
+        alone."""
+        name = 'test_reach_tokens.csv'
+        utl.dir_check(utl.dict_path)
+        path = os.path.join(utl.dict_path, name)
+        pd.DataFrame({dctc.FPN: ['a'], dctc.VEN: ['Reddit'],
+                      dctc.CAM: ['Pre Order']}).to_csv(path, index=False)
+        try:
+            api = redapi.RedApi()
+            utl.set_card_placement(api, {
+                vmc.placement: 'Ad Group Name', vmc.filenamedict: name,
+                vmc.autodicord: ['mpAgency', 'mpVendor', 'mpMisc',
+                                 'mpCampaign', 'mpSize', 'mpMisc']})
+            assert api.placement == utl.placement_spec(
+                'Ad Group Name', 'Reddit', 'Pre Order',
+                ['mpAgency', 'mpVendor', 'mpMisc', 'mpCampaign', 'mpSize',
+                 'mpMisc'])
+        finally:
+            os.remove(path)
+        api = redapi.RedApi()
+        utl.set_card_placement(api, {vmc.placement: 'nan',
+                                     vmc.filenamedict: 'nan',
+                                     vmc.autodicord: ['nan']})
+        assert api.placement == utl.placement_spec('Ad Name', 'Reddit')
+        other = object()
+        utl.set_card_placement(other, {vmc.placement: 'Placement'})
+        assert not hasattr(other, 'placement')
+
+    def test_pull_reach(self):
+        assert utl.pull_reach(None)
+        assert utl.pull_reach(['Campaign'])
+        assert not utl.pull_reach(['Campaign', utl.no_reach_field])
+
+    def test_reach_range_fits(self, caplog):
+        sd = dt.datetime(2026, 1, 1)
+        assert utl.reach_range_fits(sd, dt.datetime(2026, 4, 2), 92, 'X')
+        with caplog.at_level(logging.WARNING):
+            assert not utl.reach_range_fits(
+                sd, dt.datetime(2026, 4, 3), 92, 'Google Ads')
+        assert ('Google Ads only counts people once within 92 days'
+                in caplog.text)
+
+    def test_platform_reach_blocked(self, caplog):
+        assert not utl.platform_reach_blocked('Reddit', '')
+        assert not utl.platform_reach_blocked('Reddit', [])
+        with caplog.at_level(logging.WARNING):
+            assert utl.platform_reach_blocked(
+                'DV360', ['A'], 'advertiser', ', which names campaigns')
+        assert ('Skipping daily advertiser reach: DV360 cannot narrow it '
+                'to the campaign filter [\'A\'], which names campaigns.'
+                in caplog.text)
+
     def test_filter_df_on_col(self):
         col_name = 'a'
         col_val = 'x'
@@ -6218,6 +6385,9 @@ class TestDbApiCampaignFilter:
         """An id the api cannot match empties the report, so the retry has
         to drop the api filter and reach the campaign name instead."""
         api = self.get_api('36314869')
+        # get_data pulls reach too, which is not under test here.
+        monkeypatch.setattr(api, 'request_reach',
+                            lambda sd, ed: pd.DataFrame())
         pulls = []
 
         def fake_get_report_df(sd, ed, fields):
@@ -6236,6 +6406,9 @@ class TestDbApiCampaignFilter:
         """The retry holds every campaign the advertiser ran, so a filter
         that still matches nothing must not report all of them."""
         api = self.get_api('99999999')
+        # get_data pulls reach too, which is not under test here.
+        monkeypatch.setattr(api, 'request_reach',
+                            lambda sd, ed: pd.DataFrame())
 
         def fake_get_report_df(sd, ed, fields):
             api.query_id = 'q1'
@@ -6250,6 +6423,9 @@ class TestDbApiCampaignFilter:
         """A report id from the config never carried the filter, so an
         empty report is real and must not cost a second pull."""
         api = self.get_api('36314869')
+        # get_data pulls reach too, which is not under test here.
+        monkeypatch.setattr(api, 'request_reach',
+                            lambda sd, ed: pd.DataFrame())
         api.report_id = 'r1'
         pulls = []
 
@@ -6389,6 +6565,221 @@ class TestDcApiReachWindows:
         assert renamed[f'CM360 startDate{suffix}'].iloc[0] == '2026-03-30'
 
 
+class TestApiReachRows:
+    """Every reach-capable adapter names its reach rows the same way:
+    measures suffixed per report, whole range rows dated to the range
+    start, and the card's placement, its vendor and campaign in the slots
+    the card's placements keep them, in the card's placement column."""
+
+    @staticmethod
+    def placed(df, vendor, campaign, column):
+        return df[column].tolist() == [utl.placement_name(vendor, campaign)]
+
+    @staticmethod
+    def tik_pages(sd, ed, params):
+        if params['data_level'] == 'AUCTION_ADVERTISER':
+            return pd.DataFrame({'advertiser_id': ['9'], 'reach': [7],
+                                 'frequency': [1.0],
+                                 tikapi.TikApi.new_date: ['2026-01-02']})
+        return pd.DataFrame({'campaign_name': ['Camp'], 'reach': [5],
+                             'frequency': [2.0]})
+
+    def test_meta_rows_take_the_cards_placement(self):
+        api = fbapi.FbApi()
+        api.campaign_filter = 'Launch'
+        account = api.suffix_reach(pd.DataFrame({
+            'account_name': ['Acct'], 'reach': [10], 'frequency': [1.5]}),
+            fbapi.reach_reports[-1][1])
+        assert account['Reach - vendor_report'].iloc[0] == 10
+        assert self.placed(account, fbapi.vendor_name, 'Launch', 'ad_name')
+        campaign = api.suffix_reach(pd.DataFrame({
+            'campaign_name': ['Camp'], 'reach': [1], 'frequency': [1]}),
+            fbapi.reach_reports[0][1])
+        assert 'Reach - no_date - campaign_report' in campaign.columns
+        assert self.placed(campaign, fbapi.vendor_name, 'Launch', 'ad_name'), (
+            'the filter stands in until the card\'s campaign is known')
+        api.placement = utl.placement_spec(
+            'Ad Set Name', 'Facebook', 'Announce',
+            ['mpAgency', 'mpVendor', 'mpCampaign', 'mpMisc'])
+        adset = api.suffix_reach(pd.DataFrame({
+            'campaign_name': ['Camp', 'Camp'], 'adset_name': ['Set 1', ''],
+            'reach': [1, 2], 'frequency': [1, 1]}), fbapi.reach_reports[1][1])
+        assert adset['adset_name'].tolist() == [
+            'Set 1', '_Facebook_Announce_'], (
+            'a named ad set keeps its name; the card\'s parts fill the rest')
+        assert 'ad_name' not in adset.columns
+        delivery = pd.DataFrame({'reach': [1]})
+        assert api.suffix_reach(delivery, '') is delivery
+        assert api.reach_cols == utl.reach_columns(
+            ['Reach', 'Frequency'], [x[1] for x in fbapi.reach_reports])
+
+    def test_tiktok_rows_are_placed_and_dated(self, monkeypatch):
+        api = tikapi.TikApi()
+        monkeypatch.setattr(api, 'request_pages', self.tik_pages)
+        whole = api.request_reach_report('2026-01-01', '2026-01-30',
+                                         api.reach_reports[0])
+        assert whole[api.old_date].iloc[0] == '2026-01-01 00:00:00'
+        assert whole['reach - no_date - campaign_report'].iloc[0] == 5
+        assert self.placed(whole, api.vendor_name, '', 'ad_name')
+        api.placement = utl.placement_spec('ad_name', 'TikTok', 'Announce')
+        daily = api.request_reach_report('2026-01-01', '2026-01-30',
+                                         api.reach_reports[-1])
+        assert daily[api.old_date].iloc[0] == '2026-01-02'
+        assert daily['reach - vendor_report'].iloc[0] == 7
+        assert self.placed(daily, 'TikTok', 'Announce', 'ad_name')
+        api.campaign_id = 'Launch'
+        assert api.request_reach_report('2026-01-01', '2026-01-30',
+                                        api.reach_reports[-1]).empty
+        assert api.request_reach_report('2025-01-01', '2026-01-30',
+                                        api.reach_reports[0]).empty
+
+    def test_dv360_rows_are_placed_and_dated(self):
+        api = dbapi.DbApi()
+        api.campaign_ids = ['12', '34']
+        suffix = api.reach_reports[-1]['suffix']
+        metric = 'Unique Reach: Total Reach'
+        daily = api.suffix_reach(pd.DataFrame({
+            'Advertiser ID': ['1'], 'Date': ['2026/01/02'], metric: [9]}),
+            suffix)
+        assert daily['Date'].iloc[0] == '2026/01/02'
+        assert daily['{} - vendor_report'.format(metric)].iloc[0] == 9
+        assert self.placed(daily, api.vendor_name, '12,34', 'Creative')
+        api.placement = utl.placement_spec('Line Item', 'DV360', 'Pre Order')
+        whole = api.suffix_reach(pd.DataFrame({
+            'Campaign': ['Camp'], metric: [9]}),
+            api.reach_reports[0]['suffix'], dt.datetime(2026, 1, 1))
+        assert whole['Date'].iloc[0] == '2026/01/01'
+        assert self.placed(whole, 'DV360', 'Pre Order', 'Line Item')
+        items = api.suffix_reach(pd.DataFrame({
+            'Campaign': ['Camp'], 'Line Item': ['LI 1'], metric: [9]}),
+            api.reach_reports[2]['suffix'], dt.datetime(2026, 1, 1))
+        assert items['Line Item'].tolist() == ['LI 1']
+        assert api.daily_reach_cols == utl.reach_columns(
+            list(api.reach_metrics.values()), [suffix])
+
+    def test_google_ads_rows_are_placed(self):
+        api = awapi.AwApi()
+        df = api.suffix_reach(pd.DataFrame({
+            'Campaign': ['Camp', 'Search'], 'Unique users': [4, None],
+            'Avg. impr. freq. per user': [1.2, None]}),
+            api.daily_reach_suffix)
+        assert len(df) == 1, 'a campaign type without the metrics is dropped'
+        assert df['Unique users - campaign_report'].iloc[0] == 4
+        assert self.placed(df, api.vendor_name, '', 'Ad')
+        api.placement = utl.placement_spec('Ad', 'Google', 'Announce')
+        dated = api.suffix_reach(pd.DataFrame({
+            'Campaign': ['Camp'], 'Unique users': [4]}), api.reach_suffix,
+            dt.datetime(2026, 1, 1))
+        assert dated['Day'].iloc[0] == '2026-01-01'
+        assert 'Unique users - no_date - campaign_report' in dated.columns
+        assert self.placed(dated, 'Google', 'Announce', 'Ad')
+        assert api.suffix_reach(pd.DataFrame({'Campaign': ['x']}), '').empty
+
+    def test_reddit_rows_are_placed(self, monkeypatch):
+        api = redapi.RedApi()
+        monkeypatch.setattr(api, 'add_names_to_df',
+                            lambda df, level_col: df.assign(campaign='Camp'))
+        date_col = api.cols.get(api.date_col, api.date_col)
+        whole = api.reach_to_df(
+            [{'campaign_id': '1', 'reach': 3, 'frequency': 1.5}],
+            api.reach_reports[0], dt.datetime(2026, 1, 1))
+        assert whole[date_col].iloc[0] == '2026-01-01'
+        assert whole['Reach - no_date - campaign_report'].iloc[0] == 3
+        assert whole['Campaign Name'].iloc[0] == 'Camp'
+        assert self.placed(whole, api.vendor_name, '', 'Ad Name')
+        api.placement = utl.placement_spec(
+            'Ad Name', 'Reddit', 'Pre Order',
+            ['mpAgency', 'mpVendor', 'mpMisc', 'mpCampaign', 'mpSize',
+             'mpMisc'])
+        daily = api.reach_to_df(
+            [{'date': '2026-01-02', 'reach': 8, 'frequency': 1.0}],
+            api.reach_reports[-1], dt.datetime(2026, 1, 1))
+        assert daily[date_col].iloc[0] == '2026-01-02'
+        assert daily['Reach - vendor_report'].iloc[0] == 8
+        assert daily['Ad Name'].tolist() == ['_Reddit__Pre Order__']
+        assert utl.placement_col not in daily.columns
+
+    def test_cm360_follows_the_shared_grammar_and_shape(self):
+        api = dcapi.DcApi()
+        metric = 'Unique Reach: Total Reach'
+        cases = {(True, False, False): ' - no_date',
+                 (True, True, False): ' - no_date - campaign_report',
+                 (True, False, True): ' - no_date - vendor_report',
+                 (False, True, False): ' - campaign_report',
+                 (False, False, True): ' - vendor_report',
+                 (False, False, False): ''}
+        for (no_date, campaign, vendor), suffix in cases.items():
+            renamed = api.rename_cols(pd.DataFrame({metric: [1]}), {
+                'reach_report': True, 'no_date': no_date,
+                'campaign_report': campaign, 'vendor_report': vendor})
+            assert list(renamed.columns) == ['{}{}'.format(metric, suffix)]
+        api.vendor_dict = {'Site A': 'VendorA'}
+        api.campaign_dict = {'Camp': 'CampPart'}
+        named = api.add_placement_name(pd.DataFrame({
+            'Campaign': ['Camp'], 'Site (CM360)': ['Site A']}))
+        assert named[utl.placement_col].tolist() == [
+            utl.placement_name('VendorA', 'CampPart')]
+        no_site = api.add_placement_name(pd.DataFrame({'Campaign': ['Camp']}))
+        assert no_site[utl.placement_col].tolist() == [
+            utl.placement_name('', 'CampPart')]
+        assert api.add_placement_name(named) is named
+
+
+class TestDictRelational:
+    """A relation is a left join on its key, so a blank or repeated key
+    in a relational dictionary multiplies rows; blank keys also used to
+    be re-added on every run, so the files grew with each one until an
+    analyze run could not allocate the merge."""
+
+    filename = 'test_relational_dictionary.csv'
+
+    def relation(self):
+        return dct.DictRelational(**{dctc.FN: self.filename,
+                                     dctc.KEY: dctc.VEN,
+                                     dctc.DEP: [dctc.VT]})
+
+    def test_read_drops_blank_and_repeated_keys(self, caplog):
+        rel = self.relation()
+        pd.DataFrame({dctc.VEN: ['Reddit', '', 'nan', 'Reddit', 'TikTok'],
+                      dctc.VT: ['Social', '', '', 'Other', 'Social']}
+                     ).to_csv(rel.full_file_path, index=False)
+        try:
+            with caplog.at_level(logging.WARNING):
+                rel.read()
+            assert rel.df[dctc.VEN].tolist() == ['Reddit', 'TikTok']
+            assert rel.df[dctc.VT].tolist() == ['Social', 'Social']
+            assert ('test_relational_dictionary.csv had 2 rows with a '
+                    'blank mpVendor and 1 repeating one') in caplog.text
+            assert len(pd.read_csv(rel.full_file_path, dtype=str)) == 2, (
+                'the file is rewritten clean')
+            caplog.clear()
+            rel.read()
+            assert 'repeating' not in caplog.text
+        finally:
+            os.remove(rel.full_file_path)
+
+    def test_blank_keys_are_never_added(self):
+        rel = self.relation()
+        pd.DataFrame({dctc.VEN: ['Reddit'], dctc.VT: ['Social']}).to_csv(
+            rel.full_file_path, index=False)
+        try:
+            data_dict = pd.DataFrame({
+                dctc.FPN: ['a', 'b', 'c', 'd'],
+                dctc.VEN: ['Reddit', '', 'nan', 'TikTok'],
+                dctc.VT: [None] * 4})
+            merged = rel.apply_to_dict(data_dict.copy())
+            assert len(merged) == 4, 'a blank key multiplies nothing'
+            assert merged[dctc.VT].tolist()[0] == 'Social'
+            keys = pd.read_csv(rel.full_file_path, dtype=str)[dctc.VEN]
+            assert keys.tolist() == ['Reddit', 'TikTok']
+            rel.apply_to_dict(data_dict.copy())
+            keys = pd.read_csv(rel.full_file_path, dtype=str)[dctc.VEN]
+            assert keys.tolist() == ['Reddit', 'TikTok'], (
+                'a second run adds nothing')
+        finally:
+            os.remove(rel.full_file_path)
+
+
 class TestTikApiAdIds:
     """A TikTok report only carries ad ids, so the ad and campaign names
     are pulled separately and joined on, and that pull can come back
@@ -6433,6 +6824,9 @@ class TestTikApiAdIds:
         """One api raising takes every other vendor's data down with it,
         so no campaigns to pull ids for has to stay a warning."""
         api = self.make_api('GameA')
+        # get_data pulls reach too, which is not under test here.
+        monkeypatch.setattr(api, 'request_reach',
+                            lambda sd, ed: pd.DataFrame())
         monkeypatch.setattr(api, 'check_url', lambda: [])
         monkeypatch.setattr(api, 'make_request',
                             _FakeRequests([self.report_response()]))
