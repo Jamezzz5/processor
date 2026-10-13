@@ -633,6 +633,25 @@ def remove_date_suffix(name):
     return re.sub(r'(_\d{4}-\d{2}-\d{2})+$', '', name)
 
 
+def get_api_type(vendor_key):
+    """
+    Reduces a vendor key to the platform behind it, so cards for one
+    platform group together however they were named or split.
+
+    API_Tiktok_Launch_2026-09-28, API_Tiktok_Pre-Launch and
+    tiktok_launch all give 'tiktok': the API_ prefix, any date stamps
+    and everything after the first underscore go, and the case is
+    folded.
+
+    :param vendor_key: a vendor key from the vendormatrix or the plan
+    :returns: the platform in lower case, '' when the key is blank
+    """
+    if pd.isnull(vendor_key):
+        return ''
+    name = re.sub(r'^api_', '', str(vendor_key).strip(), flags=re.I)
+    return remove_date_suffix(name).split('_')[0].lower()
+
+
 def date_check(sd, ed):
     sd = sd.date()
     ed = ed.date()
