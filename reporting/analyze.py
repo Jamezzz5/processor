@@ -1241,7 +1241,10 @@ class Analyze(object):
         return new_sources
 
     def do_analysis_and_fix_processor(self, pre_run=False, first_run=False,
-                                      new_files=False):
+                                      new_files=False, propose_only=False):
+        """Run eligible repairs unless the caller requested proposals only."""
+        if propose_only:
+            return False
         new_file_check = []
         if new_files:
             new_file_check = self.get_new_files()
@@ -2579,7 +2582,7 @@ class CheckDoubleCounting(AnalyzeBase):
     metric_col = 'Metric'
     total_placement_count = 'Total Num Placements'
     num_duplicates = 'Num Duplicates'
-    fix = True
+    fix = False
     pre_run = True
 
     def count_unique_placements(self, df, col):
@@ -3313,19 +3316,43 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         match_df = pd.DataFrame(match_table)
         return match_df
 
-    def fix_analysis_for_data_source(self, df, vk, write=True):
-        """
-        Suggest matches for placements not in the plan using fuzzy matching.
+    @staticmethod
+    def name_key(name):
+        """A partner name or key part without punctuation, casefolded."""
+        return re.sub(r'\W+', '', str(name)).casefold()
 
-        :param df: A df filtered for the current vk
-        :param vk: Vendor key for the current df
-        :param write: If True, writes the match table to analysis dict
+    @classmethod
+    def allowed_partners(cls, vk, plan_partners):
+        """Return source partners, none when unknown, or None for all.
+        Measurement sources intentionally span every plan partner.
         """
+        parts = str(vk).split('_')
+        key = parts[1] if parts[0] == 'API' and len(parts) > 1 else parts[0]
+        if key in vmc.unconstrained_translate_keys:
+            return None
+        if key in vmc.api_partner_name_translation:
+            return vmc.api_partner_name_translation[key]
+        if key != 'Rawfile':
+            return []
+        tokens = {cls.name_key(part) for part in parts}
+        matches = [name for name in plan_partners
+                   if cls.name_key(name) in tokens]
+        return matches if len(matches) == 1 else []
+
+    def fix_analysis_for_data_source(self, df, vk, write=True):
+        """Suggest source-scoped matches; write=False previews only."""
         if df.empty or dctc.PN not in df:
             return pd.DataFrame()
-        mp_names = self.aly.df.loc[
-            self.aly.df[vmc.vendorkey] == vmc.api_mp_key, dctc.PN
-        ].dropna().unique().tolist()
+        mp_rows = self.aly.df.loc[
+            self.aly.df[vmc.vendorkey] == vmc.api_mp_key]
+        partners = mp_rows.get(dctc.VEN, pd.Series(dtype=str))
+        allowed = self.allowed_partners(vk, partners.dropna().unique())
+        if allowed is not None:
+            if dctc.VEN not in mp_rows:
+                return pd.DataFrame()
+            allowed = {self.name_key(name) for name in allowed}
+            mp_rows = mp_rows[partners.map(self.name_key).isin(allowed)]
+        mp_names = mp_rows[dctc.PN].dropna().unique().tolist()
         data_source = self.aly.matrix.get_data_source(vk)
         if vmc.transform not in data_source.p or not mp_names:
             return pd.DataFrame()
@@ -3341,6 +3368,8 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         msg = "Suggested matches for placements not in media plan:"
         self.aly.format_log_msg_with_df(msg, match_df)
         match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
+        match_df[dctc.DICT_COL_FNC] = f'Select::{vmc.vendorkey}'
+        match_df[dctc.DICT_COL_SEL] = vk
         if vmc.transform_raw_translate not in old_transform:
             if str(old_transform) == 'nan':
                 old_transform = ''

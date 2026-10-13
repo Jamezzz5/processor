@@ -56,6 +56,7 @@ def get_args(arguments=None):
     parser.add_argument('--azu', choices=['all', 'dna'])
     parser.add_argument('--noprocess', action='store_true')
     parser.add_argument('--analyze', action='store_true')
+    parser.add_argument('--propose-only', action='store_true')
     parser.add_argument('--update', choices=['all', 'vm', 'dct'])
     parser.add_argument('--exp', choices=[
         'all', 'db', 'ftp', 'test', 'azu'])
@@ -84,7 +85,8 @@ def main(arguments=None):
     matrix = vm.VendorMatrix()
     if args.analyze:
         aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-        aly.do_analysis_and_fix_processor(pre_run=True)
+        aly.do_analysis_and_fix_processor(pre_run=True,
+                                          propose_only=args.propose_only)
         matrix = vm.VendorMatrix()
     if args.api:
         api = ih.ImportHandler(args.api, matrix)
@@ -104,13 +106,15 @@ def main(arguments=None):
     if not args.noprocess:
         if args.analyze:
             aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-            aly.do_analysis_and_fix_processor(new_files=True)
+            aly.do_analysis_and_fix_processor(new_files=True,
+                                              propose_only=args.propose_only)
             matrix = vm.VendorMatrix()
         df = matrix.vm_loop_with_costs(OUTPUT_FILE)
         if args.analyze:
             logging.info('Post run - analyzing data.')
             aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-            fixes_to_run = aly.do_analysis_and_fix_processor(first_run=True)
+            fixes_to_run = aly.do_analysis_and_fix_processor(
+                first_run=True, propose_only=args.propose_only)
             if fixes_to_run:
                 logging.info('Fixes applied, rerunning processor.')
                 matrix = vm.VendorMatrix()
