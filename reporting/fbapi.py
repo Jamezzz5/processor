@@ -71,8 +71,6 @@ level_params = {AdsInsights.Level.campaign: campaign_params,
 vendor_name = 'Meta'
 reach_metrics = ['reach', 'frequency']
 reach_reports = [
-    (AdsInsights.Level.campaign, utl.reach_suffix('campaign'), 'all_days'),
-    (AdsInsights.Level.adset, utl.reach_suffix('adset'), 'all_days'),
     (AdsInsights.Level.account,
      utl.reach_suffix(utl.platform_report_level, daily=True), 1)]
 
@@ -112,9 +110,7 @@ class FbApi(object):
         ('Total', 'One row for the whole range, not one per day'),
         ('Adset', 'Ad set level'),
         ('Campaign', 'Campaign level'),
-        (utl.no_reach_field,
-         'Skip the whole range campaign and ad set reach and the daily '
-         'account reach'),
+        (utl.no_reach_field, 'Skip the daily account reach'),
         ('Screenshots', 'Capture ad screenshots'))
     default_config_file_name = 'fbconfig.json'
 
@@ -353,16 +349,15 @@ class FbApi(object):
 
     def get_reach(self, sd=None, ed=None, fields=None):
         """
-        Only the reach rows, the whole range campaign and ad set rows and
-        the daily account rows, for a caller whose delivery range is
-        shorter than the range reach has to cover: importhandler trims a
-        merge card's delivery to its merge window but pulls reach from the
-        card's start date.
+        Only the reach rows, the daily account rows, for a caller whose
+        delivery range is shorter than the range reach has to cover:
+        importhandler trims a merge card's delivery to its merge window
+        but pulls reach from the card's start date.
 
         :param sd: Start of the reach range
         :param ed: End of the reach range
         :param fields: The card's api fields, read only for No Reach
-        :return: df of reach rows, their measures suffixed per level
+        :return: df of reach rows, their measures suffixed
         """
         self.df = pd.DataFrame()
         sd, ed, fields = self.get_data_default_check(sd, ed, fields)
@@ -392,18 +387,16 @@ class FbApi(object):
 
     def request_reach(self, sd, ed, level, suffix, time_breakdown):
         """
-        Requests reach at one level: a row per campaign or ad set for the
-        whole range, so Facebook counts each person once across it, or a
-        row per day for the account, each day's people counted once across
-        every campaign the card's filter keeps.  No date_list is passed,
-        which stops a too much data error from splitting the range into
-        halves whose reach could not be added.
+        Requests the account's reach, a row per day, each day's people
+        counted once across every campaign the card's filter keeps.  No
+        date_list is passed, which stops a too much data error from
+        splitting the range into halves whose reach could not be added.
 
         :param sd: Start of the range
         :param ed: End of the range
         :param level: AdsInsights level to deduplicate reach at
         :param suffix: Column suffix naming the report
-        :param time_breakdown: 'all_days' for one row, 1 for a row a day
+        :param time_breakdown: 1 for a row a day
         """
         self.request_for_fields(
             sd, ed, None, level_params[level] + reach_metrics, [], [], [],

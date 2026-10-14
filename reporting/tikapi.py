@@ -105,24 +105,13 @@ class TikApi(object):
     campaign_col = 'campaign_name'
     campaign_id_col = 'campaign_id'
     api_field_options = (
-        (utl.no_reach_field,
-         'Skip the whole range campaign and ad group reach and the daily '
-         'advertiser reach'),)
+        (utl.no_reach_field, 'Skip the daily advertiser reach'),)
     vendor_name = 'TikTok'
     reach_metrics = ['reach', 'frequency']
-    reach_max_days = 365
-    daily_reach_max_days = 30
+    reach_max_days = 30
     reach_reports = [
-        {'data_level': 'AUCTION_CAMPAIGN', 'dimensions': ['campaign_id'],
-         'status': 'campaign_status', 'names': ['campaign_name'],
-         'suffix': utl.reach_suffix('campaign')},
-        {'data_level': 'AUCTION_ADGROUP', 'dimensions': ['adgroup_id'],
-         'status': 'adgroup_status',
-         'names': ['campaign_name', 'campaign_id', 'adgroup_name'],
-         'suffix': utl.reach_suffix('adgroup')},
         {'data_level': 'AUCTION_ADVERTISER',
-         'dimensions': ['advertiser_id', 'stat_time_day'], 'status': '',
-         'names': [], 'daily': True,
+         'dimensions': ['advertiser_id', 'stat_time_day'],
          'suffix': utl.reach_suffix(utl.platform_report_level, daily=True)}]
 
     def __init__(self):
@@ -417,12 +406,11 @@ class TikApi(object):
 
     def request_reach(self, sd, ed):
         """
-        Requests reach at every level: one row per campaign and per ad
-        group for the whole range, and one row per day for the advertiser.
+        Requests the advertiser's reach, one row per day.
 
         :param sd: start date as YYYY-MM-DD
         :param ed: end date as YYYY-MM-DD
-        :returns: dataframe of reach rows, their measures suffixed per level
+        :returns: dataframe of reach rows, their measures suffixed
         """
         frames = [self.request_reach_report(sd, ed, report)
                   for report in self.reach_reports]
@@ -430,74 +418,54 @@ class TikApi(object):
 
     def request_reach_report(self, sd, ed, report):
         """
-        Requests one reach report and dates its rows so a date merge keeps
-        them: a whole range row to the start of the range, a daily row to
-        its own day.
-
-        Leaving the day dimension out is what makes TikTok count each
-        user once across the range, and it lifts the report's cap from
-        30 days to 365.  A longer range is skipped rather than split,
-        since the reach of two halves cannot be added back together.  The
-        daily advertiser report counts people once within each day, so
-        its 30 day blocks stack.  TikTok cannot narrow an advertiser row
-        to the card's campaigns, so a card with a campaign filter gets no
-        daily advertiser reach rather than the whole account's.
+        Requests one daily reach report in 30 day blocks, the most TikTok
+        answers with the day dimension; the blocks stack because each row
+        counts people once within its own day.  TikTok cannot narrow an
+        advertiser row to the card's campaigns, so a card with a campaign
+        filter gets no daily advertiser reach rather than the whole
+        account's.
 
         :param sd: start date as YYYY-MM-DD
         :param ed: end date as YYYY-MM-DD
         :param report: the reach_reports entry to pull
         :returns: dataframe of the report's rows, their measures suffixed
         """
+        if utl.platform_reach_blocked(
+                self.vendor_name, self.parse_campaign_filter(),
+                level='advertiser'):
+            return pd.DataFrame()
         start = dt.datetime.strptime(sd, '%Y-%m-%d')
         end = dt.datetime.strptime(ed, '%Y-%m-%d')
-        if report.get('daily'):
-            if utl.platform_reach_blocked(
-                    self.vendor_name, self.parse_campaign_filter(),
-                    level='advertiser'):
-                return pd.DataFrame()
-            blocks = utl.date_blocks(start, end, self.daily_reach_max_days)
-        elif not utl.reach_range_fits(start, end, self.reach_max_days,
-                                      self.vendor_name):
-            return pd.DataFrame()
-        else:
-            blocks = [(start, end)]
         frames = []
-        for block_sd, block_ed in blocks:
+        for block_sd, block_ed in utl.date_blocks(start, end,
+                                                  self.reach_max_days):
             params = self.reach_params(block_sd.strftime('%Y-%m-%d'),
                                        block_ed.strftime('%Y-%m-%d'), report)
             frames.append(self.request_pages(params['start_date'],
                                              params['end_date'], params))
         df = pd.concat(frames, ignore_index=True)
-        date = '{} 00:00:00'.format(sd)
-        if report.get('daily'):
-            df = df.rename(columns={self.new_date: self.old_date})
-            date = ''
-        df = utl.suffix_reach(df, self.reach_metrics, report['suffix'],
-                              self.old_date, date)
+        df = df.rename(columns={self.new_date: self.old_date})
+        df = utl.suffix_reach(df, self.reach_metrics, report['suffix'])
         return utl.name_reach_rows(df, self.placement)
 
     def reach_params(self, sd, ed, report):
         """
-        The request params of one reach report.  A status filter keeps
-        deleted objects in a campaign or ad group report; the advertiser
-        level accepts no status filter and counts every ad.
+        The request params of one reach report.  The advertiser level
+        accepts no status filter and counts every ad.
 
         :param sd: start date as YYYY-MM-DD
         :param ed: end date as YYYY-MM-DD
         :param report: the reach_reports entry to request
         :returns: dict of request params
         """
-        params = {'advertiser_id': self.advertiser_id,
-                  'report_type': 'BASIC',
-                  'data_level': report['data_level'],
-                  'dimensions': json.dumps(report['dimensions']),
-                  'metrics': json.dumps(report['names'] + self.reach_metrics),
-                  'start_date': sd,
-                  'end_date': ed,
-                  'page_size': 1000}
-        if report['status']:
-            params['filtering'] = self.status_filter(report['status'])
-        return params
+        return {'advertiser_id': self.advertiser_id,
+                'report_type': 'BASIC',
+                'data_level': report['data_level'],
+                'dimensions': json.dumps(report['dimensions']),
+                'metrics': json.dumps(self.reach_metrics),
+                'start_date': sd,
+                'end_date': ed,
+                'page_size': 1000}
 
     def request_and_get_data(self, sd, ed):
         """
@@ -586,16 +554,15 @@ class TikApi(object):
 
     def get_reach(self, sd=None, ed=None, fields=None):
         """
-        Only the reach rows, the whole range campaign and ad group rows
-        and the daily advertiser rows, for a caller whose delivery range
-        is shorter than the range reach has to cover: importhandler trims
-        a merge card's delivery to its merge window but pulls reach from
-        the card's start date.
+        Only the reach rows, the daily advertiser rows, for a caller whose
+        delivery range is shorter than the range reach has to cover:
+        importhandler trims a merge card's delivery to its merge window
+        but pulls reach from the card's start date.
 
         :param sd: start of the reach range
         :param ed: end of the reach range
         :param fields: the card's api fields, read only for No Reach
-        :returns: dataframe of reach rows, their measures suffixed per level
+        :returns: dataframe of reach rows, their measures suffixed
         """
         if not utl.pull_reach(fields):
             return pd.DataFrame()

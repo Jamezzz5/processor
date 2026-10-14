@@ -68,9 +68,7 @@ class RedApi(object):
     no_reach_field = utl.no_reach_field
     vendor_name = 'Reddit'
     api_field_options = (
-        (no_reach_field,
-         'Skip the whole range campaign and ad group reach and the daily '
-         'account reach'),)
+        (no_reach_field, 'Skip the daily account reach'),)
     daily_breakdowns = ['AD_ID', 'DATE']
     daily_fields = [
         'IMPRESSIONS', 'CLICKS', 'SPEND', 'VIDEO_STARTED',
@@ -89,11 +87,7 @@ class RedApi(object):
         'CONVERSION_SIGN_UP_CLICKS', 'CONVERSION_SIGN_UP_VIEWS']
     reach_metrics = {'reach': 'Reach', 'frequency': 'Frequency'}
     reach_reports = [
-        {'breakdown': 'CAMPAIGN_ID', 'id_col': 'campaign_id',
-         'suffix': utl.reach_suffix('campaign')},
-        {'breakdown': 'AD_GROUP_ID', 'id_col': 'ad_group_id',
-         'suffix': utl.reach_suffix('ad_group')},
-        {'breakdown': 'DATE', 'id_col': '',
+        {'breakdown': 'DATE',
          'suffix': utl.reach_suffix(utl.platform_report_level, daily=True)}]
 
     def __init__(self, headless=True):
@@ -937,51 +931,42 @@ class RedApi(object):
 
     def request_reach(self, account_id, sd, ed):
         """
-        Pulls one row per campaign and per ad group for the whole range,
-        so Reddit counts each person once across it, and one row per day
-        for the account, each day's people counted once across every
-        campaign.  Reddit answers any range in one report, so none is
-        skipped, but it only holds reach from June 2024.  It cannot narrow
-        an account row to the card's campaigns, so a card with a campaign
-        filter gets no daily account reach rather than the whole account's.
+        Pulls one row per day for the account, each day's people counted
+        once across every campaign.  Reddit answers any range in one
+        report, so none is split, but it only holds reach from June 2024.
+        It cannot narrow an account row to the card's campaigns, so a
+        card with a campaign filter gets no daily account reach rather
+        than the whole account's.
 
         :param account_id: Account ID to pull as a str
         :param sd: The start date to pull from
         :param ed: The end date to pull to
-        :return: df of reach rows, their measures suffixed per level
+        :return: df of reach rows, their measures suffixed
         """
-        fields = [x.upper() for x in self.reach_metrics]
         df = pd.DataFrame()
+        if utl.platform_reach_blocked(self.vendor_name, self.campaign_filter):
+            return df
+        fields = [x.upper() for x in self.reach_metrics]
         for report in self.reach_reports:
-            if not report['id_col'] and utl.platform_reach_blocked(
-                    self.vendor_name, self.campaign_filter):
-                continue
             body = self.report_body(sd, ed, [report['breakdown']], fields)
             rows = self.get_report(account_id, sd, ed, body)
-            df = pd.concat([df, self.reach_to_df(rows, report, sd)],
+            df = pd.concat([df, self.reach_to_df(rows, report)],
                            ignore_index=True)
         return df
 
-    def reach_to_df(self, response_list, report, sd):
+    def reach_to_df(self, response_list, report):
         """
-        Names one reach report's objects, suffixes its measures, dates
-        its rows and gives them the card's placement: a whole range row
-        is dated to the start of the range, so a merge
-        keeps it, and a daily account row to its own day.
+        Suffixes one reach report's measures and gives its rows the
+        card's placement; each row keeps its own day.
 
         :param response_list: The report's rows as dicts
         :param report: The reach_reports entry pulled
-        :param sd: The start date the reach covers
-        :return: The rows named, renamed, dated and placed
+        :return: The rows renamed and placed
         """
         df = pd.DataFrame(response_list)
         if df.empty:
             return df
-        if report['id_col']:
-            df = self.add_names_to_df(df, level_col=report['id_col'])
-        date = '' if self.date_col in df.columns else sd.strftime('%Y-%m-%d')
-        df = utl.suffix_reach(df, self.reach_metrics, report['suffix'],
-                              self.date_col, date)
+        df = utl.suffix_reach(df, self.reach_metrics, report['suffix'])
         raw_cols = {v: k for k, v in self.cols.items()}
         column = self.placement['column']
         spec = dict(self.placement, column=raw_cols.get(column, column))
@@ -1006,16 +991,15 @@ class RedApi(object):
 
     def get_reach(self, sd=None, ed=None, fields=None):
         """
-        Only the reach rows, the whole range campaign and ad group rows
-        and the daily account rows, for a caller whose delivery range is
-        shorter than the range reach has to cover: importhandler trims a
-        merge card's delivery to its merge window but pulls reach from the
-        card's start date.
+        Only the reach rows, the daily account rows, for a caller whose
+        delivery range is shorter than the range reach has to cover:
+        importhandler trims a merge card's delivery to its merge window
+        but pulls reach from the card's start date.
 
         :param sd: Start of the reach range
         :param ed: End of the reach range
         :param fields: The card's api fields, read only for No Reach
-        :return: df of reach rows, their measures suffixed per level
+        :return: df of reach rows, their measures suffixed
         """
         if not utl.pull_reach(fields):
             return pd.DataFrame()

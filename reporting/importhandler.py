@@ -220,6 +220,7 @@ class ImportHandler(object):
                     api_class.sw.quit()
                 else:
                     raise e
+            df = utl.learn_card_placement(api_class, df)
             self.output(df, params[vmc.filename], params[vmc.apimerge],
                         params[vmc.firstrow], params[vmc.lastrow],
                         params[vmc.date], params[vmc.startdate],
