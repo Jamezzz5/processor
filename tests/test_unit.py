@@ -6050,6 +6050,41 @@ class TestGamesDb:
         assert float(theme.mentions) == 6
         assert theme.taxonomy_version == 2
 
+    def test_listening_tables_upsert_idempotent(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
+        news_key = {'gid': 5000001}
+        assert gdb.upsert_fact(
+            s, gmdl.SteamNews, news_key,
+            {'gameid': game.gameid, 'title': 'Patch 1.2',
+             'tags': 'patchnotes',
+             'posted_at': dt.datetime(2026, 9, 1, 5)}) == 1
+        assert gdb.upsert_fact(s, gmdl.SteamNews, news_key,
+                               {'title': 'Patch 1.2 hotfix'}) == 0
+        video = gmdl.YoutubeVideo(
+            video_id='abc123', gameid=game.gameid, kind='official',
+            source='igdb', label='Launch Trailer')
+        s.add(video)
+        s.flush()
+        comment_key = {'comment_id': 'Ugx1'}
+        assert gdb.upsert_fact(
+            s, gmdl.YoutubeComment, comment_key,
+            {'youtubevideoid': video.youtubevideoid, 'text': 'Hyped',
+             'like_count': 3,
+             'fetched_at': dt.datetime(2026, 9, 2, 5)}) == 1
+        s.query(gmdl.YoutubeComment).update({'sentiment': 'positive'})
+        assert gdb.upsert_fact(s, gmdl.YoutubeComment, comment_key,
+                               {'like_count': 4}) == 0
+        s.commit()
+        row = s.query(gmdl.YoutubeComment).one()
+        assert float(row.like_count) == 4 and row.sentiment == 'positive'
+        assert s.query(gmdl.SteamNews).one().title == 'Patch 1.2 hotfix'
+        assert gmdl.YoutubeComment.__table__.columns.keys() == [
+            'youtubecommentid', 'youtubevideoid', 'comment_id', 'text',
+            'like_count', 'published_at', 'fetched_at', 'sentiment',
+            'themes', 'classified_at', 'taxonomy_version']
+
     def test_game_release_upsert_idempotent(self):
         s = self._session()
         game = gdb.upsert_game(s, 'Game A Prime', igdb_id=1105,

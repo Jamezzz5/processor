@@ -231,6 +231,11 @@ class CommunitySnapshot(Base):
         Numeric, comment='Members online on the linked Discord server '
                          '(invite approximate_presence_count) at the '
                          'nightly sample - a point-in-time count.')
+    steam_offtopic_reviews = Column(
+        Numeric, comment='Reviews Steam hides as off-topic activity: '
+                         'the filter_offtopic_activity=0 total minus '
+                         'the default total. A rising count is a '
+                         'review-bomb signal, never a sentiment input.')
 
 
 class CommunityLink(Base):
@@ -1329,3 +1334,113 @@ class GameAlias(Base):
     source = Column(Text, comment='Who curated it: registry sheet, '
                                   'competitor band, pathmatics brand.')
     created_at = Column(DateTime, comment='Naive UTC.')
+
+
+class SteamNews(Base):
+    """Developer posts from a title's Steam news feed — patch notes and
+    announcements as the publisher wrote them, insert-only by Steam's
+    own ``gid``."""
+    __tablename__ = 'steam_news'
+    __table_args__ = (
+        UniqueConstraint('gid', name='uq_steam_news_gid'),
+        Index('ix_steam_news_game_posted', 'gameid', 'posted_at'),
+        {'schema': 'games',
+         'comment': 'Steam community announcements per title (ISteamNews '
+                    'GetNewsForApp, feed steam_community_announcements '
+                    'only). A patchnotes tag marks patch notes. Context '
+                    'for other readings; never scored.'},
+    )
+
+    steamnewsid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    gid = Column(BigInteger, nullable=False,
+                 comment="Steam's own post id - the idempotency key.")
+    title = Column(Text)
+    url = Column(Text)
+    author = Column(Text,
+                    comment='The posting account as Steam shows it.')
+    feedname = Column(Text)
+    feedlabel = Column(Text)
+    tags = Column(Text, comment='Comma-joined Steam tags; patchnotes '
+                                'marks patch notes.')
+    body = Column(Text,
+                  comment='Post body, clipped to 4,000 characters.')
+    posted_at = Column(DateTime, nullable=False, comment='Naive UTC.')
+    first_seen = Column(DateTime,
+                        comment='Naive UTC; when the lane first stored '
+                                'it - the recency column.')
+
+
+class YoutubeComment(Base):
+    """Top-level comments on an official trailer — a relevance-ordered
+    sample kept at most 30 days (YouTube API policy) with no author
+    fields. The classification columns start NULL."""
+    __tablename__ = 'youtube_comment'
+    __table_args__ = (
+        UniqueConstraint('comment_id', name='uq_youtube_comment_id'),
+        Index('ix_youtube_comment_video', 'youtubevideoid'),
+        Index('ix_youtube_comment_fetched', 'fetched_at'),
+        {'schema': 'games',
+         'comment': 'Relevance-ordered top-level comments on official '
+                    'trailers. Purged 30 days after fetch, so never a '
+                    'history; no author name or channel is stored.'},
+    )
+
+    youtubecommentid = Column(BigIntPk, primary_key=True)
+    youtubevideoid = Column(
+        BigInteger, ForeignKey('games.youtube_video.youtubevideoid'),
+        nullable=False)
+    comment_id = Column(Text, nullable=False,
+                        comment="YouTube's comment id - the idempotency "
+                                'key.')
+    text = Column(Text,
+                  comment='Comment text, clipped to 1,000 characters.')
+    like_count = Column(Numeric)
+    published_at = Column(DateTime, comment='Naive UTC.')
+    fetched_at = Column(DateTime,
+                        comment='Naive UTC; last fetch that returned it '
+                                '- the purge and recency column.')
+    sentiment = Column(Text,
+                       comment="'positive' | 'negative' | 'neutral' as "
+                               'the classifier read it; NULL until '
+                               'classified.')
+    themes = Column(Text, comment='JSON array of taxonomy keys; [] means '
+                                  'none applied, NULL not yet '
+                                  'classified.')
+    classified_at = Column(DateTime, comment='Naive UTC.')
+    taxonomy_version = Column(Integer)
+
+
+class YoutubeReaction(Base):
+    """Per-trailer reaction aggregates over the classified comment
+    sample — arithmetic only. Outlives the purged comments, so an old
+    trailer keeps its split."""
+    __tablename__ = 'youtube_reaction'
+    __table_args__ = (
+        UniqueConstraint('youtubevideoid',
+                         name='uq_youtube_reaction_video'),
+        {'schema': 'games',
+         'comment': 'Sentiment and theme counts over a classified '
+                    'sample of comments per official trailer. Our '
+                    'read of a sample, not a YouTube metric.'},
+    )
+
+    youtubereactionid = Column(BigIntPk, primary_key=True)
+    youtubevideoid = Column(
+        BigInteger, ForeignKey('games.youtube_video.youtubevideoid'),
+        nullable=False)
+    sample_size = Column(Numeric, comment='Classified comments.')
+    positive = Column(Numeric)
+    negative = Column(Numeric)
+    neutral = Column(Numeric)
+    theme_counts = Column(JSON().with_variant(JSONB, 'postgresql'),
+                          comment='{theme key: comments carrying it}.')
+    example_ids = Column(Text,
+                         comment='Comma-joined comment ids of the '
+                                 'most-liked examples; they age out '
+                                 'with the purge.')
+    taxonomy_version = Column(Integer, nullable=False)
+    model = Column(Text, comment='Classifier model id.')
+    computed_at = Column(DateTime,
+                         comment='Naive UTC; the recency column.')
