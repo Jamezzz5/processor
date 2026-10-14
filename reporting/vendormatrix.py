@@ -296,8 +296,25 @@ class VendorMatrix(object):
                 logging.info('All placements defined.  Deleting Error report'
                              ' directory.')
                 os.rmdir(er.csv_path)
+        self.df = self.add_api_type(self.df)
         self.df = utl.data_to_type(self.df, vmc.datafloatcol, vmc.datadatecol)
         return self.df
+
+    @staticmethod
+    def add_api_type(df):
+        """
+        Adds the API Type column: the platform behind each row's vendor
+        key, so output pivots by platform across cards that were split
+        by date or named by hand.  Rows without a vendor key stay as
+        they are.
+
+        :param df: the output data, with a Vendor Key column when any
+            source loaded
+        :returns: the output data with API Type beside it
+        """
+        if vmc.vendorkey in df.columns:
+            df[vmc.apitype] = df[vmc.vendorkey].map(utl.get_api_type)
+        return df
 
     @staticmethod
     def write_output_data(df, output_file):

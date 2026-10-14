@@ -4,6 +4,7 @@ siteserve = '_SiteServed'
 planned_suffix = ' (Planned)'
 
 vendorkey = 'Vendor Key'
+apitype = 'API Type'
 filename = 'FILENAME'
 firstrow = 'FIRSTROW'
 lastrow = 'LASTROW'
