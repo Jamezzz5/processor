@@ -87,7 +87,8 @@ class VendorMatrix(object):
         return df
 
     def plan_net_check(self):
-        if not self.vm['Vendor Key'].isin(['Plan Net']).any():
+        if (vmc.vendorkey not in self.vm.columns or
+                not self.vm[vmc.vendorkey].isin(['Plan Net']).any()):
             logging.warning('No Plan Net key in Vendor Matrix.  Add it.')
             return False
         return True

@@ -637,7 +637,8 @@ class Analyze(object):
             col_name = vmc.date + col
             if col_name not in df.columns:
                 col_name = col_name.replace(' - a', ' - ')
-            df[col_name] = df[col_name].astype('U')
+            if col_name in df.columns:
+                df[col_name] = df[col_name].astype('U')
         update_msg = 'Metrics by vendor key are as follows:'
         self.format_log_msg_with_df(update_msg, df)
         self.add_to_analysis_dict(key_col=self.vk_metrics,
