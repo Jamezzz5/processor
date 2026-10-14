@@ -4950,7 +4950,6 @@ class AliChat(object):
         self.models_to_search = models_to_search
         self.message = message
         self.page_context = page_context
-        ticket_offered = None
         if not self.stop_words:
             self.stop_words = self.get_stop_words()
         if page_context:
@@ -5008,24 +5007,7 @@ class AliChat(object):
                     if not html_response:
                         html_response = ''
                     html_response += hr
-        if (ali_tic.detect_ticket_intent(message)
-                and not ali_tic.is_content_task(message)):
-            coverage = ali_tic.check_existing_feature_coverage(
-                response, matched_models)
-            ticket_response = ali_tic.build_ticket_offer_response(
-                has_existing_docs=coverage['has_existing_docs'],
-                guidance_model_names=coverage['guidance_model_names'],
-                retrieval_response=response,
-            )
-            if coverage['has_existing_docs']:
-                response = ticket_response
-                self.call_llm = True
-                ticket_offered = 'soft'
-            else:
-                response = ticket_response
-                self.call_llm = False
-                ticket_offered = 'direct'
-        elif not response:
+        if not response:
             if ali_tic.is_doc_style_prompt(message):
                 guidance_searched = [
                     m for m in models_to_search
@@ -5052,7 +5034,7 @@ class AliChat(object):
                 doc_files=doc_files,
                 area_keywords=area_keywords)
         response = self.polish_response(response)
-        return response, html_response, ticket_offered, source_context
+        return response, html_response, None, source_context
 
     def train_tf(self, training_data):
         import tensorflow as tf
