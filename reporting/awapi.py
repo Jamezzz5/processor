@@ -131,9 +131,8 @@ class AwApiReportBuilder(object):
                                  self.view_conversions]
         self.conv_metrics = self.base_conv_metrics + self.ext_conv_metrics
         self.reach_metrics = [self.unique_users, self.frequency]
-        self.reach_fields = (self.camp_params + [self.campaign_id] +
-                             self.reach_metrics)
-        self.daily_reach_fields = self.date_params + self.reach_fields
+        self.reach_fields = (self.date_params + self.camp_params +
+                             [self.campaign_id] + self.reach_metrics)
         self.def_fields = self.def_params + self.def_metrics
         self.conv_fields = self.def_params + self.conv_metrics
         self.uac_fields = (self.date_params + self.camp_params +
@@ -151,8 +150,7 @@ class AwApi(object):
         ('UAC', 'App campaign report with base conversions'),
         ('no_date', 'Drop the date parameters'),
         ('Device', 'Add the device dimension'),
-        (no_reach_field,
-         'Skip the whole range and the daily campaign reach'))
+        (no_reach_field, 'Skip the daily campaign reach'))
     version = 24
     base_url = 'https://googleads.googleapis.com/v{}/customers/'.format(version)
     report_url = '/googleAds:searchStream'
@@ -162,8 +160,7 @@ class AwApi(object):
     vendor_name = 'Google Ads'
     reach_report_type = 'campaign'
     reach_max_days = 92
-    reach_suffix = utl.reach_suffix(reach_report_type)
-    daily_reach_suffix = utl.reach_suffix(reach_report_type, daily=True)
+    reach_suffix = utl.reach_suffix(reach_report_type, daily=True)
 
     def __init__(self):
         self.df = pd.DataFrame()
@@ -454,21 +451,21 @@ class AwApi(object):
         """
         Every column a reach row fills, so importhandler can find the reach
         rows a merged raw file already holds and replace them.  The daily
-        report cannot select these metrics, so the suffixes only keep the
-        whole range rows and the daily campaign rows apart from each other.
+        report cannot select these metrics, so the suffix keeps the daily
+        campaign rows apart from the delivery rows.
 
         :return: List of the suffixed reach and frequency column names
         """
         return utl.reach_columns(
             [x.display_name for x in self.rb.reach_metrics],
-            [self.reach_suffix, self.daily_reach_suffix])
+            [self.reach_suffix])
 
     def get_reach(self, sd=None, ed=None, fields=None):
         """
-        Only the reach rows, the whole range and the daily campaign rows,
-        for a caller whose delivery range is shorter than the range reach
-        has to cover: importhandler trims a merge card's delivery to its
-        merge window but pulls reach from the card's start date.
+        Only the reach rows, the daily campaign rows, for a caller whose
+        delivery range is shorter than the range reach has to cover:
+        importhandler trims a merge card's delivery to its merge window
+        but pulls reach from the card's start date.
 
         :param sd: Start of the reach range
         :param ed: End of the reach range
@@ -483,69 +480,53 @@ class AwApi(object):
 
     def request_reach(self, sd, ed):
         """
-        Pulls one row per campaign for the whole range, so Google counts
-        each person once across it, and one row per campaign per day.
-        Google Ads reports unique users on the campaign resource alone,
-        so the account has no daily row of its own.
-
-        Google Ads totals the metrics only within 92 days.  Two blocks of
-        whole range reach cannot be added back together, so a longer
-        range skips that report; the daily rows each cover one day, so
-        they are pulled in 92 day blocks whatever the range.
+        Pulls one row per campaign per day.  Google Ads reports unique
+        users on the campaign resource alone, so the account has no daily
+        row of its own.  Google Ads totals the metrics only within 92
+        days, and the daily rows each cover one day, so they are pulled
+        in 92 day blocks whatever the range.
 
         :param sd: Start of the range
         :param ed: End of the range
-        :return: df of reach rows, their measures suffixed per report
+        :return: df of reach rows, their measures suffixed
         """
         frames = []
-        if utl.reach_range_fits(sd, ed, self.reach_max_days,
-                                self.vendor_name):
-            frames.append(self.request_reach_rows(
-                sd, ed, self.rb.reach_fields, self.reach_suffix, sd))
         for block_sd, block_ed in utl.date_blocks(sd, ed,
                                                   self.reach_max_days):
-            frames.append(self.request_reach_rows(
-                block_sd, block_ed, self.rb.daily_reach_fields,
-                self.daily_reach_suffix))
+            frames.append(self.request_reach_rows(block_sd, block_ed))
         return pd.concat(frames, ignore_index=True)
 
-    def request_reach_rows(self, sd, ed, fields, suffix, date=None):
+    def request_reach_rows(self, sd, ed):
         """
-        Runs one campaign reach query and names its rows.
+        Runs one daily campaign reach query and names its rows.
 
         :param sd: Start of the range
         :param ed: End of the range
-        :param fields: ReportColumns to select
-        :param suffix: Column suffix naming the report
-        :param date: Day to date every row to, for a whole range report
-        :return: df of the report's rows, suffixed and dated
+        :return: df of the report's rows, suffixed and placed
         """
+        fields = self.rb.reach_fields
         report = self.get_report_request_dict(sd, ed, fields,
                                               self.reach_report_type)
         df = self.request_report_df(report, fields)
-        return self.suffix_reach(df, suffix, date)
+        return self.suffix_reach(df, self.reach_suffix)
 
-    def suffix_reach(self, df, suffix, date=None):
+    def suffix_reach(self, df, suffix):
         """
-        Names a reach report's measures apart from the other report's,
-        dates a whole range row to the start of its range so a merge keeps
-        it, gives the rows the card's placement, and drops a campaign
-        type without the metrics (Search, Shopping), which comes back
-        with both blank.
+        Names a reach report's measures apart from the delivery rows,
+        gives the rows the card's placement, and drops a campaign type
+        without the metrics (Search, Shopping), which comes back with
+        both blank.
 
         :param df: The reach report's rows
         :param suffix: Column suffix naming the report
-        :param date: Day to date every row to, None to keep the row's own
-        :return: The rows renamed, dated and placed
+        :return: The rows renamed and placed
         """
         metrics = [x.display_name for x in self.rb.reach_metrics
                    if x.display_name in df.columns]
         if not metrics:
             return pd.DataFrame()
         df = df.dropna(subset=metrics, how='all').reset_index(drop=True)
-        df = utl.suffix_reach(
-            df, metrics, suffix, self.rb.date.display_name,
-            date.strftime('%Y-%m-%d') if date is not None else '')
+        df = utl.suffix_reach(df, metrics, suffix)
         return utl.name_reach_rows(df, self.placement)
 
     def get_report_url(self):

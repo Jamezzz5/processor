@@ -764,51 +764,79 @@ def reach_columns(metrics, suffixes):
     return ['{}{}'.format(x, suffix) for suffix in suffixes for x in metrics]
 
 
-def suffix_reach(df, metrics, suffix, date_col='', date=''):
+def suffix_reach(df, metrics, suffix):
     """
-    Names one reach report's measures apart from every other report's so
-    none overwrites another, and dates a whole range report's rows to its
-    start so a date merge keeps them; a daily row keeps its own day.
+    Names one reach report's measures apart from the delivery rows and
+    every other report's so none overwrites another; each row keeps its
+    own day.
 
     :param df: One reach report's rows
     :param metrics: The measure columns to suffix, or a dict of the column
         each row carries to the name it is reported under
     :param suffix: The report's suffix from reach_suffix
-    :param date_col: The date column to fill, only with date
-    :param date: The formatted start of a whole range report, '' for a
-        daily report whose rows carry their own day
-    :return: The rows renamed and dated
+    :return: The rows renamed
     """
     if df.empty:
         return df
     names = metrics if isinstance(metrics, dict) else {x: x for x in metrics}
-    df = df.rename(columns={
+    return df.rename(columns={
         x: '{}{}'.format(name, suffix) for x, name in names.items()})
-    if date and date_col:
-        df[date_col] = date
-    return df
 
 
-def placement_layout(order=None):
+def placement_offset(full_place_cols, column, auto_place=''):
+    """
+    How far a card's auto dictionary order runs ahead of its placement
+    column.  The order is written against the column the dictionary
+    splits, by default the Full Placement Name, which joins every
+    column the card lists ahead of its placement column before the
+    placement itself, so the slot the order gives a part sits that
+    many parts past the part's slot in the placement.  Each column
+    ahead counts one part: an underscore stripped (::) column always
+    is one, and the order is written as if any other is too.
+
+    :param full_place_cols: The card's FULL PLACEMENT NAME column list
+    :param column: The card's placement column
+    :param auto_place: The card's AUTO DICTIONARY PLACEMENT, the Full
+        Placement Name when blank
+    :return: The number of parts ahead of the placement column, 0 when
+        the order is split from the placement column itself or the
+        placement column is not in the Full Placement Name
+    """
+    place = str(auto_place or '').strip()
+    if place and place != 'nan' and place != dctc.FPN:
+        return 0
+    cols = [str(x).removeprefix('::').strip()
+            for x in (full_place_cols or [])]
+    cols = [x for x in cols if x and x != 'nan']
+    return cols.index(column) if column in cols else 0
+
+
+def placement_layout(order=None, offset=0):
     """
     Where a card keeps the vendor and campaign in its placements: the
-    slots its auto dictionary order gives mpVendor and mpCampaign, in a
-    name as long as that order.  A card with no order, or one whose
-    order leaves a part out, uses CM360's slot for it: the second of
-    sixteen for the vendor and the sixteenth for the campaign.
+    slots its auto dictionary order gives mpVendor and mpCampaign, less
+    the parts of the split name ahead of the placement column
+    (placement_offset), in a name as long as the rest of that order.
+    A card with no order, or one whose order leaves a part out, uses
+    CM360's slot for it: the second of sixteen for the vendor and the
+    sixteenth for the campaign, slots that already sit inside its
+    placement column.
 
     :param order: The card's AUTO DICTIONARY ORDER values, None for none
+    :param offset: How many parts of the split name come before the
+        placement column, 0 when the order is the placement's own
     :return: Tuple of the name's length, the vendor slot and the
-        campaign slot, a slot None when the name has no room for it
+        campaign slot, a slot None when the name has no room for it or
+        the part sits in a column ahead of the placement
     """
     names = [str(x).split(':::')[0].strip() for x in (order or [])]
     names = [x for x in names if x and x != 'nan']
-    length = len(names) or placement_parts
+    length = max(len(names) - offset, 0) if names else placement_parts
     slots = []
     for name, default in ((dctc.VEN, placement_vendor_part),
                           (dctc.CAM, placement_campaign_part)):
-        slot = names.index(name) if name in names else default
-        slots.append(slot if slot < length else None)
+        slot = names.index(name) - offset if name in names else default
+        slots.append(slot if 0 <= slot < length else None)
     return length, slots[0], slots[1]
 
 
@@ -859,20 +887,67 @@ def first_mode(series):
     return modes.iloc[0] if len(modes) else ''
 
 
-def placement_spec(column, vendor, campaign='', order=None):
+def campaign_sources(full_place_cols, column, order=None, auto_place=''):
+    """
+    Where a card's campaign can be read off its own rows when its
+    dictionary does not know it yet: each column of the Full Placement
+    Name that keeps its underscores, with the slot the card's auto
+    dictionary order gives mpCampaign once the columns ahead of it are
+    taken off, in the name's order, so a card placed by creative still
+    reads the line item its campaign sits in.  An order split from the
+    placement column itself, or one that does not name the campaign,
+    reads the placement column alone, at CM360's slot when the order
+    has none.
+
+    :param full_place_cols: The card's FULL PLACEMENT NAME column list
+    :param column: The card's placement column
+    :param order: The card's AUTO DICTIONARY ORDER values, None for none
+    :param auto_place: The card's AUTO DICTIONARY PLACEMENT, the Full
+        Placement Name when blank
+    :return: List of (column, slot) pairs to try in turn
+    """
+    names = [str(x).split(':::')[0].strip() for x in (order or [])]
+    names = [x for x in names if x and x != 'nan']
+    place = str(auto_place or '').strip()
+    from_placement = place and place != 'nan' and place != dctc.FPN
+    if from_placement or dctc.CAM not in names:
+        slot = (names.index(dctc.CAM) if dctc.CAM in names
+                else placement_campaign_part)
+        return [(column, slot)]
+    index = names.index(dctc.CAM)
+    cols = [str(x).strip() for x in (full_place_cols or [])]
+    cols = [x for x in cols if x and x != 'nan']
+    sources = []
+    for i, col in enumerate(cols):
+        if col.startswith('::') or index < i:
+            continue
+        sources.append((col, index - i))
+    return sources or [(column, index)]
+
+
+def placement_spec(column, vendor, campaign='', order=None, offset=0,
+                   sources=None):
     """
     How a card names a reach row's placement: the column it builds
-    placements from, the vendor and campaign its placements carry, and
-    the slots its dictionary order keeps them in.
+    placements from, the vendor and campaign its placements carry, the
+    slots its dictionary order keeps them in, and where its own rows
+    give the campaign away while the dictionary does not know it.
 
     :param column: The card's placement column
     :param vendor: The vendor part, the platform's name until known
     :param campaign: The campaign part, '' until known
     :param order: The card's AUTO DICTIONARY ORDER values, None for none
-    :return: Dict of column, vendor, campaign and layout
+    :param offset: The parts of the split name ahead of the placement
+        column, from placement_offset
+    :param sources: (column, slot) pairs from campaign_sources, the
+        placement column at its own slot when None
+    :return: Dict of column, vendor, campaign, layout and sources
     """
+    layout = placement_layout(order, offset)
+    if sources is None:
+        sources = [(column, layout[2])] if layout[2] is not None else []
     return {'column': column, 'vendor': vendor, 'campaign': campaign,
-            'layout': placement_layout(order)}
+            'layout': layout, 'sources': sources}
 
 
 def name_reach_rows(df, spec, campaign=''):
@@ -932,9 +1007,12 @@ def set_card_placement(api, params):
     Tells a reach-capable api how the card it is about to pull names its
     placements, from the card's vendor matrix row and dictionary: the
     column, the slots its auto dictionary order keeps the vendor and
-    campaign in, and the vendor and campaign its placements map to.  An
-    api without reach rows has no placement and is left alone; a card
-    that says nothing on a part leaves the api's own default for it.
+    campaign in once the Full Placement Name columns ahead of the
+    placement column are taken off, and the vendor and campaign its
+    placements map to.  An api without reach rows has no placement and
+    is left alone; a card that says nothing on a part leaves the api's
+    own default for it, and learn_card_placement fills the campaign in
+    from the pull once it is made.
 
     :param api: The api object about to pull the card
     :param params: The card's vendor matrix row from vendor_set
@@ -943,33 +1021,71 @@ def set_card_placement(api, params):
         return
     spec = api.placement
     column = str(params.get(vmc.placement, '') or '').strip()
+    if not column or column == 'nan':
+        column = spec['column']
     vendor, campaign = card_placement_tokens(params.get(vmc.filenamedict))
+    offset = placement_offset(params.get(vmc.fullplacename), column,
+                              params.get(vmc.autodicplace))
+    sources = campaign_sources(params.get(vmc.fullplacename), column,
+                               params.get(vmc.autodicord),
+                               params.get(vmc.autodicplace))
     api.placement = placement_spec(
-        column if column and column != 'nan' else spec['column'],
-        vendor or spec['vendor'], campaign or spec['campaign'],
-        params.get(vmc.autodicord))
+        column, vendor or spec['vendor'], campaign or spec['campaign'],
+        params.get(vmc.autodicord), offset, sources)
 
 
-def reach_range_fits(sd, ed, max_days, platform):
+def learn_card_placement(api, df):
     """
-    Whether one whole range reach report can cover the range.  A platform
-    counts each person once only within max_days, and two shorter
-    reports cannot be added back together, so a longer range is skipped
-    with a warning rather than split.
+    Fills in the campaign a card's dictionary could not tell
+    set_card_placement, from the card's own pull: a new card has no
+    dictionary yet, so its reach rows were named with the platform
+    alone, while the campaign its placements carry sits in the delivery
+    rows, in the slot the card's order keeps it (campaign_sources).
+    The reach rows named without it take the value the delivery rows
+    carry most often; a campaign the dictionary gave, or a stand-in a
+    filter gave, is kept.
 
-    :param sd: Start of the range, a date or datetime
-    :param ed: End of the range, the same type as sd
-    :param max_days: The longest range the platform counts people once in
-    :param platform: The platform's name, for the warning
-    :return: True when the range fits one report
+    :param api: The api object that pulled the card
+    :param df: The card's pulled rows, delivery and reach together
+    :return: The rows, the reach placements completed where they could be
     """
-    days = (ed - sd).days + 1
-    if days <= max_days:
-        return True
-    logging.warning(
-        '{} only counts people once within {} days, skipping whole range '
-        'reach for the {} day range.'.format(platform, max_days, days))
-    return False
+    if not hasattr(api, 'placement') or df is None or df.empty:
+        return df
+    spec = api.placement
+    column = spec['column']
+    layout = spec['layout']
+    if spec['campaign'] or layout[2] is None or column not in df.columns:
+        return df
+    placeholder = placement_name(spec['vendor'], '', layout)
+    named = df[column].astype('U') == placeholder
+    if not named.any():
+        return df
+    campaign = learned_campaign(df[~named], spec['sources'])
+    if not campaign:
+        return df
+    api.placement = dict(spec, campaign=campaign)
+    df.loc[named, column] = placement_name(spec['vendor'], campaign, layout)
+    return df
+
+
+def learned_campaign(df, sources):
+    """
+    The campaign a card's delivery rows carry most often, read from the
+    first source column that holds one.
+
+    :param df: The card's delivery rows
+    :param sources: (column, slot) pairs from campaign_sources
+    :return: The campaign, '' when no source holds one
+    """
+    for column, slot in sources:
+        if column not in df.columns:
+            continue
+        values = df[column].astype('U').str.split('_').str[slot]
+        values = values.astype('U').str.strip()
+        campaign = first_mode(values[~blank_text(values)])
+        if campaign:
+            return campaign
+    return ''
 
 
 def platform_reach_blocked(platform, campaign_filter, level='account',

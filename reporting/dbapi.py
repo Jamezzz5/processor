@@ -18,9 +18,7 @@ class DbApi(object):
     vendor_name = 'DV360'
     api_field_options = (
         ('YOUTUBE', 'YouTube groupings and metrics'),
-        (no_reach_field,
-         'Skip the whole range campaign, insertion order and line item '
-         'reach and the daily advertiser reach'))
+        (no_reach_field, 'Skip the daily advertiser reach'))
     campaign_groups = ['FILTER_MEDIA_PLAN', 'FILTER_MEDIA_PLAN_NAME']
     campaign_col = 'Campaign'
     campaign_id_col = 'Campaign ID'
@@ -77,18 +75,8 @@ class DbApi(object):
         'METRIC_UNIQUE_REACH_AVERAGE_VIEWABLE_IMPRESSION_FREQUENCY':
             'Unique Reach: Average Viewable Impression Frequency'}
     reach_groups = ['FILTER_ADVERTISER', 'FILTER_ADVERTISER_NAME']
-    insertion_order_groups = ['FILTER_INSERTION_ORDER',
-                              'FILTER_INSERTION_ORDER_NAME']
-    line_item_groups = ['FILTER_LINE_ITEM', 'FILTER_LINE_ITEM_NAME']
     reach_reports = [
-        {'groups': campaign_groups,
-         'suffix': utl.reach_suffix('campaign')},
-        {'groups': campaign_groups + insertion_order_groups,
-         'suffix': utl.reach_suffix('insertion_order')},
-        {'groups': (campaign_groups + insertion_order_groups +
-                    line_item_groups),
-         'suffix': utl.reach_suffix('line_item')},
-        {'groups': ['FILTER_DATE'], 'daily': True,
+        {'groups': ['FILTER_DATE'],
          'suffix': utl.reach_suffix(utl.platform_report_level, daily=True)}]
     default_groups = base_groups
     default_metrics = base_metrics
@@ -224,7 +212,7 @@ class DbApi(object):
         self.df = utl.filter_df_on_campaign(
             self.df, self.campaign_name_filter, self.campaign_col,
             self.campaign_id_col, keep_on_no_match=keep_on_no_match,
-            keep_cols=self.daily_reach_cols)
+            keep_cols=self.reach_cols)
         return self.df
 
     def refresh_client_token(self, extra):
@@ -547,36 +535,25 @@ class DbApi(object):
     def reach_cols(self):
         """
         Every column a reach row fills, so importhandler can find the reach
-        rows a merged raw file already holds and replace them.
+        rows a merged raw file already holds and replace them, and the
+        campaign filter leaves them alone.
 
         :return: List of suffixed reach column names
         """
         return utl.reach_columns(list(self.reach_metrics.values()),
                                  [x['suffix'] for x in self.reach_reports])
 
-    @property
-    def daily_reach_cols(self):
-        """
-        The columns only an advertiser's daily reach row fills, which the
-        campaign filter has to leave alone.
-
-        :return: List of suffixed reach column names
-        """
-        return utl.reach_columns(
-            list(self.reach_metrics.values()),
-            [x['suffix'] for x in self.reach_reports if x.get('daily')])
-
     def get_reach(self, sd=None, ed=None, fields=None):
         """
-        Only the reach rows, the whole range rows and the daily advertiser
-        rows, for a caller whose delivery range is shorter than the range
-        reach has to cover: importhandler trims a merge card's delivery to
-        its merge window but pulls reach from the card's start date.
+        Only the reach rows, the daily advertiser rows, for a caller whose
+        delivery range is shorter than the range reach has to cover:
+        importhandler trims a merge card's delivery to its merge window
+        but pulls reach from the card's start date.
 
         :param sd: Start of the reach range
         :param ed: End of the reach range
         :param fields: The card's api fields, read only for No Reach
-        :return: df of reach rows, their measures suffixed per level
+        :return: df of reach rows, their measures suffixed
         """
         if not utl.pull_reach(fields):
             return pd.DataFrame()
@@ -586,15 +563,13 @@ class DbApi(object):
 
     def request_reach(self, sd, ed):
         """
-        Pulls one row per campaign, insertion order and line item for the
-        whole range, so DV360 counts each person once across it, and one
-        row per day for the advertiser.  The daily STANDARD report cannot
-        carry these metrics, which is why each level is a REACH query of
-        its own.
+        Pulls one row per day for the advertiser.  The daily STANDARD
+        report cannot carry these metrics, which is why the reach is a
+        REACH query of its own.
 
         :param sd: Start of the range
         :param ed: End of the range
-        :return: df of reach rows, their measures suffixed per level
+        :return: df of reach rows, their measures suffixed
         """
         sd, ed, _ = self.get_data_default_check(sd, ed, None)
         df = pd.DataFrame()
@@ -605,36 +580,27 @@ class DbApi(object):
 
     def request_reach_report(self, sd, ed, report):
         """
-        Pulls one level's reach, in as many queries as DV360 answers.
-
-        DV360 only deduplicates reach within 93 days and two blocks cannot
-        be added back together, so a longer range skips a whole range
-        report; the daily advertiser rows each cover one day, so they are
-        pulled in 93 day blocks whatever the range.  DV360 narrows the
-        advertiser's reach to the card's campaigns only when the filter
-        gives their ids, so a filter of names gets no daily advertiser
-        reach rather than the whole advertiser's.
+        Pulls the advertiser's daily reach, in as many queries as DV360
+        answers: the rows each cover one day, so they are pulled in 93
+        day blocks whatever the range.  DV360 narrows the advertiser's
+        reach to the card's campaigns only when the filter gives their
+        ids, so a filter of names gets no daily advertiser reach rather
+        than the whole advertiser's.
 
         :param sd: Start of the range
         :param ed: End of the range
         :param report: The reach_reports entry to pull
-        :return: df of the level's rows, their measures suffixed
+        :return: df of the report's rows, their measures suffixed
         """
-        if report.get('daily'):
-            names = [] if self.campaign_ids else self.campaign_name_filter
-            if utl.platform_reach_blocked(
-                    self.vendor_name, names, level='advertiser',
-                    reason=', which names campaigns rather than giving '
-                           'their ids'):
-                return pd.DataFrame()
-            blocks = utl.date_blocks(sd, ed, self.reach_max_days)
-        elif not utl.reach_range_fits(sd, ed, self.reach_max_days,
-                                      self.vendor_name):
+        names = [] if self.campaign_ids else self.campaign_name_filter
+        if utl.platform_reach_blocked(
+                self.vendor_name, names, level='advertiser',
+                reason=', which names campaigns rather than giving '
+                       'their ids'):
             return pd.DataFrame()
-        else:
-            blocks = [(sd, ed)]
         df = pd.DataFrame()
-        for block_sd, block_ed in blocks:
+        for block_sd, block_ed in utl.date_blocks(sd, ed,
+                                                  self.reach_max_days):
             tdf = self.get_reach_report_df(block_sd, block_ed, report)
             df = pd.concat([df, tdf], ignore_index=True)
         return df
@@ -664,9 +630,7 @@ class DbApi(object):
             return pd.DataFrame()
         self.download_report()
         self.remove_reach_footer()
-        if report.get('daily'):
-            return self.suffix_reach(self.df, report['suffix'])
-        return self.suffix_reach(self.df, report['suffix'], sd)
+        return self.suffix_reach(self.df, report['suffix'])
 
     def remove_reach_footer(self):
         """
@@ -687,22 +651,17 @@ class DbApi(object):
         self.df = self.df[ids.str.isdigit()].reset_index(drop=True)
         return self.df
 
-    def suffix_reach(self, df, suffix, sd=None):
+    def suffix_reach(self, df, suffix):
         """
-        Names a reach report's measures apart from any other level's,
-        dates a whole range row to the start of the range so a merge
-        keeps it, and gives the rows the card's placement, the campaign
-        ids the report was narrowed to standing in while the card's
-        campaign is not known.
+        Names a reach report's measures apart from the delivery rows and
+        gives the rows the card's placement, the campaign ids the report
+        was narrowed to standing in while the card's campaign is not
+        known.
 
         :param df: One reach report's rows
         :param suffix: The report's column suffix
-        :param sd: Start of the range the reach covers, None for a daily
-            report whose rows carry their day
-        :return: The rows renamed, dated and placed
+        :return: The rows renamed and placed
         """
-        date = sd.strftime('%Y/%m/%d') if sd is not None else ''
-        df = utl.suffix_reach(df, list(self.reach_metrics.values()), suffix,
-                              self.date_col, date)
+        df = utl.suffix_reach(df, list(self.reach_metrics.values()), suffix)
         return utl.name_reach_rows(df, self.placement,
                                    ','.join(self.campaign_ids))
