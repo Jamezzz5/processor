@@ -58,6 +58,12 @@ na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN',
              'nan']
 sheet_name_splitter = ':::'
 tmp_file_suffix = 'TMP'
+no_reach_field = 'No Reach'
+platform_report_level = 'vendor'
+placement_col = 'Placement'
+placement_parts = 16
+placement_vendor_part = 1
+placement_campaign_part = 15
 
 
 def dir_check(directory):
@@ -657,6 +663,296 @@ def filter_df_on_col(df, col_name, col_val, exclude=False):
     return df
 
 
+def date_blocks(sd, ed, max_days):
+    """
+    Splits a range into consecutive blocks of at most max_days days, for
+    a report that answers one block at a time and whose rows are each a
+    single day's figure, so the blocks stack without double counting.
+
+    :param sd: Start of the range, a date or datetime
+    :param ed: End of the range, the same type as sd
+    :param max_days: Longest block, in days, the report answers at once
+    :return: List of (start, end) tuples covering sd to ed in order
+    """
+    blocks = []
+    for offset in range(0, (ed - sd).days + 1, max_days):
+        block_sd = sd + dt.timedelta(days=offset)
+        block_ed = min(block_sd + dt.timedelta(days=max_days - 1), ed)
+        blocks.append((block_sd, block_ed))
+    return blocks
+
+
+def pull_reach(fields):
+    """
+    Whether a card's api fields leave its reach rows on.
+
+    :param fields: The card's API_FIELDS values, None when it has none
+    :return: False when the fields carry No Reach
+    """
+    return no_reach_field not in (fields or [])
+
+
+def reach_suffix(level='', daily=False):
+    """
+    The column suffix naming one reach report, in the grammar the CM360
+    import set: a whole range report is ' - no_date - <level>_report'
+    and a daily one ' - <level>_report', where the level is the object
+    each row counts people once for and a platform's own report of its
+    account is the 'vendor' level.
+
+    :param level: The report's level, '' for one named by its dates alone
+    :param daily: Whether each row is one day rather than the range
+    :return: The suffix, '' for a dated report of no level
+    """
+    parts = [] if daily else ['no_date']
+    if level:
+        parts.append('{}_report'.format(level))
+    return ''.join(' - {}'.format(x) for x in parts)
+
+
+def reach_columns(metrics, suffixes):
+    """
+    Every column a card's reach rows fill, so importhandler can find the
+    rows a merged raw file already holds and replace them.
+
+    :param metrics: The reach measure column names
+    :param suffixes: The suffix of each reach report the card pulls
+    :return: List of the suffixed names, one report after another
+    """
+    return ['{}{}'.format(x, suffix) for suffix in suffixes for x in metrics]
+
+
+def suffix_reach(df, metrics, suffix, date_col='', date=''):
+    """
+    Names one reach report's measures apart from every other report's so
+    none overwrites another, and dates a whole range report's rows to its
+    start so a date merge keeps them; a daily row keeps its own day.
+
+    :param df: One reach report's rows
+    :param metrics: The measure columns to suffix, or a dict of the column
+        each row carries to the name it is reported under
+    :param suffix: The report's suffix from reach_suffix
+    :param date_col: The date column to fill, only with date
+    :param date: The formatted start of a whole range report, '' for a
+        daily report whose rows carry their own day
+    :return: The rows renamed and dated
+    """
+    if df.empty:
+        return df
+    names = metrics if isinstance(metrics, dict) else {x: x for x in metrics}
+    df = df.rename(columns={
+        x: '{}{}'.format(name, suffix) for x, name in names.items()})
+    if date and date_col:
+        df[date_col] = date
+    return df
+
+
+def placement_layout(order=None):
+    """
+    Where a card keeps the vendor and campaign in its placements: the
+    slots its auto dictionary order gives mpVendor and mpCampaign, in a
+    name as long as that order.  A card with no order, or one whose
+    order leaves a part out, uses CM360's slot for it: the second of
+    sixteen for the vendor and the sixteenth for the campaign.
+
+    :param order: The card's AUTO DICTIONARY ORDER values, None for none
+    :return: Tuple of the name's length, the vendor slot and the
+        campaign slot, a slot None when the name has no room for it
+    """
+    names = [str(x).split(':::')[0].strip() for x in (order or [])]
+    names = [x for x in names if x and x != 'nan']
+    length = len(names) or placement_parts
+    slots = []
+    for name, default in ((dctc.VEN, placement_vendor_part),
+                          (dctc.CAM, placement_campaign_part)):
+        slot = names.index(name) if name in names else default
+        slots.append(slot if slot < length else None)
+    return length, slots[0], slots[1]
+
+
+def placement_name(vendor='', campaign='', layout=None):
+    """
+    A placement name for a report's row, in the shape the CM360 import
+    invents for its totals: the vendor and the campaign in the slots the
+    card's placements keep them and every other part blank, so a
+    dictionary reads the two parts it needs and the run of blanks says
+    the row is a report's figure rather than a placement anyone
+    trafficked.  An underscore inside a part becomes a space so the
+    dictionary's split keeps every part in place.
+
+    :param vendor: The vendor part
+    :param campaign: The campaign part
+    :param layout: The card's layout from placement_layout, CM360's
+        sixteen parts when None
+    :return: The underscore joined name
+    """
+    length, vendor_slot, campaign_slot = layout or placement_layout()
+    parts = [''] * length
+    if vendor_slot is not None:
+        parts[vendor_slot] = vendor
+    if campaign_slot is not None:
+        parts[campaign_slot] = campaign
+    return '_'.join(str(x).replace('_', ' ') for x in parts)
+
+
+def blank_text(series):
+    """
+    Which values of a column are empty: '' and the text a missing value
+    becomes once a column is cast to strings.
+
+    :param series: The column
+    :return: Boolean series, True where the value is blank
+    """
+    return series.astype('U').str.strip().isin(['', 'nan', 'None'])
+
+
+def first_mode(series):
+    """
+    The value a column carries most often, '' for an empty column.
+
+    :param series: The column
+    :return: Its most frequent value
+    """
+    modes = series.mode()
+    return modes.iloc[0] if len(modes) else ''
+
+
+def placement_spec(column, vendor, campaign='', order=None):
+    """
+    How a card names a reach row's placement: the column it builds
+    placements from, the vendor and campaign its placements carry, and
+    the slots its dictionary order keeps them in.
+
+    :param column: The card's placement column
+    :param vendor: The vendor part, the platform's name until known
+    :param campaign: The campaign part, '' until known
+    :param order: The card's AUTO DICTIONARY ORDER values, None for none
+    :return: Dict of column, vendor, campaign and layout
+    """
+    return {'column': column, 'vendor': vendor, 'campaign': campaign,
+            'layout': placement_layout(order)}
+
+
+def name_reach_rows(df, spec, campaign=''):
+    """
+    Gives a reach report's rows the placement a card's dictionary reads
+    them by: the card's vendor and campaign in the slots its placements
+    keep them, in the column the card builds placements from, wherever
+    that column is blank.  A row already naming an object there, such as
+    an ad set's whole range row on a card placed by ad set, keeps its
+    name.  The campaign given stands in while the card's is not known,
+    such as the filter the pull was narrowed to.
+
+    :param df: One reach report's rows
+    :param spec: The card's placement_spec
+    :param campaign: The campaign part when the card's is unknown
+    :return: The rows with the placement column filled where blank
+    """
+    if df.empty:
+        return df
+    column = spec['column']
+    name = placement_name(spec['vendor'], spec['campaign'] or campaign,
+                          spec['layout'])
+    names = pd.Series(name, index=df.index, dtype=object)
+    if column in df.columns:
+        names = df[column].where(~blank_text(df[column]), names)
+    df[column] = names
+    return df
+
+
+def card_placement_tokens(dict_file):
+    """
+    The vendor and campaign a card's existing placements map to: the
+    values its dictionary carries most often, which a constant dictionary
+    writes into it as well.  The file is read as it is and never created,
+    so a card with no dictionary yet learns nothing.
+
+    :param dict_file: The card's FILENAME_DICTIONARY value
+    :return: Tuple of the vendor and campaign, '' where none is known
+    """
+    name = str(dict_file or '').strip()
+    tokens = {dctc.VEN: '', dctc.CAM: ''}
+    if not name or name == 'nan' or not os.path.isfile(
+            os.path.join(dict_path, name)):
+        return tokens[dctc.VEN], tokens[dctc.CAM]
+    df = import_read_csv(name, dict_path)
+    if not isinstance(df, pd.DataFrame):
+        return tokens[dctc.VEN], tokens[dctc.CAM]
+    for col in tokens:
+        if col in df.columns:
+            values = df[col].astype('U').str.strip()
+            tokens[col] = first_mode(values[~blank_text(values)])
+    return tokens[dctc.VEN], tokens[dctc.CAM]
+
+
+def set_card_placement(api, params):
+    """
+    Tells a reach-capable api how the card it is about to pull names its
+    placements, from the card's vendor matrix row and dictionary: the
+    column, the slots its auto dictionary order keeps the vendor and
+    campaign in, and the vendor and campaign its placements map to.  An
+    api without reach rows has no placement and is left alone; a card
+    that says nothing on a part leaves the api's own default for it.
+
+    :param api: The api object about to pull the card
+    :param params: The card's vendor matrix row from vendor_set
+    """
+    if not hasattr(api, 'placement'):
+        return
+    spec = api.placement
+    column = str(params.get(vmc.placement, '') or '').strip()
+    vendor, campaign = card_placement_tokens(params.get(vmc.filenamedict))
+    api.placement = placement_spec(
+        column if column and column != 'nan' else spec['column'],
+        vendor or spec['vendor'], campaign or spec['campaign'],
+        params.get(vmc.autodicord))
+
+
+def reach_range_fits(sd, ed, max_days, platform):
+    """
+    Whether one whole range reach report can cover the range.  A platform
+    counts each person once only within max_days, and two shorter
+    reports cannot be added back together, so a longer range is skipped
+    with a warning rather than split.
+
+    :param sd: Start of the range, a date or datetime
+    :param ed: End of the range, the same type as sd
+    :param max_days: The longest range the platform counts people once in
+    :param platform: The platform's name, for the warning
+    :return: True when the range fits one report
+    """
+    days = (ed - sd).days + 1
+    if days <= max_days:
+        return True
+    logging.warning(
+        '{} only counts people once within {} days, skipping whole range '
+        'reach for the {} day range.'.format(platform, max_days, days))
+    return False
+
+
+def platform_reach_blocked(platform, campaign_filter, level='account',
+                           reason=''):
+    """
+    Whether a card's campaign filter keeps the platform's own daily reach
+    from being pulled: the platform cannot narrow its account to the
+    card's campaigns, so a filtered card gets no account rows rather than
+    the whole account's.
+
+    :param platform: The platform's name, for the warning
+    :param campaign_filter: The filter the report cannot apply, falsy
+        when there is none or the platform applied it
+    :param level: What the platform calls its account, for the warning
+    :param reason: Why the filter cannot be applied, after the message
+    :return: True when the report is skipped
+    """
+    if not campaign_filter:
+        return False
+    logging.warning(
+        'Skipping daily {} reach: {} cannot narrow it to the campaign '
+        'filter {}{}.'.format(level, platform, campaign_filter, reason))
+    return True
+
+
 def parse_campaign_filter(campaign_filter):
     """
     Splits a campaign filter into ids to send to an api and values to match
@@ -678,7 +974,7 @@ def parse_campaign_filter(campaign_filter):
 
 
 def filter_df_on_campaign(df, values, name_col, id_col='',
-                          keep_on_no_match=True):
+                          keep_on_no_match=True, keep_cols=None):
     """
     Narrows a report to the campaigns a filter names.
 
@@ -686,7 +982,9 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
     on the name column, so a value only has to be right about the campaign
     and not about which of the two it is.  When the filter matches nothing
     the unfiltered df is kept, so a stale or mistyped value surfaces as a
-    warning rather than as empty data.
+    warning rather than as empty data.  A row filled in any of keep_cols
+    is measured above the campaign, so no campaign names it: it is kept
+    whatever the filter says and left out of the match stats.
 
     :param df: The downloaded report
     :param values: The filter values to match
@@ -696,6 +994,8 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
         unfiltered df.  False where the caller already knows the filter names
         a campaign in the report, so a non match means the campaign did not
         deliver rather than that the filter is wrong
+    :param keep_cols: Columns of the rows the filter never drops, such as
+        an account's daily reach
     :return: The filtered dataframe
     """
     if not values or df.empty:
@@ -707,6 +1007,9 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
             'filter.  The report type may not support the campaign '
             'grouping.'.format(name_col, id_col))
         return df
+    keep = pd.Series(False, index=df.index)
+    for col in [x for x in (keep_cols or []) if x in df.columns]:
+        keep |= df[col].notna()
     mask = pd.Series(False, index=df.index)
     if name_col in cols:
         names = df[name_col].astype('U')
@@ -716,8 +1019,9 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
         ids = df[id_col].astype('U').str.strip().str.replace(
             r'\.0$', '', regex=True)
         mask |= ids.isin(values)
+    mask &= ~keep
     tdf = df[mask]
-    record_campaign_filter_stats(values, tdf, df, cols[0],
+    record_campaign_filter_stats(values, tdf, df[~keep], cols[0],
                                  keep_on_no_match)
     if tdf.empty:
         logging.warning(
@@ -726,10 +1030,10 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
                 values, df[cols[0]].nunique(),
                 'unfiltered' if keep_on_no_match else 'empty',
                 sorted(df[cols[0]].dropna().unique().tolist())))
-        return df if keep_on_no_match else tdf
+        return df if keep_on_no_match else df[keep].reset_index(drop=True)
     logging.info('Filtered to {} of {} rows on campaign filter.'.format(
         len(tdf), len(df)))
-    return tdf.reset_index(drop=True)
+    return df[mask | keep].reset_index(drop=True)
 
 
 campaign_filter_stats_file = 'campaign_filter_stats.json'

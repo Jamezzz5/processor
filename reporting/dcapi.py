@@ -6,7 +6,6 @@ import time
 import logging
 import datetime as dt
 import requests
-import numpy as np
 import pandas as pd
 from io import StringIO
 import reporting.utils as utl
@@ -378,11 +377,19 @@ class DcApi(object):
         return df
 
     def check_for_campaign_vendor_dicts(self, tdf):
+        """
+        Learns, from the delivery rows' placements, the vendor and campaign
+        parts a reach row's invented Placement should carry, keyed by the
+        site and campaign the report names.
+
+        :param tdf: The delivery rows, with their placements
+        """
         temp_col = 'PlacementPart'
-        cols = [('Site (CM360)', 1, self.vendor_dict),
-                ('Campaign', 15, self.campaign_dict)]
+        cols = [('Site (CM360)', utl.placement_vendor_part, self.vendor_dict),
+                ('Campaign', utl.placement_campaign_part, self.campaign_dict)]
         for col_name, place_idx, storage_dict in cols:
-            second_parts = tdf['Placement'].str.split('_').str[place_idx]
+            second_parts = tdf[utl.placement_col].str.split('_')
+            second_parts = second_parts.str[place_idx]
             pair_df = tdf[[col_name]].copy()
             pair_df[temp_col] = second_parts
             unique_pairs = pair_df.drop_duplicates(subset=[col_name])
@@ -390,24 +397,23 @@ class DcApi(object):
             storage_dict.update(res)
 
     def add_placement_name(self, tdf):
-        place_col = 'Placement'
+        """
+        Invents a Placement for a reach report's rows, which name none:
+        the vendor and campaign parts learned from the delivery rows, in
+        the sixteen part shape every reach report's rows share.
+
+        :param tdf: One reach report's rows
+        :return: The rows with the Placement column filled
+        """
+        place_col = utl.placement_col
         if place_col in tdf.columns:
             return tdf
-        else:
-            tdf[place_col] = ''
-        is_blank = tdf[place_col].isna() | (
-                    tdf[place_col].str.strip() == '')
-        placement_parts = [[''] * 16 for _ in range(len(tdf))]
-        campaign_parts = tdf['Campaign'].map(self.campaign_dict)
-        for i, val in enumerate(campaign_parts):
-            placement_parts[i][15] = val
+        campaigns = tdf['Campaign'].map(self.campaign_dict)
+        vendors = pd.Series('', index=tdf.index)
         if 'Site (CM360)' in tdf.columns:
-            vendor_parts = tdf['Site (CM360)'].map(self.vendor_dict)
-            for i, val in enumerate(vendor_parts):
-                placement_parts[i][1] = val
-        new_placements = ['_'.join(map(str, parts))
-                          for parts in placement_parts]
-        tdf[place_col] = np.where(is_blank, new_placements, tdf[place_col])
+            vendors = tdf['Site (CM360)'].map(self.vendor_dict)
+        tdf[place_col] = [utl.placement_name(vendor, campaign)
+                          for vendor, campaign in zip(vendors, campaigns)]
         return tdf
 
     def find_first_line(self):
@@ -633,10 +639,13 @@ class DcApi(object):
     def rename_cols(self, tdf, report_param):
         rename_dict = self.col_rename_dict.copy()
         if 'reach_report' in report_param and report_param['reach_report']:
-            col_str = ''
-            for report_type in ['no_date', 'campaign_report', 'vendor_report']:
-                if report_param[report_type]:
-                    col_str = '{} - {}'.format(col_str, report_type)
+            level = ''
+            if report_param['campaign_report']:
+                level = 'campaign'
+            elif report_param['vendor_report']:
+                level = utl.platform_report_level
+            col_str = utl.reach_suffix(
+                level, daily=not report_param['no_date'])
             if col_str:
                 for k, v in self.reach_metrics.items():
                     rename_dict[v] = '{}{}'.format(v, col_str)

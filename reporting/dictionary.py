@@ -584,10 +584,49 @@ class DictRelational(object):
         if self.df.empty:
             self.df = pd.DataFrame(columns=self.columns)
         self.df = utl.data_to_type(self.df, str_col=[self.key])
+        self.df = self.drop_unusable_keys(self.df)
+
+    def drop_unusable_keys(self, df):
+        """
+        Drops the rows a lookup cannot use: a blank key, and any repeat
+        of a key after its first row.  Each relation is a left join on
+        its key, so a key on several rows multiplies every dictionary
+        row carrying it, and seven relations in a row turn a handful of
+        blank keys into millions of rows.  A file that had any is
+        rewritten so the warning does not repeat every run.
+
+        :param df: The relational dictionary as read
+        :return: The rows a lookup can use
+        """
+        if df.empty or self.key not in df.columns:
+            return df
+        blank = utl.blank_text(df[self.key])
+        repeated = df.duplicated(subset=[self.key]) & ~blank
+        if not blank.any() and not repeated.any():
+            return df
+        logging.warning(
+            '{} had {} rows with a blank {} and {} repeating one; they '
+            'are dropped and the file rewritten, since a repeated key '
+            'multiplies the dictionary rows it matches.'.format(
+                self.filename, int(blank.sum()), self.key,
+                int(repeated.sum())))
+        df = df[~blank & ~repeated].reset_index(drop=True)
+        self.write(df)
+        return df
 
     def add_key_values(self, data_dict):
+        """
+        Adds the dictionary's new key values to the relational file.  A
+        blank key is never added: it would match every row the auto
+        dictionary could not fill, and once written it read back as a
+        different blank and was added again on every run.
+
+        :param data_dict: The dictionary the relation is applied to
+        :return: Whether any key was added
+        """
         keys_list = pd.DataFrame(data_dict[self.key]).drop_duplicates()
         keys_list.dropna(subset=[self.key], inplace=True)
+        keys_list = keys_list[~utl.blank_text(keys_list[self.key])]
         keys_list = self.get_new_values(keys_list)
         if keys_list.empty:
             return False
