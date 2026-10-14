@@ -198,7 +198,9 @@ class VendorMatrix(object):
             for col in [vmc.autodicplace, vmc.placement, vmc.vendorkey]:
                 self.vm_change(index, col, source[col])
             for col in [vmc.autodicord, vmc.fullplacename]:
-                new_value = '|'.join(str(x) for x in source[col].split('\r\n'))
+                new_value = '|'.join(str(x) for x in
+                                     source[col].split('\r\n')) \
+                    if source[col] else ''
                 self.vm_change(index, col, new_value)
             active_metric_cols = list(source['active_metrics'].keys())
             for col in vmc.datacol:
