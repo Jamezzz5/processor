@@ -6084,6 +6084,19 @@ class TestGamesDb:
             'youtubecommentid', 'youtubevideoid', 'comment_id', 'text',
             'like_count', 'published_at', 'fetched_at', 'sentiment',
             'themes', 'classified_at', 'taxonomy_version']
+        narrative_key = {'gameid': game.gameid,
+                         'week_start': dt.date(2026, 10, 5),
+                         'narrative_key': 'steam-deck-performance'}
+        assert gdb.upsert_fact(
+            s, gmdl.TitleNarrative, narrative_key,
+            {'name': 'Steam Deck performance', 'item_count': 5,
+             'share': 0.25, 'status': 'new', 'prompt_version': 1,
+             'source_mix': {'review': 5}}) == 1
+        assert gdb.upsert_fact(s, gmdl.TitleNarrative, narrative_key,
+                               {'status': 'rising'}) == 0
+        s.commit()
+        assert s.query(gmdl.TitleNarrative).one().status == 'rising'
+        assert 'x_posts' in gmdl.CommunitySnapshot.__table__.columns
 
     def test_game_release_upsert_idempotent(self):
         s = self._session()

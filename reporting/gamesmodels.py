@@ -236,6 +236,12 @@ class CommunitySnapshot(Base):
                          'the filter_offtopic_activity=0 total minus '
                          'the default total. A rising count is a '
                          'review-bomb signal, never a sentiment input.')
+    x_posts = Column(
+        Numeric, comment='Posts on X that UTC day matching the title\'s '
+                         'names and hashtags, reposts excluded - X\'s '
+                         'own count from counts/recent. A shared name '
+                         'is qualified with game words, so it can '
+                         'undercount. Context, never scored.')
 
 
 class CommunityLink(Base):
@@ -1441,6 +1447,62 @@ class YoutubeReaction(Base):
                                  'most-liked examples; they age out '
                                  'with the purge.')
     taxonomy_version = Column(Integer, nullable=False)
+    model = Column(Text, comment='Classifier model id.')
+    computed_at = Column(DateTime,
+                         comment='Naive UTC; the recency column.')
+
+
+class TitleNarrative(Base):
+    """Narratives the classifier named over one week's sampled text per
+    title; names are model-authored, counts, shares and status are
+    arithmetic. The writer replaces a title's week in one transaction."""
+    __tablename__ = 'title_narrative'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'week_start', 'narrative_key',
+                         name='uq_title_narrative_cell'),
+        Index('ix_title_narrative_week', 'week_start'),
+        {'schema': 'games',
+         'comment': "Narratives named over one week's sampled reviews, "
+                    'press, developer posts and trailer comments per '
+                    'title. Names are model-authored; counts, shares '
+                    'and status are arithmetic. Never scored.'},
+    )
+
+    titlenarrativeid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    week_start = Column(Date, nullable=False,
+                        comment='ISO Monday of the week read.')
+    narrative_key = Column(
+        Text, nullable=False,
+        comment='Identity carried across weeks: the slug of the name '
+                'the week it was born.')
+    name = Column(Text, nullable=False,
+                  comment='Model-named the week it was born, kept while '
+                          'continued.')
+    item_count = Column(Numeric, comment='Sampled items assigned.')
+    sample_size = Column(Numeric, comment='Items shown to the model.')
+    pool_size = Column(Numeric,
+                       comment='New items that week before sampling.')
+    share = Column(Numeric, comment='item_count / sample_size (0-1).')
+    source_mix = Column(JSON().with_variant(JSONB, 'postgresql'),
+                        comment='{review|press|news|youtube: items}.')
+    positive = Column(
+        Numeric, comment="Items positive by their source's own flag "
+                         '(voted_up, press tone, comment sentiment).')
+    negative = Column(Numeric)
+    neutral = Column(Numeric,
+                     comment='Neutral, unjudged and developer posts.')
+    example_ids = Column(
+        JSON().with_variant(JSONB, 'postgresql'),
+        comment='{source: [ids]}, up to two each; text is read live '
+                'and comments age out with the purge.')
+    status = Column(Text, comment="'new' | 'rising' | 'steady' | "
+                                  "'fading' against the prior week.")
+    prior_share = Column(
+        Numeric, comment="The continued narrative's share the week "
+                         'before; NULL when new.')
+    prompt_version = Column(Integer, nullable=False)
     model = Column(Text, comment='Classifier model id.')
     computed_at = Column(DateTime,
                          comment='Naive UTC; the recency column.')
