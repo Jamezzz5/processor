@@ -93,6 +93,21 @@ class _PassingFix(az.AnalyzeBase):
         return None
 
 
+class _WideFix(az.AnalyzeBase):
+    name = 'wide'
+    fix = True
+    new_files = True
+    all_files = True
+
+    def do_and_fix_analysis(self, **kwargs):
+        self.aly.scope_seen[self.name] = kwargs
+
+
+class _NarrowFix(_WideFix):
+    name = 'narrow'
+    all_files = False
+
+
 def _raise_read_timeout(*args, **kwargs):
     """Stand in for a driver that stopped answering its socket."""
     raise url_ex.ReadTimeoutError(None, 'url', 'Read timed out.')
@@ -6979,3 +6994,212 @@ def test_slides_sparse_table_height_and_caption(monkeypatch):
              if 'insertText' in req]
     assert texts.count('Summary (continued)') == len(batches) - 1
     assert texts.count('Evidence') == len(batches)
+
+
+def _matrix(rows):
+    matrix = vm.VendorMatrix(display_log=False)
+    matrix.vm_parse(pd.DataFrame(rows).reindex(
+        columns=[vmc.vendorkey] + vmc.vmkeys).fillna(''))
+    return matrix
+
+
+@pytest.fixture
+def in_tmp(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+@pytest.mark.usefixtures('in_tmp')
+class TestDayOneFixes:
+    def test_plannet_vendor_list_without_a_plan_net_source(self):
+        check = az.CheckAutoDictOrder(az.Analyze(
+            matrix=_matrix([{vmc.vendorkey: 'API_Facebook_A'}])))
+        assert check.get_plannet_vendor_list(['Meta']) == ['Meta']
+        assert check.get_plannet_vendor_list() == []
+
+    def test_plan_length_names_and_partner_scope(self):
+        names = pd.Series(['a_b_c_d', 'e_f'])
+        plan = pd.Series(['x_y_z', 'p_q_r'])
+        cut = az.CheckPlacementsNotInMp.plan_length_names(names, plan)
+        assert cut.tolist() == ['a_b_c', 'e_f']
+        mixed = pd.Series(['x_y_z', 'p_q'])
+        assert az.CheckPlacementsNotInMp.plan_length_names(
+            names, mixed).tolist() == names.tolist()
+        allowed = az.CheckPlacementsNotInMp.allowed_partners
+        partners = ['9gag', 'Crunchyroll', 'Meta']
+        assert allowed('API_GoogleSheets_9gag', partners) == ['9gag']
+        assert allowed('API_GoogleSheets_sheet', partners) == []
+        assert allowed('API_Rawfile_Crunchyroll', partners) == [
+            'Crunchyroll']
+        assert allowed('API_Facebook_A', partners) == (
+            vmc.api_partner_name_translation[vmc.api_fb_key])
+        assert allowed('API_DCM_A', partners) is None
+
+    def test_new_file_pass_scopes_each_check(self, monkeypatch):
+        aly = az.Analyze(matrix=_matrix([{vmc.vendorkey: 'API_X_A'}]))
+        aly.scope_seen = {}
+        aly.class_list = [_WideFix, _NarrowFix]
+        monkeypatch.setattr(aly, 'get_new_files', lambda: ['API_X_A'])
+        aly.do_analysis_and_fix_processor(new_files=True)
+        assert aly.scope_seen == {
+            'wide': {'only_new_files': False, 'new_file_list': []},
+            'narrow': {'only_new_files': True, 'new_file_list': ['API_X_A']}}
+
+    def test_writes_report_whether_they_landed(self, monkeypatch):
+        matrix = _matrix([{vmc.vendorkey: 'API_X_A'}])
+        assert matrix.write() is True
+        monkeypatch.setattr(pd.DataFrame, 'to_csv',
+                            Mock(side_effect=OSError('disk')))
+        assert matrix.write() is False
+        row = pd.DataFrame({dctc.DICT_COL_NAME: [dctc.PN],
+                            dctc.DICT_COL_VALUE: ['a'],
+                            dctc.DICT_COL_NVALUE: ['b']})
+        assert dct.DictTranslationConfig().add_and_write(row) is False
+
+    def test_adwords_split_keeps_the_delivered_rows(self, monkeypatch):
+        os.makedirs('raw_data')
+        pd.DataFrame({'Campaign': ['brand search', 'launch video',
+                                   'more search', 'Search ads'],
+                      'Clicks': [1, 2, 3, 4]}).to_csv('raw_data/google.csv',
+                                                      index=False)
+        check = az.CheckAdwordsSplit(az.Analyze(
+            matrix=_matrix([{vmc.vendorkey: 'API_Adwords_A'}])))
+        assert check.carry_raw_file('google.csv', 'adwords_a_auto_search.csv',
+                                    'search')
+        kept = pd.read_csv('raw_data/adwords_a_auto_search.csv')
+        assert kept['Clicks'].tolist() == [1, 3]
+        assert not check.carry_raw_file('missing.csv', 'x.csv', 'search')
+        open('raw_data/empty.csv', 'w').close()
+        assert not check.carry_raw_file('empty.csv', 'x.csv', 'search')
+        monkeypatch.setattr(pd.DataFrame, 'to_csv',
+                            Mock(side_effect=OSError('disk')))
+        assert not check.carry_raw_file('google.csv', 'x.csv', 'search')
+
+    def test_unplanned_names_are_the_delivered_names(self):
+        df = pd.DataFrame({
+            vmc.vendorkey: [vmc.api_mp_key] + ['API_Snapchat_A'] * 2,
+            dctc.VEN: ['Snapchat'] * 3,
+            dctc.PN: ['Snapchat_US_Launch', 'Snapchat_US_Launch_ad1',
+                      'Snapchat_UK_Launch_ad1']})
+        check = az.CheckPlacementsNotInMp.__new__(az.CheckPlacementsNotInMp)
+        found = check.find_placements_not_in_mp(df)
+        assert found[dctc.PN].tolist() == ['Snapchat_UK_Launch_ad1']
+
+    def test_vendor_lists_take_blank_translations(self):
+        assert dct.DictTranslationConfig().write(pd.DataFrame({
+            dctc.DICT_COL_NAME: [dctc.VEN] * 2,
+            dctc.DICT_COL_VALUE: ['fb', 'x'],
+            dctc.DICT_COL_NVALUE: ['Meta', '']}), dctc.filename_tran_config)
+        check = az.CheckAutoDictOrder(az.Analyze(
+            matrix=_matrix([{vmc.vendorkey: 'API_X_A'}])))
+        assert 'meta' in check.check_vendor_lists()[dctc.VEN]
+
+
+_SNAP = 'API_Snapchat_A'
+_PLACEMENT = 'Placement Name'
+_BUDGET_ORDER = 'mpMisc|mpBudget|mpVendor|mpCountry/Region'
+_SHIFTED = ['mpBudget', 'mpVendor', 'mpCountry/Region']
+_ORIGINAL_GET_RAW_DF = vm.DataSource.get_raw_df
+
+
+def _raw_df_or_boom(self, nrows=None):
+    if self.key == 'API_Bad_A':
+        raise OSError('unreadable')
+    return _ORIGINAL_GET_RAW_DF(self, nrows=nrows)
+
+
+def _order_source(order, names, key=_SNAP):
+    """A matrix holding one raw source whose placement names are ``names``."""
+    file_name = f'{key.lower()}.csv'
+    os.makedirs('raw_data', exist_ok=True)
+    pd.DataFrame({_PLACEMENT: names, 'Date': '2026-10-14',
+                  'Impressions': 1}).to_csv(
+        os.path.join('raw_data', file_name), index=False)
+    matrix = _matrix([{
+        vmc.vendorkey: key, vmc.filename: file_name, vmc.firstrow: 0,
+        vmc.lastrow: 0, vmc.fullplacename: _PLACEMENT,
+        vmc.placement: _PLACEMENT, vmc.autodicplace: dctc.FPN,
+        vmc.autodicord: order, vmc.date: 'Date',
+        vmc.impressions: 'Impressions'}])
+    matrix.sort_vendor_list()
+    return matrix
+
+
+def _proposals(matrix, *lists):
+    check = az.CheckAutoDictOrder(az.Analyze(matrix=matrix))
+    return [x['change_auto_order'] for x in check.do_analysis_on_data_source(
+        matrix.get_data_source(_SNAP), [], *lists)]
+
+
+@pytest.mark.usefixtures('in_tmp')
+class TestAutoDictOrder:
+    @pytest.mark.parametrize('order, names, expected', [
+        pytest.param(f'{_BUDGET_ORDER}|mpCampaign',
+                     ['1001_Snapchat_US_Launch'] * 6,
+                     [*_SHIFTED, 'mpCampaign'], id='platform-names-no-plan'),
+        pytest.param(_BUDGET_ORDER, ['1001_Snapchat_US'] * 2 + ['a_b_c'] * 8,
+                     None, id='weak-evidence'),
+        pytest.param(_BUDGET_ORDER, ['1001_Snapchat_US'] * 6 + ['a_b_c'] * 4,
+                     _SHIFTED, id='enough-evidence'),
+        pytest.param('mpCampaign|mpMisc|mpVendor|mpCountry/Region',
+                     ['Launch_Snapchat_US'] * 6,
+                     ['mpCampaign', 'mpVendor', 'mpCountry/Region'],
+                     id='keeps-leading-campaign'),
+        pytest.param('mpBudget|mpMisc|mpVendor|mpCountry/Region',
+                     ['1001_Snapchat_US'] * 6, _SHIFTED,
+                     id='keeps-leading-budget'),
+        pytest.param('mpCampaign|mpBudget|mpVendor|mpCountry/Region',
+                     ['Launch_Snapchat_US'] * 6, None, id='too-few-fillers'),
+        pytest.param('mpMisc|mpBudget|mpVendor|mpCreative:::0:::_|'
+                     'mpCountry/Region|mpCampaign',
+                     ['1001_Snapchat_x_US_Launch'] * 4,
+                     ['mpBudget', 'mpVendor', 'mpCreative:::0:::_',
+                      'mpCountry/Region', 'mpCampaign'],
+                     id='country-offset-follows-order'),
+        pytest.param('mpMisc|mpMisc|mpMisc|mpVendor|mpCountry/Region',
+                     ['1001_Snapchat_US_x'] * 5 + ['c_1001_Snapchat_US'] * 5,
+                     None, id='mixed-layouts'),
+    ])
+    def test_proposed_order(self, order, names, expected):
+        assert _proposals(_order_source(order, names)) == (
+            [expected] if expected else [])
+
+    def test_a_tie_keeps_the_current_order_quietly(self, caplog):
+        order = 'mpMisc|mpMisc|mpBudget|mpVendor|mpCountry/Region|mpCampaign'
+        names = ['Snapchat_US_Launch_Snapchat_US_Launch'] * 4
+        assert _proposals(_order_source(order, names)) == []
+        assert 'mix two layouts' not in caplog.text
+
+    def test_given_lists_are_never_rebuilt(self, monkeypatch):
+        check = az.CheckAutoDictOrder(az.Analyze(
+            matrix=_matrix([{vmc.vendorkey: 'API_X_A'}])))
+        monkeypatch.setattr(check, 'get_vendor_list',
+                            Mock(side_effect=AssertionError('rebuilt')))
+        assert check.check_vendor_lists([' Meta', 'nan'], [], []) == {
+            dctc.VEN: {'meta'}, dctc.COU: set(), dctc.CAM: set()}
+
+    def test_the_share_counts_rows_not_tokens(self):
+        names = ['1001_Snapchat_US_Launch'] * 2 + ['a_b_c_d'] * 8
+        matrix = _order_source(f'{_BUDGET_ORDER}|mpCampaign', names)
+        assert _proposals(matrix, ['Snapchat'], ['US'], ['Launch']) == []
+
+    def test_one_unreadable_source_does_not_stop_the_check(self, monkeypatch):
+        good = _order_source(_BUDGET_ORDER, ['1001_Snapchat_US'] * 4)
+        bad = _order_source(_BUDGET_ORDER, ['x'] * 2, key='API_Bad_A')
+        sources = [bad.get_data_source('API_Bad_A'),
+                   good.get_data_source(_SNAP)]
+        monkeypatch.setattr(vm.DataSource, 'get_raw_df', _raw_df_or_boom)
+        monkeypatch.setattr(good, 'get_all_data_sources', lambda: sources)
+        aly = az.Analyze(matrix=good)
+        az.CheckAutoDictOrder(aly).do_analysis()
+        found = aly.find_in_analysis_dict('change_auto_order')[0]['data']
+        assert list(found[vmc.vendorkey].values()) == [_SNAP]
+
+    def test_a_written_shift_asks_for_a_rerun(self):
+        aly = az.Analyze(matrix=_order_source(
+            _BUDGET_ORDER, ['1001_Snapchat_US'] * 4))
+        az.CheckAutoDictOrder(aly).fix_analysis(pd.DataFrame(
+            [{vmc.vendorkey: _SNAP, 'change_auto_order': _SHIFTED}]))
+        assert aly.fixes_to_run
+        written = pd.read_csv(os.path.join('config', vm.csv_file))
+        assert written[vmc.autodicord].iloc[0] == '|'.join(_SHIFTED)

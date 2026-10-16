@@ -9,6 +9,8 @@ import codecs
 import shutil
 import signal
 import random
+import tempfile
+import contextlib
 import base64
 import select
 import zipfile
@@ -1080,7 +1082,34 @@ def filter_df_on_campaign(df, values, name_col, id_col='',
 
 campaign_filter_stats_file = 'campaign_filter_stats.json'
 _STATS_SAMPLE_CAP = 25
-_pending_filter_stat = {}
+
+
+def _read_json(file_name, default):
+    """``file_name``'s JSON, or ``default`` when it is missing, unreadable
+    or another shape: these files only report on a run."""
+    try:
+        with open(file_name, 'r') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return default
+    return data if isinstance(data, type(default)) else default
+
+
+def _write_json(file_name, data):
+    """Write ``data`` as JSON, logging rather than raising a refusal."""
+    dir_check(os.path.dirname(file_name) or '.')
+    try:
+        with open(file_name, 'w') as f:
+            json.dump(data, f)
+    except OSError as e:
+        logging.warning(f'Could not write {file_name}: {e}')
+
+
+def _pending_filter_stat_path():
+    """A per-process temp file, not a module variable: ``reporting.utils``
+    and ``processor.reporting.utils`` are two module objects in one run."""
+    return os.path.join(tempfile.gettempdir(),
+                        f'lqproc_filter_stat_{os.getpid()}.json')
 
 
 def record_campaign_filter_stats(values, tdf, df, campaign_col,
@@ -1088,8 +1117,7 @@ def record_campaign_filter_stats(values, tdf, df, campaign_col,
     """Hold the match record for a just-filtered report."""
     try:
         campaigns = df[campaign_col].dropna().astype('U').unique().tolist()
-        _pending_filter_stat.clear()
-        _pending_filter_stat.update({
+        _write_json(_pending_filter_stat_path(), {
             'filter_values': list(values),
             'matched': int(tdf[campaign_col].nunique()),
             'total': len(campaigns),
@@ -1104,8 +1132,10 @@ def record_campaign_filter_stats(values, tdf, df, campaign_col,
 def drain_campaign_filter_stats():
     """Return and clear the pending record -- the import handler calls
     this per vendor key so a record cannot bleed across cards."""
-    stat = dict(_pending_filter_stat)
-    _pending_filter_stat.clear()
+    file_name = _pending_filter_stat_path()
+    stat = _read_json(file_name, {})
+    with contextlib.suppress(OSError):
+        os.remove(file_name)
     return stat
 
 
@@ -1114,25 +1144,110 @@ def write_campaign_filter_stats(stats_by_vk, config_path_dir=None):
     the app reads, so an earlier partial import's records survive."""
     if not stats_by_vk:
         return
-    file_dir = config_path_dir or config_path
-    file_name = os.path.join(file_dir, campaign_filter_stats_file)
-    existing = {}
-    if os.path.exists(file_name):
-        try:
-            with open(file_name, 'r') as f:
-                existing = json.load(f)
-        except (IOError, ValueError):
-            existing = {}
-    if not isinstance(existing, dict):
-        existing = {}
+    file_name = os.path.join(config_path_dir or config_path,
+                             campaign_filter_stats_file)
+    existing = _read_json(file_name, {})
     existing.update(stats_by_vk)
-    dir_check(file_dir)
+    _write_json(file_name, existing)
+
+
+run_stats_file = 'run_stats.json'
+_RUN_STATS_ERROR_CHARS = 500
+_RATE_LIMIT_RE = re.compile(
+    r'rate.?limit|too many requests|\b429\b|throttl', re.IGNORECASE)
+
+
+def reset_run_stats(config_path_dir=None):
+    """Forget the previous run's steps so a file a copy-back carried
+    forward cannot read as this run's."""
+    with contextlib.suppress(OSError):
+        os.remove(os.path.join(config_path_dir or config_path,
+                               run_stats_file))
+
+
+def error_http_status(error):
+    """The HTTP status a ``requests`` (``response``), Facebook SDK
+    (``http_status()``) or googleapiclient (``resp``) error carries."""
+    method = getattr(error, 'http_status', None)
+    status = (getattr(getattr(error, 'response', None), 'status_code', None)
+              or (method() if callable(method) else None)
+              or getattr(getattr(error, 'resp', None), 'status', None))
     try:
-        with open(file_name, 'w') as f:
-            json.dump(existing, f)
-    except IOError as e:
-        logging.warning('Could not write campaign filter stats: '
-                        '{}'.format(e))
+        return int(status)
+    except (TypeError, ValueError):
+        return None
+
+
+class StepLogCounter(logging.Handler):
+    """Counts a step's warnings and rate-limit messages, the only 4xx
+    evidence the API classes give, and keeps the last ERROR text."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.warnings = 0
+        self.rate_limited = 0
+        self.last_error = ''
+
+    def emit(self, record):
+        self.warnings += 1
+        try:
+            text = record.getMessage()
+        except (TypeError, ValueError):
+            text = str(record.msg)
+        if _RATE_LIMIT_RE.search(text):
+            self.rate_limited += 1
+        if record.levelno >= logging.ERROR:
+            self.last_error = text
+
+
+class TimedStep(object):
+    """Time one run step into ``run_stats.json``, written on entry so a
+    crash leaves it as the running step. A block that swallows a failure
+    sets ``error``; it may also set ``rows`` and ``status``."""
+
+    def __init__(self, step, api_key='', vendor_key='',
+                 config_path_dir=None):
+        self.file_name = os.path.join(config_path_dir or config_path,
+                                      run_stats_file)
+        self.record = {
+            'step': step, 'api_key': api_key, 'vendor_key': vendor_key,
+            'pid': os.getpid(), 'token': f'{random.getrandbits(64):016x}',
+            'started_at': None, 'seconds': None, 'status': 'running'}
+        self.counter = StepLogCounter()
+        self.start = self.rows = self.status = self.error = None
+
+    def __enter__(self):
+        self.record['started_at'] = dt.datetime.utcnow().strftime(
+            '%Y-%m-%dT%H:%M:%S.%f')
+        _write_json(self.file_name,
+                    _read_json(self.file_name, []) + [self.record])
+        logging.getLogger().addHandler(self.counter)
+        self.start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, error, traceback):
+        logging.getLogger().removeHandler(self.counter)
+        error = error or self.error
+        self.record.update(
+            seconds=round(time.perf_counter() - self.start, 3),
+            status=self.status or ('ok' if error is None else 'failed'),
+            warnings=self.counter.warnings,
+            rate_limited=self.counter.rate_limited)
+        if self.rows is not None:
+            self.record['rows'] = int(self.rows)
+        if error is not None:
+            text = str(error)
+            if isinstance(error, SystemExit):
+                code = error.code if isinstance(error.code, str) else ''
+                text = self.counter.last_error or code
+            self.record.update(error_type=type(error).__name__,
+                               error_text=text[:_RUN_STATS_ERROR_CHARS],
+                               http_status=error_http_status(error))
+        records = [self.record if x.get('token') == self.record['token']
+                   else x for x in _read_json(self.file_name, [])]
+        if self.record not in records:
+            records.append(self.record)
+        _write_json(self.file_name, records)
 
 
 def image_to_binary(file_name, as_bytes_io=False):

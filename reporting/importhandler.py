@@ -47,6 +47,12 @@ import processor.reporting.vendormatrix as vm
 import processor.reporting.utils as utl
 
 
+def api_key_of(vk):
+    """The API type a vendor key names: ``API_Facebook_A`` -> ``Facebook``."""
+    parts = str(vk).split('_')
+    return parts[1] if len(parts) > 1 else ''
+
+
 class ImportHandler(object):
     def __init__(self, args, matrix):
         self.args = args
@@ -185,18 +191,35 @@ class ImportHandler(object):
         Keyword arguments:
         key_list -- list of Vendormatrix keys for a given API
         api_class -- The class of API to call
+
+        A key's campaign filter record is drained even when the key
+        raises, so it never lands on the next card.
         """
         stats_by_vk = {}
+        utl.drain_campaign_filter_stats()
         for vk in key_list:
-            params = self.matrix.vendor_set(vk)
+            try:
+                self.api_call(vk, api_class)
+            finally:
+                stat = utl.drain_campaign_filter_stats()
+            if stat:
+                stat['date'] = dt.datetime.today().strftime(
+                    '%Y-%m-%d %H:%M:%S')
+                stats_by_vk[vk] = stat
+        utl.write_campaign_filter_stats(stats_by_vk)
+
+    def api_call(self, vk, api_class):
+        """Pull one vendor key as a timed import step; a Selenium class's
+        failure is recorded without stopping the loop."""
+        params = self.matrix.vendor_set(vk)
+        with utl.TimedStep('import', api_key_of(vk), vk) as step:
             try:
                 api_class.input_config(params[vmc.apifile])
             except (FileNotFoundError, ValueError, SystemExit) as e:
                 logging.warning(e)
-                continue
-            # Clear records a previous key's failure left behind,
-            # so nothing is attributed to the wrong card.
-            utl.drain_campaign_filter_stats()
+                step.status = 'skipped'
+                step.error = e
+                return
             utl.set_card_placement(api_class, params)
             start_check = self.date_check(params[vmc.startdate])
             end_check = self.date_check(params[vmc.enddate])
@@ -218,18 +241,19 @@ class ImportHandler(object):
                 logging.error("API error occurred", exc_info=True)
                 if hasattr(api_class, 'sw') and api_class.sw:
                     api_class.sw.quit()
+                    step.error = e
                 else:
                     raise e
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
-            stat = utl.drain_campaign_filter_stats()
-            if stat:
-                stat['date'] = dt.datetime.today().strftime(
-                    '%Y-%m-%d %H:%M:%S')
-                stats_by_vk[vk] = stat
-        utl.write_campaign_filter_stats(stats_by_vk)
+            self.output_source(df, params, step)
+
+    def output_source(self, df, params, step):
+        """Write a vendor key's pulled ``df`` and count its rows on the
+        timed ``step``."""
+        step.rows = len(df)
+        self.output(df, params[vmc.filename], params[vmc.apimerge],
+                    params[vmc.firstrow], params[vmc.lastrow],
+                    params[vmc.date], params[vmc.startdate],
+                    params[vmc.enddate])
 
     def api_loop(self):
         """Loops through all APIs and makes function call to retrieve data.
@@ -254,7 +278,7 @@ class ImportHandler(object):
             if import_config.config_file not in data_source.params:
                 continue
             config_name = str(data_source.params[import_config.config_file])
-            api_type = vk.split('_')[1]
+            api_type = api_key_of(vk)
             api_class = self.class_list[api_type]()
             ic_df = import_config.df.loc[
                 import_config.df[import_config.key] == api_type]
@@ -270,13 +294,11 @@ class ImportHandler(object):
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:
             params = self.matrix.vendor_set(vk)
-            ftp_class.input_config(params[vmc.apifile])
-            ftp_class.header = params[vmc.firstrow]
-            df = ftp_class.get_data()
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
+            with utl.TimedStep('files', api_key_of(vk), vk) as step:
+                ftp_class.input_config(params[vmc.apifile])
+                ftp_class.header = params[vmc.firstrow]
+                df = ftp_class.get_data()
+                self.output_source(df, params, step)
 
     def ftp_loop(self):
         if self.arg_check('sz'):
@@ -285,12 +307,10 @@ class ImportHandler(object):
     def db_load(self, db_key, db_class):
         for vk in db_key:
             params = self.matrix.vendor_set(vk)
-            db_class.input_config(params[vmc.apifile])
-            df = db_class.get_data(filename=params[vmc.apifields][0])
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
+            with utl.TimedStep('files', api_key_of(vk), vk) as step:
+                db_class.input_config(params[vmc.apifile])
+                df = db_class.get_data(filename=params[vmc.apifields][0])
+                self.output_source(df, params, step)
 
     def db_loop(self):
         if self.arg_check('dna'):
@@ -299,19 +319,17 @@ class ImportHandler(object):
     def s3_load(self, s3_key, s3_class):
         for vk in s3_key:
             params = self.matrix.vendor_set(vk)
-            s3_class.input_config(params[vmc.apifile])
-            start_check = self.date_check(params[vmc.startdate])
-            end_check = self.date_check(params[vmc.enddate])
-            if start_check:
-                params[vmc.startdate] = None
-            if end_check:
-                params[vmc.enddate] = None
-            df = s3_class.get_data(sd=params[vmc.startdate],
-                                   ed=params[vmc.enddate])
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
+            with utl.TimedStep('files', api_key_of(vk), vk) as step:
+                s3_class.input_config(params[vmc.apifile])
+                start_check = self.date_check(params[vmc.startdate])
+                end_check = self.date_check(params[vmc.enddate])
+                if start_check:
+                    params[vmc.startdate] = None
+                if end_check:
+                    params[vmc.enddate] = None
+                df = s3_class.get_data(sd=params[vmc.startdate],
+                                       ed=params[vmc.enddate])
+                self.output_source(df, params, step)
 
     def s3_loop(self):
         if self.arg_check('dna'):
@@ -320,13 +338,11 @@ class ImportHandler(object):
     def azu_load(self, azu_key, azu_class):
         for vk in azu_key:
             params = self.matrix.vendor_set(vk)
-            azu_class.input_config(params[vmc.apifile])
-            azu_class.header = params[vmc.firstrow]
-            df = azu_class.get_data()
-            self.output(df, params[vmc.filename], params[vmc.apimerge],
-                        params[vmc.firstrow], params[vmc.lastrow],
-                        params[vmc.date], params[vmc.startdate],
-                        params[vmc.enddate])
+            with utl.TimedStep('files', api_key_of(vk), vk) as step:
+                azu_class.input_config(params[vmc.apifile])
+                azu_class.header = params[vmc.firstrow]
+                df = azu_class.get_data()
+                self.output_source(df, params, step)
 
     def azu_loop(self):
         if self.arg_check('dna'):

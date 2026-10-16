@@ -2,6 +2,7 @@ import sys
 import logging
 import argparse
 import pandas as pd
+import reporting.utils as utl
 import reporting.export as exp
 import reporting.analyze as az
 import reporting.tbapi as tbapi
@@ -77,6 +78,7 @@ def main(arguments=None):
     args = get_args(arguments)
     if not args.nolog:
         set_log()
+    utl.reset_run_stats()
     if args.update == 'all' or args.update == 'vm':
         vm.vm_update()
     if args.update == 'all' or args.update == 'dct':
@@ -84,51 +86,59 @@ def main(arguments=None):
     df = pd.DataFrame()
     matrix = vm.VendorMatrix()
     if args.analyze:
-        aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-        aly.do_analysis_and_fix_processor(pre_run=True,
-                                          propose_only=args.propose_only)
+        with utl.TimedStep('analyze_pre'):
+            aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
+            aly.do_analysis_and_fix_processor(
+                pre_run=True, propose_only=args.propose_only)
         matrix = vm.VendorMatrix()
     if args.api:
-        api = ih.ImportHandler(args.api, matrix)
-        api.api_loop()
-    if args.ftp:
-        ftp = ih.ImportHandler(args.ftp, matrix)
-        ftp.ftp_loop()
-    if args.dbi:
-        dbi = ih.ImportHandler(args.dbi, matrix)
-        dbi.db_loop()
-    if args.s3:
-        s3 = ih.ImportHandler(args.s3, matrix)
-        s3.s3_loop()
-    if args.azu:
-        azu = ih.ImportHandler(args.azu, matrix)
-        azu.azu_loop()
+        with utl.TimedStep('import'):
+            api = ih.ImportHandler(args.api, matrix)
+            api.api_loop()
+    file_loops = [(args.ftp, ih.ImportHandler.ftp_loop),
+                  (args.dbi, ih.ImportHandler.db_loop),
+                  (args.s3, ih.ImportHandler.s3_loop),
+                  (args.azu, ih.ImportHandler.azu_loop)]
+    if any(arg for arg, _ in file_loops):
+        with utl.TimedStep('files'):
+            for arg, loop in file_loops:
+                if arg:
+                    loop(ih.ImportHandler(arg, matrix))
     if not args.noprocess:
         if args.analyze:
-            aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-            aly.do_analysis_and_fix_processor(new_files=True,
-                                              propose_only=args.propose_only)
+            with utl.TimedStep('analyze_files'):
+                aly = az.Analyze(df=df, file_name=OUTPUT_FILE,
+                                 matrix=matrix)
+                aly.do_analysis_and_fix_processor(
+                    new_files=True, propose_only=args.propose_only)
             matrix = vm.VendorMatrix()
-        df = matrix.vm_loop_with_costs(OUTPUT_FILE)
+        with utl.TimedStep('process'):
+            df = matrix.vm_loop_with_costs(OUTPUT_FILE)
         if args.analyze:
-            logging.info('Post run - analyzing data.')
-            aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-            fixes_to_run = aly.do_analysis_and_fix_processor(
-                first_run=True, propose_only=args.propose_only)
+            with utl.TimedStep('analyze_post'):
+                logging.info('Post run - analyzing data.')
+                aly = az.Analyze(df=df, file_name=OUTPUT_FILE,
+                                 matrix=matrix)
+                fixes_to_run = aly.do_analysis_and_fix_processor(
+                    first_run=True, propose_only=args.propose_only)
             if fixes_to_run:
                 logging.info('Fixes applied, rerunning processor.')
                 matrix = vm.VendorMatrix()
-                df = matrix.vm_loop_with_costs(OUTPUT_FILE)
+                with utl.TimedStep('process'):
+                    df = matrix.vm_loop_with_costs(OUTPUT_FILE)
     if args.exp:
-        exp_class = exp.ExportHandler()
-        if exp_class.config_loaded:
-            exp_class.export_loop(args.exp)
+        with utl.TimedStep('export'):
+            exp_class = exp.ExportHandler()
+            if exp_class.config_loaded:
+                exp_class.export_loop(args.exp)
     if args.tab:
-        tb = tbapi.TabApi()
-        tb.refresh_extract()
+        with utl.TimedStep('tableau'):
+            tb = tbapi.TabApi()
+            tb.refresh_extract()
     if args.analyze:
-        aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
-        aly.do_all_analysis()
+        with utl.TimedStep('analysis'):
+            aly = az.Analyze(df=df, file_name=OUTPUT_FILE, matrix=matrix)
+            aly.do_all_analysis()
 
 
 if __name__ == '__main__':

@@ -57,14 +57,14 @@ class VendorMatrix(object):
         return vm
 
     def write(self):
-        logging.debug('Writing vendormatrix to {}.'.format(csv_full_file))
+        """Write the matrix to its file; False when the disk refused it."""
         rules = [x for x in self.vm_df.columns if 'RULE' in x]
         cols = [vmc.vendorkey] + vmc.vmkeys + rules
         miss_cols = [x for x in cols if x not in self.vm_df.columns]
         if miss_cols:
             for miss_col in miss_cols:
                 self.vm_df[miss_col] = ''
-        self.vm_df[cols].to_csv(csv_full_file, index=False, encoding='utf-8')
+        return utl.write_file(self.vm_df[cols], csv_full_file)
 
     @staticmethod
     def blank_df():

@@ -64,8 +64,8 @@ class TestEndToEnd:
     * 'end_to_end_config.xlsx'
     * 'rawfile.csv'
     * 'results.csv'
-    Also, check that the file 'end_to_end_config.csv' is in the
-    'processor/config/' directory and up to date
+    The run pulls every API for real, so it also needs the credential
+    files in 'processor/config/'.
     """
     def test_load_config(self, load_config):
         config_cols = [vm.ImportConfig.key, vm.ImportConfig.account_id,

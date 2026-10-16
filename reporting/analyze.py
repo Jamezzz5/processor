@@ -1249,16 +1249,13 @@ class Analyze(object):
         new_file_check = []
         if new_files:
             new_file_check = self.get_new_files()
-        kwargs = {'only_new_files': new_files,
-                  'new_file_list': new_file_check}
         for analysis_class in self.class_list:
             if analysis_class.fix:
                 is_pre_run = pre_run and analysis_class.pre_run
                 is_new_file = new_files and analysis_class.new_files
-                is_all_files = analysis_class.all_files
-                if new_files and is_all_files:
-                    kwargs['only_new_files'] = False
-                    kwargs['new_file_list'] = []
+                narrow = new_files and not analysis_class.all_files
+                kwargs = {'only_new_files': narrow,
+                          'new_file_list': new_file_check if narrow else []}
                 if is_pre_run or first_run or is_new_file:
                     self.do_and_fix_one_analysis(analysis_class, kwargs)
                     self.matrix = vm.VendorMatrix(display_log=False)
@@ -1325,9 +1322,14 @@ class AnalyzeBase(object):
 
 
 class CheckAutoDictOrder(AnalyzeBase):
+    """Propose shifting a source's auto dictionary order to where its
+    sampled names carry the vendor, when ``min_match_share`` of the
+    rows carry a known token there."""
     name = Analyze.change_auto_order
     fix = True
     new_files = True
+    sample_rows = 100
+    min_match_share = 0.5
 
     @staticmethod
     def get_vendor_list(col=dctc.VEN):
@@ -1354,10 +1356,11 @@ class CheckAutoDictOrder(AnalyzeBase):
          """
         if not ven_list:
             ven_list = []
-        plannet_filename = self.matrix.vendor_set(vm.plan_key)
-        if vmc.filenamedict in plannet_filename:
-            plannet_filename = plannet_filename[vmc.filenamedict]
-            plannet_filename = os.path.join(utl.dict_path, plannet_filename)
+        plannet_filename = self.matrix.vendor_set(vm.plan_key).get(
+            vmc.filenamedict)
+        if not plannet_filename:
+            return ven_list
+        plannet_filename = os.path.join(utl.dict_path, plannet_filename)
         if os.path.isfile(plannet_filename):
             pc = utl.import_read_csv(plannet_filename)
             if col not in pc.columns:
@@ -1367,44 +1370,66 @@ class CheckAutoDictOrder(AnalyzeBase):
             ven_list = [x for x in ven_list if x not in ['nan', '0', 'None']]
         return ven_list
 
-    def check_vendor_lists(self, ven_list=None, cou_list=None, camp_list=None):
-        """
-        Checks if vendor, country, and/or campaign lists are empty and
-        generates them if needed. Returns all three lists.
-        """
-        if not ven_list:
-            ven_list = self.get_vendor_list()
-            ven_list = self.get_plannet_vendor_list(ven_list)
-        if not cou_list:
-            cou_list = self.get_vendor_list(dctc.COU)
-            cou_list = self.get_plannet_vendor_list(cou_list, dctc.COU)
-        if not camp_list:
-            camp_list = self.get_vendor_list(dctc.CAM)
-            camp_list = self.get_plannet_vendor_list(camp_list, dctc.CAM)
-        return ven_list, cou_list, camp_list
+    def output_vocabulary(self, col):
+        """The values ``col`` carries in the last output's media plan rows."""
+        df = self.aly.df
+        if df is None or df.empty or col not in df or vmc.vendorkey not in df:
+            return []
+        rows = df[df[vmc.vendorkey] == vmc.api_mp_key]
+        return rows[col].unique().tolist()
 
     @staticmethod
-    def get_raw_data_vendor_idx(tdf, camp_ven_diff, ven_list, cou_list,
-                                camp_list):
-        """
-        Determines the vendor index of a data source in the full placement
-        names by checking for vendor, country/region, and campaign items at
-        separation levels noted in the auto dictionary order. Returns the
-        index, or -1 if no item matches were found.
-        """
-        max_idx, max_val = -1, 0
-        for col in tdf.columns:
-            ven_counts, cou_counts, camp_counts = 0, 0, 0
-            ven_counts = tdf[col].isin(ven_list).sum()
-            if col + 1 < len(tdf.columns):
-                cou_counts = tdf[col + 1].isin(cou_list).sum()
-            if 0 <= col + camp_ven_diff < len(tdf.columns):
-                camp_counts = tdf[col + camp_ven_diff].isin(camp_list).sum()
-            total = ven_counts + cou_counts + camp_counts
-            if total > max_val:
-                max_val = total
-                max_idx = col
-        return max_idx
+    def match_keys(values):
+        """What a token must equal, case aside; placeholders never match."""
+        return ({str(x).strip().casefold() for x in values}
+                - {'', 'nan', '0', 'none'})
+
+    def check_vendor_lists(self, ven_list=None, cou_list=None, camp_list=None):
+        """``{column: match keys}`` for vendor, country and campaign; a list
+        not passed in comes from the translations, plan net, last output
+        and, for vendors, every platform's own names."""
+        platforms = vmc.api_partner_name_translation
+        lists = {dctc.VEN: ven_list, dctc.COU: cou_list, dctc.CAM: camp_list}
+        for col, names in lists.items():
+            if names is None:
+                names = self.get_plannet_vendor_list(
+                    self.get_vendor_list(col), col)
+                names += self.output_vocabulary(col)
+                if col == dctc.VEN:
+                    names += list(platforms)
+                    names += [x for v in platforms.values() for x in v]
+            lists[col] = self.match_keys(names)
+        return lists
+
+    def get_raw_data_vendor_idx(self, tdf, shifts, names, current=-1):
+        """The vendor's token index in the sampled names, or -1 when the
+        sample does not say. The current index keeps a tie, and two
+        positions matching as many rows are two layouts left alone."""
+        tokens = tdf.apply(
+            lambda col: col.astype(str).str.strip().str.casefold())
+        known = {kind: tokens.isin(names[kind]) for kind in shifts}
+        width = len(tdf.columns)
+        scores = {}
+        for col in range(width):
+            hits = pd.Series(0, index=tdf.index)
+            for kind, shift in shifts.items():
+                if 0 <= col + shift < width:
+                    hits += known[kind][col + shift]
+            scores[col] = (int(hits.sum()), int((hits > 0).sum()))
+        if not scores:
+            return -1
+        best = max(scores, key=lambda c: (scores[c], c == current, -c))
+        matched, rows = scores[best][1], len(tdf)
+        if matched < self.min_match_share * rows:
+            logging.info('Too few known tokens to place the vendor: best '
+                         f'position matched {matched} of {rows} rows.')
+            return -1
+        if best != current and list(scores.values()).count(scores[best]) > 1:
+            logging.warning('Names mix two layouts (positions matching '
+                            f'{matched} rows each); the order is left as '
+                            'it is.')
+            return -1
+        return best
 
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None, camp_list=None):
@@ -1413,26 +1438,15 @@ class CheckAutoDictOrder(AnalyzeBase):
         dictionary order from the vendormatrix. Suggests a shifted order if
         they differ.
         """
-        if vmc.autodicord not in source.p:
+        auto_order = source.p.get(vmc.autodicord, [])
+        if dctc.VEN not in auto_order:
             return df
-        ven_list, cou_list, camp_list = (
-            self.check_vendor_lists(ven_list, cou_list, camp_list))
-        ven_auto_idx = (source.p[vmc.autodicord].index(dctc.VEN)
-                        if dctc.VEN in source.p[vmc.autodicord] else -1)
-        camp_auto_idx = (source.p[vmc.autodicord].index(dctc.CAM)
-                         if dctc.CAM in source.p[vmc.autodicord]
-                         else ven_auto_idx)
-        auto_order = source.p[vmc.autodicord]
-        if ven_auto_idx < 0 or (len(auto_order) <= (ven_auto_idx + 1)):
-            return df
-        if not auto_order[ven_auto_idx + 1] == dctc.COU:
-            return df
-        camp_shift = camp_auto_idx - ven_auto_idx
-        tdf = source.get_raw_df(nrows=100)
+        ven_auto_idx = auto_order.index(dctc.VEN)
+        tdf = source.get_raw_df(nrows=self.sample_rows)
         auto_place = source.p[vmc.autodicplace]
         if auto_place == dctc.PN:
             auto_place = source.p[vmc.placement]
-        if (dctc.FPN not in tdf.columns or tdf.empty
+        if (tdf is None or tdf.empty or dctc.FPN not in tdf.columns
                 or auto_place not in tdf.columns):
             return df
         if tdf[auto_place].isnull().values.any():
@@ -1441,27 +1455,48 @@ class CheckAutoDictOrder(AnalyzeBase):
             tdf[auto_place] = tdf[auto_place].astype(str)
         tdf = utl.data_to_type(tdf, str_col=[auto_place])
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
-        ven_raw_idx = self.get_raw_data_vendor_idx(tdf, camp_shift, ven_list,
-                                                   cou_list, camp_list)
-        if 0 <= ven_raw_idx != ven_auto_idx:
-            diff = ven_auto_idx - ven_raw_idx
-            if diff > 0:
-                new_order = auto_order[diff:]
-            else:
-                new_order = (diff * -1) * [dctc.MIS] + auto_order
+        names = self.check_vendor_lists(ven_list, cou_list, camp_list)
+        shifts = {kind: auto_order.index(kind) - ven_auto_idx
+                  for kind in names if kind in auto_order}
+        ven_raw_idx = self.get_raw_data_vendor_idx(tdf, shifts, names,
+                                                   ven_auto_idx)
+        new_order = self.shifted_order(auto_order, ven_auto_idx, ven_raw_idx)
+        if new_order:
             data_dict = {vmc.vendorkey: source.key, self.name: new_order}
             if not df:
                 df = []
             df.append(data_dict)
         return df
 
+    @staticmethod
+    def shifted_order(auto_order, ven_auto_idx, ven_raw_idx):
+        """The order with the vendor moved to ``ven_raw_idx`` by adding or
+        removing fillers, never a named column; None when it cannot."""
+        if ven_raw_idx < 0 or ven_raw_idx == ven_auto_idx:
+            return None
+        diff = ven_auto_idx - ven_raw_idx
+        if diff < 0:
+            return -diff * [dctc.MIS] + auto_order
+        lead = auto_order[:ven_auto_idx]
+        if lead.count(dctc.MIS) < diff:
+            return None
+        for _ in range(diff):
+            lead.remove(dctc.MIS)
+        return lead + auto_order[ven_auto_idx:]
+
     def do_analysis(self):
+        """Check every source's order; one whose raw file cannot be read
+        is logged and skipped so it does not hide the rest."""
         data_sources = self.matrix.get_all_data_sources()
         df = []
-        ven_list, cou_list, camp_list = self.check_vendor_lists()
+        names = self.check_vendor_lists()
         for ds in data_sources:
-            df = self.do_analysis_on_data_source(ds, df, ven_list, cou_list,
-                                                 camp_list)
+            try:
+                df = self.do_analysis_on_data_source(ds, df, *names.values())
+            except (OSError, ValueError):
+                logging.exception('Could not check the naming order of '
+                                  f'{ds.key}; the other sources are still '
+                                  'checked.')
         df = pd.DataFrame(df)
         if df.empty:
             msg = 'No new proposed order.'
@@ -1472,18 +1507,22 @@ class CheckAutoDictOrder(AnalyzeBase):
                                       message=msg, data=df.to_dict())
 
     def fix_analysis_for_data_source(self, source_aly_dict, write=True):
+        """Write the proposed order and drop the source's dictionary; a
+        written change asks the run to process again."""
         vk = source_aly_dict[vmc.vendorkey]
         new_order = '|'.join(source_aly_dict[self.name])
         logging.info('Changing order for {} to {}'.format(vk, new_order))
         data_source = self.aly.matrix.get_data_source(vk)
-        try:
-            os.remove(os.path.join(utl.dict_path,
-                                   data_source.p[vmc.filenamedict]))
-        except FileNotFoundError as e:
-            logging.warning('File not found error: {}'.format(e))
+        dict_file = vm.raw_file_path(data_source.p.get(vmc.filenamedict),
+                                     folder=utl.dict_path)
+        if dict_file:
+            try:
+                os.remove(dict_file)
+            except OSError as e:
+                logging.warning(f'Dictionary {dict_file} not removed: {e}')
         self.aly.matrix.vm_change_on_key(vk, vmc.autodicord, new_order)
-        if write:
-            self.aly.matrix.write()
+        if write and self.aly.matrix.write():
+            self.aly.fixes_to_run = True
 
     def fix_analysis(self, aly_dict, write=True):
         aly_dict = aly_dict.to_dict(orient='records')
@@ -2059,6 +2098,20 @@ class CheckAdwordsSplit(AnalyzeBase):
                 df['config'] = api_file
         return df
 
+    def carry_raw_file(self, old_fn, new_fn, match_string):
+        """Give a split-off source the rows the unfiltered pull delivered
+        for campaigns containing ``match_string``; True when written."""
+        old_path = vm.raw_file_path(old_fn)
+        if not os.path.exists(old_path):
+            return False
+        df = utl.import_read_csv(old_path)
+        if df is None or df.empty or self.camp_col not in df.columns:
+            return False
+        kept = df[df[self.camp_col].astype(str).str.contains(
+            str(match_string))]
+        logging.info(f'Keeping {len(kept)} rows of {old_fn} for {new_fn}')
+        return utl.write_file(kept, vm.raw_file_path(new_fn))
+
     def fix_analysis(self, aly_dict, write=True):
         """
         Creates new vendor keys, filenames, and configs for multiple campaign
@@ -2075,10 +2128,13 @@ class CheckAdwordsSplit(AnalyzeBase):
             ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
             new_vk = '{}_auto_{}'.format(vk, x['match_string'])
             ndf.loc[0, vmc.vendorkey] = new_vk
-            file_type = os.path.splitext(ndf[vmc.filename][0])[1].lower()
+            old_fn = ndf[vmc.filename][0]
+            file_type = os.path.splitext(old_fn)[1].lower()
             new_fn = '{}{}'.format(new_vk.replace(
                 'API_', '').lower(), file_type)
             ndf.loc[0, vmc.filename] = new_fn
+            if write:
+                self.carry_raw_file(old_fn, new_fn, x['match_string'])
             new_config_name = 'awconfig_{}.yaml'.format(
                 new_vk.replace('API_', '').lower())
             ndf.loc[0, vmc.apifile] = new_config_name
@@ -2416,7 +2472,7 @@ class CheckColumnNames(AnalyzeBase):
                     try:
                         tdf[col] = utl.data_to_type(tdf[col].reset_index(),
                                                     date_col=[col])[col]
-                    except:
+                    except (ValueError, TypeError, OverflowError):
                         tdf[col] = pd.NaT
                 date_col = (tdf.isnull().sum() * 100 / len(tdf)).idxmin()
                 logging.info('Changing {} date col to {} '.format(vk, date_col))
@@ -3260,7 +3316,8 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         Find placements in full output not included in the media plan.
 
         :param df: The df to check media plan names from
-        :return:
+        :return: the delivered rows under their whole delivered name,
+            which is what the fix's translation matches on
         """
         if df.empty or not set(self.cols).issubset(df.columns):
             return pd.DataFrame(columns=self.cols)
@@ -3270,11 +3327,24 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             df.loc[df[vmc.vendorkey] == vmc.api_mp_key][self.cols[1:]])
         if mp_placements.empty:
             return pd.DataFrame(columns=self.cols)
-        df_placements = df.loc[df[vmc.vendorkey] != vmc.api_mp_key]
+        df_placements = df.loc[df[vmc.vendorkey] != vmc.api_mp_key].copy()
+        df_placements[self.tmp_col] = self.plan_length_names(
+            df_placements[dctc.PN], mp_placements[dctc.PN])
+        mp_placements = mp_placements.rename(columns={dctc.PN: self.tmp_col})
         merged_df = pd.merge(df_placements, mp_placements, how=self.merge,
-                             on=self.cols[1:], indicator=True)
+                             on=[dctc.VEN, self.tmp_col], indicator=True)
         filtered_df = merged_df[merged_df[self.merge_col] == self.merge_filter]
         return filtered_df[self.cols]
+
+    @staticmethod
+    def plan_length_names(names, mp_names):
+        """Delivered names cut to the plan's token count, dropping the
+        tail a platform appends; whole names when plan lengths differ."""
+        counts = mp_names.astype(str).str.count('_').unique()
+        if len(counts) != 1:
+            return names
+        tokens = int(counts[0]) + 1
+        return names.astype(str).str.split('_').str[:tokens].str.join('_')
 
     def do_analysis(self):
         df = self.aly.df
@@ -3293,10 +3363,15 @@ class CheckPlacementsNotInMp(AnalyzeBase):
                                       message=msg, data=rdf.to_dict())
 
     @staticmethod
-    def find_closest_name_match(names, mp_names, underscore_min=10,
+    def find_closest_name_match(names, mp_names, underscore_min=None,
                                 data_source_name='', ignore_min=False):
+        """Suggest the plan name each delivered name most resembles, skipping
+        names with more underscores than ``underscore_min`` (default: the
+        plan's own longest name, at least 10)."""
         if not any([x.split('_')[0] for x in mp_names]):
             return pd.DataFrame()
+        if underscore_min is None:
+            underscore_min = max([10] + [str(x).count('_') for x in mp_names])
         match_table = []
         ali_chat = AliChat()
         for name in names:
@@ -3325,16 +3400,15 @@ class CheckPlacementsNotInMp(AnalyzeBase):
     @classmethod
     def allowed_partners(cls, vk, plan_partners):
         """Return source partners, none when unknown, or None for all.
-        Measurement sources intentionally span every plan partner.
+        Measurement sources intentionally span every plan partner; a raw
+        file or sheet reports for the one partner its key names.
         """
         parts = str(vk).split('_')
         key = parts[1] if parts[0] == 'API' and len(parts) > 1 else parts[0]
         if key in vmc.unconstrained_translate_keys:
             return None
-        if key in vmc.api_partner_name_translation:
-            return vmc.api_partner_name_translation[key]
-        if key != 'Rawfile':
-            return []
+        if key not in vmc.generic_source_keys:
+            return vmc.api_partner_name_translation.get(key, [])
         tokens = {cls.name_key(part) for part in parts}
         matches = [name for name in plan_partners
                    if cls.name_key(name) in tokens]
@@ -3371,6 +3445,9 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
         match_df[dctc.DICT_COL_FNC] = f'Select::{vmc.vendorkey}'
         match_df[dctc.DICT_COL_SEL] = vk
+        if not write:
+            return match_df
+        written = True
         if vmc.transform_raw_translate not in old_transform:
             if str(old_transform) == 'nan':
                 old_transform = ''
@@ -3378,11 +3455,14 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             if old_transform:
                 new_transform = '{}:::{}'.format(old_transform, new_transform)
             self.aly.matrix.vm_change_on_key(vk, vmc.transform, new_transform)
-            self.aly.matrix.write()
-        if write:
-            tc = dct.DictTranslationConfig()
-            tc.add_and_write(match_df)
+            written = self.aly.matrix.write()
+        tc = dct.DictTranslationConfig()
+        written = tc.add_and_write(match_df) and written
+        if written:
             self.aly.fixes_to_run = True
+        else:
+            logging.warning(f'Suggested matches for {vk} were not saved; '
+                            'the run keeps its current names.')
         return match_df
 
     def fix_analysis(self, aly_dict, write=True):

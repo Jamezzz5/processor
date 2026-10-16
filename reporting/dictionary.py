@@ -896,7 +896,7 @@ class DictTranslationConfig(object):
         self.df = pd.concat([self.df, df], ignore_index=True)
         subset = [x for x in self.df.columns if x != dctc.DICT_COL_NVALUE]
         self.df = self.df.drop_duplicates(subset=subset, keep='last')
-        self.write(self.df, configfile=dctc.filename_tran_config)
+        return self.write(self.df, configfile=dctc.filename_tran_config)
 
 
 def dict_update():

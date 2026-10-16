@@ -368,6 +368,7 @@ unconstrained_translate_keys = (
     api_dc_key, api_szk_key, api_ga_key, api_af_key, api_aj_key,
     api_dv_key, api_ias_key, api_pix_key, api_mp_key, api_ss_key,
 )
+generic_source_keys = (api_raw_key, api_gs_key)
 
 top_apis = [
     api_aw_key,
