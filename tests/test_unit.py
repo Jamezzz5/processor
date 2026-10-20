@@ -5191,6 +5191,16 @@ class FakeEngine:
 
 class TestExport:
 
+    def test_clean_upload_text_matches_the_copy_rules(self):
+        df = pd.DataFrame({'name': ['a"b\\c\r\nd\te', 'plain', None],
+                           'spend': [1.5, 2.0, 3.0]})
+        cleaned = df.copy()
+        for col in cleaned.select_dtypes(include='object').columns:
+            cleaned[col] = cleaned[col].map(exp.clean_upload_text)
+        assert cleaned['name'].tolist() == ['ab/cde', 'plain', None]
+        assert cleaned['spend'].tolist() == [1.5, 2.0, 3.0]
+        assert exp.clean_upload_text(7) == 7
+
     @pytest.mark.parametrize(
         'filter_table, event_tables, expected_string', [
             ('', None,
@@ -6626,6 +6636,196 @@ class TestDcApiReachWindows:
                 'date_range': window})
         suffix = ' - no_date - campaign_report'
         assert renamed[f'CM360 startDate{suffix}'].iloc[0] == '2026-03-30'
+
+
+class TestDcApiPathToConversion:
+    """The pathToConversion field adds a row per attributed conversion,
+    naming the interaction CM360 credited and the conversion's order id,
+    so uploaded sales can be traced to the ad that won them."""
+
+    header = ('Conversion ID,Activity,Activity Date/Time,ORD Value,'
+              'Interaction Type,Campaign,Campaign ID,Placement,'
+              'Floodlight Attributed Interaction,Total Conversions,'
+              'Total Revenue')
+    rows = [
+        '10066324635809675995,Purchase,2026-09-23 10:00:00,ORD1,,,,,,1,828',
+        '10066324635809675995,Purchase,2026-09-23 10:00:00,ORD1,Impression,'
+        'Camp A,1001,P1,FALSE,0,0',
+        '10066324635809675995,Purchase,2026-09-23 10:00:00,ORD1,Click,'
+        'Camp A,1001,P2,TRUE,0,0',
+        '222,Lead,2026-09-24 08:00:00,ORD2,,,,,,1,74',
+        '222,Lead,2026-09-24 08:00:00,ORD2,Impression,Camp B,1002,P3,TRUE,'
+        '0,0']
+
+    def report_text(self, rows=None):
+        """A Path to Conversion CSV as CM360 writes it: a preamble, the
+        fields, each conversion's total row then its interactions, and a
+        grand total."""
+        return '\n'.join(
+            ['path_report', '', 'Report Time Zone,America/New_York', '',
+             'Report Fields', self.header] + (rows or self.rows) +
+            ['Grand Total:,---,---,---,---,---,---,---,---,2,902'])
+
+    @staticmethod
+    def response(data=None, text=''):
+        return types.SimpleNamespace(json=lambda: data or {}, text=text)
+
+    def fake_request(self, url, method, body=None, params=None,
+                     json_response=True):
+        """Answers get_data's calls as CM360 would.  Each report queued
+        keeps the CSV that was current when it was sent, so a report
+        downloaded again for a later card is told apart by its rows."""
+        if url.endswith('/reports/') and method == 'post':
+            self.sent.append(body)
+            report_id = str(len(self.sent))
+            self.texts[report_id] = self.text
+            return self.response({'id': report_id})
+        if url.endswith('/run'):
+            return self.response({'id': 'f'})
+        if url.endswith('?alt=media'):
+            report_id = url.split('/reports/')[1].split('/')[0]
+            return self.response(text=self.texts[report_id])
+        if '/files/' in url:
+            return self.response({'status': 'REPORT_AVAILABLE'})
+        if 'floodlightActivities' in url:
+            return self.response({'floodlightActivities': [{'id': '5'}]})
+        return self.response({'floodlightConfigurationId': '99'})
+
+    def fake_cm360(self, monkeypatch, api, text):
+        """Routes the api's requests to fake_request, with the standard
+        and reach reports left out, and returns the bodies CM360 is
+        sent."""
+        self.sent, self.texts, self.text = [], {}, text
+        monkeypatch.setattr(api, 'make_request', self.fake_request)
+        monkeypatch.setattr(api, 'create_report', lambda **kwargs: False)
+        api.usr_id = '1'
+        api.advertiser_id = '42'
+        api.campaign_id = ''
+        return self.sent
+
+    @staticmethod
+    def last_days(days):
+        today = dt.datetime.today()
+        return today - dt.timedelta(days=days), today
+
+    def test_path_field_adds_the_report_and_keeps_the_dates(self):
+        """Any other field moves the reports to a relative range; the path
+        field only adds a report, so it must leave the card's dates."""
+        api = dcapi.DcApi()
+        sd, ed = dt.datetime(2026, 9, 1), dt.datetime(2026, 9, 30)
+        api.parse_fields(sd, ed, [api.path_field])
+        assert api.path_report
+        assert api.date_range == {'startDate': '2026-09-01',
+                                  'endDate': '2026-09-30'}
+        api.parse_fields(sd, ed, [api.path_field, '30'])
+        assert api.path_report
+        assert api.date_range['relativeDateRange'] == 'LAST_30_DAYS'
+        api.parse_fields(sd, ed, None)
+        assert not api.path_report
+        assert api.path_field in dict(dcapi.DcApi.api_field_options)
+
+    def test_platform_type_stays_on_its_own_card(self):
+        """One instance pulls every DCM card, and the dimension used to be
+        appended to the class list, so it reached every later card."""
+        api = dcapi.DcApi()
+        sd, ed = dt.datetime(2026, 9, 1), dt.datetime(2026, 9, 30)
+        api.parse_fields(sd, ed, ['platformType'])
+        api.parse_fields(sd, ed, ['platformType'])
+        assert api.default_fields.count('platformType') == 1
+        api.parse_fields(sd, ed, None)
+        assert 'platformType' not in api.default_fields
+        assert 'platformType' not in dcapi.DcApi.default_fields
+
+    def test_path_range_is_cut_to_the_last_60_days(self):
+        """CM360 refuses the whole report when it reaches back further."""
+        api = dcapi.DcApi()
+        today = dt.date.today()
+        earliest = str(today - dt.timedelta(days=59))
+        api.date_range = {'startDate': '2026-01-01', 'endDate': str(today)}
+        assert api.path_date_range() == {'startDate': earliest,
+                                         'endDate': str(today)}
+        api.date_range = {'relativeDateRange': 'LAST_365_DAYS'}
+        assert api.path_date_range() == {
+            'startDate': earliest,
+            'endDate': str(today - dt.timedelta(days=1))}
+        old_end = str(today - dt.timedelta(days=61))
+        api.date_range = {'startDate': '2026-01-01', 'endDate': old_end}
+        assert api.path_date_range() is None
+
+    def test_report_asks_for_the_attributed_conversions(self):
+        api = dcapi.DcApi()
+        api.advertiser_id, api.campaign_id = '42', ''
+        window = {'startDate': '2026-09-01', 'endDate': '2026-09-30'}
+        body = api.create_path_report_params(window, 99, ['5', '6'])
+        criteria = body['pathToConversionCriteria']
+        assert body['type'] == 'PATH_TO_CONVERSION'
+        assert criteria['floodlightConfigId']['value'] == '99'
+        assert criteria['dateRange'] == window
+        assert [x['id'] for x in criteria['activityFilters']] == ['5', '6']
+        interaction = [x['name'] for x in
+                       criteria['perInteractionDimensions']]
+        assert {'interactionNumber', 'interactionTime'} <= set(interaction), (
+            'CM360 refuses the report without them')
+        assert {'campaignId', 'placement', 'interactionType',
+                'floodlightAttributedInteraction'} <= set(interaction)
+        conversion = [x['name'] for x in criteria['conversionDimensions']]
+        assert {'conversionId', 'ordValue', 'activityTime'} <= set(
+            conversion)
+        assert 'reportProperties' not in criteria, (
+            'unattributed conversions stay out unless asked for')
+
+    def test_each_conversion_is_its_credited_interaction(self, monkeypatch):
+        """The conversion's count and revenue move onto the interaction
+        CM360 credited, under names the standard report's own Total
+        Conversions and Total Revenue never collide with."""
+        api = dcapi.DcApi()
+        sent = self.fake_cm360(monkeypatch, api, self.report_text())
+        df = api.get_data(*self.last_days(10), fields=[api.path_field])
+        assert [x['type'] for x in sent] == ['PATH_TO_CONVERSION']
+        criteria = sent[0]['pathToConversionCriteria']
+        assert criteria['floodlightConfigId']['value'] == '99'
+        assert df['ORD Value'].tolist() == ['ORD1', 'ORD2']
+        assert df['Placement'].tolist() == ['P2', 'P3']
+        assert df['Interaction Type'].tolist() == ['Click', 'Impression']
+        assert df['Total Conversions - path_report'].tolist() == ['1', '1']
+        assert df['Total Revenue - path_report'].tolist() == ['828', '74']
+        assert df['Date'].tolist() == ['2026-09-23', '2026-09-24']
+        assert df['Conversion ID'].iloc[0] == '10066324635809675995'
+        assert 'Total Conversions' not in df.columns
+        assert 'Total Revenue' not in df.columns
+
+    def test_campaign_filter_reaches_path_rows(self, monkeypatch):
+        """The report type takes no campaign filter, so the card's filter
+        is matched on the rows' campaign id after download."""
+        api = dcapi.DcApi()
+        self.fake_cm360(monkeypatch, api, self.report_text())
+        api.campaign_id = '1002'
+        df = api.get_data(*self.last_days(10), fields=[api.path_field])
+        assert df['ORD Value'].tolist() == ['ORD2']
+
+    def test_a_card_only_downloads_its_own_reports(self, monkeypatch):
+        """The instance is shared by every DCM card in a run, and the
+        reports one card queued used to be downloaded again into the
+        next card's file."""
+        api = dcapi.DcApi()
+        self.fake_cm360(monkeypatch, api, self.report_text())
+        first = api.get_data(*self.last_days(10), fields=[api.path_field])
+        assert first['ORD Value'].tolist() == ['ORD1', 'ORD2']
+        self.text = self.report_text([
+            '333,Lead,2026-09-25 09:00:00,ORD3,,,,,,1,19',
+            '333,Lead,2026-09-25 09:00:00,ORD3,Click,Camp C,1003,P4,TRUE,'
+            '0,0'])
+        api.advertiser_id = '43'
+        second = api.get_data(*self.last_days(10), fields=[api.path_field])
+        assert second['ORD Value'].tolist() == ['ORD3']
+
+    def test_no_report_when_the_range_is_too_old(self, monkeypatch):
+        api = dcapi.DcApi()
+        sent = self.fake_cm360(monkeypatch, api, self.report_text())
+        sd = dt.datetime.today() - dt.timedelta(days=200)
+        ed = dt.datetime.today() - dt.timedelta(days=100)
+        assert api.get_data(sd, ed, fields=[api.path_field]).empty
+        assert sent == []
 
 
 class TestApiReachRows:

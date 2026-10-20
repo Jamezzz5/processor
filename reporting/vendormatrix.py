@@ -112,9 +112,8 @@ class VendorMatrix(object):
         self.vm = utl.col_removal(self.vm, 'vm', drop)
         self.vm = utl.data_to_type(self.vm, [], vmc.datecol, vmc.barsplitcol)
         self.vl = self.vm[vmc.vendorkey].tolist()
-        for col in vmc.barsplitcol:
-            if col in self.vm.columns:
-                self.vm[col] = self.vm[col].str.split('|')
+        bar_cols = [x for x in vmc.barsplitcol if x in self.vm.columns]
+        self.vm[bar_cols] = self.vm[bar_cols].map(lambda x: x.split('|'))
         self.vm = self.vm.set_index(vmc.vendorkey).to_dict()
 
     def vm_import_keys(self):

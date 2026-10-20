@@ -356,6 +356,9 @@ def string_to_date(my_string):
         return my_string
 
 
+_WHITESPACE_RUN = re.compile(r'\s+')
+
+
 def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
                  fill_empty=True):
     df = df.loc[:, ~df.columns.duplicated()]
@@ -391,11 +394,10 @@ def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
         df[col] = df[col].astype('U')
         df[col] = df[col].apply(lambda x: string_to_date(x))
         df[col] = pd.to_datetime(df[col], errors='coerce').dt.normalize()
-    for col in str_col:
-        if col not in df:
-            continue
-        df[col] = df[col].astype('U')
-        df[col] = df[col].str.replace(r"\s+", " ", regex=True).str.strip()
+    str_col = [col for col in dict.fromkeys(str_col) if col in df]
+    if str_col:
+        df[str_col] = df[str_col].astype('U').map(
+            lambda x: _WHITESPACE_RUN.sub(' ', x).strip())
     for col in int_col:
         if col not in df:
             continue

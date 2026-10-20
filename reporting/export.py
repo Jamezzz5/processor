@@ -26,6 +26,18 @@ CONNECT_TIMEOUT = 10
 REFUSED_MARKS = ('Connection refused', 'connection refused',
                  'could not translate host name', 'does not exist',
                  'password authentication failed')
+UPLOAD_TEXT_TABLE = str.maketrans({'"': None, '\\': '/', '\r': None,
+                                   '\n': None, '\t': None})
+
+
+def clean_upload_text(value):
+    """``value`` without the characters a COPY row cannot carry, a
+    backslash written as a slash; anything not a string passes through.
+    One ``str.translate`` per cell, where a regex ``replace`` over the
+    frame ran five searches per cell of every column."""
+    if isinstance(value, str):
+        return value.translate(UPLOAD_TEXT_TABLE)
+    return value
 
 
 class ExportHandler(object):
@@ -738,8 +750,8 @@ class DFTranslation(object):
         if real_columns:
             self.df = self.df[self.df[real_columns].sum(axis=1) != 0]
         self.df = self.df.reset_index(drop=True)
-        replace_dict = {'"': '', "\\\\": '/', '\r': '', '\n': '', '\t': ''}
-        self.df.replace(replace_dict, regex=True, inplace=True)
+        for col in self.df.select_dtypes(include='object').columns:
+            self.df[col] = self.df[col].map(clean_upload_text)
         return True
 
     def get_upload_id(self):
