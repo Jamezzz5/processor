@@ -430,9 +430,9 @@ class TikApi(object):
 
     def request_reach_report(self, sd, ed, report):
         """
-        Requests one reach report and dates its rows so a date merge keeps
-        them: a whole range row to the start of the range, a daily row to
-        its own day.
+        Requests one reach report and dates its rows: a whole range row
+        to the end of the range, so each run's row replaces the last, a
+        daily row to its own day.
 
         Leaving the day dimension out is what makes TikTok count each
         user once across the range, and it lifts the report's cap from
@@ -468,7 +468,7 @@ class TikApi(object):
             frames.append(self.request_pages(params['start_date'],
                                              params['end_date'], params))
         df = pd.concat(frames, ignore_index=True)
-        date = '{} 00:00:00'.format(sd)
+        date = '{} 00:00:00'.format(ed)
         if report.get('daily'):
             df = df.rename(columns={self.new_date: self.old_date})
             date = ''

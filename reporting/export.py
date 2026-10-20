@@ -900,7 +900,10 @@ class ScriptBuilder(object):
                 append_tables.append(table.name)
         return append_tables
 
-    def append_plan_join(self, original_from_script):
+    def append_plan_join(self, original_from_script, join='FULL'):
+        """Joins plan onto a from script.  FULL keeps unmatched plan rows
+        but stops a WHERE on the event date pruning the scan; LEFT lets
+        a reader that needs no plan column prune it."""
         table = [x for x in self.tables if x.name == 'plan'][0]
         fcs = [x for x in table.columns if x.foreign_keys]
         table_name = '"{}"."{}"'.format(table.schema, table.name)
@@ -910,8 +913,8 @@ class ScriptBuilder(object):
             fk.column.table.schema, fk.column.table.name)
         table_relation = '{}."{}"'.format(table_name, fc.name)
         foreign_relation = '{}."{}"'.format(join_table, fk.column.name)
-        join_script = """\nFULL JOIN {} ON ({} = {})""".format(
-            table_name, foreign_relation, table_relation)
+        join_script = """\n{} JOIN {} ON ({} = {})""".format(
+            join, table_name, foreign_relation, table_relation)
         from_script = original_from_script + join_script
         return from_script
 
@@ -1022,9 +1025,9 @@ class ScriptBuilder(object):
         return from_script
 
     def get_from_script_with_opts(self, base_table, filter_table='',
-                                  event_tables=None):
+                                  event_tables=None, plan_join='FULL'):
         from_script = self.get_from_script(table=base_table)
-        from_script = self.append_plan_join(from_script)
+        from_script = self.append_plan_join(from_script, plan_join)
         if event_tables:
             from_script = self.append_event_joins(from_script,
                                                   tables=event_tables)

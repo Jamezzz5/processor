@@ -113,6 +113,13 @@ def _raise_read_timeout(*args, **kwargs):
     raise url_ex.ReadTimeoutError(None, 'url', 'Read timed out.')
 
 
+def _write_stops_part_way(df, path, **kwargs):
+    """Stand in for a to_csv the disk cut off after the header began."""
+    with open(path, 'w') as out:
+        out.write('Vendor Key')
+    raise OSError('disk full')
+
+
 COOKIE_DECOYS = (
     '<p>We use COOKIES. Continue reading our policy.</p>'
     '<button onclick="window.picked=\'settings\'">Cookie settings</button>')
@@ -3651,6 +3658,37 @@ class TestVendormatrix:
         assert matrix.vm_df.empty
         assert matrix.vl == [vm.plan_key]
         assert vm.ImportConfig(matrix=matrix).get_current_imports() == []
+        matrix.vm_df = pd.DataFrame({vmc.vendorkey: ['API_Rawfile_New']})
+        assert matrix.write() is False
+        with open(os.path.join(tmp_path, vm.csv_full_file)) as f:
+            assert f.read() == contents
+
+    def test_vm_write_that_fails_keeps_the_old_matrix(self, tmp_path,
+                                                      monkeypatch):
+        """to_csv empties the file before filling it, so a write in place
+        that stopped part way left a blank or cut-short matrix."""
+        os.makedirs(os.path.join(tmp_path, utl.config_path))
+        monkeypatch.chdir(tmp_path)
+        matrix = vm.VendorMatrix()
+        matrix.vm_df = pd.DataFrame({vmc.vendorkey: [vm.plan_key]})
+        assert matrix.write()
+        with open(vm.csv_full_file) as f:
+            saved = f.read()
+        monkeypatch.setattr(pd.DataFrame, 'to_csv', _write_stops_part_way)
+        matrix.vm_df = pd.DataFrame({vmc.vendorkey: ['API_Rawfile_New']})
+        assert matrix.write() is False
+        with open(vm.csv_full_file) as f:
+            assert f.read() == saved
+        assert os.listdir(utl.config_path) == [vm.csv_file]
+
+    def test_vm_loop_without_plan_net_says_so(self, tmp_path, monkeypatch):
+        """A matrix without Plan Net ran every import, then raised a
+        KeyError out of import_plan_data."""
+        os.makedirs(os.path.join(tmp_path, utl.config_path))
+        monkeypatch.chdir(tmp_path)
+        matrix = vm.VendorMatrix()
+        with pytest.raises(ValueError, match='has no Plan Net row'):
+            matrix.vm_loop()
 
     @staticmethod
     def _bare_source(original, new):
@@ -5135,6 +5173,8 @@ default_sum_cols = [
     'SUM("lqadb"."event"."verificationcost") AS "verificationcost"',
     'SUM("lqadb"."event"."videoplays") AS "videoplays"',
     'SUM("lqadb"."event"."ad_recallers") AS "ad_recallers"',
+    'SUM("lqadb"."event"."reach_platform") AS "reach_platform"',
+    'SUM("lqadb"."event"."frequency_platform") AS "frequency_platform"',
     'SUM("lqadb"."plan"."plannednetcost") AS "plannednetcost"'
 ]
 conv_event_sum_cols = [
@@ -5452,6 +5492,18 @@ class TestExport:
         from_script = sb.get_from_script_with_opts(
             base_table, filter_table=filter_table, event_tables=event_tables)
         assert from_script == expected_string
+
+    def test_plan_join_is_a_parameter(self):
+        """The plan join is FULL unless a reader asks for LEFT."""
+        sb = exp.ScriptBuilder()
+        base_table = [x for x in sb.tables if x.name == 'event'][0]
+        full = sb.get_from_script_with_opts(base_table)
+        left = exp.ScriptBuilder().get_from_script_with_opts(
+            base_table, plan_join='LEFT')
+        full_join, left_join = (f'\n{x} JOIN "lqadb"."plan" ON ('
+                                for x in ('FULL', 'LEFT'))
+        assert full_join in full
+        assert left == full.replace(full_join, left_join)
 
     @pytest.mark.parametrize(
         'event_tables, expected_col_names, expected_sum_cols', [
@@ -6831,7 +6883,7 @@ class TestDcApiPathToConversion:
 class TestApiReachRows:
     """Every reach-capable adapter names its reach rows the same way:
     measures suffixed per report, whole range rows dated to the range
-    start, and the card's placement, its vendor and campaign in the slots
+    end, and the card's placement, its vendor and campaign in the slots
     the card's placements keep them, in the card's placement column."""
 
     @staticmethod
@@ -6881,7 +6933,7 @@ class TestApiReachRows:
         monkeypatch.setattr(api, 'request_pages', self.tik_pages)
         whole = api.request_reach_report('2026-01-01', '2026-01-30',
                                          api.reach_reports[0])
-        assert whole[api.old_date].iloc[0] == '2026-01-01 00:00:00'
+        assert whole[api.old_date].iloc[0] == '2026-01-30 00:00:00'
         assert whole['reach - no_date - campaign_report'].iloc[0] == 5
         assert self.placed(whole, api.vendor_name, '', 'ad_name')
         api.placement = utl.placement_spec('ad_name', 'TikTok', 'Announce')
@@ -6986,6 +7038,253 @@ class TestApiReachRows:
         assert no_site[utl.placement_col].tolist() == [
             utl.placement_name('', 'CampPart')]
         assert api.add_placement_name(named) is named
+
+
+class _ReachApi(object):
+    """An api that reports reach, recording what each pull asked for."""
+
+    reach_cols = ['Reach - no_date - campaign_report']
+
+    def __init__(self):
+        self.calls = []
+
+    def input_config(self, config):
+        pass
+
+    def get_data(self, sd=None, ed=None, fields=None):
+        self.calls.append(('data', sd, ed, list(fields or [])))
+        return pd.DataFrame({'Date': [ed], 'Impressions': [1]})
+
+    def get_reach(self, sd=None, ed=None, fields=None):
+        self.calls.append(('reach', sd, ed, list(fields or [])))
+        return pd.DataFrame({'Date': [ed], self.reach_cols[0]: [5]})
+
+
+class TestPlatformReach:
+    """A platform's whole range campaign reach reaches the warehouse as
+    Reach - Platform and Frequency - Platform, dated to the range end."""
+
+    platform_keys = (vmc.api_fb_key, vmc.api_aw_key, 'Adwords_YT',
+                     vmc.api_db_key, vmc.api_tik_key, vmc.api_red_key)
+
+    @staticmethod
+    def raw_columns():
+        """Each platform's raw campaign reach and frequency columns."""
+        aw = awapi.AwApi().rb
+        return {
+            vmc.api_fb_key: (fbapi.col_name_dic['reach'],
+                             fbapi.col_name_dic['frequency']),
+            vmc.api_aw_key: tuple(x.display_name for x in aw.reach_metrics),
+            'Adwords_YT': tuple(x.display_name for x in aw.reach_metrics),
+            vmc.api_db_key: (
+                dbapi.DbApi.reach_metrics[
+                    'METRIC_UNIQUE_REACH_IMPRESSION_REACH'],
+                dbapi.DbApi.reach_metrics[
+                    'METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY']),
+            vmc.api_tik_key: tuple(tikapi.TikApi.reach_metrics),
+            vmc.api_red_key: (redapi.RedApi.reach_metrics['reach'],
+                              redapi.RedApi.reach_metrics['frequency'])}
+
+    def test_platform_reach_template_rows(self):
+        """Each platform's template row maps one raw column per cell, since
+        combining_data would sum a pipe joined pair."""
+        path = os.path.join(utl.config_path, vm.csv_file)
+        if not os.path.isfile(path):
+            pytest.skip('this checkout carries no vendor matrix template')
+        matrix = pd.read_csv(path, dtype=str, keep_default_na=False)
+        matrix = matrix.set_index(vmc.vendorkey)
+        suffix = utl.reach_suffix('campaign')
+        for key, (reach, frequency) in self.raw_columns().items():
+            assert matrix.loc[key, vmc.reach_p] == f'{reach}{suffix}', key
+            assert matrix.loc[key, vmc.frequency_p] == (
+                f'{frequency}{suffix}')
+        filled = matrix.loc[matrix[vmc.reach_p] != '']
+        assert set(filled.index) == set(self.platform_keys)
+        assert not filled[vmc.reach_p].str.contains('|', regex=False).any()
+        assert not filled[vmc.frequency_p].str.contains(
+            '|', regex=False).any()
+        assert matrix.loc[vmc.api_dc_key, vmc.reach_p] == '', (
+            'CM360 keeps Reach, Reach - Campaign and Reach - Date')
+
+    def test_translation_schema_and_model_agree_on_platform_reach(self):
+        """The vendor matrix, export translation, schema and model carry
+        the two columns under the same names."""
+        columns = ('reach_platform', 'frequency_platform')
+        for names in (vmc.datacol, vmc.datafloatcol, vmc.vmkeys):
+            assert {vmc.reach_p, vmc.frequency_p} <= set(names)
+        event = exp.mdl.Event.__table__.columns
+        for column in columns:
+            assert isinstance(event[column].type, exp.sqa.Numeric), column
+        assert set(columns) <= exp.ScriptBuilder().metrics
+        translation = os.path.join(utl.config_path, utl.db_df_trans_config)
+        schema = os.path.join(utl.config_path, 'dbschema.csv')
+        if not (os.path.isfile(translation) and os.path.isfile(schema)):
+            pytest.skip('this checkout carries no export config')
+        rows = pd.read_csv(translation).set_index(exc.translation_db)
+        assert rows.loc['reach_platform', exc.translation_df] == vmc.reach_p
+        assert rows.loc['frequency_platform', exc.translation_df] == (
+            vmc.frequency_p)
+        assert (rows.loc[list(columns), exc.translation_type] == 'REAL').all()
+        tables = pd.read_csv(schema).set_index(exc.table)
+        for column in columns:
+            assert f'{column} numeric' in tables.loc[
+                'event', exc.columns]
+
+    def test_meta_whole_range_rows_are_dated_to_the_range_end(self):
+        api = fbapi.FbApi()
+        rows = pd.DataFrame({'campaign_name': ['Camp'],
+                             'date_start': ['2026-01-01'],
+                             'date_stop': ['2026-01-30'],
+                             'reach': [1], 'frequency': [1]})
+        whole = api.suffix_reach(rows.copy(), fbapi.reach_reports[0][1])
+        assert whole['date_start'].tolist() == ['2026-01-30']
+        daily = api.suffix_reach(rows.copy(), fbapi.reach_reports[-1][1])
+        assert daily['date_start'].tolist() == ['2026-01-01'], (
+            'a daily row keeps its own day')
+
+    def test_google_ads_whole_range_rows_are_dated_to_the_range_end(
+            self, monkeypatch):
+        api = awapi.AwApi()
+        rows = pd.DataFrame({'Campaign': ['Camp'], 'Unique users': [4],
+                             'Avg. impr. freq. per user': [1.2]})
+        monkeypatch.setattr(api, 'request_report_df',
+                            lambda report, fields: rows.copy())
+        df = api.request_reach(dt.date(2026, 1, 1), dt.date(2026, 1, 30))
+        whole = df.loc[df[f'Unique users{api.reach_suffix}'].notna()]
+        assert whole['Day'].tolist() == ['2026-01-30']
+
+    def test_dv360_whole_range_rows_are_dated_to_the_range_end(
+            self, monkeypatch):
+        api = dbapi.DbApi()
+        metric = 'Unique Reach: Impression Reach'
+        rows = pd.DataFrame({'Campaign': ['Camp'], metric: [9]})
+        monkeypatch.setattr(api, 'request_query', lambda metadata: True)
+        monkeypatch.setattr(api, 'download_report',
+                            lambda: setattr(api, 'df', rows.copy()))
+        monkeypatch.setattr(api, 'remove_reach_footer', lambda: None)
+        df = api.get_reach_report_df(dt.datetime(2026, 1, 1),
+                                     dt.datetime(2026, 1, 30),
+                                     api.reach_reports[0])
+        assert df['Date'].tolist() == ['2026/01/30']
+
+    def test_reddit_whole_range_rows_are_dated_to_the_range_end(
+            self, monkeypatch):
+        api = redapi.RedApi()
+        monkeypatch.setattr(api, 'add_names_to_df',
+                            lambda df, level_col: df.assign(campaign='Camp'))
+        monkeypatch.setattr(api, 'report_body',
+                            lambda sd, ed, breakdowns, fields: {})
+        monkeypatch.setattr(api, 'get_report', lambda account_id, sd, ed,
+                            body: [{'campaign_id': '1', 'reach': 3,
+                                    'frequency': 1.5}])
+        df = api.request_reach('1', dt.datetime(2026, 1, 1),
+                               dt.datetime(2026, 1, 30))
+        date_col = api.cols.get(api.date_col, api.date_col)
+        assert df[date_col].tolist() == ['2026-01-30'] * 3
+
+    def test_api_call_pulls_merge_card_reach_from_card_start(
+            self, monkeypatch):
+        """A merge card pulls delivery for its window with No Reach and
+        reach over the whole card; any other card pulls once."""
+        api = _ReachApi()
+        start, end = dt.datetime(2026, 1, 1), dt.datetime(2026, 1, 30)
+        params = {vmc.apifile: 'x.json', vmc.startdate: start,
+                  vmc.enddate: end, vmc.apifields: ['Campaign'],
+                  vmc.apimerge: 7}
+        matrix = types.SimpleNamespace(vendor_set=lambda vk: dict(params))
+        handler = ih.ImportHandler('all', matrix)
+        written = []
+        monkeypatch.setattr(
+            handler, 'output_source',
+            lambda df, p, step, reach_cols=None: written.append(
+                (df, reach_cols)))
+        handler.api_call('API_Reach', api)
+        trimmed = end - dt.timedelta(days=7)
+        assert api.calls == [
+            ('data', trimmed, end, ['Campaign', utl.no_reach_field]),
+            ('reach', start, end, ['Campaign'])]
+        df, reach_cols = written[0]
+        assert reach_cols == _ReachApi.reach_cols
+        assert len(df) == 2
+        api.calls.clear()
+        params[vmc.apimerge] = float('nan')
+        handler.api_call('API_Reach', api)
+        assert api.calls == [('data', start, end, ['Campaign'])]
+        api.calls.clear()
+        params[vmc.apimerge] = 7
+        params[vmc.apifields] = ['Campaign', utl.no_reach_field]
+        handler.api_call('API_Reach', api)
+        assert api.calls == [
+            ('data', trimmed, end, ['Campaign', utl.no_reach_field])]
+
+    def test_merge_replaces_prior_reach_rows(self, tmp_path):
+        """A merge drops the old file's reach rows whatever their date and
+        keeps its delivery; an api without reach columns merges as before.
+        """
+        reach = _ReachApi.reach_cols[0]
+        old = pd.DataFrame({
+            'Date': ['2026-01-10', '2026-01-20', '2026-01-25'],
+            'Impressions': [1, None, 3], reach: [None, 50, None]})
+        path = tmp_path / 'raw.csv'
+        old.to_csv(path, index=False)
+        new = pd.DataFrame({'Date': ['2026-01-29', '2026-01-30'],
+                            'Impressions': [5, None], reach: [None, 60]})
+        handler = ih.ImportHandler('all', None)
+        merged = handler.merge_df(
+            new, str(path), ['Date'], dt.datetime(2026, 1, 23),
+            dt.datetime(2026, 1, 30), 0, 0, 7, reach_cols=[reach])
+        assert merged[reach].dropna().tolist() == [60]
+        assert merged['Impressions'].dropna().tolist() == [1, 5]
+        kept = handler.merge_df(
+            new, str(path), ['Date'], dt.datetime(2026, 1, 23),
+            dt.datetime(2026, 1, 30), 0, 0, 7)
+        assert kept[reach].dropna().tolist() == [50, 60]
+
+    def test_merge_keeps_a_report_the_pull_left_empty(self, tmp_path):
+        """Months after a week's delivery, past a platform's reach cap,
+        the whole range row stays and the daily rows pulled from the
+        card's start all land, outside the merge window or not."""
+        whole, daily = 'Reach - whole', 'Reach - daily'
+        days = [f'2026-01-0{x}' for x in range(1, 8)]
+        path = tmp_path / 'raw.csv'
+        pd.DataFrame({'Date': days * 2 + ['2026-04-01'],
+                      'Impressions': [100] * 7 + [None] * 8,
+                      daily: [None] * 7 + [10] * 7 + [None],
+                      whole: [None] * 14 + [50]}).to_csv(path, index=False)
+        new = pd.DataFrame({'Date': days, daily: [12] * 7})
+        args = (new, str(path), ['Date'], dt.datetime(2026, 4, 8),
+                dt.datetime(2026, 4, 15), 0, 0, 7, [whole, daily])
+        handler = ih.ImportHandler('all', None)
+        merged = handler.merge_df(*args, keep_reach=True)
+        assert merged[whole].dropna().tolist() == [50]
+        assert merged[daily].dropna().tolist() == [12] * 7
+        assert merged['Impressions'].dropna().tolist() == [100] * 7
+        assert handler.merge_df(*args)[whole].dropna().empty
+
+    def test_whole_file_card_keeps_a_report_the_pull_left_empty(
+            self, tmp_path, monkeypatch):
+        """A card without a merge rewrites its file each run, so it carries
+        the old whole range row over, unless the card says No Reach."""
+        monkeypatch.chdir(tmp_path)
+        whole, daily = 'Reach - whole', 'Reach - daily'
+        path = (tmp_path / 'raw.csv').as_posix()
+        pd.DataFrame({'Date': ['2026-01-01', '2026-04-01'],
+                      daily: [10, None],
+                      whole: [None, 50]}).to_csv(path, index=False)
+        new = pd.DataFrame({'Date': ['2026-01-01'], daily: [12]})
+        params = {vmc.filename: path, vmc.apimerge: float('nan'),
+                  vmc.firstrow: 0, vmc.lastrow: 0, vmc.date: ['Date'],
+                  vmc.startdate: None, vmc.enddate: None,
+                  vmc.apifields: ['Campaign']}
+        handler = ih.ImportHandler('all', None)
+        step = types.SimpleNamespace()
+        handler.output_source(new, params, step, [whole, daily])
+        written = pd.read_csv(path)
+        assert written[daily].dropna().tolist() == [12]
+        assert written[whole].dropna().tolist() == [50]
+        params[vmc.apifields] = ['Campaign', utl.no_reach_field]
+        handler.output_source(new, params, step, [whole, daily])
+        assert whole not in pd.read_csv(path)
 
 
 class TestDictRelational:

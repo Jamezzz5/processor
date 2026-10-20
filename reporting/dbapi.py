@@ -666,7 +666,7 @@ class DbApi(object):
         self.remove_reach_footer()
         if report.get('daily'):
             return self.suffix_reach(self.df, report['suffix'])
-        return self.suffix_reach(self.df, report['suffix'], sd)
+        return self.suffix_reach(self.df, report['suffix'], ed)
 
     def remove_reach_footer(self):
         """
@@ -687,21 +687,21 @@ class DbApi(object):
         self.df = self.df[ids.str.isdigit()].reset_index(drop=True)
         return self.df
 
-    def suffix_reach(self, df, suffix, sd=None):
+    def suffix_reach(self, df, suffix, ed=None):
         """
         Names a reach report's measures apart from any other level's,
-        dates a whole range row to the start of the range so a merge
-        keeps it, and gives the rows the card's placement, the campaign
-        ids the report was narrowed to standing in while the card's
-        campaign is not known.
+        dates a whole range row to the end of the range so each run's
+        row replaces the last, and gives the rows the card's placement,
+        the campaign ids the report was narrowed to standing in while
+        the card's campaign is not known.
 
         :param df: One reach report's rows
         :param suffix: The report's column suffix
-        :param sd: Start of the range the reach covers, None for a daily
+        :param ed: End of the range the reach covers, None for a daily
             report whose rows carry their day
         :return: The rows renamed, dated and placed
         """
-        date = sd.strftime('%Y/%m/%d') if sd is not None else ''
+        date = ed.strftime('%Y/%m/%d') if ed is not None else ''
         df = utl.suffix_reach(df, list(self.reach_metrics.values()), suffix,
                               self.date_col, date)
         return utl.name_reach_rows(df, self.placement,

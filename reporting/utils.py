@@ -239,27 +239,38 @@ def import_read_csv(filename, path=None, file_check=True, error_bad='error',
     return df
 
 
-def write_file(df, file_name):
+def write_file(df, file_name, atomic=False):
     """Writes a df to disk as csv or xlsx parsing file type from name
 
     Keyword arguments:
     df -- the dataframe to be written
     file_name -- the name of the file to write to on disk
+    atomic -- write a sibling file and swap it in.  A plain write empties
+        the file before filling it, and a job reading it in that window
+        gets a blank or cut-short frame.
     """
     logging.debug('Writing {}'.format(file_name))
-    file_type = os.path.splitext(file_name)[1].lower()
+    root, ext = os.path.splitext(file_name)
+    file_type = ext.lower()
     kwargs = {}
     if file_type == '.xlsx':
         write_func = df.to_excel
     else:
         write_func = df.to_csv
         kwargs['encoding'] = 'utf-8'
+    out_name = '{}.{}.tmp{}'.format(root, os.getpid(), ext) if atomic \
+        else file_name
     try:
-        write_func(file_name, index=False, **kwargs)
+        write_func(out_name, index=False, **kwargs)
+        if atomic:
+            os.replace(out_name, file_name)
         return True
     except IOError:
         logging.warning('{} could not be opened.  This file was not saved.'
                         ''.format(file_name))
+        if atomic:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(out_name)
         return False
 
 

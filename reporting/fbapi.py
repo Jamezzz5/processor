@@ -286,10 +286,11 @@ class FbApi(object):
     def suffix_reach(self, df, suffix):
         """
         Names a reach report's measures apart from the delivery rows so
-        neither overwrites the other, and gives its rows the card's
-        placement, in the card's placement column under the key the api
-        reports it by.  The filter the request was narrowed to stands
-        in while the card's campaign is not known.
+        neither overwrites the other, dates a whole range row to the end
+        of its range so each run's row replaces the last, and gives its
+        rows the card's placement, in the card's placement column under
+        the key the api reports it by.  The filter the request was
+        narrowed to stands in while the card's campaign is not known.
 
         :param df: One completed async job's rows
         :param suffix: The reach report's column suffix, blank for delivery
@@ -299,6 +300,8 @@ class FbApi(object):
             return df
         df = utl.suffix_reach(
             df, {x: col_name_dic[x] for x in reach_metrics}, suffix)
+        if 'no_date' in suffix and 'date_stop' in df.columns:
+            df['date_start'] = df['date_stop']
         raw_cols = {v: k for k, v in col_name_dic.items()}
         column = self.placement['column']
         spec = dict(self.placement, column=raw_cols.get(column, column))

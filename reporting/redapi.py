@@ -958,20 +958,20 @@ class RedApi(object):
                 continue
             body = self.report_body(sd, ed, [report['breakdown']], fields)
             rows = self.get_report(account_id, sd, ed, body)
-            df = pd.concat([df, self.reach_to_df(rows, report, sd)],
+            df = pd.concat([df, self.reach_to_df(rows, report, ed)],
                            ignore_index=True)
         return df
 
-    def reach_to_df(self, response_list, report, sd):
+    def reach_to_df(self, response_list, report, ed):
         """
         Names one reach report's objects, suffixes its measures, dates
         its rows and gives them the card's placement: a whole range row
-        is dated to the start of the range, so a merge
-        keeps it, and a daily account row to its own day.
+        is dated to the end of the range, so each run's row replaces
+        the last, and a daily account row to its own day.
 
         :param response_list: The report's rows as dicts
         :param report: The reach_reports entry pulled
-        :param sd: The start date the reach covers
+        :param ed: The end date the reach covers
         :return: The rows named, renamed, dated and placed
         """
         df = pd.DataFrame(response_list)
@@ -979,7 +979,7 @@ class RedApi(object):
             return df
         if report['id_col']:
             df = self.add_names_to_df(df, level_col=report['id_col'])
-        date = '' if self.date_col in df.columns else sd.strftime('%Y-%m-%d')
+        date = '' if self.date_col in df.columns else ed.strftime('%Y-%m-%d')
         df = utl.suffix_reach(df, self.reach_metrics, report['suffix'],
                               self.date_col, date)
         raw_cols = {v: k for k, v in self.cols.items()}

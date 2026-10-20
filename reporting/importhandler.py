@@ -53,6 +53,22 @@ def api_key_of(vk):
     return parts[1] if len(parts) > 1 else ''
 
 
+def reach_figures(df, reach_cols):
+    """``df``'s reach columns as numbers, blank where a row has none."""
+    present = [x for x in reach_cols or [] if x in df.columns]
+    return df[present].apply(pd.to_numeric, errors='coerce')
+
+
+def unreplaced_reach(old, new, reach_cols):
+    """The reach rows of ``old`` for a report ``new`` has no figure in, such
+    as the whole range row a platform's reach cap skipped."""
+    old_figures = reach_figures(old, reach_cols)
+    new_figures = reach_figures(new, reach_cols)
+    filled = [x for x in new_figures if new_figures[x].notna().any()]
+    replaced = old_figures.reindex(columns=filled).notna().any(axis=1)
+    return old.loc[old_figures.notna().any(axis=1) & ~replaced]
+
+
 class ImportHandler(object):
     def __init__(self, args, matrix):
         self.args = args
@@ -100,12 +116,15 @@ class ImportHandler(object):
         }
 
     def output(self, api_df, filename, api_merge=None, first_row=None,
-               last_row=None, date_col=None, start_date=None, end_date=None):
+               last_row=None, date_col=None, start_date=None, end_date=None,
+               reach_cols=None, keep_reach=False):
         """Writes a df to disk from an API
 
         Keyword arguments:
         api_df -- the dataframe to be written
         filename -- the name of the file to write to on disk
+        reach_cols -- the api's reach columns, whose old rows new ones replace
+        keep_reach -- keep the old rows of a reach report this pull left empty
         """
         utl.dir_check(utl.raw_path)
         if '/' in filename:
@@ -114,7 +133,13 @@ class ImportHandler(object):
             full_file = os.path.join(utl.raw_path, filename)
         if str(api_merge) != 'nan':
             api_df = self.merge_df(api_df, full_file, date_col, start_date,
-                                   end_date, first_row, last_row, api_merge)
+                                   end_date, first_row, last_row, api_merge,
+                                   reach_cols, keep_reach)
+        elif keep_reach and not api_df.empty and os.path.isfile(full_file):
+            old = utl.import_read_csv(full_file, empty_df=True)
+            api_df = pd.concat(
+                [api_df, unreplaced_reach(old, api_df, reach_cols)],
+                ignore_index=True)
         self.write_df(api_df, full_file)
 
     def write_df(self, api_df, full_file, attempt=0):
@@ -133,15 +158,31 @@ class ImportHandler(object):
                             'not overwriting {}.'.format(full_file))
 
     def merge_df(self, api_df, filename, date_col, start_date, end_date,
-                 first_row, last_row, api_merge):
+                 first_row, last_row, api_merge, reach_cols=None,
+                 keep_reach=False):
+        """The old raw file's delivery before the merge window beside the
+        api's for it, and the api's reach rows whole, as pull_card pulls
+        them from the card's start.  Each replaces the old rows of its
+        report, which the export would sum with it; with ``keep_reach`` a
+        report the api left empty keeps its old rows.
+        """
         if not os.path.isfile(filename):
             return api_df
-        df = utl.import_read_csv(filename)
-        df = self.merge_df_cleaning(df, first_row, last_row, date_col, pd.NaT,
-                                    end_date - dt.timedelta(days=api_merge))
-        api_df = self.merge_df_cleaning(api_df, first_row, last_row, date_col,
-                                        start_date, end_date)
-        df = pd.concat([df, api_df], ignore_index=True).reset_index(drop=True)
+        df = self.merge_df_cleaning(utl.import_read_csv(filename), first_row,
+                                    last_row, date_col, pd.NaT, pd.NaT)
+        api_df = self.merge_df_cleaning(api_df, first_row, last_row,
+                                        date_col, pd.NaT, pd.NaT)
+        old_reach = reach_figures(df, reach_cols).notna().any(axis=1)
+        new_reach = reach_figures(api_df, reach_cols).notna().any(axis=1)
+        cutoff = end_date - dt.timedelta(days=api_merge)
+        frames = [
+            utl.date_removal(df.loc[~old_reach], date_col[0], pd.NaT, cutoff),
+            utl.date_removal(api_df.loc[~new_reach], date_col[0], start_date,
+                             end_date),
+            api_df.loc[new_reach]]
+        if keep_reach:
+            frames.append(unreplaced_reach(df, api_df, reach_cols))
+        df = pd.concat(frames, ignore_index=True)
         df = utl.add_dummy_header(df, first_row)
         df = utl.add_dummy_header(df, last_row, location='foot')
         return df
@@ -229,14 +270,13 @@ class ImportHandler(object):
                 params[vmc.startdate] = None
             if end_check:
                 params[vmc.enddate] = None
+            card_start = params[vmc.startdate]
             params[vmc.startdate] = self.set_start(params[vmc.startdate],
                                                    params[vmc.enddate],
                                                    params[vmc.apimerge])
             df = pd.DataFrame()
             try:
-                df = api_class.get_data(sd=params[vmc.startdate],
-                                        ed=params[vmc.enddate],
-                                        fields=params[vmc.apifields])
+                df = self.pull_card(api_class, params, card_start)
             except Exception as e:
                 logging.error("API error occurred", exc_info=True)
                 if hasattr(api_class, 'sw') and api_class.sw:
@@ -244,16 +284,35 @@ class ImportHandler(object):
                     step.error = e
                 else:
                     raise e
-            self.output_source(df, params, step)
+            self.output_source(df, params, step,
+                               getattr(api_class, 'reach_cols', None))
 
-    def output_source(self, df, params, step):
+    @staticmethod
+    def pull_card(api_class, params, card_start):
+        """The card's delivery and, on a merge card whose api reports
+        reach, its reach pulled apart from ``card_start``: reach over the
+        merge window would count only the window's people."""
+        fields = params[vmc.apifields]
+        sd, ed = params[vmc.startdate], params[vmc.enddate]
+        if (str(params[vmc.apimerge]) == 'nan'
+                or not hasattr(api_class, 'get_reach')
+                or not utl.pull_reach(fields)):
+            return api_class.get_data(sd=sd, ed=ed, fields=fields)
+        delivery = api_class.get_data(
+            sd=sd, ed=ed, fields=[*(fields or []), utl.no_reach_field])
+        reach = api_class.get_reach(sd=card_start, ed=ed, fields=fields)
+        return pd.concat([delivery, reach], ignore_index=True)
+
+    def output_source(self, df, params, step, reach_cols=None):
         """Write a vendor key's pulled ``df`` and count its rows on the
-        timed ``step``."""
+        timed ``step``; unless the card says No Reach, a reach report the
+        pull left empty keeps its last rows."""
         step.rows = len(df)
+        keep_reach = bool(reach_cols) and utl.pull_reach(params[vmc.apifields])
         self.output(df, params[vmc.filename], params[vmc.apimerge],
                     params[vmc.firstrow], params[vmc.lastrow],
                     params[vmc.date], params[vmc.startdate],
-                    params[vmc.enddate])
+                    params[vmc.enddate], reach_cols, keep_reach)
 
     def api_loop(self):
         """Loops through all APIs and makes function call to retrieve data.

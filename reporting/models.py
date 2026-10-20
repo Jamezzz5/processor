@@ -827,6 +827,8 @@ class Event(Base):
     verificationcost = Column(Numeric)
     videoplays = Column(Numeric)
     ad_recallers = Column(Numeric)
+    reach_platform = Column(Numeric)
+    frequency_platform = Column(Numeric)
 
     fullplacement = relationship('Fullplacement')
     upload = relationship('Upload')

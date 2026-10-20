@@ -41,6 +41,7 @@ class VendorMatrix(object):
         self.process_omit_list = None
         self.tdf = None
         self.df = None
+        self.unreadable = False
         self.vm_parse()
         self.vm_import_keys()
         self.vm_rules()
@@ -57,14 +58,20 @@ class VendorMatrix(object):
         return vm
 
     def write(self):
-        """Write the matrix to its file; False when the disk refused it."""
+        """Write the matrix to its file; False when the disk refused it,
+        or when the file last read back unreadable: the matrix is then a
+        blank stand-in, and writing it would wipe every source."""
+        if self.unreadable:
+            logging.error('{} could not be read, so it was not overwritten.'
+                          ''.format(csv_full_file))
+            return False
         rules = [x for x in self.vm_df.columns if 'RULE' in x]
         cols = [vmc.vendorkey] + vmc.vmkeys + rules
         miss_cols = [x for x in cols if x not in self.vm_df.columns]
         if miss_cols:
             for miss_col in miss_cols:
                 self.vm_df[miss_col] = ''
-        return utl.write_file(self.vm_df[cols], csv_full_file)
+        return utl.write_file(self.vm_df[cols], csv_full_file, atomic=True)
 
     @staticmethod
     def blank_df():
@@ -77,7 +84,8 @@ class VendorMatrix(object):
         :param df: the vendor matrix as read from disk
         :returns: a df holding the vendor key and every vm column
         """
-        if df is None or vmc.vendorkey not in df.columns:
+        self.unreadable = df is None or vmc.vendorkey not in df.columns
+        if self.unreadable:
             logging.warning('Could not read {}.  Continuing with a blank '
                             'vendor matrix.'.format(csv_full_file))
             return self.blank_df()
@@ -279,6 +287,11 @@ class VendorMatrix(object):
 
     def vm_loop(self):
         logging.info('Initializing Vendor Matrix Loop')
+        if plan_key not in self.vm[vmc.fullplacename]:
+            raise ValueError(
+                '{} has no {} row, so there is no plan to process the data '
+                'against.  Restore the row and run again.'.format(
+                    csv_full_file, plan_key))
         self.df = pd.DataFrame(columns=[vmc.date, dctc.FPN, dctc.PN, dctc.BM])
         self.sort_vendor_list()
         for vk in self.vl:

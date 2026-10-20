@@ -501,7 +501,7 @@ class AwApi(object):
         if utl.reach_range_fits(sd, ed, self.reach_max_days,
                                 self.vendor_name):
             frames.append(self.request_reach_rows(
-                sd, ed, self.rb.reach_fields, self.reach_suffix, sd))
+                sd, ed, self.rb.reach_fields, self.reach_suffix, ed))
         for block_sd, block_ed in utl.date_blocks(sd, ed,
                                                   self.reach_max_days):
             frames.append(self.request_reach_rows(
@@ -528,10 +528,11 @@ class AwApi(object):
     def suffix_reach(self, df, suffix, date=None):
         """
         Names a reach report's measures apart from the other report's,
-        dates a whole range row to the start of its range so a merge keeps
-        it, gives the rows the card's placement, and drops a campaign
-        type without the metrics (Search, Shopping), which comes back
-        with both blank.
+        dates a whole range row to the end of its range so each run's row
+        replaces the last and the export reads the day the range ended,
+        gives the rows the card's placement, and drops a campaign type
+        without the metrics (Search, Shopping), which comes back with
+        both blank.
 
         :param df: The reach report's rows
         :param suffix: Column suffix naming the report
