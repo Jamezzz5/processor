@@ -7089,9 +7089,11 @@ class TestPlatformReach:
         """Each platform's template row maps one raw column per cell, since
         combining_data would sum a pipe joined pair."""
         path = os.path.join(utl.config_path, vm.csv_file)
-        if not os.path.isfile(path):
+        matrix = pd.DataFrame()
+        if os.path.isfile(path):
+            matrix = pd.read_csv(path, dtype=str, keep_default_na=False)
+        if matrix.empty:
             pytest.skip('this checkout carries no vendor matrix template')
-        matrix = pd.read_csv(path, dtype=str, keep_default_na=False)
         matrix = matrix.set_index(vmc.vendorkey)
         suffix = utl.reach_suffix('campaign')
         for key, (reach, frequency) in self.raw_columns().items():
