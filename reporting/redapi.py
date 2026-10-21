@@ -983,8 +983,7 @@ class RedApi(object):
         df = utl.suffix_reach(df, self.reach_metrics, report['suffix'],
                               self.date_col, date)
         raw_cols = {v: k for k, v in self.cols.items()}
-        column = self.placement['column']
-        spec = dict(self.placement, column=raw_cols.get(column, column))
+        spec = utl.raw_placement_spec(self.placement, raw_cols)
         return self.rename_columns(utl.name_reach_rows(df, spec))
 
     def get_data(self, sd=None, ed=None, fields=None):

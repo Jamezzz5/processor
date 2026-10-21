@@ -852,6 +852,86 @@ def placement_name(vendor='', campaign='', layout=None):
     return '_'.join(str(x).replace('_', ' ') for x in parts)
 
 
+def shifted_layout(layout, offset):
+    """
+    A layout for a name that starts offset parts into the name its
+    dictionary splits: each slot that many parts earlier, and none for a
+    slot that falls in the parts ahead, which hold their own values.
+
+    :param layout: The card's layout from placement_layout
+    :param offset: How many parts of the split name sit ahead
+    :return: Tuple of the name's length, the vendor slot and the
+        campaign slot, as placement_layout returns them
+    """
+    length, vendor_slot, campaign_slot = layout or placement_layout()
+    slots = [slot - offset if slot is not None and slot >= offset else None
+             for slot in (vendor_slot, campaign_slot)]
+    return max(length - offset, 0), slots[0], slots[1]
+
+
+def placement_ahead(full_place_cols, column, auto_placement=dctc.FPN):
+    """
+    The columns a card's full placement name joins ahead of its placement
+    column, each with whether the join strips its underscores.  The auto
+    dictionary splits the full name, so a reach row's name in the
+    placement column starts as many parts in as these columns make.  A
+    card whose dictionary splits the placement column itself, or whose
+    full name leaves that column out, has nothing ahead.
+
+    :param full_place_cols: The card's Full Placement Name values
+    :param column: The card's placement column
+    :param auto_placement: The card's AUTO DICTIONARY PLACEMENT value
+    :return: Tuple of (column, strips) pairs in the full name's order
+    """
+    if str(auto_placement).strip() == dctc.PN:
+        return ()
+    if isinstance(full_place_cols, str):
+        full_place_cols = full_place_cols.split('|')
+    cols = [(str(x)[2:], True) if str(x)[:2] == '::' else (str(x), False)
+            for x in full_place_cols or []]
+    names = [name for name, _ in cols]
+    if column not in names:
+        return ()
+    return tuple(cols[:names.index(column)])
+
+
+def raw_placement_spec(spec, raw_cols):
+    """
+    A card's placement_spec in the raw keys an api's rows carry before it
+    renames them: the placement column and every column ahead of it.
+
+    :param spec: The card's placement_spec
+    :param raw_cols: Dict of each reported column name to its raw key
+    :return: The spec with its columns renamed
+    """
+    ahead = tuple((raw_cols.get(name, name), strips)
+                  for name, strips in spec.get('ahead', ()))
+    return dict(spec, column=raw_cols.get(spec['column'], spec['column']),
+                ahead=ahead)
+
+
+def parts_ahead(df, ahead):
+    """
+    How many parts each row's full placement name holds ahead of its
+    placement column: one for a column the join strips of underscores or
+    one the row leaves blank, which reads as nan, else one more for each
+    underscore in its value.  A column the report does not carry is
+    blank on its rows once they join the card's other rows.
+
+    :param df: One reach report's rows
+    :param ahead: The columns ahead, from placement_ahead
+    :return: Series of the part count per row
+    """
+    parts = pd.Series(0, index=df.index)
+    for column, strips in ahead:
+        if strips or column not in df.columns:
+            parts += 1
+            continue
+        values = df[column].astype('U').where(~blank_text(df[column]), '')
+        parts += values.str.count('_') + 1
+    return parts
+
+
 def blank_text(series):
     """
     Which values of a column are empty: '' and the text a missing value
@@ -874,20 +954,22 @@ def first_mode(series):
     return modes.iloc[0] if len(modes) else ''
 
 
-def placement_spec(column, vendor, campaign='', order=None):
+def placement_spec(column, vendor, campaign='', order=None, ahead=()):
     """
     How a card names a reach row's placement: the column it builds
-    placements from, the vendor and campaign its placements carry, and
-    the slots its dictionary order keeps them in.
+    placements from, the vendor and campaign its placements carry, the
+    slots its dictionary order keeps them in, and the columns its full
+    placement name joins ahead of that column.
 
     :param column: The card's placement column
     :param vendor: The vendor part, the platform's name until known
     :param campaign: The campaign part, '' until known
     :param order: The card's AUTO DICTIONARY ORDER values, None for none
-    :return: Dict of column, vendor, campaign and layout
+    :param ahead: The columns ahead, from placement_ahead
+    :return: Dict of column, vendor, campaign, layout and ahead
     """
     return {'column': column, 'vendor': vendor, 'campaign': campaign,
-            'layout': placement_layout(order)}
+            'layout': placement_layout(order), 'ahead': tuple(ahead)}
 
 
 def name_reach_rows(df, spec, campaign=''):
@@ -895,10 +977,7 @@ def name_reach_rows(df, spec, campaign=''):
     Gives a reach report's rows the placement a card's dictionary reads
     them by: the card's vendor and campaign in the slots its placements
     keep them, in the column the card builds placements from, wherever
-    that column is blank.  A row already naming an object there, such as
-    an ad set's whole range row on a card placed by ad set, keeps its
-    name.  The campaign given stands in while the card's is not known,
-    such as the filter the pull was narrowed to.
+    that column is blank.
 
     :param df: One reach report's rows
     :param spec: The card's placement_spec
@@ -908,9 +987,12 @@ def name_reach_rows(df, spec, campaign=''):
     if df.empty:
         return df
     column = spec['column']
-    name = placement_name(spec['vendor'], spec['campaign'] or campaign,
-                          spec['layout'])
-    names = pd.Series(name, index=df.index, dtype=object)
+    vendor, campaign = spec['vendor'], spec['campaign'] or campaign
+    offsets = parts_ahead(df, spec.get('ahead', ()))
+    names = offsets.map({
+        offset: placement_name(vendor, campaign,
+                               shifted_layout(spec['layout'], offset))
+        for offset in offsets.unique()}).astype(object)
     if column in df.columns:
         names = df[column].where(~blank_text(df[column]), names)
     df[column] = names
@@ -947,9 +1029,10 @@ def set_card_placement(api, params):
     Tells a reach-capable api how the card it is about to pull names its
     placements, from the card's vendor matrix row and dictionary: the
     column, the slots its auto dictionary order keeps the vendor and
-    campaign in, and the vendor and campaign its placements map to.  An
-    api without reach rows has no placement and is left alone; a card
-    that says nothing on a part leaves the api's own default for it.
+    campaign in, the columns its full placement name joins ahead of that
+    column, and the vendor and campaign its placements map to.  An api
+    without reach rows has no placement and is left alone; a card that
+    says nothing on a part leaves the api's own default for it.
 
     :param api: The api object about to pull the card
     :param params: The card's vendor matrix row from vendor_set
@@ -958,11 +1041,13 @@ def set_card_placement(api, params):
         return
     spec = api.placement
     column = str(params.get(vmc.placement, '') or '').strip()
+    column = column if column and column != 'nan' else spec['column']
     vendor, campaign = card_placement_tokens(params.get(vmc.filenamedict))
     api.placement = placement_spec(
-        column if column and column != 'nan' else spec['column'],
-        vendor or spec['vendor'], campaign or spec['campaign'],
-        params.get(vmc.autodicord))
+        column, vendor or spec['vendor'], campaign or spec['campaign'],
+        params.get(vmc.autodicord), placement_ahead(
+            params.get(vmc.fullplacename), column,
+            params.get(vmc.autodicplace, dctc.FPN)))
 
 
 def reach_range_fits(sd, ed, max_days, platform):

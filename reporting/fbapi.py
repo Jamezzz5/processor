@@ -303,8 +303,7 @@ class FbApi(object):
         if 'no_date' in suffix and 'date_stop' in df.columns:
             df['date_start'] = df['date_stop']
         raw_cols = {v: k for k, v in col_name_dic.items()}
-        column = self.placement['column']
-        spec = dict(self.placement, column=raw_cols.get(column, column))
+        spec = utl.raw_placement_spec(self.placement, raw_cols)
         return utl.name_reach_rows(df, spec, self.campaign_filter or '')
 
     @staticmethod

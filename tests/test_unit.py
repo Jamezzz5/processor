@@ -826,7 +826,8 @@ class TestUtils:
         the card's is unknown."""
         spec = utl.placement_spec('Ad Name', 'Reddit')
         assert spec == {'column': 'Ad Name', 'vendor': 'Reddit',
-                        'campaign': '', 'layout': (16, 1, 15)}
+                        'campaign': '', 'layout': (16, 1, 15),
+                        'ahead': ()}
         df = pd.DataFrame({'Ad Name': ['Real ad', '', float('nan')],
                            'reach': [1, 2, 3]})
         df = utl.name_reach_rows(df, spec, 'Filter')
@@ -895,6 +896,139 @@ class TestUtils:
         other = object()
         utl.set_card_placement(other, {vmc.placement: 'Placement'})
         assert not hasattr(other, 'placement')
+
+    def test_shifted_layout(self):
+        """A name starting parts into the split name moves its slots back
+        by as many; a slot in the parts ahead is left to them."""
+        assert utl.shifted_layout((17, 2, 16), 0) == (17, 2, 16)
+        assert utl.shifted_layout((17, 2, 16), 1) == (16, 1, 15)
+        assert utl.shifted_layout((19, 4, 18), 4) == (15, 0, 14)
+        assert utl.shifted_layout((17, 2, 16), 3) == (14, None, 13)
+        assert utl.shifted_layout((2, 0, 1), 5) == (0, None, None)
+        assert utl.placement_name('Meta', 'Launch', (0, None, None)) == ''
+
+    def test_placement_ahead(self):
+        """The columns the full name joins ahead of the placement column,
+        and whether the join strips them; nothing when the dictionary
+        splits the placement column or the full name leaves it out."""
+        full = ['::Campaign Name', 'Ad Set Name', 'Ad Name']
+        assert utl.placement_ahead(full, 'Ad Set Name') == (
+            ('Campaign Name', True),)
+        assert utl.placement_ahead('|'.join(full), 'Ad Name') == (
+            ('Campaign Name', True), ('Ad Set Name', False))
+        assert utl.placement_ahead(full, 'Campaign Name') == ()
+        assert utl.placement_ahead(full, 'Ad Set Name', dctc.PN) == ()
+        assert utl.placement_ahead(full, 'Creative') == ()
+        assert utl.placement_ahead(None, 'Ad Name') == ()
+
+    REACH_ORDER = ['mpMisc', 'mpBudget', 'mpVendor', 'mpCountry/Region',
+                   'mpTargeting:::0:::_', 'mpCreative:::2:::_', 'mpCopy',
+                   'mpRetailer', 'mpBuy Model', 'mpBuy Rate',
+                   'mpPlacement Date', 'mpServing', 'mpMisc', 'mpMisc',
+                   'mpKPI', 'mpTargeting:::1:::_', 'mpCampaign']
+    META_FULL = ['::Campaign Name', 'Ad Set Name', 'Ad Name']
+    REACH_CARDS = {
+        'meta by ad set': dict(
+            full=META_FULL, placement='Ad Set Name', vendor='Meta',
+            order=REACH_ORDER, campaign_cols=['Campaign Name']),
+        'meta by ad': dict(
+            full=META_FULL, placement='Ad Name', vendor='Meta',
+            order=REACH_ORDER, campaign_cols=['Campaign Name']),
+        'google': dict(
+            full=['::Campaign', 'Ad group', 'Ad', 'Display URL'],
+            placement='Ad group', vendor='YouTube', order=REACH_ORDER,
+            campaign_cols=['Campaign']),
+        'dv360': dict(
+            full=['::Advertiser', '::Campaign', '::Insertion Order',
+                  'Line Item', 'Creative'],
+            placement='Creative', vendor='DV360',
+            order=['mpMisc', 'mpMisc'] + REACH_ORDER,
+            campaign_cols=['Advertiser', 'Campaign']),
+        'split by placement': dict(
+            full=META_FULL, placement='Ad Set Name', vendor='Meta',
+            order=REACH_ORDER, campaign_cols=['Campaign Name'],
+            auto=dctc.PN),
+    }
+
+    @staticmethod
+    def _imported_reach_rows(card, rows):
+        """Reach rows through an import of the card: the api names them,
+        the vendor matrix joins each one's full placement name, and the
+        auto dictionary splits whichever column the card points it at.
+
+        :returns: The rows with their full name and the dictionary's
+            mpVendor and mpCampaign
+        """
+        auto = card.get('auto', dctc.FPN)
+        api = types.SimpleNamespace(placement=utl.placement_spec(
+            card['placement'], card['vendor'], 'Launch'))
+        utl.set_card_placement(api, {
+            vmc.placement: card['placement'], vmc.filenamedict: 'nan',
+            vmc.autodicord: card['order'], vmc.fullplacename: card['full'],
+            vmc.autodicplace: auto})
+        df = utl.name_reach_rows(pd.DataFrame(rows), api.placement)
+        raw_cols = [x.removeprefix('::') for x in card['full']]
+        df = df.reindex(columns=list(dict.fromkeys(list(df) + raw_cols)))
+        df = vm.full_placement_creation(df, 'API_x', dctc.FPN, card['full'])
+        err = Mock(get=Mock(
+            return_value=df[[dctc.FPN, card['placement']]].copy()))
+        split = dct.Dict.split_error_df(err, list(card['order']), auto)
+        return split[[dctc.FPN, dctc.VEN, dctc.CAM]]
+
+    @pytest.mark.parametrize('card', list(REACH_CARDS))
+    def test_reach_rows_split_into_the_cards_vendor_and_campaign(self, card):
+        """A platform campaign's reach row reads as the card's vendor and
+        campaign once the full placement name puts the card's other
+        columns ahead of it, and each platform campaign stays a placement
+        of its own whose name begins as its delivery's does, then a blank
+        part -- what the reporting reads tie its delivery by."""
+        card = self.REACH_CARDS[card]
+        names = ['KH_Launch_Franchise Fans', 'KH_Launch_JRPG Players']
+        rows = [dict({col: f'Square Enix {name}' if col == 'Advertiser'
+                      else name for col in card['campaign_cols']},
+                     reach=reach)
+                for name, reach in zip(names, (400000, 2900000))]
+        split = self._imported_reach_rows(card, rows)
+        assert split[dctc.VEN].tolist() == [card['vendor']] * 2
+        assert split[dctc.CAM].tolist() == ['Launch'] * 2
+        assert split[dctc.FPN].nunique() == 2, (
+            'two platform campaigns are two placements, never one sum')
+        delivery = pd.DataFrame([dict(
+            row, **{'Ad Set Name': 'US_Fans', 'Ad Name': 'Video_1',
+                    'Ad group': 'US_Fans', 'Ad': 'Video_1',
+                    'Insertion Order': 'IO_1', 'Line Item': 'LI_1',
+                    'Creative': 'Video_1', 'Display URL': 'kh.com'})
+            for row in rows])
+        delivery = vm.full_placement_creation(delivery, 'API_x', dctc.FPN,
+                                              card['full'])
+        size = len(card['campaign_cols'])
+        for fpn, delivered in zip(split[dctc.FPN], delivery[dctc.FPN]):
+            parts = fpn.split('_')
+            assert parts[:size] == delivered.split('_')[:size]
+            assert parts[size] in ('', 'nan'), fpn
+
+    def test_fbapi_names_reach_rows_by_raw_keys(self):
+        """Facebook names its rows before renaming them, so the columns
+        ahead of the placement are read by their raw keys: an ad set's
+        whole range row on a card placed by ad starts as many parts in as
+        its campaign and ad set names make."""
+        api = fbapi.FbApi()
+        api.campaign_filter = 'KH'
+        utl.set_card_placement(api, {
+            vmc.placement: 'Ad Name', vmc.filenamedict: 'nan',
+            vmc.autodicord: self.REACH_ORDER,
+            vmc.fullplacename: self.META_FULL,
+            vmc.autodicplace: dctc.FPN})
+        df = pd.DataFrame({'campaign_name': ['KH_Launch', 'KH_Launch'],
+                           'adset_name': [None, 'US_Fans_Video'],
+                           'reach': [5, 3], 'frequency': [2, 1.5],
+                           'date_start': ['2026-10-01'] * 2,
+                           'date_stop': ['2026-10-20'] * 2})
+        df = api.suffix_reach(df, utl.reach_suffix('campaign'))
+        layout = utl.placement_layout(self.REACH_ORDER)
+        assert df['ad_name'].tolist() == [
+            utl.placement_name('Meta', 'KH', utl.shifted_layout(layout, 2)),
+            utl.placement_name('Meta', 'KH', utl.shifted_layout(layout, 4))]
 
     def test_pull_reach(self):
         assert utl.pull_reach(None)
