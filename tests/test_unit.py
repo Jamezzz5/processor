@@ -4728,6 +4728,26 @@ class TestAnalyze:
         for idx, name in enumerate(names):
             assert rdf_dict[name] == mp_names[idx]
 
+    def test_placement_translation_needs_a_sure_change(self):
+        """A translation is suggested only for one clear plan match that
+        changes the name the check compares; a loose match keeps
+        suggesting for every name."""
+        mp_names = ['Meta_Launch_USA_Video_Prospecting',
+                    'Meta_Launch_USA_Video_Retargeting',
+                    'Meta_Launch_UK_Static_Broad']
+        names = ['Meta_Launch_USA_Video_Prospect',
+                 'Meta_Holiday_DE_Audio_Retargeting',
+                 'Meta_Launch_USA_Video_Prospecting',
+                 'Meta_Launch_UK_Static_Broad_AdSet9',
+                 'Meta_Launch_UK_Static_Broadd']
+        check = az.CheckPlacementsNotInMp
+        rdf = check.translation_matches(names, mp_names)
+        assert dict(zip(rdf[dctc.DICT_COL_VALUE],
+                        rdf[dctc.DICT_COL_NVALUE])) == {
+            'Meta_Launch_UK_Static_Broadd': 'Meta_Launch_UK_Static_Broad'}
+        loose = check.find_closest_name_match(names, mp_names)
+        assert loose[dctc.DICT_COL_VALUE].tolist() == names
+
     def test_check_col_live(self):
         df = self.get_output_as_df(with_plan=True)
         ali_class = az.CheckLive(az.Analyze())
@@ -7772,6 +7792,32 @@ class TestDayOneFixes:
         assert aly.scope_seen == {
             'wide': {'only_new_files': False, 'new_file_list': []},
             'narrow': {'only_new_files': True, 'new_file_list': ['API_X_A']}}
+
+    @pytest.mark.parametrize('transform, writes', [
+        ('', True),
+        (f'IgnoreMin:::{vmc.transform_no_auto_translate}', False)])
+    def test_no_auto_translate_source_only_suggests(self, transform,
+                                                    writes):
+        """A source whose transform carries NoAutoTranslate still gets
+        its suggestions but keeps its names and its transform."""
+        key = 'API_Facebook_A'
+        plan_name = 'Meta_Launch_UK_Static_Broad'
+        delivered = pd.DataFrame({vmc.vendorkey: [vmc.api_mp_key, key],
+                                  dctc.VEN: ['Meta', 'Meta'],
+                                  dctc.PN: [plan_name, f'{plan_name}d']})
+        aly = az.Analyze(df=delivered, matrix=_matrix([{
+            vmc.vendorkey: key, vmc.placement: dctc.PN,
+            vmc.transform: transform}]))
+        check = az.CheckPlacementsNotInMp(aly)
+        match_df = check.fix_analysis_for_data_source(delivered[1:], key)
+        assert match_df[dctc.DICT_COL_NVALUE].tolist() == [plan_name]
+        assert aly.fixes_to_run is writes
+        assert os.path.exists(os.path.join(
+            dct.DictTranslationConfig().csv_path,
+            dctc.filename_tran_config)) is writes
+        cell = aly.matrix.vm_df.set_index(vmc.vendorkey).at[
+            key, vmc.transform]
+        assert (vmc.transform_raw_translate in cell) is writes
 
     def test_writes_report_whether_they_landed(self, monkeypatch):
         matrix = _matrix([{vmc.vendorkey: 'API_X_A'}])

@@ -220,6 +220,7 @@ VER_COST = 'Verification Cost'
 ad_rep_cols = [AD_COST, REP_COST, VER_COST]
 
 transform_raw_translate = 'RawTranslate'
+transform_no_auto_translate = 'NoAutoTranslate'
 
 api_aw_key = 'Adwords'
 api_goad_key = 'GoogleAds'

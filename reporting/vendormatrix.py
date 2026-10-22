@@ -445,7 +445,8 @@ class VendorMatrix(object):
                 'MergeReplaceExclude', 'DateSplit', 'Stack', 'Melt',
                 'CombineColumnsUnderscore', 'RawTranslate', 'AddColumn',
                 'FilterCol', 'CombineColumns', 'EqualReplace', 'RenameCol',
-                'PercentDecode', 'PriceCalculate', 'StringReplaceAll']
+                'PercentDecode', 'PriceCalculate', 'StringReplaceAll',
+                vmc.transform_no_auto_translate]
 
 
 def raw_file_path(file_name, folder=utl.raw_path):

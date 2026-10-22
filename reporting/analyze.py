@@ -3058,12 +3058,14 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         self.aly.add_to_analysis_dict(key_col=self.name,
                                       message=msg, data=rdf.to_dict())
 
-    @staticmethod
-    def find_closest_name_match(names, mp_names, underscore_min=None,
-                                data_source_name='', ignore_min=False):
+    @classmethod
+    def find_closest_name_match(cls, names, mp_names, underscore_min=None,
+                                data_source_name='', ignore_min=False,
+                                strict=False):
         """Suggest the plan name each delivered name most resembles, skipping
         names with more underscores than ``underscore_min`` (default: the
-        plan's own longest name, at least 10)."""
+        plan's own longest name, at least 10), and with ``strict`` any
+        name without a sure match (``is_sure_match``)."""
         if not any([x.split('_')[0] for x in mp_names]):
             return pd.DataFrame()
         if underscore_min is None:
@@ -3079,14 +3081,43 @@ class CheckPlacementsNotInMp(AnalyzeBase):
             closest, words = ali_chat.find_db_model(
                 mp_names, message=message, model_is_list=True,
                 split_underscore=True)
-            if closest:
-                suggested_name = mp_names[next(iter(closest))]
-                match_table.append({
-                    dctc.DICT_COL_VALUE: name,
-                    dctc.DICT_COL_NVALUE: suggested_name
-                })
+            if not closest or (
+                    strict and not cls.is_sure_match(name, closest, mp_names)):
+                continue
+            suggested_name = mp_names[next(iter(closest))]
+            match_table.append({
+                dctc.DICT_COL_VALUE: name,
+                dctc.DICT_COL_NVALUE: suggested_name
+            })
         match_df = pd.DataFrame(match_table)
         return match_df
+
+    @staticmethod
+    def is_sure_match(name, closest, mp_names):
+        """Whether ``closest``, the plan name indexes tied for the best
+        score, is one plan name sharing over half its words with ``name``."""
+        if len(closest) != 1:
+            return False
+        plan_words = set(utl.lower_words_from_str(
+            str(mp_names[next(iter(closest))]), split_underscore=True))
+        shared = plan_words.intersection(utl.lower_words_from_str(
+            str(name), split_underscore=True))
+        return len(shared) * 2 > len(plan_words)
+
+    @classmethod
+    def translation_matches(cls, names, mp_names, data_source_name='',
+                            ignore_min=False):
+        """The plan name to translate each delivered name to, only where
+        the match is sure and changes the name the check compares."""
+        match_df = cls.find_closest_name_match(
+            names, mp_names, data_source_name=data_source_name,
+            ignore_min=ignore_min, strict=True)
+        if match_df.empty:
+            return match_df
+        compared = cls.plan_length_names(
+            match_df[dctc.DICT_COL_VALUE], pd.Series(mp_names))
+        changed = compared.ne(match_df[dctc.DICT_COL_NVALUE])
+        return match_df[changed].reset_index(drop=True)
 
     @staticmethod
     def name_key(name):
@@ -3111,7 +3142,9 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         return matches if len(matches) == 1 else []
 
     def fix_analysis_for_data_source(self, df, vk, write=True):
-        """Suggest source-scoped matches; write=False previews only."""
+        """Suggest source-scoped matches; write=False previews only, as
+        does a source whose transform carries NoAutoTranslate, the flag a
+        campaign with Auto-translate off sets on every source."""
         if df.empty or dctc.PN not in df:
             return pd.DataFrame()
         mp_rows = self.aly.df.loc[
@@ -3132,7 +3165,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         ignore_min = False
         if 'IgnoreMin' in old_transform_split:
             ignore_min = True
-        match_df = self.find_closest_name_match(
+        match_df = self.translation_matches(
             df[dctc.PN], mp_names, data_source_name=vk, ignore_min=ignore_min)
         if match_df.empty:
             return match_df
@@ -3141,7 +3174,7 @@ class CheckPlacementsNotInMp(AnalyzeBase):
         match_df[dctc.DICT_COL_NAME] = data_source.p[vmc.placement]
         match_df[dctc.DICT_COL_FNC] = f'Select::{vmc.vendorkey}'
         match_df[dctc.DICT_COL_SEL] = vk
-        if not write:
+        if not write or vmc.transform_no_auto_translate in old_transform_split:
             return match_df
         written = True
         if vmc.transform_raw_translate not in old_transform:
