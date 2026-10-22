@@ -362,39 +362,44 @@ class VendorMatrix(object):
                               'Display Impressions', 'Impressions (Net)',
                               '* Served Impressions', 'show_cnt'],
             vmc.clicks: [vmc.clicks.lower(), 'Link Clicks', 'Ad CLicks',
+                         'Ad Clicks', 'Delivered Clicks',
                          'Display Clicks', 'Clicks (Net)', '* Clicks', 'swipes',
                          'click_cnt', 'Link clicks'],
             vmc.cost: ['Spend', 'spend', 'Cost', 'cost', 'totalCost',
                        'Revenue (Adv Currency)', 'Amount Spent (USD)',
                        'Planned Net Cost', 'Budget Delivered', 'Buyer Spend',
                        'stat_cost', 'Advertiser Cost (Adv Currency)',
-                       'Billable', 'Advertiser Spending'],
+                       'Billable', 'Advertiser Spending', 'Delivered Spend'],
             vmc.views: ['Views', 'TrueView Views', '10-Second Video Views',
                         'Video Starts', 'Video Started', 'video_views',
                         'total_play', 'Video views'],
             vmc.views25: ['Video played to 25%', 'Video Watches at 25%',
                           'Video First Quartile Completions', 'Video View 25%',
                           'Watches at 25%', 'Video Played 25%', 'quartile_1',
-                          'play_first_quartile', 'Video played 25%', '25%'],
+                          'play_first_quartile', 'Video played 25%', '25%',
+                          'VIDEO25PC'],
             vmc.views50: ['Video played to 50%', 'Video Watches at 50%',
                           'Video Midpoints', 'Video View 50%', 'Watches at 50%',
                           'Video Played 50%', 'quartile_2', 'play_midpoint',
-                          'Video played 50%', '50%'],
+                          'Video played 50%', '50%', 'VIDEO50PC'],
             vmc.views75: ['Video played to 75%', 'Video Watches at 75%',
                           'Video Third Quartile Completions', 'Video View 75%',
                           'Watches at 75%', 'Video Played 75%', 'quartile_3',
-                          'play_third_quartile', 'Video played 75%', '75%'],
+                          'play_third_quartile', 'Video played 75%', '75%',
+                          'VIDEO75PC'],
             vmc.views100: ['Video played to 100%', 'Video Watches at 100%',
                            'Video Completions', 'Video View 100%', 'play_over',
                            'Watches at 100%', 'Video Fully Played', '100%',
-                           'view_completion', 'Video played 100%'],
+                           'view_completion', 'Video played 100%',
+                           'VIDEO100PC'],
             vmc.video_plays: ['video_play_actions'],
             vmc.engagements: ['post_engagement'],
             vmc.likes: ['like'],
             vmc.comments: ['comment'],
             vmc.shares: ['post'],
             vmc.reactions: ['post_reaction'],
-            vmc.revenue: ['Total Revenue', 'sales14d', 'totalSales14d'],
+            vmc.revenue: ['Total Revenue', 'sales14d', 'totalSales14d',
+                          'Sales Revenue', 'Sales Revenue ($)'],
             vmc.purchase: ['purchases14d', 'totalPurchases14d'],
             vmc.newuser: ['Installs', 'newUsers'],
             vmc.totaluser: ['users'],
@@ -424,6 +429,15 @@ class VendorMatrix(object):
             if x not in data_dict.keys():
                 data_dict[x] = []
         return data_dict
+
+    @staticmethod
+    def get_placement_col_translation():
+        """The raw column names platforms give the placement string,
+        most likely first; kept apart from get_col_translation, whose
+        callers look up metrics only."""
+        return ['Placement Name', 'Placement', 'PSN Placement Name',
+                'Order Line Name', 'Line Item Name', 'Line Item',
+                'Ad Set Name', 'Ad Group', 'Ad Name']
 
     @staticmethod
     def get_transform_types():
@@ -458,6 +472,22 @@ def move_named_file(old_path, new_path):
         return False
     shutil.move(old_path, new_path)
     return True
+
+
+def apply_raw_key_template(df, import_key):
+    """Lay a typed raw key's template cells over the one-row Rawfile copy
+    add_to_vm falls back to, so the card starts on the platform's own
+    export columns; a RULE cell fills only an empty slot."""
+    template = vmc.raw_key_templates.get(import_key, {})
+    for col, val in template.items():
+        current = str(df[col][0]) if col in df.columns else ''
+        current = '' if current == 'nan' else current
+        if col == vmc.autodicord:
+            val = val.format(order=current)
+        elif col.startswith(utl.RULE_PREF) and current:
+            continue
+        df[col] = val
+    return df
 
 
 class ImportConfig(object):
@@ -708,7 +738,9 @@ class ImportConfig(object):
             for col in [vmc.filename, vmc.filenamedict]:
                 df[col] = df[col].str.replace(
                     vmc.api_raw_key.lower(), import_key.lower())
-        for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict]:
+            df = apply_raw_key_template(df, import_key)
+        for col in [vmc.vendorkey, vmc.filename, vmc.filenamedict,
+                    vmc.filenameerror]:
             df = self.set_new_value(df, col, key_name)
         df[vmc.vendorkey] = '{}_{}'.format(import_type, df[vmc.vendorkey][0])
         df[vmc.apifile] = new_file

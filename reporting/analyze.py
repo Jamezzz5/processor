@@ -2,8 +2,6 @@ import os
 import re
 import json
 import time
-import zlib
-import zipfile
 import functools
 
 import yaml
@@ -26,7 +24,6 @@ import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
-import xml.etree.ElementTree as et
 from .ali.search import AliSearch
 from .ali import ticket_intent as ali_tic
 from .ali import codebase as ali_code
@@ -800,307 +797,6 @@ class Analyze(object):
                     message=flagged_msg, data=edf.to_dict())
         return self.flag_ad_serving_platform_differences()
 
-    @staticmethod
-    def processor_clean_functions(df, cd, cds_name, clean_functions):
-        success = True
-        for text, clean_func in clean_functions.items():
-            if not success:
-                msg = 'A previous step failed to process.'
-                cd[text][cds_name] = (False, msg)
-                continue
-            try:
-                df = clean_func(df)
-                msg = 'Successfully able to {}'.format(text)
-                cd[text][cds_name] = (True, msg)
-            except Exception as e:
-                msg = 'Could not {} with error: {}'.format(text, e)
-                cd[text][cds_name] = (False, msg)
-                success = False
-        return df, cd, success
-
-    @staticmethod
-    def compare_start_end_date_raw(df, cd, cds_name, cds, vk='vk'):
-        df = df.copy()
-        df[vmc.vendorkey] = vk
-        date_col_name = cds.p[vmc.date][0]
-        if str(date_col_name) == 'nan' or date_col_name not in df.columns:
-            msg = 'Date not specified or not column names.'
-            msg = (False, msg)
-        else:
-            df[vmc.date] = df[cds.p[vmc.date][0]]
-            df = utl.data_to_type(df=df, date_col=vmc.datadatecol)
-            df = df[[vmc.vendorkey, vmc.date]].groupby([vmc.vendorkey]).agg(
-                {vmc.date: [np.min, np.max]})
-            df.columns = [' - '.join(col).strip() for col in df.columns]
-            tdf = df.reset_index()
-            max_col = '{} - amax'.format(vmc.date)
-            if max_col not in tdf.columns:
-                max_col = max_col.replace('amax', 'max')
-            min_col = '{} - amin'.format(vmc.date)
-            if min_col not in tdf.columns:
-                min_col = min_col.replace('amin', 'min')
-            max_date = tdf[max_col][0].date()
-            min_date = tdf[min_col][0].date()
-            sd = cds.p[vmc.startdate].date()
-            ed = cds.p[vmc.enddate].date()
-            if any(pd.isnull(x) for x in [max_date, min_date, sd, ed]):
-                msg = 'Max date {} or min date {} is not a date.'.format(
-                    max_date, min_date)
-                msg = (False, msg)
-            elif max_date < sd:
-                msg = ('Last day in raw file {} is less than start date {}.\n'
-                       'Result will be blank.  Change start date.'.format(
-                    max_date, sd))
-                msg = (False, msg)
-            elif min_date > ed:
-                msg = ('First day in raw file {} is less than end date {}.\n'
-                       'Result will be blank.  Change end date.'.format(
-                    min_date, ed))
-                msg = (False, msg)
-            else:
-                msg = ('Some or all data in raw file with date range {} - {} '
-                       'falls between start and end dates {} - {}'.format(
-                    sd, ed, min_date, max_date))
-                msg = (True, msg)
-        cd[vmc.startdate][cds_name] = msg
-        return cd
-
-    def check_raw_file_against_plan_net(self, df, cd, cds_name):
-        plan_df = self.matrix.vendor_get(vm.plan_key)
-        if plan_df.empty:
-            msg = (False, 'Plan net is empty could not check.')
-        else:
-            plan_names = self.matrix.vendor_set(vm.plan_key)[vmc.fullplacename]
-            df = vm.full_placement_creation(df, None, dctc.FPN, plan_names)
-            missing = [x for x in df[dctc.FPN].unique()
-                       if x not in plan_df[dctc.FPN].unique()]
-            if not missing:
-                msg = (True, 'All values defined in plan net.')
-            else:
-                missing = ', '.join(missing)
-                msg = (False, 'The following values were not in the plan net '
-                              'dictionary: {}'.format(missing))
-        cd[vm.plan_key][cds_name] = msg
-        return cd
-
-    @staticmethod
-    def write_raw_file_dict(vk, cd):
-        utl.dir_check(utl.tmp_file_suffix)
-        file_name = '{}.json'.format(vk)
-        file_name = os.path.join(utl.tmp_file_suffix, file_name)
-        with open(file_name, 'w') as fp:
-            json.dump(cd, fp, cls=utl.NpEncoder)
-
-    @staticmethod
-    def check_combine_col_totals(cd, df, cds_name, c_cols):
-        df = utl.data_to_type(df, float_col=c_cols)
-        for col in c_cols:
-            if col in df.columns:
-                total = df[col].sum()
-                if total <= 0:
-                    msg = (False, 'Sum of column {} was {}'.format(col, total))
-                else:
-                    msg = (True, int(total))
-                if cds_name == 'New':
-                    if 'Old' not in cd[col]:
-                        old_total = 0
-                    else:
-                        old_total = cd[col]['Old'][1]
-                    if (not isinstance(old_total, str) and
-                            not isinstance(total, str) and old_total > total):
-                        msg = ('Old file total {} was greater than new file '
-                               'total {} for col {}'.format(old_total,
-                                                            total, col))
-                        msg = (False, msg)
-                cd[col][cds_name] = msg
-        return cd
-
-    @staticmethod
-    def get_base_raw_file_dict(ds):
-        cd = {CheckFirstRow.new_first_line: {},
-              'file_load': {},
-              vmc.fullplacename: {},
-              vmc.placement: {},
-              vmc.date: {},
-              'empty': {},
-              vmc.startdate: {},
-              'active_metrics': {}}
-        c_cols = [x for x in vmc.datafloatcol if ds.p[x] != ['nan']]
-        clean_functions = {
-            'get and merge dictionary': ds.get_and_merge_dictionary,
-            'combine data': ds.combine_data,
-            'remove cols and make calculations':
-                ds.remove_cols_and_make_calculations}
-        for x in c_cols + list(clean_functions.keys()) + [vm.plan_key]:
-            cd[x] = {}
-        return cd, clean_functions, c_cols
-
-    @staticmethod
-    def check_sheet_names(tds, sheet_names):
-        missing_sheets = []
-        try:
-            xl = pd.read_excel(tds.p[vmc.filename], None)
-        except (ValueError, et.ParseError, FileNotFoundError,
-                zipfile.BadZipfile, zlib.error) as e:
-            logging.warning(e)
-            return missing_sheets
-        sheet_lists = list(xl.keys())
-        for sheet_name in sheet_names:
-            if sheet_name not in sheet_lists:
-                missing_sheets.append(sheet_name)
-        return missing_sheets
-
-    @staticmethod
-    def get_missing_ds_cols_for_vm_col(ds, ds_cols, exp_col):
-        """
-        Ensure the expected column name, or names if the expected column name is
-        a combination of other columns indicated in the vendormatrix, appears in
-        the datasource. Returns a list of expected column names that were not
-        found nor successfully mapped to different column names and a dictionary
-        of the recommended column mappings.
-
-        :param ds: Data source object being analyzed
-        :param ds_cols: List of the column names for the data source's dataframe
-        :param exp_col: Name of the column being looked for
-        :return: List of missing column names associated with the expected col
-            name provided and dictionary of the recommended column mappings
-        """
-        cols_to_check = ds.p[exp_col] if ds.p[exp_col] != ['nan'] else [exp_col]
-        if exp_col == vmc.placement:
-            cols_to_check = [ds.p[exp_col]]
-        vm_dict = vm.VendorMatrix.get_col_translation()
-        missing_cols = []
-        new_mappings = {}
-        lookup_cols = [vmc.placement, vmc.fullplacename, vmc.autodicord,
-                       vmc.autodicord]
-        for col in cols_to_check:
-            clean_col = col.replace('::', '')
-            if clean_col in ds_cols:
-                continue
-            if exp_col not in lookup_cols:
-                found_col = ''
-                if exp_col in ds_cols:
-                    found_col = exp_col
-                elif clean_col in vm_dict:
-                    found_vals = list(set(vm_dict[clean_col]) & set(ds_cols))
-                    found_col = found_vals[0] if found_vals else ''
-                elif exp_col in vm_dict:
-                    found_vals = list(set(vm_dict[exp_col]) & set(ds_cols))
-                    found_col = found_vals[0] if found_vals else ''
-                if found_col:
-                    new_mappings[found_col] = exp_col
-                    continue
-            missing_cols.append(col)
-        return missing_cols, new_mappings
-
-
-    def compare_raw_files(self, vk, ds):
-        """
-        Compare key values for the old and new raw files for a given vendor key
-        :param vk: Vendor key to compare raw files for
-        :param ds: Data source object for the provided vk
-        :return: None
-        """
-        tds = self.matrix.get_data_source(vk)
-        file_type = os.path.splitext(ds.p[vmc.filename_true])[1]
-        tmp_file = ds.p[vmc.filename_true].replace(
-            file_type, '{}{}'.format(utl.tmp_file_suffix, file_type))
-        tds.p[vmc.filename_true] = tmp_file
-        tds.p[vmc.filename] = tmp_file
-        missing_sheets = []
-        if ':::' in ds.p[vmc.filename]:
-            sheet_names = ds.p[vmc.filename].split(':::')[1:]
-            sheet_info = ':::' + ':::'.join(sheet_names)
-            missing_sheets = self.check_sheet_names(tds, sheet_names)
-            tds.p[vmc.filename] += sheet_info
-        cd, clean_functions, c_cols = self.get_base_raw_file_dict(ds)
-        for cds_name, cds in {'Old': ds, 'New': tds}.items():
-            try:
-                find_blank = CheckFirstRow(Analyze())
-                first_row = find_blank.find_first_row(cds)
-                if not first_row.empty:
-                    first_row = first_row.iloc[0][find_blank.new_first_line]
-                    cds.p[vmc.firstrow] = first_row
-                else:
-                    first_row = cds.p[vmc.firstrow]
-                cd[find_blank.new_first_line][cds_name] = (
-                    True, '{}'.format(first_row))
-                find_total = CheckLastRow(Analyze())
-                last_row = find_total.find_last_row(cds)
-                if not last_row.empty:
-                    last_row = last_row.iloc[0][find_total.new_last_line]
-                    cds.p[vmc.lastrow] = last_row
-                else:
-                    last_row = cds.p[vmc.lastrow]
-                df = cds.get_raw_df()
-            except Exception as e:
-                logging.warning('Unknown exception: {}'.format(e))
-                if cds_name == 'New':
-                    if missing_sheets:
-                        missing_sheets = ', '.join(missing_sheets).upper()
-                        msg = ('Xlsx file is missing the following sheets: '
-                               '{}. Rename sheets if naming is wrong. Else, '
-                               'check w/ vendor to get all needed sheets.'
-                               ).format(missing_sheets)
-                    else:
-                        msg = 'Please open the file in excel, select all '
-                        'columns, select General in the Number format '
-                        'dropdown, save as a csv and retry.'
-                else:
-                    msg = ('The old file may not exist.  '
-                           'Please save the new file.')
-                cd['file_load'][cds_name] = (
-                    False,
-                    '{} file could not be loaded.  {}'.format(cds_name, msg))
-                continue
-            cd['file_load'][cds_name] = (True, 'File was successfully read.')
-            suggested_col_mappings = {}
-            for col in [vmc.fullplacename, vmc.placement, vmc.date] + c_cols:
-                missing_cols, col_maps = self.get_missing_ds_cols_for_vm_col(
-                    ds, df.columns, col)
-                suggested_col_mappings.update(col_maps)
-                if missing_cols:
-                    msg = (False,
-                           'Columns specified in the {} are not in the'
-                           ' new file those columns are: '
-                           '{}'.format(col, ','.join(missing_cols)))
-                else:
-                    msg = (True, '{} columns are in the raw file.'.format(col))
-                cd[col][cds_name] = msg
-            msg = 'No active metric changes detected.'
-            if suggested_col_mappings:
-                map_str = [f'{key} -> {val}'
-                           for key, val in suggested_col_mappings.items()]
-                map_str = ', '.join(map_str)
-                msg = ('Active metric changes detected. The file\'s following'
-                       ' column names will be mapped as: {}').format(map_str)
-                col_map = {}
-                for key, val in suggested_col_mappings.items():
-                    new_name = cds.p[val][0] if cds.p[val] != ['nan'] else val
-                    col_map[key] = new_name
-                df = df.rename(columns=col_map)
-            cd['active_metrics'][cds_name] = (True, msg)
-            if df is None or df.empty:
-                msg = '{} file is empty skipping checks.'.format(cds_name)
-                cd['empty'][cds_name] = (False, msg)
-                continue
-            total_mb = int(round(df.memory_usage(index=True).sum() / 1000000))
-            msg = '{} file has {} rows and is {}MB.'.format(
-                cds_name, len(df.index), total_mb)
-            cd['empty'][cds_name] = (True, msg)
-            cd = self.compare_start_end_date_raw(df, cd, cds_name, cds, vk)
-            df, cd, success = self.processor_clean_functions(
-                df, cd, cds_name, clean_functions)
-            if not success:
-                for col in [vm.plan_key]:
-                    msg = ('Could not fully process files so no '
-                           'additional checks could be made.')
-                    cd[col][cds_name] = (False, msg)
-            cd = self.check_combine_col_totals(cd, df, cds_name, c_cols)
-            cd = self.check_raw_file_against_plan_net(df, cd, cds_name)
-            cds.df = df
-        self.write_raw_file_dict(vk, cd)
-
     def find_missing_serving(self):
         groups = [vmc.vendorkey, dctc.SRV, dctc.AM, dctc.PN]
         metrics = []
@@ -1727,8 +1423,8 @@ class CheckLastRow(AnalyzeBase):
         """
         data_sources = self.matrix.get_all_data_sources()
         data_sources = [ds for ds in data_sources
-                        if 'Rawfile' in vmc.vendorkey
-                        or 'GoogleSheets' in vmc.vendorkey]
+                        if vmc.api_raw_key in str(ds.key)
+                        or vmc.api_gs_key in str(ds.key)]
         df = pd.DataFrame()
         for source in data_sources:
             df = self.find_last_row(source, df)
@@ -4217,9 +3913,10 @@ class AliChat(object):
 
     @staticmethod
     def _parse_llm_stream_lines(r):
-        """Parse an SSE response's lines into delta dicts."""
+        """Parse an SSE response's lines into delta dicts, skipping the
+        ``:`` comments llama-server sends as a long-prompt keep-alive."""
         for raw_line in r.iter_lines(decode_unicode=True):
-            if not raw_line:
+            if not raw_line or raw_line.startswith(":"):
                 continue
             if raw_line.startswith("data: "):
                 raw_line = raw_line[6:]

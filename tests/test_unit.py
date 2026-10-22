@@ -3869,6 +3869,65 @@ class TestVendormatrix:
         result = ic.get_default_vm_value('DBM', 'API')
         assert len(result) == 1
 
+    @staticmethod
+    def _raw_template_ic(tmp_path, monkeypatch):
+        """An ImportConfig whose in-memory matrix holds only the Rawfile
+        template row, the way a box without typed raw rows starts."""
+        ic = _import_config(tmp_path, monkeypatch, [])
+        ic.matrix_df = pd.DataFrame([{
+            vmc.vendorkey: vmc.api_raw_key, vmc.filename: 'rawfile.csv',
+            vmc.filenamedict: 'rawfile_dictionary.csv',
+            vmc.filenameerror: 'RAWFILE_ERROR_REPORT.csv',
+            vmc.autodicord: 'mpBudget|mpVendor',
+            vmc.apifile: 'rawfileapi.json', vmc.date: 'Date',
+            vmc.impressions: 'Impressions',
+            vmc.transform: vmc.transform_raw_translate}])
+        return ic
+
+    def test_add_to_vm_gives_each_raw_card_its_own_error_report(
+            self, tmp_path, monkeypatch):
+        """Every Rawfile card used to share RAWFILE_ERROR_REPORT.csv, so
+        two cards' unmatched placements overwrote each other."""
+        ic = self._raw_template_ic(tmp_path, monkeypatch)
+        ic.add_to_vm(vmc.api_raw_key, 'rawfileapi_Twitch.json', None, None,
+                     key_name='Twitch')
+        ic.add_to_vm(vmc.api_raw_key, 'rawfileapi_Fandom.json', None, None,
+                     key_name='Fandom')
+        rows = ic.matrix_df.set_index(vmc.vendorkey)
+        assert rows.loc['API_Rawfile_Twitch', vmc.filenameerror] == (
+            'RAWFILE_ERROR_REPORT_Twitch.csv')
+        assert rows.loc['API_Rawfile_Fandom', vmc.filenameerror] == (
+            'RAWFILE_ERROR_REPORT_Fandom.csv')
+
+    def test_add_to_vm_lays_the_typed_raw_template_over_the_rawfile_row(
+            self, tmp_path, monkeypatch):
+        """A box whose matrix never got a RawfilePlaystation row still
+        starts the card on PlayStation's own export columns."""
+        ic = self._raw_template_ic(tmp_path, monkeypatch)
+        vk = ic.add_to_vm(vmc.api_psn_key, 'rawfileapi_PSN.json', None,
+                          None, key_name='PSN')
+        assert vk == 'API_RawfilePlaystation_PSN'
+        row = ic.matrix_df.set_index(vmc.vendorkey).loc[vk]
+        assert row[vmc.filename] == 'rawfileplaystation_PSN.csv'
+        assert row[vmc.filenameerror] == 'RAWFILE_ERROR_REPORT_PSN.csv'
+        assert row[vmc.date] == 'Day'
+        assert row[vmc.impressions] == 'Delivered Impressions'
+        assert row[vmc.cost] == 'Delivered Spend'
+        assert row[vmc.autodicord] == 'mpMisc|mpBudget|mpVendor'
+        assert row['RULE_1_METRIC'] == 'POST::{}'.format(vmc.AD_COST)
+        assert row[vmc.transform] == vmc.transform_raw_translate
+
+    def test_apply_raw_key_template_keeps_an_existing_rule(self):
+        df = pd.DataFrame([{vmc.vendorkey: vmc.api_psn_key,
+                            vmc.autodicord: 'mpVendor',
+                            'RULE_1_FACTOR': '0.5',
+                            'RULE_1_METRIC': 'POST::Impressions',
+                            'RULE_1_QUERY': 'mpVendor::Twitch'}])
+        df = vm.apply_raw_key_template(df, vmc.api_psn_key)
+        assert df['RULE_1_METRIC'][0] == 'POST::Impressions'
+        assert df[vmc.autodicord][0] == 'mpMisc|mpVendor'
+        assert df[vmc.clicks][0] == 'Clicks'
+
     @pytest.mark.parametrize('value, old, new, expected', [
         ('API_Facebook_Facebook', 'Facebook', 'Meta', 'API_Facebook_Meta'),
         ('facebook_foo.csv', 'foo', 'bar', 'facebook_bar.csv'),
@@ -4294,7 +4353,24 @@ class TestCalc:
 
 class TestAnalyze:
     vm_df = None
-    
+
+    def test_check_last_row_visits_only_raw_and_sheet_sources(
+            self, monkeypatch):
+        """The filter compared the literal column name, so no source was
+        ever checked for a totals row."""
+        sources = [vm.DataSource(key, {}) for key in
+                   ('API_Rawfile_Twitch', 'API_RawfilePlaystation_PSN',
+                    'API_GoogleSheets_Fees', 'API_DCM_Launch')]
+        matrix = Mock()
+        matrix.get_all_data_sources.return_value = sources
+        check = az.CheckLastRow(az.Analyze(matrix=matrix))
+        find = Mock(return_value=pd.DataFrame())
+        monkeypatch.setattr(check, 'find_last_row', find)
+        check.do_analysis()
+        assert [c.args[0].key for c in find.call_args_list] == [
+            'API_Rawfile_Twitch', 'API_RawfilePlaystation_PSN',
+            'API_GoogleSheets_Fees']
+
     @staticmethod
     def get_rule_names():
         names = []
@@ -5130,6 +5206,23 @@ class TestAliChat:
         assert len(word_idx[word_str]) == len(db_model)
         for i in range(item_num):
             assert word_idx[str(i)] == [i]
+
+    def test_stream_parser_skips_sse_comments(self, caplog):
+        """llama-server sends ``: ping`` keep-alive comments while a
+        long prompt is still processing; a comment is not a chunk to
+        parse, and every one of them logged a warning."""
+        lines = [': ping', '', ':',
+                 'data: {"choices": [{"delta": {"content": "hi"}}]}',
+                 'data: {"choices": [{"delta": {}, '
+                 '"finish_reason": "stop"}]}',
+                 'data: [DONE]']
+        resp = Mock()
+        resp.iter_lines.return_value = iter(lines)
+        with caplog.at_level(logging.WARNING):
+            deltas = list(az.AliChat._parse_llm_stream_lines(resp))
+        assert deltas == [{'type': 'response', 'delta': 'hi'},
+                          {'type': 'finish', 'delta': 'stop'}]
+        assert 'unparseable' not in caplog.text
 
 
 default_col_names = [

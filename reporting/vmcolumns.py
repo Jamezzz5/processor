@@ -264,6 +264,7 @@ api_pix_key = 'Pixalate'
 api_ias_key = 'Integral'
 api_ste_key = 'Steam'
 api_asa_key = 'AppleSearchAds'
+api_psn_key = 'RawfilePlaystation'
 api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_nb_key, api_af_key, api_sc_key, api_aj_key, api_dc_key,
             api_rs_key, api_db_key, api_vk_key, api_rc_key, api_szk_key,
@@ -272,7 +273,7 @@ api_keys = [api_aw_key, api_fb_key, api_tw_key, api_ttd_key, api_ga_key,
             api_gs_key, api_qt_key, api_rawx_key, api_yv_key, api_amd_key,
             api_mp_key, api_ss_key, api_nz_key, api_ytd_key, api_wal_key,
             api_goad_key, api_dvo_key, api_sim_key, api_azu_key, api_pix_key,
-            api_ias_key, api_ste_key, api_asa_key]
+            api_ias_key, api_ste_key, api_asa_key, api_psn_key]
 test_apis = [api_dc_key, api_fb_key, api_aw_key, api_sam_key, api_tik_key,
              api_yv_key, api_gs_key, api_sc_key, api_cri_key, api_amd_key,
              api_amz_key, api_sim_key, api_rs_key, api_red_key, api_ttd_key,
@@ -364,7 +365,8 @@ api_partner_name_translation = {
     api_asa_key: ['Apple Search Ads', 'ASA', 'Apple'],
     api_rawx_key: ['Xbox', 'XBL'],
     api_ytd_key: ['YouTube'],
-    api_ste_key: ['Steam']
+    api_ste_key: ['Steam'],
+    api_psn_key: ['PlayStation', 'PSN', 'Sony', 'SIEA']
 }
 
 unconstrained_translate_keys = (
@@ -372,6 +374,30 @@ unconstrained_translate_keys = (
     api_dv_key, api_ias_key, api_pix_key, api_mp_key, api_ss_key,
 )
 generic_source_keys = (api_raw_key, api_gs_key)
+typed_raw_keys = (api_rawx_key, api_psn_key)
+raw_keys = (api_raw_key,) + typed_raw_keys
+
+raw_key_templates = {
+    api_psn_key: {
+        placement: 'Placement Name',
+        fullplacename: 'Placement Name',
+        autodicord: 'mpMisc|{order}',
+        transform: transform_raw_translate,
+        date: 'Day',
+        impressions: 'Delivered Impressions',
+        clicks: 'Clicks',
+        cost: 'Delivered Spend',
+        views25: 'VIDEO25PC',
+        views50: 'VIDEO50PC',
+        views75: 'VIDEO75PC',
+        views100: 'VIDEO100PC',
+        purchase: 'Conversions',
+        revenue: 'Sales Revenue',
+        'RULE_1_FACTOR': '0.0',
+        'RULE_1_METRIC': 'POST::{}'.format(AD_COST),
+        'RULE_1_QUERY': 'mpAgency::Liquid Advertising',
+    },
+}
 
 top_apis = [
     api_aw_key,
