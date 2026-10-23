@@ -129,8 +129,9 @@ class SzkApi(object):
         else:
             request_method = requests.get
         try:
-            r = request_method(url, headers=headers, json=json_body, data=data,
-                               verify=False)
+            r = request_method(url, headers=headers, json=json_body, data=data)
+        except requests.exceptions.SSLError:
+            raise
         except requests.exceptions.ConnectionError as e:
             attempt += 1
             if attempt > 100:

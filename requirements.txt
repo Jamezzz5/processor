@@ -11,7 +11,8 @@ pyjwt==2.15.1
 pytz==2026.5
 selenium==4.2.0
 Pillow==13.0.0
-boto3==1.33.2
+boto3==1.43.117
+certifi>=2026.10.19
 tableauserverclient==0.18.0
 tableauhyperapi==0.0.26963
 tableaudocumentapi==0.9
