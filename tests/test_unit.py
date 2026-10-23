@@ -5244,6 +5244,22 @@ class TestAliChat:
                           {'type': 'finish', 'delta': 'stop'}]
         assert 'unparseable' not in caplog.text
 
+    def test_get_openai_response(self, monkeypatch):
+        reply = Mock(json=Mock(return_value={'choices': [{'text': ' hi '}]}))
+        post = Mock(return_value=reply)
+        monkeypatch.setattr(az.requests, 'post', post)
+        chat = az.AliChat()
+        chat.config = None
+        assert chat.get_openai_response('hello').startswith('OpenAI not')
+        assert not post.called
+        chat.config = {'SECRET_KEY': 'k'}
+        assert chat.get_openai_response('hello') == 'hi'
+        kwargs = post.call_args.kwargs
+        assert kwargs['headers'] == {'Authorization': 'Bearer k'}
+        assert kwargs['json']['model'] == 'gpt-3.5-turbo-instruct'
+        assert kwargs['json']['prompt'] == 'User: hello\nAI:'
+        reply.raise_for_status.assert_called_once_with()
+
 
 default_col_names = [
     '"lqadb"."event"."eventname"',

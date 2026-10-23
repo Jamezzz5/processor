@@ -209,9 +209,10 @@ class CommunitySnapshot(Base):
                          'summed) — a point-in-time sample at the '
                          'nightly run hour, not a peak.')
     reddit_active_users = Column(
-        Numeric, comment='Subreddit active_user_count at snapshot time '
-                         '(about.json) — concurrent-scale, unlike the '
-                         'cumulative reddit_members.')
+        Numeric, comment="Retired: Reddit's about answer no longer "
+                         'carries active_user_count, so nothing '
+                         'writes this. Drop once no deployed code '
+                         'reads it.')
     steam_total_reviews = Column(
         Numeric, comment='Lifetime Steam review count (appreviews '
                          'summary) - the review-stats lane\'s own '
@@ -825,7 +826,14 @@ class AttentionShare(Base):
         Numeric, comment='Weekly mean of the nightly '
                          'concurrent-viewer samples.')
     reddit_active_users = Column(
-        Numeric, comment='Weekly mean of the nightly samples.')
+        Numeric, comment="Retired: Reddit's about answer no longer "
+                         'carries active_user_count, so nothing '
+                         'writes this. Drop once no deployed code '
+                         'reads it.')
+    reddit_new_members = Column(
+        Numeric, comment='Subreddit subscribers gained since the '
+                         'previous reading, scaled to seven days '
+                         'and clipped at zero.')
     steam_ccu = Column(
         Numeric, comment='Weekly mean of daily concurrent players.')
     wikipedia_views = Column(
@@ -1379,9 +1387,12 @@ class SteamNews(Base):
 
 
 class YoutubeComment(Base):
-    """Top-level comments on an official trailer — a relevance-ordered
-    sample kept at most 30 days (YouTube API policy) with no author
-    fields. The classification columns start NULL."""
+    """Top-level comments on an official trailer or one of a title's
+    most-viewed creator videos — a relevance-ordered sample with no
+    author fields, refreshed while the lane reads the video and deleted
+    30 days after the last fetch that returned it (YouTube API policy).
+    The classification columns start NULL, and only official trailers'
+    comments are classified."""
     __tablename__ = 'youtube_comment'
     __table_args__ = (
         UniqueConstraint('comment_id', name='uq_youtube_comment_id'),
@@ -1389,7 +1400,10 @@ class YoutubeComment(Base):
         Index('ix_youtube_comment_fetched', 'fetched_at'),
         {'schema': 'games',
          'comment': 'Relevance-ordered top-level comments on official '
-                    'trailers. Purged 30 days after fetch, so never a '
+                    "trailers and on each title's most-viewed creator "
+                    'videos (youtube_video.kind says which). Refreshed '
+                    'while the lane reads the video and deleted 30 days '
+                    'after the last fetch that returned it, so never a '
                     'history; no author name or channel is stored.'},
     )
 
@@ -1506,3 +1520,110 @@ class TitleNarrative(Base):
     model = Column(Text, comment='Classifier model id.')
     computed_at = Column(DateTime,
                          comment='Naive UTC; the recency column.')
+
+
+class RedditItem(Base):
+    """A post or top-level comment in a title's own subreddit — the
+    newest posts and the top comments on the busiest of them, read
+    nightly with no author fields and purged 30 days after fetch."""
+    __tablename__ = 'reddit_item'
+    __table_args__ = (
+        UniqueConstraint('thing_id', name='uq_reddit_item_thing'),
+        Index('ix_reddit_item_game_created', 'gameid', 'created_at'),
+        Index('ix_reddit_item_fetched', 'fetched_at'),
+        {'schema': 'games',
+         'comment': "Posts and top-level comments from each title's "
+                    'subreddit. Purged 30 days after fetch, so never a '
+                    'history; no author name is stored.'},
+    )
+
+    reddititemid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    thing_id = Column(Text, nullable=False,
+                      comment="Reddit's fullname (t3_ a post, t1_ a "
+                              'comment) - the idempotency key.')
+    subreddit = Column(Text, comment='The subreddit read, without r/.')
+    kind = Column(Text, nullable=False, comment="'post' | 'comment'.")
+    title = Column(Text, comment="The post's title; NULL on a comment.")
+    body = Column(Text, comment='Self-text or comment body, clipped to '
+                                '4,000 characters.')
+    permalink = Column(Text, comment='Path on reddit.com, from /r/.')
+    score = Column(Numeric, comment="Reddit's score (upvotes less "
+                                    'downvotes) at the last fetch.')
+    num_comments = Column(Numeric, comment="A post's comment count at the "
+                                           'last fetch; NULL on a comment.')
+    created_at = Column(DateTime, nullable=False, comment='Naive UTC.')
+    fetched_at = Column(DateTime,
+                        comment='Naive UTC; last fetch that returned it '
+                                '- the purge and recency column.')
+
+
+class BlueskyPost(Base):
+    """A public Bluesky post naming a tracked title, from a nightly
+    search per title — one row per title the post names, no profile or
+    follower data, purged 30 days after fetch."""
+    __tablename__ = 'bluesky_post'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'uri', name='uq_bluesky_post_game_uri'),
+        Index('ix_bluesky_post_game_created', 'gameid', 'created_at'),
+        Index('ix_bluesky_post_fetched', 'fetched_at'),
+        {'schema': 'games',
+         'comment': 'Public Bluesky posts naming each tracked title, one '
+                    'row per title named. Purged 30 days after fetch, '
+                    'so never a history; no profile is stored.'},
+    )
+
+    blueskypostid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    uri = Column(Text, nullable=False,
+                 comment='at:// URI of the post - with gameid, the '
+                         'idempotency key.')
+    text = Column(Text,
+                  comment='Post text, clipped to 4,000 characters.')
+    language = Column(Text, comment="'english', the first other language "
+                                    "tag, or 'unknown'.")
+    like_count = Column(Numeric, comment='Likes at the last fetch.')
+    repost_count = Column(Numeric)
+    reply_count = Column(Numeric)
+    created_at = Column(DateTime, nullable=False, comment='Naive UTC.')
+    fetched_at = Column(DateTime,
+                        comment='Naive UTC; last fetch that returned it '
+                                '- the purge and recency column.')
+
+
+class NewsArticle(Base):
+    """An online news article whose text names a tracked title, from
+    the GDELT global news index — the headline, link and outlet only,
+    never the body. Upserted by title and link; ``fetched_at`` keeps
+    the first store."""
+    __tablename__ = 'news_article'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'url', name='uq_news_article_game_url'),
+        Index('ix_news_article_game_seen', 'gameid', 'seen_at'),
+        {'schema': 'games',
+         'comment': 'Online news whose text names each tracked title, '
+                    'from the GDELT DOC API article list: headline, '
+                    'link, outlet, language and country, one row per '
+                    'title named. The body is never stored.'},
+    )
+
+    newsarticleid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    url = Column(Text, nullable=False,
+                 comment='Article link - with gameid, the idempotency '
+                         'key.')
+    title = Column(Text, comment='The headline as GDELT saw it.')
+    domain = Column(Text, comment='The outlet host, e.g. ign.com.')
+    language = Column(Text, comment="'english', another language in "
+                                    "lower case, or 'unknown'.")
+    source_country = Column(Text, comment="The outlet's country as GDELT "
+                                          'names it.')
+    seen_at = Column(DateTime, nullable=False,
+                     comment='Naive UTC; when GDELT first saw the '
+                             "article - the article's date.")
+    fetched_at = Column(DateTime,
+                        comment='Naive UTC; when the lane first stored '
+                                'it - the recency column.')

@@ -7,7 +7,6 @@ import functools
 import yaml
 import nltk
 import random
-import openai
 import shutil
 import logging
 import operator
@@ -15,7 +14,6 @@ import tarfile
 import requests
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import datetime as dt
 import reporting.calc as cal
 import reporting.awapi as aw
@@ -334,33 +332,6 @@ class Analyze(object):
                 new_file_name = os.path.join(bu, file_name)
                 shutil.copy(file_name, new_file_name)
         logging.info('Successfully backed up files to {}'.format(bu))
-
-    # noinspection PyUnresolvedReferences
-    @staticmethod
-    def make_heat_map(df, cost_cols=None):
-        fig, axs = sns.plt.subplots(ncols=len(df.columns),
-                                    gridspec_kw={'hspace': 0, 'wspace': 0})
-        for idx, col in enumerate(df.columns):
-            text_format = ",.0f"
-            sns.heatmap(df[[col]], annot=True, fmt=text_format, linewidths=.5,
-                        cbar=False, cmap="Blues", ax=axs[idx])
-            if col in cost_cols:
-                for t in axs[idx].texts:
-                    t.set_text('$' + t.get_text())
-            if idx != 0:
-                axs[idx].set_ylabel('')
-                axs[idx].get_yaxis().set_ticks([])
-            else:
-                labels = [val[:30] for val in reversed(list(df.index))]
-                axs[idx].set_yticklabels(labels=labels)
-            axs[idx].xaxis.tick_top()
-        sns.plt.show()
-        sns.plt.close()
-
-    def generate_table(self, group, metrics, sort=None):
-        df = self.generate_df_table(group, metrics, sort)
-        cost_cols = [x for x in metrics if metrics[x]]
-        self.make_heat_map(df, cost_cols)
 
     def generate_df_table(self, group, metrics, sort=None, data_filter=None,
                           df=pd.DataFrame(), sd_col='start_date',
@@ -3703,17 +3674,16 @@ class AliChat(object):
     def get_openai_response(self, message):
         response = 'OpenAI not configured could not get response.'
         if self.config:
-            openai.api_key = self.config['SECRET_KEY']
-            prompt = f"User: {message}\nAI:"
-            response = openai.Completion.create(
-                engine="gpt-3.5-turbo-instruct",
-                prompt=prompt,
-                max_tokens=1024,
-                n=1,
-                stop=None,
-                temperature=0.5,
-            )
-            response = response.choices[0].text.strip()
+            r = requests.post(
+                'https://api.openai.com/v1/completions',
+                headers={'Authorization': 'Bearer {}'.format(
+                    self.config['SECRET_KEY'])},
+                json={'model': 'gpt-3.5-turbo-instruct',
+                      'prompt': f"User: {message}\nAI:",
+                      'max_tokens': 1024, 'n': 1, 'temperature': 0.5},
+                timeout=120)
+            r.raise_for_status()
+            response = r.json()['choices'][0]['text'].strip()
         return response
 
     def get_unigrams_and_bigrams(self, text, split_underscore=False,
