@@ -5227,6 +5227,14 @@ class TestAnalyze:
         bm25_scores = transformer.bm25_search(user_text, top_k=top_k)
         assert bm25_scores
 
+    def test_lemma_reads_wordnet_without_its_self_map(self):
+        """Lemmas as ``WordNetLemmatizer`` gives them, from a WordNet
+        that never built the 3.0-to-3.0 sense map nltk loads with."""
+        words = ['campaigns', 'geese', 'abaci', 'us', 'hardrock']
+        assert [az._lemma(word) for word in words] == [
+            'campaign', 'goose', 'abacus', 'u', 'hardrock']
+        assert az._wordnet().map30 is None
+
     @requires_base_config
     def test_do_analysis_and_fix_processor(self):
         output_dfs = [pd.DataFrame(),

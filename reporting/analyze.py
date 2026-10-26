@@ -11,6 +11,7 @@ import shutil
 import logging
 import operator
 import tarfile
+import warnings
 import requests
 import numpy as np
 import pandas as pd
@@ -22,6 +23,7 @@ import reporting.vmcolumns as vmc
 import reporting.dictionary as dct
 import reporting.vendormatrix as vm
 import reporting.dictcolumns as dctc
+from nltk.corpus.reader.wordnet import WordNetCorpusReader
 from .ali.search import AliSearch
 from .ali import ticket_intent as ali_tic
 from .ali import codebase as ali_code
@@ -3482,11 +3484,42 @@ class Intent(object):
         }
 
 
+def _corpus_root(name):
+    """The nltk corpus ``name`` in either shape the downloader leaves
+    it in, or None when it is not on disk."""
+    for path in ('corpora/{}'.format(name),
+                 'corpora/{}.zip/{}/'.format(name, name)):
+        try:
+            return nltk.data.find(path)
+        except LookupError:
+            continue
+    return None
+
+
+class _LemmaWordNet(WordNetCorpusReader):
+    """WordNet for lemmatising alone: it skips the 3.0-to-3.0 sense map
+    nltk builds on load, which only multilingual lookups read."""
+
+    def map_wn(self, version='wordnet'):
+        return None
+
+
+@functools.cache
+def _wordnet():
+    root = _corpus_root('wordnet')
+    if root is None:
+        raise LookupError('nltk corpus wordnet is not installed')
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        return _LemmaWordNet(root, None)
+
+
 @functools.lru_cache(maxsize=65536)
 def _lemma(word):
-    """WordNet's noun lemma for ``word``, memoised because a corpus
-    repeats a few thousand words, which halves training time."""
-    return nltk.stem.WordNetLemmatizer().lemmatize(word)
+    """WordNet's noun lemma for ``word``, as ``WordNetLemmatizer`` picks
+    it; memoised, as a corpus repeats a few thousand words."""
+    lemmas = _wordnet()._morphy(word, 'n')
+    return min(lemmas, key=len) if lemmas else word
 
 
 def _highlight_terms(text, words):
@@ -4611,14 +4644,7 @@ class AliChat(object):
         """Whether an nltk corpus is on disk, in either shape the
         downloader leaves it in.
         """
-        for path in ('corpora/{}'.format(name),
-                     'corpora/{}.zip/{}/'.format(name, name)):
-            try:
-                nltk.data.find(path)
-                return True
-            except LookupError:
-                continue
-        return False
+        return _corpus_root(name) is not None
 
     @staticmethod
     def _ensure_nltk_corpus(name):
