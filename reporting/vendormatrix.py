@@ -1287,7 +1287,7 @@ def df_single_transform(df, transform, delim_cols=None, vendor_key=None):
         df = pd.pivot_table(df, index=index_cols, columns=[pivot_col],
                             aggfunc='sum')
         if len(val_col) != 1:
-            df.columns = df.columns.map('_'.join)
+            df.columns = ['_'.join(str(y) for y in x) for x in df.columns]
         if type(df.columns) == pd.MultiIndex:
             df.columns = [' - '.join([str(y) for y in x]) for x in df.columns]
         df = df.reset_index()

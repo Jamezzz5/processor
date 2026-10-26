@@ -3180,6 +3180,12 @@ class TestApis:
 
     @staticmethod
     def send_api_call(api, fields=None):
+        """Skip an API whose config this box lacks, which the class guard,
+        reading only fbconfig.json, does not catch."""
+        config = os.path.join(CONFIG_PATH, api.default_config_file_name)
+        if not os.path.exists(config):
+            pytest.skip('{} not present'.format(
+                api.default_config_file_name))
         api.input_config(api.default_config_file_name)
         sd = (dt.datetime.today() - dt.timedelta(days=28)).replace(
             hour=0, minute=0, second=0, microsecond=0)
@@ -3765,6 +3771,24 @@ class TestVendormatrix:
         expected = ['adgroup a', 'adgroup 1_adgroup 2_adgroup 3']
         assert result['Adgroup Name'].tolist() == expected
         assert result['Partner Name'].tolist() == ['Partner|1', 'Partner|2']
+
+    def test_pivot_transform_blank_pivot_value(self):
+        """A blank pivot value is filled with 0 before pivoting, so the
+        column names have to join a number, not only strings."""
+        df = pd.DataFrame({
+            vmc.date: ['2026-10-01', '2026-10-01', '2026-10-02'],
+            'conversionType': ['Purchase', None, 'Purchase'],
+            'Conversions': [3, 1, 2],
+            'Sales': [10.0, 5.0, 4.0],
+        })
+        transform = 'Pivot::conversionType::Conversions|Sales'
+        out = vm.df_transform(df, transform)
+        assert out.columns.tolist() == [
+            vmc.date, 'Conversions_0', 'Conversions_Purchase',
+            'Sales_0', 'Sales_Purchase']
+        assert out['Conversions_Purchase'].tolist() == [3, 2]
+        assert out['Conversions_0'].iloc[0] == 1
+        assert out['Sales_Purchase'].tolist() == [10.0, 4.0]
 
     @requires_base_config
     def test_vm_load(self):
@@ -6991,6 +7015,9 @@ class TestDcApiPathToConversion:
         keeps the CSV that was current when it was sent, so a report
         downloaded again for a later card is told apart by its rows."""
         if url.endswith('/reports/') and method == 'post':
+            criteria = body.get('pathToConversionCriteria', {})
+            if self.refuse_extended and 'reportProperties' in criteria:
+                return None
             self.sent.append(body)
             report_id = str(len(self.sent))
             self.texts[report_id] = self.text
@@ -7003,7 +7030,8 @@ class TestDcApiPathToConversion:
         if '/files/' in url:
             return self.response({'status': 'REPORT_AVAILABLE'})
         if 'floodlightActivities' in url:
-            return self.response({'floodlightActivities': [{'id': '5'}]})
+            return self.response({'floodlightActivities': [
+                {'id': '5', 'name': 'Purchase'}, {'id': '6', 'name': 'Lead'}]})
         return self.response({'floodlightConfigurationId': '99'})
 
     def fake_cm360(self, monkeypatch, api, text):
@@ -7011,6 +7039,7 @@ class TestDcApiPathToConversion:
         and reach reports left out, and returns the bodies CM360 is
         sent."""
         self.sent, self.texts, self.text = [], {}, text
+        self.refuse_extended = False
         monkeypatch.setattr(api, 'make_request', self.fake_request)
         monkeypatch.setattr(api, 'create_report', lambda **kwargs: False)
         api.usr_id = '1'
@@ -7037,7 +7066,13 @@ class TestDcApiPathToConversion:
         assert api.date_range['relativeDateRange'] == 'LAST_30_DAYS'
         api.parse_fields(sd, ed, None)
         assert not api.path_report
-        assert api.path_field in dict(dcapi.DcApi.api_field_options)
+        api.parse_fields(sd, ed, [api.path_only_field, 'pathActivity::Lead'])
+        assert api.path_report and api.path_only
+        assert api.path_activities == ['Lead']
+        assert 'startDate' in api.date_range
+        options = dict(dcapi.DcApi.api_field_options)
+        assert {api.path_field, api.path_all_field,
+                api.path_only_field} <= set(options)
 
     def test_platform_type_stays_on_its_own_card(self):
         """One instance pulls every DCM card, and the dimension used to be
@@ -7108,6 +7143,82 @@ class TestDcApiPathToConversion:
         assert df['Conversion ID'].iloc[0] == '10066324635809675995'
         assert 'Total Conversions' not in df.columns
         assert 'Total Revenue' not in df.columns
+        assert api.path_attributed_col not in df.columns
+
+    def test_every_interaction_keeps_its_flag(self, monkeypatch):
+        """The uncredited interactions stay with their TRUE/FALSE flag, and
+        only the credited one carries the conversion, so sums stay right."""
+        api = dcapi.DcApi()
+        self.fake_cm360(monkeypatch, api, self.report_text())
+        df = api.get_data(*self.last_days(10), fields=[api.path_all_field])
+        assert df['Placement'].tolist() == ['P1', 'P2', 'P3']
+        assert df[api.path_attributed_col].tolist() == [
+            'FALSE', 'TRUE', 'TRUE']
+        conversions = df['Total Conversions - path_report']
+        revenue = df['Total Revenue - path_report']
+        assert pd.to_numeric(conversions).tolist() == [0, 1, 1]
+        assert pd.to_numeric(revenue).tolist() == [0, 828, 74]
+        assert df['Date'].tolist() == [
+            '2026-09-23', '2026-09-23', '2026-09-24']
+
+    def test_every_interaction_falls_back_to_five(self, monkeypatch):
+        """Every interaction asks for extended paths; a configuration
+        without them still gets its report, of the last 5 per path."""
+        api = dcapi.DcApi()
+        sent = self.fake_cm360(monkeypatch, api, self.report_text())
+        api.get_data(*self.last_days(10), fields=[api.path_all_field])
+        criteria = sent[0]['pathToConversionCriteria']
+        assert criteria['reportProperties'] == api.path_extended
+        self.refuse_extended = True
+        df = api.get_data(*self.last_days(10), fields=[api.path_all_field])
+        assert 'reportProperties' not in sent[1]['pathToConversionCriteria']
+        assert df['Placement'].tolist() == ['P1', 'P2', 'P3']
+
+    def test_a_refused_path_length_is_not_retried(self, monkeypatch):
+        """CM360 gives the same refusal every time, so the fallback must
+        not wait out ten retries first."""
+        api = dcapi.DcApi()
+        refusal = self.response({'error': {'message': (
+            "Invalid 'maximumClickInteractions' value. For the specified "
+            "Floodlight Configuration ID the value needs to be one of "
+            "[0, 5].")}})
+        raw, sleep = Mock(return_value=refusal), Mock()
+        monkeypatch.setattr(api, 'get_client', Mock(return_value=None))
+        monkeypatch.setattr(api, 'raw_request', raw)
+        monkeypatch.setattr(dcapi.time, 'sleep', sleep)
+        assert api.make_request('reports/', 'post') is None
+        assert raw.call_count == 1
+        sleep.assert_not_called()
+
+    def test_path_only_skips_the_delivery_reports(self, monkeypatch):
+        api = dcapi.DcApi()
+        sent = self.fake_cm360(monkeypatch, api, self.report_text())
+        delivery = Mock(return_value=None)
+        monkeypatch.setattr(api, 'create_report', delivery)
+        api.get_data(*self.last_days(10), fields=[api.path_field])
+        assert delivery.called, 'the path field on its own keeps the delivery'
+        delivery.reset_mock()
+        df = api.get_data(*self.last_days(10), fields=[api.path_only_field])
+        delivery.assert_not_called()
+        assert [x['type'] for x in sent] == ['PATH_TO_CONVERSION'] * 2
+        assert df['ORD Value'].tolist() == ['ORD1', 'ORD2']
+
+    def test_activities_are_picked_by_id_or_name(self, monkeypatch):
+        """Every activity unless the card names some; a card naming none
+        that exist pulls nothing rather than every activity."""
+        api = dcapi.DcApi()
+        sent = self.fake_cm360(monkeypatch, api, self.report_text())
+        picks = [[], ['pathActivity::Lead'],
+                 ['pathActivity::5', 'pathActivity::Lead']]
+        for pick in picks:
+            api.get_data(*self.last_days(10), fields=[api.path_field, *pick])
+        assert [[x['id'] for x in body['pathToConversionCriteria'][
+            'activityFilters']] for body in sent] == [
+            ['5', '6'], ['6'], ['5', '6']]
+        df = api.get_data(*self.last_days(10),
+                          fields=['pathActivity::Signup'])
+        assert df.empty
+        assert len(sent) == 3
 
     def test_campaign_filter_reaches_path_rows(self, monkeypatch):
         """The report type takes no campaign filter, so the card's filter

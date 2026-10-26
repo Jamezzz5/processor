@@ -19,12 +19,20 @@ base_url = 'https://www.googleapis.com/dfareporting'
 
 class DcApi(object):
     path_field = 'pathToConversion'
+    path_all_field = 'pathAllInteractions'
+    path_only_field = 'pathOnly'
+    path_activity_prefix = 'pathActivity::'
     api_field_options = (
         ('platformType', 'Add the platform type dimension'),
         ('60', 'Relative date range of the last 60 days'),
         ('30', 'Relative date range of the last 30 days'),
         (path_field, 'Add a row per attributed conversion naming the ad '
-                     'credited and its order ID, last 60 days only'))
+                     'credited and its order ID, last 60 days only'),
+        (path_all_field, 'Path to Conversion with every interaction in the '
+                         'path, credited or not, up to 200 where CM360 '
+                         'allows extended paths, otherwise the last 5'),
+        (path_only_field, 'Path to Conversion rows only, without '
+                          'impressions, clicks or spend'))
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
         'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId',
@@ -92,6 +100,11 @@ class DcApi(object):
     path_attributed_col = 'Floodlight Attributed Interaction'
     path_conversion_id_col = 'Conversion ID'
     path_activity_time_col = 'Activity Date/Time'
+    path_extended = {'maximumClickInteractions': 100,
+                     'maximumImpressionInteractions': 100}
+    final_errors = ("reach reports can't span more than 93 days.",
+                    "Invalid 'maximumClickInteractions' value",
+                    "Invalid 'maximumImpressionInteractions' value")
     default_config_file_name = 'dcapi.json'
     date_col = 'Date'
     campaign_col = 'Campaign'
@@ -122,6 +135,9 @@ class DcApi(object):
         self.vendor_dict = {}
         self.campaign_dict = {}
         self.path_report = False
+        self.path_all_interactions = False
+        self.path_only = False
+        self.path_activities = []
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -239,9 +255,9 @@ class DcApi(object):
         The dimensions are copied from the class list before platformType
         is added, since one instance pulls every DCM card in a run and an
         appended class list carried the dimension into every later card.
-        The path field only adds a report, so on its own it leaves the
-        card's dates as they are where any other field moves the reports
-        to a relative range.
+        Any path field turns the path report on and only adds a report,
+        so on its own it leaves the card's dates as they are where any
+        other field moves the reports to a relative range.
 
         :param sd: The card's start date
         :param ed: The card's end date
@@ -253,9 +269,17 @@ class DcApi(object):
             'endDate': ed.strftime('%Y-%m-%d')
         }
         self.default_fields = list(type(self).default_fields)
+        prefix = self.path_activity_prefix
+        toggles = (self.path_field, self.path_all_field, self.path_only_field)
         fields = fields or []
-        self.path_report = self.path_field in fields
-        fields = [x for x in fields if x != self.path_field]
+        path_fields = [x for x in fields
+                       if x in toggles or x.startswith(prefix)]
+        fields = [x for x in fields if x not in path_fields]
+        self.path_report = bool(path_fields)
+        self.path_all_interactions = self.path_all_field in path_fields
+        self.path_only = self.path_only_field in path_fields
+        self.path_activities = [x[len(prefix):] for x in path_fields
+                                if x.startswith(prefix)]
         if fields and fields != ['nan']:
             self.date_range = {'kind': 'dfareporting#dateRange',
                                'relativeDateRange': 'LAST_365_DAYS'}
@@ -366,6 +390,8 @@ class DcApi(object):
             self.report_ids.append(self.original_report_id)
             report_types = []
             report_created = True
+        if self.path_only:
+            report_types = []
         for report_type in report_types:
             reach_report = report_type[0]
             no_date = report_type[1]
@@ -457,19 +483,25 @@ class DcApi(object):
         measures are suffixed apart from the standard report's, which
         counts the same conversions, and each row is dated to its
         conversion so a date merge keeps it past the 60 days CM360 does.
+        With every interaction asked for, the uncredited ones stay too,
+        with zero count and revenue and the TRUE/FALSE column kept.
 
         :param df: The report's rows, header applied
         :return: The attributed conversions, empty when the report has none
         """
-        if df.empty or self.path_attributed_col not in df.columns:
+        flag_col = self.path_attributed_col
+        if df.empty or flag_col not in df.columns:
             return pd.DataFrame()
         id_col = self.path_conversion_id_col
-        attributed = df[self.path_attributed_col]
         metrics = [x for x in self.path_metric_cols if x in df.columns]
-        totals = df.loc[attributed.isna(), [id_col] + metrics]
-        credited = attributed.astype(str).str.upper() == 'TRUE'
-        rows = df[credited].drop(columns=metrics + [self.path_attributed_col])
+        totals = df.loc[df[flag_col].isna(), [id_col] + metrics]
+        rows = df[df[flag_col].notna()].drop(columns=metrics)
         rows = rows.merge(totals, on=id_col, how='left')
+        credited = rows[flag_col].astype(str).str.upper() == 'TRUE'
+        if self.path_all_interactions:
+            rows.loc[~credited, metrics] = 0
+        else:
+            rows = rows[credited].drop(columns=[flag_col])
         rows[self.date_col] = pd.to_datetime(
             rows[self.path_activity_time_col],
             errors='coerce').dt.strftime('%Y-%m-%d')
@@ -579,8 +611,8 @@ class DcApi(object):
                                        params=params, attempt=attempt,
                                        json_response=json_response)
         if json_response and 'error' in self.r.json():
-            reach_error_str = "reach reports can't span more than 93 days."
-            if reach_error_str in self.r.json()['error']['message']:
+            message = self.r.json()['error']['message']
+            if any(x in message for x in self.final_errors):
                 attempt = 100
             else:
                 logging.warning(
@@ -648,7 +680,9 @@ class DcApi(object):
         """
         Queues the card's Path to Conversion report, which CM360 keys on
         the advertiser's Floodlight configuration rather than on the
-        advertiser, and only answers for the last 60 days.
+        advertiser, and only answers for the last 60 days.  Every
+        interaction asks for extended paths, and the last 5 when the
+        configuration doesn't allow them.
 
         :return: Whether a report was queued
         """
@@ -665,10 +699,25 @@ class DcApi(object):
                             'Not pulling Path to Conversion.'
                             ''.format(self.advertiser_id))
             return False
+        activity_ids = self.path_activity_ids()
+        if self.path_activities and not activity_ids:
+            logging.warning('None of the card\'s Floodlight activities are '
+                            'on advertiser {}.  Not pulling Path to '
+                            'Conversion.'.format(self.advertiser_id))
+            return False
+        params = {'path_report': True, 'date_range': date_range}
+        extended = self.path_all_interactions
         report = self.create_path_report_params(
-            date_range, config_id, self.get_floodlight_tag_ids())
-        return self.queue_report(report, {'path_report': True,
-                                          'date_range': date_range})
+            date_range, config_id, activity_ids, extended)
+        queued = self.queue_report(report, params)
+        if queued or not extended:
+            return queued
+        logging.warning('CM360 refused extended paths for advertiser {}.  '
+                        'Pulling the last 5 interactions of each path.'
+                        ''.format(self.advertiser_id))
+        report = self.create_path_report_params(
+            date_range, config_id, activity_ids)
+        return self.queue_report(report, params)
 
     def get_floodlight_config_id(self):
         """
@@ -684,7 +733,8 @@ class DcApi(object):
             return None
         return self.r.json().get('floodlightConfigurationId')
 
-    def create_path_report_params(self, date_range, config_id, activity_ids):
+    def create_path_report_params(self, date_range, config_id, activity_ids,
+                                  extended=False):
         """
         The body of a Path to Conversion report of the attributed
         conversions only, CM360's default: the dimensions name each
@@ -696,10 +746,13 @@ class DcApi(object):
         :param config_id: The advertiser's Floodlight configuration id
         :param activity_ids: The activities to report, every one when
             empty
+        :param extended: Whether to ask for up to 100 clicks and 100
+            impressions per path, which CM360 refuses for a Floodlight
+            configuration without extended paths
         :return: The report body
         """
         report_name = '{}path_report'.format(self.report_base_name())
-        return {
+        report = {
             'name': report_name,
             'type': 'PATH_TO_CONVERSION',
             'fileName': report_name,
@@ -716,6 +769,10 @@ class DcApi(object):
                 'perInteractionDimensions': self.sorted_dimensions(
                     self.path_interaction_fields),
                 'metricNames': self.path_metrics}}
+        if extended:
+            report['pathToConversionCriteria']['reportProperties'] = dict(
+                self.path_extended)
+        return report
 
     @staticmethod
     def sorted_dimensions(names):
@@ -728,9 +785,33 @@ class DcApi(object):
                  'id': x,
                  'kind': 'dfareporting#dimensionValue'} for x in activity_ids]
 
-    def get_floodlight_tag_ids(self, fl_ids=None, next_page=None):
-        if not fl_ids:
-            fl_ids = []
+    def get_floodlight_tag_ids(self):
+        return [x['id'] for x in self.get_floodlight_activities()]
+
+    def path_activity_ids(self):
+        """
+        The activities the path report asks for: the ones the card names
+        by id or exact name, or all of the advertiser's when it names none.
+
+        :return: List of activity ids, empty when none of the card's match
+        """
+        activities = self.get_floodlight_activities()
+        wanted = set(self.path_activities)
+        if not wanted:
+            return [x['id'] for x in activities]
+        known = ({x['id'] for x in activities}
+                 | {x.get('name') for x in activities})
+        missing = wanted - known
+        if missing:
+            logging.warning('No Floodlight activity {} on advertiser {}.'
+                            ''.format(', '.join(sorted(missing)),
+                                      self.advertiser_id))
+        return [x['id'] for x in activities
+                if x['id'] in wanted or x.get('name') in wanted]
+
+    def get_floodlight_activities(self, activities=None, next_page=None):
+        if not activities:
+            activities = []
         fl_url = self.create_user_url()
         params = {'advertiserId': self.advertiser_id}
         fl_url = '{}floodlightActivities'.format(fl_url)
@@ -739,15 +820,15 @@ class DcApi(object):
         self.r = self.make_request(fl_url, method='get', params=params)
         if not self.r:
             logging.warning('Could not make floodlights returning blank list.')
-            return fl_ids
+            return activities
         if 'floodlightActivities' not in self.r.json():
             logging.warning('floodlightActivities not in response as follows: '
                             '\n{}'.format(self.r.json()))
-        fl_ids.extend([x['id'] for x in self.r.json()['floodlightActivities']])
+        activities.extend(self.r.json()['floodlightActivities'])
         if 'nextPageToken' in self.r.json() and self.r.json()['nextPageToken']:
-            fl_ids = self.get_floodlight_tag_ids(
-                fl_ids, next_page=self.r.json()['nextPageToken'])
-        return fl_ids
+            activities = self.get_floodlight_activities(
+                activities, next_page=self.r.json()['nextPageToken'])
+        return activities
 
     def create_report_params(self, reach_report=False, no_date=False,
                              campaign_report=False, vendor_report=False,
