@@ -33,7 +33,8 @@ class IasApi(object):
         self.password = None
         self.advertiser = None
         self.campaign = None
-        self.config_list = None
+        self.warn_config_list = None
+        self.warn_advertiser_list = None
         self.config = None
         self.key_list = [self.username_str, self.password_str]
 
@@ -50,12 +51,20 @@ class IasApi(object):
         self.password = self.config.get(self.password_str)
         self.advertiser = self.config.get(self.advertiser_str)
         self.campaign = self.config.get(self.campaign_str)
-        self.config_list = [self.username, self.password]
+        self.warn_config_list = [(self.username_str, self.username),
+                                 (self.password_str, self.password)]
+        self.warn_advertiser_list = [(self.advertiser_str, self.advertiser)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in config file.'.format(item))
+        """Name a blank login or advertiser without skipping the card"""
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'Integral Ad Science',
+            'The card returns no data until it is filled in.')
+        utl.warn_on_blank_config(
+            self.warn_advertiser_list, self.config_file,
+            'Integral Ad Science',
+            'The pull cannot switch to this card\'s advertiser, so it may '
+            'fail or return another advertiser\'s data.')
 
     def get_data(self, sd=None, ed=None, fields=None):
         """

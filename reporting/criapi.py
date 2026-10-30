@@ -52,20 +52,17 @@ class CriApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.advertiser_id = self.config['advertiser_id']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.advertiser_id]
+        self.client_id = self.config.get('client_id')
+        self.client_secret = self.config.get('client_secret')
+        self.advertiser_id = self.config.get('advertiser_id')
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('advertiser_id', self.advertiser_id)]
         if 'campaign_id' in self.config:
             self.campaign_id = self.config['campaign_id']
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Cri config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file, 'Criteo')
 
     def refresh_token(self):
         data = {'client_id': self.client_id,

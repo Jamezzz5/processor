@@ -126,6 +126,7 @@ class DcApi(object):
         self.original_report_id = None
         self.report_ids = []
         self.config_list = None
+        self.warn_config_list = None
         self.client = None
         self.date_range = None
         self.version = '5'
@@ -174,10 +175,17 @@ class DcApi(object):
         self.refresh_url = config.get('refresh_url', '')
         self.usr_id = config.get('usr_id', '')
         self.original_report_id = config.get('report_id', '')
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.refresh_token, self.refresh_url, self.usr_id]
-        if 'advertiser_id' in config:
-            self.advertiser_id = self.remove_space(config['advertiser_id'])
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token),
+                            ('refresh_url', self.refresh_url),
+                            ('usr_id', self.usr_id)]
+        advertiser_id = config.get('advertiser_id')
+        blank = utl.blank_config_keys([('advertiser_id', advertiser_id)])
+        self.advertiser_id = '' if blank else self.remove_space(advertiser_id)
+        self.warn_config_list = []
+        if not self.original_report_id:
+            self.warn_config_list = [('advertiser_id', self.advertiser_id)]
         if 'campaign_id' in config:
             self.campaign_id = self.remove_space(config['campaign_id'])
 
@@ -186,11 +194,11 @@ class DcApi(object):
         return str(val).replace(' ', '')
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in DC config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'DCM',
+            'The card is still pulled, but may return no rows until it is '
+            'filled in.')
+        utl.skip_on_blank_config(self.config_list, self.config_file, 'DCM')
 
     def refresh_client_token(self, extra, max_attempts=10):
         """

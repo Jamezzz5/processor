@@ -60,18 +60,16 @@ class SimApi(object):
         except IOError:
             logging.error('{} not found. Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.domains = self.config['domains']
-        self.countries = self.config['countries']
-        self.api_key = self.config['api_key']
-        self.config_list = [self.config, self.api_key, self.domains,
-                            self.countries]
+        self.domains = self.config.get('domains')
+        self.countries = self.config.get('countries')
+        self.api_key = self.config.get('api_key')
+        self.config_list = [('api_key', self.api_key),
+                            ('domains', self.domains),
+                            ('countries', self.countries)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Sim config file'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Similarweb')
 
     def set_headers(self):
         headers = {

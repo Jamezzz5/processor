@@ -179,6 +179,7 @@ class GsApi(object):
         self.refresh_url = None
         self.sheet_id = None
         self.config_list = None
+        self.warn_config_list = None
         self.client = None
         self.df = pd.DataFrame()
         self.r = None
@@ -205,36 +206,37 @@ class GsApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.refresh_url = self.config['refresh_url']
-        self.sheet_id = self.config['sheet_id']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.refresh_token, self.refresh_url,
-                            self.sheet_id]
+        self.load_config_dict(self.config)
 
     def load_config_dict(self, config):
         """Populate credentials from an in-memory dict, bypassing the
-        CWD-relative config file load (used by the app-layer vault)."""
+        CWD-relative config file load (used by the app-layer vault).
+
+        ``sheet_id`` may be absent or blank: a pooled credential has
+        none, and most callers set the sheet after loading or create
+        their own, so only a card that reads its own sheet needs it.
+
+        :param config: dict in gsapi.json shape
+        """
         self.config = config
-        self.client_id = config['client_id']
-        self.client_secret = config['client_secret']
-        self.access_token = config['access_token']
-        self.refresh_token = config['refresh_token']
-        self.refresh_url = config['refresh_url']
+        self.client_id = config.get('client_id', '')
+        self.client_secret = config.get('client_secret', '')
+        self.access_token = config.get('access_token', '')
+        self.refresh_token = config.get('refresh_token', '')
+        self.refresh_url = config.get('refresh_url', '')
         self.sheet_id = config.get('sheet_id', '')
-        self.config_list = [self.config, self.client_id,
-                            self.client_secret, self.refresh_token,
-                            self.refresh_url]
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token),
+                            ('refresh_url', self.refresh_url)]
+        self.warn_config_list = [('sheet_id', self.sheet_id)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in GS config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'Google Sheets',
+            'The card reads no sheet or doc until it is filled in.')
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Google Sheets')
 
     def parse_fields(self, fields):
         if fields:

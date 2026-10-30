@@ -59,22 +59,20 @@ class SteApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.key = self.config['key']
-        search_num = self.config.get('search_num', self.default_search_num)
+        self.key = self.config.get('key')
+        search_num = self.config.get('search_num')
+        if utl.blank_config_keys([('search_num', search_num)]):
+            search_num = self.default_search_num
         try:
             self.search_num = int(search_num)
         except (TypeError, ValueError):
             logging.error('{} cannot be converted to an integer. '
                           'Aborting.'.format(search_num))
             sys.exit(0)
-        self.config_list = [self.config, self.key]
+        self.config_list = [('key', self.key)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Ste config file. '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file, 'Steam')
 
     def make_request(self, url, method='GET', params=None, body=None,
                      header=None, attempt=1):

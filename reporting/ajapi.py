@@ -51,18 +51,14 @@ class AjApi(object):
         except IOError:
             logging.error(self.config_file + ' not found.  Aborting.')
             sys.exit(0)
-        self.app_token = self.config['app_token']
-        self.tracker_token = self.config['tracker_token']
-        self.api_token = self.config['api_token']
+        self.app_token = self.config.get('app_token')
+        self.tracker_token = self.config.get('tracker_token', '')
+        self.api_token = self.config.get('api_token')
         self.config_list = [('app_token', self.app_token),
                             ('api_token', self.api_token)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item[1] == '':
-                logging.warning('{} not in AJ config file.  Aborting.'.format(
-                    item[0]))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file, 'Adjust')
 
     @staticmethod
     def date_check(sd, ed):
