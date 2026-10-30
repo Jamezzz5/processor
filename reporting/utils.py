@@ -8,6 +8,7 @@ import time
 import codecs
 import shutil
 import signal
+import sys
 import random
 import tempfile
 import contextlib
@@ -1261,6 +1262,66 @@ def reset_run_stats(config_path_dir=None):
     with contextlib.suppress(OSError):
         os.remove(os.path.join(config_path_dir or config_path,
                                run_stats_file))
+
+
+def blank_config_keys(pairs):
+    """The names of the required config values that are blank.
+
+    None (a JSON null), whitespace and 'nan' count as blank as well as
+    '': an ``== ''`` test lets them through to fail later, far from
+    the config.
+
+    :param pairs: (key name, value) for each required setting
+    :returns: the blank names, in order
+    """
+    return [name for name, value in pairs
+            if value is None or str(value).strip() in ('', 'nan')]
+
+
+def blank_config_message(missing, config_file, api_name, ending):
+    """'<API> config <file> is missing <keys>.  <ending>'"""
+    return '{} config {} is missing {}.  {}'.format(
+        api_name, os.path.basename(config_file), ', '.join(missing), ending)
+
+
+def skip_on_blank_config(pairs, config_file, api_name):
+    """Skip the card, naming each blank key and the file, when a
+    required config value is blank.
+
+    ``sys.exit(0)`` is how an API class skips a card from
+    ``input_config``: the import handler records the SystemExit as a
+    skipped step.  The exit carries no text, so the message is logged
+    at ERROR, which TimedStep keeps as the step's reason.
+
+    :param pairs: (key name, value) for each required setting
+    :param config_file: the card's config file
+    :param api_name: the vendor, as the message names it
+    """
+    missing = blank_config_keys(pairs)
+    if not missing:
+        return
+    logging.error(blank_config_message(missing, config_file, api_name,
+                                       'Fill it in to pull this card.'))
+    sys.exit(0)
+
+
+def warn_on_blank_config(pairs, config_file, api_name,
+                         effect='The card is still pulled.'):
+    """Name each blank config value the card can be pulled without,
+    and carry on: a value whose absence only limits the pull, so the
+    card must not be skipped for it.
+
+    :param pairs: (key name, value) for each setting to report
+    :param config_file: the card's config file
+    :param api_name: the vendor, as the message names it
+    :param effect: what the blank value means for this pull
+    :returns: the blank names, in order
+    """
+    missing = blank_config_keys(pairs)
+    if missing:
+        logging.warning(blank_config_message(missing, config_file, api_name,
+                                             effect))
+    return missing
 
 
 def error_http_status(error):

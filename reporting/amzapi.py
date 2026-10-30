@@ -195,6 +195,7 @@ class AmzApi(object):
         self.campaign_export_id = ''
         self.cid_df = pd.DataFrame()
         self.config_list = None
+        self.warn_config_list = None
         self.client = None
         self.headers = None
         self.version = '2'
@@ -258,20 +259,23 @@ class AmzApi(object):
         self.client_secret = config.get('client_secret', '')
         self.access_token = config.get('access_token', '')
         self.refresh_token = config.get('refresh_token', '')
-        self.advertiser_id = config.get('advertiser_id', '')
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.refresh_token]
+        self.advertiser_id = config.get('advertiser_id') or ''
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token)]
+        self.warn_config_list = [('advertiser_id', self.advertiser_id)]
         if 'campaign_id' in config:
             self.campaign_id = config['campaign_id']
         self.config_use_v1 = config.get('use_v1', True)
         self.use_v1 = self.config_use_v1
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in AMZ config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'Amazon',
+            'The card pulls the first account these credentials can see, '
+            'which may not be this card\'s advertiser.')
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Amazon')
 
     def refresh_client_token(self, extra, attempt=1):
         try:

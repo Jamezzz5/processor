@@ -130,15 +130,13 @@ class AsaApi(object):
                 logging.error('{} not found.  Aborting.'.format(key_file))
                 sys.exit(0)
         self.campaign_filter = config.get(self.campaign_filter_str)
-        self.config_list = [self.client_id, self.team_id, self.key_id,
-                            self.org_id, self.private_key]
+        self.config_list = list(zip(
+            self.key_list, [self.client_id, self.team_id, self.key_id,
+                            self.org_id, self.private_key]))
 
     def check_config(self):
-        for item in self.config_list:
-            if not item:
-                logging.warning('Apple Search Ads config file is missing '
-                                'values.  Aborting.')
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Apple Search Ads')
 
     def get_client_secret(self):
         now = int(time.time())

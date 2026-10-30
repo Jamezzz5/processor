@@ -49,19 +49,17 @@ class QtApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
-        self.advertiser = self.config['advertiser']
-        self.act_id = self.config['act_id']
-        self.config_list = [self.config, self.username, self.password,
-                            self.advertiser, self.act_id]
+        self.username = self.config.get('username')
+        self.password = self.config.get('password')
+        self.advertiser = self.config.get('advertiser', '')
+        self.act_id = self.config.get('act_id')
+        self.config_list = [('username', self.username),
+                            ('password', self.password),
+                            ('act_id', self.act_id)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Quantcast config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Quantcast')
 
     def set_header(self):
         token = self.get_token()

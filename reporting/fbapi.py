@@ -131,6 +131,7 @@ class FbApi(object):
         self.placement = utl.placement_spec(col_name_dic['ad_name'],
                                             vendor_name)
         self.config_list = []
+        self.warn_config_list = []
         self.date_lists = None
         self.field_lists = None
         self.async_requests = []
@@ -161,10 +162,12 @@ class FbApi(object):
         self.config = config
         self.app_id = config.get('app_id', '')
         self.app_secret = config.get('app_secret', '')
-        self.access_token = config.get('access_token', '')
+        self.access_token = config.get('access_token') or ''
         self.act_id = config.get('act_id', '')
-        self.config_list = [self.app_id, self.app_secret, self.access_token,
-                            self.act_id]
+        self.config_list = [('access_token', self.access_token),
+                            ('act_id', self.act_id)]
+        self.warn_config_list = [('app_id', self.app_id),
+                                 ('app_secret', self.app_secret)]
         self.campaign_filter = config.get('campaign_filter',
                                           self.campaign_filter)
         FacebookAdsApi.init(self.app_id, self.app_secret, self.access_token)
@@ -181,11 +184,11 @@ class FbApi(object):
         return [x.export_all_data() for x in accounts]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in FB config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.configfile, 'Facebook',
+            'The card is still pulled with the access token alone.')
+        utl.skip_on_blank_config(self.config_list, self.configfile,
+                                 'Facebook')
 
     @staticmethod
     def parse_fields(items):

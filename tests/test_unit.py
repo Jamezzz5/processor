@@ -62,6 +62,17 @@ import processor.reporting.gameswriter as gamesw
 import processor.reporting.simapi as simapi
 import processor.reporting.steapi as steapi
 import processor.reporting.asaapi as asaapi
+import processor.reporting.qtapi as qtapi
+import processor.reporting.ytdapi as ytdapi
+import processor.reporting.adkapi as adkapi
+import processor.reporting.ajapi as ajapi
+import processor.reporting.dvapi as dvapi
+import processor.reporting.innapi as innapi
+import processor.reporting.nbapi as nbapi
+import processor.reporting.pixapi as pixapi
+import processor.reporting.rcapi as rcapi
+import processor.reporting.szkapi as szkapi
+import processor.reporting.vkapi as vkapi
 import processor.reporting.importhandler as ih
 
 
@@ -8112,3 +8123,315 @@ class TestAutoDictOrder:
         assert aly.fixes_to_run
         written = pd.read_csv(os.path.join('config', vm.csv_file))
         assert written[vmc.autodicord].iloc[0] == '|'.join(_SHIFTED)
+
+
+_CONFIG_CASES = [
+    # (module, class name, config file attribute, a filled config,
+    #  a key the card is skipped without, a key it only warns about)
+    (adkapi, 'AdkApi', 'config_file',
+     {'username': 'user@example.com', 'password': 'pw', 'api_key': 'key',
+      'campaign_filter': '', 'company_id': '1234'}, 'company_id', None),
+    (afapi, 'AfApi', 'config_file',
+     {'api_token': 'tok-123', 'app_id': 'id123456789',
+      'source': 'googleadwords_int, Facebook Ads'}, None, 'api_token'),
+    (ajapi, 'AjApi', 'config_file',
+     {'app_token': 'abc123app', 'tracker_token': '', 'api_token': 'tok_xyz'},
+     'api_token', None),
+    (amzapi, 'AmzApi', 'config_file',
+     {'client_id': 'amzn1.application-oa2-client.x',
+      'client_secret': 'secret', 'access_token': '',
+      'refresh_token': 'Atzr|refresh', 'advertiser_id': 'A123456789',
+      'campaign_id': ''}, 'client_secret', 'advertiser_id'),
+    (awapi, 'AwApi', 'configfile',
+     {'client_id': 'cid', 'client_secret': 'secret',
+      'developer_token': 'devtok', 'refresh_token': 'rtok',
+      'client_customer_id': '123-456-7890'}, 'client_id', None, 'adwords'),
+    (criapi, 'CriApi', 'config_file',
+     {'client_id': 'cid', 'client_secret': 'csecret',
+      'advertiser_id': '12345', 'campaign_id': ''}, 'advertiser_id', None),
+    (dbapi, 'DbApi', 'config_file',
+     {'client_id': 'cid', 'client_secret': 'secret', 'access_token': 'tok',
+      'refresh_token': 'rtok',
+      'refresh_url': 'https://accounts.google.com/o/oauth2/token',
+      'report_id': '', 'advertiser_id': '12345', 'campaign_id': ''},
+     'refresh_token', 'advertiser_id'),
+    (dvapi, 'DvApi', 'config_file',
+     {'username': 'user@example.com', 'password': 'pw', 'advertiser': '',
+      'campaign': '', 'client': ''}, 'username', None),
+    (gaapi, 'GaApi', 'config_file',
+     {'client_id': 'test-client-id', 'client_secret': 'test-secret',
+      'access_token': 'test-access', 'refresh_token': 'test-refresh',
+      'refresh_url': 'https://oauth2.googleapis.com/token',
+      'ga_id': '123456789'}, 'ga_id', None),
+    (gsapi, 'GsApi', 'config_file',
+     {'client_id': 'cid', 'client_secret': 'secret', 'access_token': 'at',
+      'refresh_token': 'rt',
+      'refresh_url': 'https://oauth2.googleapis.com/token',
+      'sheet_id': 'sheet-1'}, 'refresh_url', 'sheet_id'),
+    (iasapi, 'IasApi', 'config_file',
+     {'username': 'user@example.com', 'password': 'pw', 'advertiser': '12345',
+      'campaign': 'Camp'}, None, 'username'),
+    (innapi, 'InnApi', 'config_file',
+     {'username': 'u', 'password': 'p', 'advertiser': 'Adv',
+      'campaign_filter': ''}, 'advertiser', None),
+    (nbapi, 'NbApi', 'config_file',
+     {'client_id': 'cid', 'client_secret': 'csecret',
+      'access_token': 'atoken', 'refresh_token': 'rtoken',
+      'refresh_url': 'https://api.netbase.com/cb/oauth/access_token',
+      'topic_id': 12345}, 'client_secret', None),
+    (pixapi, 'PixApi', 'config_file',
+     {'api_key': 'test-key', 'domains': 'example.com,example.org',
+      'countries': 'US'}, 'api_key', None),
+    (rcapi, 'RcApi', 'config_file',
+     {'client_id': 'test-client-id', 'client_secret': 'test-secret'},
+     'client_secret', None),
+    (redapi, 'RedApi', 'config_file',
+     {'username': 't2_fakeacct', 'password': '', 'client_id': 'cid',
+      'client_secret': 'sec', 'refresh_token': 'ref',
+      'redirect_uri': 'https://x.test/cb', 'access_token': 'acc', 'code': 'c'},
+     'client_id', 'redirect_uri'),
+    (rsapi, 'RsApi', 'config_file',
+     {'api_key': 'test-key', 'game_name': 'Test Game', 'campaign_filter': '',
+      'domain': ''}, 'api_key', None),
+    (samapi, 'SamApi', 'config_file',
+     {'author_id': '12345', 'author_name': 'someone@example.com',
+      'access_token': 'tok', 'campaign_id': '111, 222'},
+     'access_token', 'author_name'),
+    (scapi, 'ScApi', 'config_file',
+     {'client_id': 'cid', 'client_secret': 'csec', 'access_token': 'atok',
+      'refresh_token': 'rtok', 'ad_account_id': 'acct-1',
+      'campaign_filter': ''}, 'refresh_token', None),
+    (simapi, 'SimApi', 'config_file',
+     {'api_key': 'abc123', 'domains': 'a.com,b.com', 'countries': 'us'},
+     'api_key', None),
+    (steapi, 'SteApi', 'config_file',
+     {'key': 'ABCDEF0123456789', 'search_num': 50}, 'key', None),
+    (szkapi, 'SzkApi', 'config_file',
+     {'username': 'user@example.com', 'password': 'pw', 'api_key': 'key123',
+      'campaign_ids': '111,222', 'email': 'reports@example.com'},
+     'campaign_ids', None),
+    (tikapi, 'TikApi', 'config_file',
+     {'access_token': 'tok-abc', 'advertiser_id': '7000000000000',
+      'campaign_id': ''}, 'advertiser_id', None),
+    (ttdapi, 'TtdApi', 'configfile',
+     {'LOGIN': 'ttd_api_user@example.com', 'PASS': 'secret',
+      'ADID': 'adv1234', 'Report Name': 'abc1234', 'Token': 'tok'},
+     'Report Name', 'ADID'),
+    (twapi, 'TwApi', 'configfile',
+     {'CONSUMER_KEY': 'ck', 'CONSUMER_SECRET': 'cs', 'ACCESS_TOKEN': 'at',
+      'ACCESS_TOKEN_SECRET': 'ats', 'ACCOUNT_ID': 'aid',
+      'CAMPAIGN_FILTER': ''}, 'CONSUMER_KEY', 'ACCOUNT_ID'),
+    (vkapi, 'VkApi', 'config_file',
+     {'client_id': 'cid', 'client_secret': 'csec', 'access_token': 'tok',
+      'act_id': '12345'}, 'access_token', None),
+    (fbapi, 'FbApi', 'configfile',
+     {'app_id': 'a', 'app_secret': 's', 'access_token': 't',
+      'act_id': 'act_1', 'campaign_filter': ''}, 'access_token', 'app_id'),
+    (nzapi, 'NzApi', 'config_file',
+     {'api_key': 'k', 'game_title': 'Game A', 'country_filter': ''},
+     'api_key', None),
+    (qtapi, 'QtApi', 'config_file',
+     {'username': 'u', 'password': 'p', 'advertiser': 'a', 'act_id': '1'},
+     'password', None),
+    (ytdapi, 'YtdApi', 'config_file',
+     {'client_id': 'c', 'client_secret': 's', 'access_token': 'a',
+      'refresh_token': 'r', 'refresh_url': 'u', 'query': 'Game A'},
+     'client_id', None),
+    (yvapi, 'YvApi', 'config_file',
+     {'client_id': 'c', 'client_secret': 's', 'advertiser': '7',
+      'campaign': ''}, 'advertiser', None),
+    (asaapi, 'AsaApi', 'config_file',
+     {'client_id': 'c', 'team_id': 't', 'key_id': 'k', 'org_id': 'o',
+      'private_key': 'pk', 'campaign_filter': ''}, 'org_id', None),
+    (dcapi, 'DcApi', 'config_file',
+     {'client_id': 'c', 'client_secret': 's', 'access_token': 'a',
+      'refresh_token': 'r', 'refresh_url': 'u', 'usr_id': '1',
+      'advertiser_id': '2', 'campaign_id': '', 'report_id': ''},
+     'usr_id', 'advertiser_id'),
+    (pmapi, 'PmApi', 'config_file',
+     {'username': 'u', 'password': 'p', 'account_filter': 'Game A',
+      'campaign_filter': ''}, 'username', None),
+]
+_SKIP_CASES = [x for x in _CONFIG_CASES if x[4]]
+_WARN_CASES = [x for x in _CONFIG_CASES if x[5]]
+
+
+def _no_network(*args, **kwargs):
+    raise AssertionError('A config check must not call the network.')
+
+
+def _loaded_api(case, config, tmp_path, monkeypatch):
+    """The case's API class after load_config has read ``config`` from
+    a file in ``tmp_path``, as input_config does before check_config.
+    Built offline: any request fails the test."""
+    module, class_name, file_attr = case[:3]
+    section = case[6] if len(case) > 6 else None
+    for method in ('get', 'post', 'request'):
+        monkeypatch.setattr(utl.requests, method, _no_network)
+    if hasattr(module, 'config_path'):
+        monkeypatch.setattr(module, 'config_path', str(tmp_path))
+    file_name = os.path.join(str(tmp_path),
+                             'card.yaml' if section else 'card.json')
+    with open(file_name, 'w') as f:
+        if section:
+            yaml.dump({section: config}, f)
+        else:
+            json.dump(config, f)
+    api = getattr(module, class_name)()
+    setattr(api, file_attr, file_name)
+    api.load_config()
+    return api
+
+
+def _without(config, key):
+    return {k: v for k, v in config.items() if k != key}
+
+
+class TestCheckConfig:
+    """A card whose config has a blank required value is skipped with a
+    message that names the key and the file."""
+
+    def test_blank_config_keys_counts_nulls_and_nan(self):
+        pairs = [('a', ''), ('b', None), ('c', '  '), ('d', 'nan'),
+                 ('e', 0), ('f', 'x')]
+        assert utl.blank_config_keys(pairs) == ['a', 'b', 'c', 'd']
+
+    def test_the_skip_reason_reaches_the_step(self, tmp_path):
+        with utl.TimedStep('import', 'Facebook', 'API_Facebook_A',
+                           config_path_dir=str(tmp_path)) as step:
+            try:
+                utl.skip_on_blank_config([('act_id', None)],
+                                         'config/fbconfig.json', 'Facebook')
+            except SystemExit as e:
+                step.status = 'skipped'
+                step.error = e
+        with open(os.path.join(str(tmp_path), utl.run_stats_file)) as f:
+            record = json.load(f)[-1]
+        assert record['status'] == 'skipped'
+        assert record['error_text'] == (
+            'Facebook config fbconfig.json is missing act_id.  Fill it in '
+            'to pull this card.')
+
+    @pytest.mark.parametrize('case', _CONFIG_CASES,
+                             ids=[x[1] for x in _CONFIG_CASES])
+    def test_a_filled_config_passes_quietly(
+            self, tmp_path, monkeypatch, caplog, case):
+        api = _loaded_api(case, case[3], tmp_path, monkeypatch)
+        with caplog.at_level(logging.WARNING):
+            api.check_config()
+        assert 'is missing' not in caplog.text
+
+    @pytest.mark.parametrize('case', _SKIP_CASES,
+                             ids=[x[1] for x in _SKIP_CASES])
+    def test_a_null_value_skips_the_card_by_name(
+            self, tmp_path, monkeypatch, caplog, case):
+        key = case[4]
+        api = _loaded_api(case, {**case[3], key: None}, tmp_path,
+                          monkeypatch)
+        with caplog.at_level(logging.ERROR), \
+                pytest.raises(SystemExit) as exit_info:
+            api.check_config()
+        assert exit_info.value.code == 0
+        assert 'is missing {}.'.format(key) in caplog.text
+
+    @pytest.mark.parametrize('case', _SKIP_CASES,
+                             ids=[x[1] for x in _SKIP_CASES])
+    def test_a_key_left_out_of_the_file_skips_the_card_by_name(
+            self, tmp_path, monkeypatch, caplog, case):
+        """A key missing from the file used to raise KeyError, which
+        ended the whole run instead of skipping the card."""
+        key = case[4]
+        api = _loaded_api(case, _without(case[3], key), tmp_path,
+                          monkeypatch)
+        with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
+            api.check_config()
+        assert 'is missing {}.'.format(key) in caplog.text
+
+    @pytest.mark.parametrize('case', _WARN_CASES,
+                             ids=[x[1] for x in _WARN_CASES])
+    def test_a_blank_optional_value_warns_and_carries_on(
+            self, tmp_path, monkeypatch, caplog, case):
+        key = case[5]
+        api = _loaded_api(case, {**case[3], key: None}, tmp_path,
+                          monkeypatch)
+        with caplog.at_level(logging.WARNING):
+            api.check_config()
+        assert 'is missing {}.'.format(key) in caplog.text
+        assert not [x for x in caplog.records if x.levelno >= logging.ERROR]
+
+    def test_a_blank_reddit_password_is_not_reported(
+            self, tmp_path, monkeypatch, caplog):
+        """Reddit's password carries the campaign filter, so blank is the
+        normal setting for an API card and must not even warn."""
+        case = [x for x in _CONFIG_CASES if x[1] == 'RedApi'][0]
+        for password in ('', None):
+            api = _loaded_api(case, {**case[3], 'password': password},
+                              tmp_path, monkeypatch)
+            with caplog.at_level(logging.WARNING):
+                api.check_config()
+        assert 'is missing' not in caplog.text
+
+    def test_test_connection_reports_a_skipped_card_as_a_failure(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(qtapi, 'config_path', str(tmp_path))
+        configs = {'blank.json': {'username': 'u', 'password': None,
+                                  'act_id': '1'},
+                   'full.json': {'username': 'u', 'password': 'p',
+                                 'act_id': '1'}}
+        for name, config in configs.items():
+            with open(os.path.join(str(tmp_path), name), 'w') as f:
+                json.dump(config, f)
+        row = ih.ImportHandler.config_failure(qtapi.QtApi(), 'blank.json',
+                                              'Account ID')
+        assert row.to_dict('records') == [{
+            'Field': 'Account ID', 'Success': False,
+            'Result': 'FAILURE: Quantcast config blank.json is missing '
+                      'password.  Fill it in to pull this card.'}]
+        assert ih.ImportHandler.config_failure(
+            qtapi.QtApi(), 'full.json', 'Account ID') is None
+
+    def test_a_skipped_card_does_not_stop_the_next(self, tmp_path,
+                                                   monkeypatch):
+        """The import loop records a blank-config card as skipped, with
+        its reason, and still pulls the next card of the same API."""
+        configs = {
+            'blank.json': {'username': 'u', 'password': None,
+                           'advertiser': 'a', 'act_id': '111'},
+            'full.json': {'username': 'u', 'password': 'p',
+                          'advertiser': 'a', 'act_id': '222'}}
+        for name, config in configs.items():
+            with open(os.path.join(str(tmp_path), name), 'w') as f:
+                json.dump(config, f)
+        monkeypatch.setattr(utl, 'config_path', str(tmp_path))
+        monkeypatch.setattr(qtapi, 'config_path', str(tmp_path))
+        pulled = []
+        monkeypatch.setattr(
+            qtapi.QtApi, 'get_data',
+            lambda api, sd=None, ed=None, fields=None: pulled.append(
+                api.act_id) or pd.DataFrame({'Impressions': [1]}))
+        cards = {'API_Quantcast_blank': 'blank.json',
+                 'API_Quantcast_full': 'full.json'}
+        matrix = types.SimpleNamespace(vendor_set=lambda vk: {
+            vmc.apifile: cards[vk], vmc.startdate: dt.datetime(2026, 10, 1),
+            vmc.enddate: dt.datetime(2026, 10, 7), vmc.apifields: None,
+            vmc.apimerge: float('nan')})
+        handler = ih.ImportHandler('all', matrix)
+        written = []
+        monkeypatch.setattr(
+            handler, 'output_source',
+            lambda df, params, step, reach_cols=None: written.append(df))
+        handler.api_calls(list(cards), qtapi.QtApi())
+        assert pulled == ['222']
+        assert len(written) == 1
+        with open(os.path.join(str(tmp_path), utl.run_stats_file)) as f:
+            steps = {x['vendor_key']: x for x in json.load(f)}
+        assert steps['API_Quantcast_blank']['status'] == 'skipped'
+        assert steps['API_Quantcast_blank']['error_text'] == (
+            'Quantcast config blank.json is missing password.  Fill it in '
+            'to pull this card.')
+        assert steps['API_Quantcast_full']['status'] == 'ok'
+
+    def test_yahoo_logs_a_missing_config_name_as_an_error(self, caplog):
+        with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
+            yvapi.YvApi().input_config(float('nan'))
+        assert [x.levelname for x in caplog.records] == ['ERROR']

@@ -49,19 +49,17 @@ class InnApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
-        self.advertiser = self.config['advertiser']
-        self.campaign_filter = self.config['campaign_filter']
-        self.config_list = [self.config, self.username, self.password,
-                            self.advertiser]
+        self.username = self.config.get('username')
+        self.password = self.config.get('password')
+        self.advertiser = self.config.get('advertiser')
+        self.campaign_filter = self.config.get('campaign_filter', '')
+        self.config_list = [('username', self.username),
+                            ('password', self.password),
+                            ('advertiser', self.advertiser)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Innovid config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Innovid')
 
     def set_headers(self):
         user_pass = base64.b64encode(bytes('{}:{}'.format(

@@ -83,20 +83,20 @@ class SzkApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
-        self.api_key = self.config['api_key']
-        self.campaign_ids = self.config['campaign_ids']
-        self.email = self.config['email']
-        self.config_list = [self.config, self.username, self.password,
-                            self.api_key, self.campaign_ids, self.email]
+        self.username = self.config.get('username')
+        self.password = self.config.get('password')
+        self.api_key = self.config.get('api_key')
+        self.campaign_ids = self.config.get('campaign_ids')
+        self.email = self.config.get('email')
+        self.config_list = [('username', self.username),
+                            ('password', self.password),
+                            ('api_key', self.api_key),
+                            ('campaign_ids', self.campaign_ids),
+                            ('email', self.email)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Sizmek config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Sizmek')
 
     def set_headers(self):
         self.headers = {'api-key': self.api_key,

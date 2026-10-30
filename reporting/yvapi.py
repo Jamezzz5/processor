@@ -53,8 +53,8 @@ class YvApi(object):
 
     def input_config(self, config):
         if str(config) == 'nan':
-            logging.warning('Config file name not in vendor matrix.  '
-                            'Aborting.')
+            logging.error('Config file name not in vendor matrix.  '
+                          'Aborting.')
             sys.exit(0)
         logging.info(
             'Loading Yahoo DSP - Verizon config file: {}'.format(config))
@@ -82,18 +82,17 @@ class YvApi(object):
         self.config = config
         self.client_id = config.get('client_id', '')
         self.client_secret = config.get('client_secret', '')
-        self.advertiser = (int(config['advertiser'])
-                           if 'advertiser' in config else '')
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.advertiser]
+        advertiser = config.get('advertiser')
+        blank = utl.blank_config_keys([('advertiser', advertiser)])
+        self.advertiser = '' if blank else int(advertiser)
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('advertiser', self.advertiser)]
         self.campaign_filter = config.get('campaign', self.campaign_filter)
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Yahoo DSP - Verizon config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Yahoo DSP')
 
     def make_request(self, method, url, attempt=1, **kwargs):
         """Sends one request, retrying when the connection breaks.
