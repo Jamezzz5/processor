@@ -386,12 +386,12 @@ class DcApi(object):
                         (True, True, False, True),
                         (True, False, True, False),
                         (True, False, False, True)]
-        if self.original_report_id:
+        if self.path_only:
+            report_types = []
+        elif self.original_report_id:
             self.report_ids.append(self.original_report_id)
             report_types = []
             report_created = True
-        if self.path_only:
-            report_types = []
         for report_type in report_types:
             reach_report = report_type[0]
             no_date = report_type[1]
@@ -507,6 +507,16 @@ class DcApi(object):
             errors='coerce').dt.strftime('%Y-%m-%d')
         return rows.rename(
             columns={x: '{}{}'.format(x, self.path_suffix) for x in metrics})
+
+    def kept_raw_rows(self, df):
+        """Boolean Series over ``df``, the card's old raw file, of the rows
+        an import merge may keep: under pathOnly only those naming a
+        conversion.  Read right after get_data, which sets it per card."""
+        if not self.path_only:
+            return pd.Series(True, index=df.index)
+        if self.path_conversion_id_col not in df.columns:
+            return pd.Series(False, index=df.index)
+        return df[self.path_conversion_id_col].notna()
 
     def check_for_campaign_vendor_dicts(self, tdf):
         """

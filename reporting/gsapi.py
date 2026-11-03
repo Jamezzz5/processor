@@ -22,10 +22,11 @@ LINE_LEADING_PT = 3
 GLYPH_WIDTH_RATIO = .6
 PROSE_GLYPH_RATIO = .52
 TILE_PAD_EMU = 100000
-TILE_HERO_PT = 36
-TILE_HERO_VALUE_H_EMU = 600000
+TILE_HERO_PT = 60
+TILE_HERO_VALUE_H_EMU = 914400
 TILE_MIN_H_EMU = 1370000
-TILE_TEXT_PT = (11, 9, 8)
+TILE_TEXT_PT = (12, 10, 9)
+TILE_VALUE_BIG_PT = 40
 
 
 def _chars_per_line(width, font_pt, glyph=GLYPH_WIDTH_RATIO):
@@ -34,6 +35,26 @@ def _chars_per_line(width, font_pt, glyph=GLYPH_WIDTH_RATIO):
     prose measures at :data:`PROSE_GLYPH_RATIO`."""
     return max(1, int((width - TEXT_INSET_EMU)
                       / (font_pt * EMU_PER_PT * glyph)))
+
+
+def _floored_shares(shares, mins):
+    """``shares`` rescaled to sum to one, each at least its ``mins``
+    entry, or the floors alone rescaled when they overflow."""
+    total_min = sum(mins)
+    if total_min >= 1:
+        return [floor / total_min for floor in mins]
+    fixed = set()
+    while True:
+        free = [i for i in range(len(shares)) if i not in fixed]
+        left = 1 - sum(mins[i] for i in fixed)
+        weight = sum(shares[i] for i in free)
+        out = list(mins)
+        for i in free:
+            out[i] = shares[i] / weight * left if weight else left / len(free)
+        under = {i for i in free if out[i] < mins[i]}
+        if not under:
+            return out
+        fixed |= under
 
 
 def _wrapped_lines(text, width, font_pt, glyph=GLYPH_WIDTH_RATIO):
@@ -93,10 +114,106 @@ def _fit_text(text, width, height, sizes, max_lines=None, spacing=100,
     return FitResult(font_pt, lines, needed, fits)
 
 
-def _hero_fits(tiles, width):
-    """Whether every tile value sets on one line at ``TILE_HERO_PT``."""
-    chars = _chars_per_line(width, TILE_HERO_PT)
+def _ladder_pt(text, width, sizes, max_lines, height=None):
+    """The largest step of ``sizes`` keeping ``text`` to ``max_lines``
+    lines of bare line pitch standing in ``height``, else the floor."""
+    for font_pt in sizes:
+        lines = _wrapped_lines(text, width, font_pt)
+        if lines > max_lines:
+            continue
+        if height is None or lines * _line_pitch(font_pt) <= height:
+            return font_pt
+    return sizes[-1]
+
+
+def _values_fit(tiles, width, font_pt):
+    """Whether every tile value sets on one line at ``font_pt``."""
+    chars = _chars_per_line(width, font_pt)
     return all(len(str(tile.get('value') or '')) <= chars for tile in tiles)
+
+
+def _value_box_h(font_pt):
+    """EMU a one-line tile value takes; display sizes sit tighter."""
+    factor = 1.2 if font_pt > TILE_VALUE_BIG_PT else 1.36
+    return int(font_pt * factor * EMU_PER_PT)
+
+
+def _lines_fit(height, font_pt, spacing=100):
+    """How many lines at ``font_pt`` stand in a ``height`` box after its
+    insets."""
+    return int((height - TEXT_INSET_EMU) // _line_pitch(font_pt, spacing))
+
+
+def _leading_fit(items, sizes, budget):
+    """``(kept, used)``: the leading ``items`` whose ``sizes`` sum within
+    ``budget``, always at least one, and what they take of it."""
+    kept, used = [], 0
+    for item, size in zip(items, sizes):
+        if kept and used + size > budget:
+            break
+        kept.append(item)
+        used += size
+    return kept, used
+
+
+def _fact_pairs(facts):
+    """``[(label, [line, ...])]`` from a parameters slide's ``facts``,
+    without blank labels and lines."""
+    pairs = [(str(fact.get('label') or '').strip(),
+              [str(line) for line in fact.get('lines') or []
+               if str(line or '').strip()]) for fact in facts or []]
+    return [pair for pair in pairs if any(pair)]
+
+
+def _clip_pairs(pairs, width, font_pt, max_lines):
+    """The leading facts of ``pairs``, lines cut, within ``max_lines`` of
+    a ``width`` box, counting each label and the gap before it a line."""
+    kept, used = [], 0
+    for label, lines in pairs:
+        need = (1 if kept else 0) + (1 if label else 0)
+        if kept and used + need >= max_lines:
+            break
+        used += need
+        fit_lines, taken = _leading_fit(
+            lines, [_wrapped_lines(line, width, font_pt) for line in lines],
+            max_lines - used)
+        used += taken
+        kept.append((label, fit_lines))
+        if used >= max_lines:
+            break
+    return kept
+
+
+def _luminance(rgb):
+    """WCAG relative luminance of a 0-1 ``{'red', 'green', 'blue'}``."""
+    red, green, blue = (v / 12.92 if v <= 0.03928
+                        else ((v + 0.055) / 1.055) ** 2.4
+                        for v in (rgb['red'], rgb['green'], rgb['blue']))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _contrast(fore, back):
+    """WCAG contrast ratio between two 0-1 colours."""
+    high, low = sorted((_luminance(fore), _luminance(back)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _composite(fill, alpha, under):
+    """``fill`` at ``alpha`` laid over ``under``, the colour a reader
+    sees."""
+    if alpha is None:
+        return dict(fill)
+    return {key: alpha * fill[key] + (1 - alpha) * under[key]
+            for key in ('red', 'green', 'blue')}
+
+
+def _solid_fill(color, alpha, field):
+    """``(solidFill, fields)`` filling ``field`` with ``color``; alpha is
+    only sent when set, since the API rejects it on an opaque fill."""
+    if alpha is None:
+        return {'color': {'rgbColor': color}}, f'{field}.solidFill.color'
+    return ({'color': {'rgbColor': color}, 'alpha': alpha},
+            f'{field}.solidFill.color,{field}.solidFill.alpha')
 
 
 TABLE_CELL_PAD_EMU = 91440
@@ -104,24 +221,82 @@ TABLE_LINE_RATIO = 1.25
 TABLE_ROW_MIN_EMU = 340000
 
 
-def _table_row_height(row, width, font_pt, columns=None):
-    """Reserve native cell wrapping plus Slides' fixed 0.1in cell insets;
-    ``columns`` is the header's width when a row is shorter."""
-    cell_w = width / max(1, columns or len(row))
-    lines = max((_wrapped_lines(value, cell_w, font_pt)
-                 for value in row if value), default=1)
-    return max(TABLE_ROW_MIN_EMU,
+def _table_row_height(row, widths, font_pt, row_min=TABLE_ROW_MIN_EMU):
+    """Reserve native cell wrapping plus Slides' fixed 0.1in cell insets
+    for a row whose cells sit in columns of ``widths``."""
+    lines = max((_wrapped_lines(value, width, font_pt)
+                 for value, width in zip(row, widths) if value), default=1)
+    return max(row_min,
                int(lines * font_pt * TABLE_LINE_RATIO * EMU_PER_PT
                    + 2 * TABLE_CELL_PAD_EMU))
 
 
-def _tile_block_heights(tile, width):
+def _table_heights(header, rows, widths, head_pt, body_pt,
+                   row_min=TABLE_ROW_MIN_EMU):
+    """``(header height, [row heights])`` of a table in columns of
+    ``widths``."""
+    return (_table_row_height(header, widths, head_pt, row_min),
+            [_table_row_height(row, widths, body_pt, row_min)
+             for row in rows])
+
+
+def _clip_rows(rows, widths, font_pt, row_h):
+    """``rows`` with every cell cut on a word to the lines a ``row_h``
+    table row holds."""
+    lines = max(1, int((row_h - 2 * TABLE_CELL_PAD_EMU)
+                       // (font_pt * TABLE_LINE_RATIO * EMU_PER_PT)))
+    return [[_clip_lines(cell, width, font_pt, lines)
+             for cell, width in zip(row, widths)] for row in rows]
+
+
+TABLE_WIDTH_CAP_CHARS = 40
+TABLE_COL_MIN_EMU = 406400
+
+
+def _longest_word_emu(cells, font_pt):
+    """EMU the longest word in any of ``cells`` needs at ``font_pt``,
+    insets included, so a column that wide never breaks it mid-word."""
+    longest = max((len(word) for cell in cells
+                   for word in str(cell or '').split()), default=0)
+    return (longest * font_pt * EMU_PER_PT * GLYPH_WIDTH_RATIO
+            + TEXT_INSET_EMU)
+
+
+def _weighted_widths(width, weights, mins):
+    """``width`` split by ``weights``, each part at least its ``mins``
+    share, the rounding left on the last so the parts sum exactly."""
+    total = sum(weights)
+    shares = [weight / total if total else 1 / len(weights)
+              for weight in weights]
+    widths = [int(width * share) for share in _floored_shares(shares, mins)]
+    widths[-1] += width - sum(widths)
+    return widths
+
+
+def _table_widths(header, rows, width, head_pt, body_pt):
+    """EMU per column: each at least its longest word and the API's 32pt
+    floor, the rest by longest cell; equal when the floors overflow."""
+    if not header:
+        return []
+    columns = [[head] + [row[c] for row in rows if c < len(row)]
+               for c, head in enumerate(header)]
+    mins = [max(TABLE_COL_MIN_EMU, _longest_word_emu([head], head_pt),
+                _longest_word_emu(cells, body_pt)) / width
+            for head, *cells in columns]
+    if sum(mins) >= 1:
+        return [width / len(header)] * len(header)
+    weights = [min(max(len(str(cell or '')) for cell in column),
+                   TABLE_WIDTH_CAP_CHARS) for column in columns]
+    return _weighted_widths(width, weights, mins)
+
+
+def _tile_block_heights(tile, width, sizes=TILE_TEXT_PT):
     """``(label, caption, note)`` heights for one stat tile's text — read
     once to size the grid and again to place each block, so the two
     cannot drift apart and overlap."""
     return tuple(_block_height(tile.get(key), width, font_pt)
                  for key, font_pt in zip(('label', 'caption', 'note'),
-                                         TILE_TEXT_PT))
+                                         sizes))
 
 
 def _fit_rows(rows, heights, budget):
@@ -580,36 +755,48 @@ class GsApi(object):
     DECK_BAD_DARK = {'red': 0.973, 'green': 0.443, 'blue': 0.443}
     DECK_CARD_ALPHA_DARK = 0.10
     DECK_RULE_DARK = {'red': 0.290, 'green': 0.361, 'blue': 0.510}
-    CONTENT_TOP_EMU = 980000
+    CONTENT_TOP_EMU = 1000000
     CONTENT_TOP_DARK_EMU = 1180000
-    SUPPORTS_SUBHEAD = True
-    SUBHEAD_H_EMU = 380000
-    SUBHEAD_H_LIGHT_EMU = 220000
+    EYEBROW_Y_EMU = 100000
+    EYEBROW_H_EMU = 200000
+    HEADING_DARK_EMU = (300000, 560000, 820000, 320000)
+    HEADING_LIGHT_EMU = (160000, 460000, 840000, 380000)
     TEMPLATE_LAYOUT_STEM = 'CUSTOM_14'
-    TITLE_BLOCK_Y_EMU = 3950000
+    TITLE_BLOCK_Y_EMU = 2260000
     TITLE_BLOCK_W_EMU = 5900000
+    TITLE_BLOCK_H_EMU = 900000
+    COVER_TITLE_PT = (36, 32, 28)
     SECTION_X_EMU = 1600200
     CAPTION_H_EMU = 340000
-    CAPTION_PT = 11
+    CAPTION_PT = 12
     CAPTION_GAP_EMU = 80000
     CAPTION_FOOT_EMU = 380000
     BODY_FOOT_EMU = 420000
     SOURCE_PT = 7.5
     SOURCE_H_EMU = 230000
     HEADLINE_LINES = 2
-    HEADLINE_PT_DARK = (22, 20, 18)
-    HEADLINE_PT_LIGHT = (20, 18, 16)
-    SUBHEAD_PT_DARK = (12, 11, 10)
-    SUBHEAD_PT_LIGHT = (11, 10, 9)
-    NARRATIVE_PT = (15, 14, 13, 12)
+    HEADLINE_PT_DARK = (36, 32, 28, 24, 22)
+    HEADLINE_PT_LIGHT = (32, 28, 24, 22, 20)
+    STATEMENT_PT = (24, 22, 20, 18)
+    SUBHEAD_PT_DARK = (14, 13, 12)
+    SUBHEAD_PT_LIGHT = (13, 12, 11)
+    NARRATIVE_PT = (16, 15, 14)
     NARRATIVE_SPACING = 115
     NARRATIVE_SPACE_BELOW_PT = 4
-    RAIL_PT = (10, 9)
-    STAT_PT = (11, 10, 9)
+    RAIL_PT = (12, 11, 10)
+    STAT_PT = (14, 12, 11)
     CARD_HEAD_PT = (13, 12, 11)
-    CARD_BODY_PT = (10, 9)
-    TILE_VALUE_PT_LADDER = (26, 22, 18)
+    CARD_BODY_PT = (12, 11, 10)
+    CARD_STAT_PT = (24, 20, 18)
+    TILE_VALUE_PT_LADDER = (56, 48, 40, 32, 26, 22, 18)
     TOC_PT = (14, 12)
+    TABLE_HEAD_PT = 12
+    TABLE_BODY_PT = 11
+    TABLE_SHORT_ROWS = 6
+    TABLE_SHORT_SHARE = 0.55
+    TABLE_SHORT_HEAD_PT = 14
+    TABLE_SHORT_BODY_PT = 13
+    TABLE_SHORT_ROW_MIN_EMU = 457200
 
     def _note_fit(self, slide_id, slot, fit):
         """Record a block that does not fit at the ladder's floor on
@@ -620,16 +807,18 @@ class GsApi(object):
         self.fit_warnings.append((slide_id, slot, fit.lines, fit.pt))
 
     @classmethod
-    def body_box(cls, dark):
-        """``(x, y, w, h)`` EMU of a content slide's body."""
+    def body_box(cls, dark, stats=False):
+        """``(x, y, w, h)`` EMU of a content slide's body, above the stat
+        bar's band when ``stats``."""
         top = cls._content_top(dark)
+        band = cls.STORY_STAT_H_EMU + cls.STORY_GAP_EMU if stats else 0
         return (cls.MARGIN_EMU, top, cls.PAGE_W_EMU - 2 * cls.MARGIN_EMU,
-                cls.PAGE_H_EMU - top - cls.BODY_FOOT_EMU)
+                cls.PAGE_H_EMU - top - cls.BODY_FOOT_EMU - band)
 
     @classmethod
-    def fit_body(cls, text, dark):
+    def fit_body(cls, text, dark, stats=False):
         """How a narrative sets in the body box, before the deck exists."""
-        _, _, width, height = cls.body_box(dark)
+        _, _, width, height = cls.body_box(dark, stats)
         return cls._fit_prose(text, width, height, cls.NARRATIVE_PT)
 
     @classmethod
@@ -658,14 +847,17 @@ class GsApi(object):
 
     @classmethod
     def table_row_groups(cls, header, rows, dark, caption=None,
-                         narrative=False):
+                         narrative=False, stats=False, widths=None):
         """``rows`` split into the groups :meth:`add_table_slide` draws a
-        slide each, so a caller can count a table's slides first."""
-        _, _, width, body_h = cls.story_chart_box(dark, bool(narrative))
+        slide each, laid out on ``widths`` when a continuation keeps them."""
+        _, _, width, body_h = cls.story_chart_box(dark, bool(narrative),
+                                                  bool(stats))
+        widths = widths or _table_widths(header, rows, width,
+                                         cls.TABLE_HEAD_PT, cls.TABLE_BODY_PT)
+        head_h, heights = _table_heights(header, rows, widths,
+                                         cls.TABLE_HEAD_PT, cls.TABLE_BODY_PT)
         budget = (body_h - cls._caption_reserve(caption, width, body_h)
-                  - _table_row_height(header, width, 11))
-        heights = [_table_row_height(row, width, 10, len(header))
-                   for row in rows]
+                  - head_h)
         return _fit_rows(rows, heights, budget)
 
     @classmethod
@@ -684,15 +876,21 @@ class GsApi(object):
         accent on dark slides."""
         brand = brand or {}
         if self.is_dark:
-            return {'accent': brand.get('accent') or self.DECK_ACCENT_DARK,
-                    'ink': self.DECK_WHITE,
-                    'muted': self.DECK_MUTED_LIGHT,
-                    'card': self.DECK_WHITE,
-                    'card_alpha': self.DECK_CARD_ALPHA_DARK}
+            return self._art_colors(brand)
         return {'accent': brand.get('accent') or self.DECK_ACCENT,
                 'ink': brand.get('ink') or self.DECK_INK,
                 'muted': brand.get('muted') or self.DECK_MUTED,
                 'card': brand.get('card') or self.DECK_CARD}
+
+    def _art_colors(self, brand):
+        """The palette for anything drawn over the ink field, whatever
+        the deck's theme."""
+        brand = brand or {}
+        return {'accent': brand.get('accent') or self.DECK_ACCENT_DARK,
+                'ink': self.DECK_WHITE,
+                'muted': self.DECK_MUTED_LIGHT,
+                'card': self.DECK_WHITE,
+                'card_alpha': self.DECK_CARD_ALPHA_DARK}
 
     CONTINUED_SUFFIX = ' (continued)'
 
@@ -701,6 +899,12 @@ class GsApi(object):
         title = str(title or '')
         return title if title.endswith(self.CONTINUED_SUFFIX) \
             else f'{title}{self.CONTINUED_SUFFIX}'
+
+    def _part(self, slide_id, title, index):
+        """``(slide id, title)`` of part ``index`` of a continued slide."""
+        if not index:
+            return slide_id, title
+        return f'{slide_id}part{index}', self._continued(title)
 
     @classmethod
     def _content_top(cls, dark):
@@ -712,15 +916,18 @@ class GsApi(object):
         return self._content_top(self.is_dark)
 
     @classmethod
-    def story_chart_box(cls, dark, narrative=True, stats=False):
-        """``(x, y, w, h)`` EMU of the chart in a chart-story slide, for
-        sizing a capture before the deck exists."""
-        cx, cw = cls.MARGIN_EMU, cls.PAGE_W_EMU - 2 * cls.MARGIN_EMU
-        top = cls._content_top(dark)
-        body_h = cls.PAGE_H_EMU - top - cls.BODY_FOOT_EMU
-        chart_w = int(cw * cls.STORY_CHART_SHARE) if narrative else cw
-        stat_h = (cls.STORY_STAT_H_EMU + cls.STORY_GAP_EMU) if stats else 0
-        return cx, top, chart_w, body_h - stat_h
+    def story_chart_box(cls, dark, narrative=True, stats=False,
+                        split=False):
+        """``(x, y, w, h)`` EMU of a chart-story slide's chart, for sizing
+        a capture early; ``split`` centres it between two rails."""
+        cx, top, cw, body_h = cls.body_box(dark, stats)
+        if not narrative:
+            return cx, top, cw, body_h
+        share = cls.STORY_SPLIT_SHARE if split else cls.STORY_CHART_SHARE
+        chart_w = int(cw * share)
+        if split:
+            cx += (cw - chart_w) // 2
+        return cx, top, chart_w, body_h
 
     @classmethod
     def chart_image_box(cls, dark, title=True, caption=True,
@@ -735,16 +942,23 @@ class GsApi(object):
                   - (caption_h or cls.CAPTION_H_EMU))
         return cx, top, cw, bottom - top
 
-    def headline_pt(self, title, width=None, lines=HEADLINE_LINES):
+    def headline_pt(self, title, width=None, lines=HEADLINE_LINES,
+                    height=None):
         """The largest step of the headline ladder that keeps ``title``
-        to ``lines`` lines, else the ladder's floor."""
+        to ``lines`` lines standing in ``height``, else the floor."""
         if width is None:
             width = self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         sizes = (self.HEADLINE_PT_DARK if self.is_dark
                  else self.HEADLINE_PT_LIGHT)
-        return next((size for size in sizes
-                     if _wrapped_lines(title, width, size) <= lines),
-                    sizes[-1])
+        return _ladder_pt(str(title or ''), width, sizes, lines, height)
+
+    def _title_box(self, title, width, lines, one_h, two_h):
+        """``(pt, h)`` of a content title: the one-line box when it fits
+        one line or sits over a subhead, else the two-line box."""
+        one_pt = self.headline_pt(title, width, 1, one_h)
+        if lines <= 1 or _wrapped_lines(title, width, one_pt) <= 1:
+            return one_pt, one_h
+        return self.headline_pt(title, width, lines, two_h), two_h
 
     def slides_batch_update(self, presentation_id, requests):
         """POST a Slides batchUpdate and record whether it applied."""
@@ -808,19 +1022,23 @@ class GsApi(object):
     def _text_box_reqs(self, slide_id, shape_id, text, x, y, w, h,
                        font_pt=18, bold=False, align='START', color=None,
                        font=None, italic=False):
+        """A text box with one style over all its text; an empty box gets
+        none, since Slides rejects a style on an empty range."""
         ink = self.DECK_WHITE if self.is_dark else self.DECK_INK
         style = {'fontSize': {'magnitude': font_pt, 'unit': 'PT'},
                  'bold': bold, 'italic': italic,
                  'fontFamily': font or self.deck_font,
                  'foregroundColor': {'opaqueColor': {
                      'rgbColor': color or ink}}}
-        return [
-            {'createShape': {
-                'objectId': shape_id, 'shapeType': 'TEXT_BOX',
-                'elementProperties': self._elem_props(slide_id, w, h, x, y)}},
+        reqs = [{'createShape': {
+            'objectId': shape_id, 'shapeType': 'TEXT_BOX',
+            'elementProperties': self._elem_props(slide_id, w, h, x, y)}}]
+        if not text:
+            return reqs
+        return reqs + [
             {'insertText': {
                 'objectId': shape_id, 'insertionIndex': 0,
-                'text': text or ''}},
+                'text': str(text)}},
             {'updateTextStyle': {
                 'objectId': shape_id, 'style': style,
                 'textRange': {'type': 'ALL'},
@@ -873,83 +1091,115 @@ class GsApi(object):
 
     def _template_title_slide(self, presentation_id, meta, slide_id,
                               colors):
-        """Place title and logos on the template cover, optionally
-        replacing its art."""
+        """The template cover: title (or ``game_logo_url``) on a plate, the
+        publisher mark bottom-left and, over art, the house mark right."""
         reqs = [self._blank_slide_req(slide_id, 'title')]
         art = meta.get('image_url')
         reqs += self._art_field_reqs(slide_id, colors, art,
-                                     meta.get('img_w'), meta.get('img_h'))
-        if art and meta.get('house_logo_url'):
-            reqs += self._logo_plate_reqs(
-                slide_id, f'{slide_id}house', meta['house_logo_url'],
-                (self.PAGE_W_EMU - self.LOGO_W_EMU) // 2, 1500000)
-        block_x = self.PAGE_W_EMU - self.MARGIN_EMU - self.TITLE_BLOCK_W_EMU
+                                     meta.get('img_w'), meta.get('img_h'),
+                                     meta.get('focus'))
+        block_w = self.TITLE_BLOCK_W_EMU
+        block_x = self.PAGE_W_EMU - self.MARGIN_EMU - block_w
         y = self.TITLE_BLOCK_Y_EMU
-        reqs += self._text_box_reqs(
-            slide_id, f'{slide_id}t', meta.get('title', ''),
-            block_x, y, self.TITLE_BLOCK_W_EMU, 420000, font_pt=20,
-            bold=True, align='END', color=self.DECK_WHITE)
-        reqs += self._text_box_reqs(
-            slide_id, f'{slide_id}s', meta.get('subtitle', ''),
-            block_x, y + 430000, self.TITLE_BLOCK_W_EMU, 300000, font_pt=12,
-            align='END', color=self.DECK_MUTED_LIGHT)
+        sub_y = y + self.TITLE_BLOCK_H_EMU
+        sub_h, foot_h = 300000, 260000
         foot = ' · '.join(s for s in (meta.get('brand', ''),
                                       meta.get('legal', '')) if s)
+        if art:
+            reqs += self._text_plate_reqs(
+                slide_id, y,
+                self.TITLE_BLOCK_H_EMU + sub_h + (foot_h if foot else 0))
+        if meta.get('game_logo_url'):
+            _, gy, gw, gh = self._fit_box(
+                meta.get('game_logo_w'), meta.get('game_logo_h'),
+                block_x, y, block_w, self.TITLE_BLOCK_H_EMU)
+            reqs += self._image_reqs(slide_id, f'{slide_id}gl',
+                                     meta['game_logo_url'],
+                                     block_x + block_w - gw, gy, gw, gh)
+        else:
+            title = str(meta.get('title', '') or '')
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}t', title, block_x, y, block_w,
+                self.TITLE_BLOCK_H_EMU,
+                font_pt=_ladder_pt(title, block_w, self.COVER_TITLE_PT, 2,
+                                   self.TITLE_BLOCK_H_EMU),
+                bold=True, align='END', color=self.DECK_WHITE)
+        reqs += self._text_box_reqs(
+            slide_id, f'{slide_id}s', meta.get('subtitle', ''),
+            block_x, sub_y, block_w, sub_h, font_pt=14,
+            align='END', color=self.DECK_MUTED_LIGHT)
         if foot:
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}legal', foot, block_x, y + 750000,
-                self.TITLE_BLOCK_W_EMU, 260000, font_pt=8, align='END',
+                slide_id, f'{slide_id}legal', foot, block_x, sub_y + sub_h,
+                block_w, foot_h, font_pt=8, align='END',
                 color=self.DECK_MUTED_LIGHT)
+        logo_y = self.PAGE_H_EMU - self.LOGO_H_EMU - self.LOGO_CLEAR_EMU
         if meta.get('logo_url'):
             reqs += self._logo_plate_reqs(
                 slide_id, f'{slide_id}logo', meta['logo_url'],
-                self.MARGIN_EMU + 91440,
-                self.PAGE_H_EMU - self.LOGO_H_EMU - 500000)
+                self.MARGIN_EMU, logo_y, img_w=meta.get('logo_w'),
+                img_h=meta.get('logo_h'))
+        if art and meta.get('house_logo_url'):
+            reqs += self._logo_plate_reqs(
+                slide_id, f'{slide_id}house', meta['house_logo_url'],
+                self.PAGE_W_EMU - self.MARGIN_EMU - self.LOGO_W_EMU, logo_y,
+                img_w=meta.get('house_logo_w'),
+                img_h=meta.get('house_logo_h'))
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def add_section_slide(self, presentation_id, slide_id, heading,
                           brand=None, eyebrow=None, note=None,
-                          image_url=None, img_w=None, img_h=None):
-        """Build a divider with optional eyebrow, note and background art."""
+                          image_url=None, img_w=None, img_h=None,
+                          focus=None):
+        """Build a divider with optional eyebrow, note and background art,
+        cropped to ``focus``, the heading block on a plate over art."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id, 'section')]
         reqs += self._art_field_reqs(slide_id, colors, image_url,
-                                     img_w, img_h)
+                                     img_w, img_h, focus)
         align = 'START' if self.is_dark else 'CENTER'
         if self.is_dark:
             cx = self.SECTION_X_EMU
             cw = self.PAGE_W_EMU - 2 * self.SECTION_X_EMU
         head_h = 1100000 if eyebrow else 700000
         head_y = (self.PAGE_H_EMU - head_h) // 2 - 137160
+        eyebrow_y = head_y - 400000
+        rule_y = head_y + head_h + 91440
+        note_y, note_h = rule_y + 150000, 400000
+        if image_url:
+            block_top = eyebrow_y if eyebrow else head_y
+            block_end = note_y + note_h if note else head_y + head_h
+            reqs += self._text_plate_reqs(slide_id, block_top,
+                                          block_end - block_top, 91440)
         if eyebrow:
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}e', eyebrow, cx, head_y - 400000,
+                slide_id, f'{slide_id}e', eyebrow, cx, eyebrow_y,
                 cw, 340000, font_pt=12, bold=True, align=align,
                 color=colors['accent'])
+        head_pt = (_ladder_pt(heading or '', cw, self.STATEMENT_PT, 3, head_h)
+                   if eyebrow else 28)
         reqs += self._text_box_reqs(
-            slide_id, f'{slide_id}t', heading or '',
-            cx, head_y, cw, head_h,
-            font_pt=24 if eyebrow else 28, bold=True, align=align,
-            color=self.DECK_WHITE)
+            slide_id, f'{slide_id}t', heading or '', cx, head_y, cw, head_h,
+            font_pt=head_pt, bold=True, align=align, color=self.DECK_WHITE)
         rule_w = 2057400
-        rule_y = head_y + head_h + 91440
         if not self.is_dark:
             reqs += self._rect_reqs(
                 slide_id, f'{slide_id}rule', (self.PAGE_W_EMU - rule_w) // 2,
                 rule_y, rule_w, 45720, colors['accent'])
         if note:
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}n', note, cx, rule_y + 150000,
-                cw, 400000, font_pt=12, align=align,
+                slide_id, f'{slide_id}n', note, cx, note_y,
+                cw, note_h, font_pt=12, align=align,
                 color=self.DECK_MUTED_LIGHT)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
     def add_closing_slide(self, presentation_id, slide_id, heading,
                           logos=None, legal=None, brand=None,
-                          image_url=None, img_w=None, img_h=None):
+                          image_url=None, img_w=None, img_h=None,
+                          focus=None):
         """The deck's last slide: a thank-you on the art field over
         ``logos`` (``[publisher_url, liquid_url]``, either None) and the
         legal line."""
@@ -957,21 +1207,23 @@ class GsApi(object):
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id, 'section')]
         reqs += self._art_field_reqs(slide_id, colors, image_url,
-                                     img_w, img_h)
+                                     img_w, img_h, focus)
+        head_y, head_h = 1700000, 900000
+        if image_url:
+            reqs += self._text_plate_reqs(slide_id, head_y, head_h)
         reqs += self._text_box_reqs(
             slide_id, f'{slide_id}t', heading or 'Thank you',
-            cx, 1700000, cw, 900000, font_pt=36, bold=True,
+            cx, head_y, cw, head_h, font_pt=36, bold=True,
             align='CENTER', color=self.DECK_WHITE)
-        logo_y = self.PAGE_H_EMU - 1150000
+        logo_y = self.PAGE_H_EMU - self.LOGO_H_EMU - 640000
         left, right = (list(logos or []) + [None, None])[:2]
         if left:
             reqs += self._logo_plate_reqs(slide_id, f'{slide_id}l', left,
-                                          cx + 91440, logo_y)
+                                          cx, logo_y)
         if right:
             reqs += self._logo_plate_reqs(
                 slide_id, f'{slide_id}r', right,
-                self.PAGE_W_EMU - self.MARGIN_EMU - self.LOGO_W_EMU - 91440,
-                logo_y)
+                self.PAGE_W_EMU - self.MARGIN_EMU - self.LOGO_W_EMU, logo_y)
         if legal:
             reqs += self._text_box_reqs(
                 slide_id, f'{slide_id}legal', legal, cx,
@@ -982,10 +1234,11 @@ class GsApi(object):
 
     def add_narrative_slide(self, presentation_id, slide_id, title, text,
                             brand=None, footer=None, page=None, rich=None,
-                            eyebrow=None, subhead=None, source=None):
-        """Build a native text slide with optional bold and bullet ranges."""
+                            eyebrow=None, subhead=None, source=None,
+                            stats=None):
+        """A native text slide with optional bold and bullet ranges and a
+        ``stats`` bar (``[(value, label), ...]``) under the text."""
         colors = self._brand_colors(brand)
-        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         body_id = f'{slide_id}b'
         body_text = (rich or {}).get('text') or text or ''
         reqs = [self._blank_slide_req(slide_id)]
@@ -993,15 +1246,16 @@ class GsApi(object):
                                           footer=footer, page=page,
                                           eyebrow=eyebrow, subhead=subhead,
                                           source=source)
-        top = self.content_top()
-        fit = self.fit_body(body_text, self.is_dark)
+        cx, top, cw, text_h = self.body_box(self.is_dark, bool(stats))
+        fit = self.fit_body(body_text, self.is_dark, bool(stats))
         self._note_fit(slide_id, 'body', fit)
         reqs += self._text_box_reqs(
-            slide_id, body_id, body_text, cx, top,
-            cw, self.PAGE_H_EMU - top - self.BODY_FOOT_EMU, font_pt=fit.pt,
-            align='START', color=colors['ink'])
+            slide_id, body_id, body_text, cx, top, cw, text_h,
+            font_pt=fit.pt, align='START', color=colors['ink'])
         if body_text:
             reqs.append(self._prose_spacing_req(body_id))
+        if stats:
+            reqs += self._stat_bar_reqs(slide_id, stats, cx, cw, colors)
         for start, end in (rich or {}).get('bold_ranges') or []:
             if end > start:
                 reqs.append({'updateTextStyle': {
@@ -1011,11 +1265,7 @@ class GsApi(object):
                     'fields': 'bold'}})
         for start, end in (rich or {}).get('bullet_ranges') or []:
             if end > start:
-                reqs.append({'createParagraphBullets': {
-                    'objectId': body_id,
-                    'textRange': {'type': 'FIXED_RANGE',
-                                  'startIndex': start, 'endIndex': end},
-                    'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'}})
+                reqs.append(self._bullets_req(body_id, start, end))
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -1089,11 +1339,7 @@ class GsApi(object):
         """A filled shape (no outline) — the card behind a stat tile, the
         band behind a section heading, the ink field behind a cover;
         ``alpha`` (0-1) makes it translucent."""
-        fill = {'color': {'rgbColor': fill_color}}
-        fields = 'shapeBackgroundFill.solidFill.color'
-        if alpha is not None:
-            fill['alpha'] = alpha
-            fields += ',shapeBackgroundFill.solidFill.alpha'
+        fill, fields = _solid_fill(fill_color, alpha, 'shapeBackgroundFill')
         return [
             {'createShape': {
                 'objectId': shape_id, 'shapeType': shape_type,
@@ -1123,22 +1369,27 @@ class GsApi(object):
                 'fields': 'outline'}})
         return reqs
 
-    def _cover_fit(self, img_w, img_h):
-        """``(x, y, w, h)`` that covers the page without distortion,
-        centred; unknown dimensions read as 16:9."""
+    def _cover_fit(self, img_w, img_h, focus=None):
+        """``(x, y, w, h)`` covering the page undistorted, cropped at
+        ``focus`` (0-1 ``(fx, fy)``, centred by default); unknown is 16:9."""
         img_w, img_h = img_w or 16, img_h or 9
+        fx, fy = focus or (0.5, 0.5)
         scale = max(self.PAGE_W_EMU / float(img_w),
                     self.PAGE_H_EMU / float(img_h))
         draw_w, draw_h = img_w * scale, img_h * scale
-        return (int((self.PAGE_W_EMU - draw_w) / 2),
-                int((self.PAGE_H_EMU - draw_h) / 2),
+        return (int((self.PAGE_W_EMU - draw_w) * fx),
+                int((self.PAGE_H_EMU - draw_h) * fy),
                 int(draw_w), int(draw_h))
 
-    ART_VEIL_ALPHA = 0.72
-    LOGO_W_EMU, LOGO_H_EMU = 1524000, 508000
+    ART_VEIL_ALPHA = 0.55
+    ART_PLATE_ALPHA = 0.6
+    ART_PLATE_PAD_EMU = 137160
+    LOGO_W_EMU, LOGO_H_EMU = 2057400, 685800
+    LOGO_CLEAR_EMU = 228600
+    LOGO_PAD_EMU = 91440
 
     def _art_field_reqs(self, slide_id, colors, image_url=None,
-                        img_w=None, img_h=None):
+                        img_w=None, img_h=None, focus=None):
         """The field behind a dark slide: full-bleed art under a
         translucent ink veil, else plain ink — or nothing at all on a
         template layout, whose own art is the field."""
@@ -1146,7 +1397,7 @@ class GsApi(object):
         if not image_url and self.is_dark:
             return reqs
         if image_url:
-            x, y, w, h = self._cover_fit(img_w, img_h)
+            x, y, w, h = self._cover_fit(img_w, img_h, focus)
             reqs += self._image_reqs(slide_id, f'{slide_id}art', image_url,
                                      x, y, w, h)
         reqs += self._rect_reqs(
@@ -1155,17 +1406,26 @@ class GsApi(object):
             alpha=self.ART_VEIL_ALPHA if image_url else None)
         return reqs
 
-    def _logo_plate_reqs(self, slide_id, shape_id, logo_url, x, y):
-        """A brand mark at ``(x, y)`` on a white plate, so any colourway
-        reads on the dark field."""
-        lw, lh = self.LOGO_W_EMU, self.LOGO_H_EMU
-        pad = 91440  # 0.1" plate padding
+    def _text_plate_reqs(self, slide_id, y, h, pad=ART_PLATE_PAD_EMU):
+        """A translucent ink plate across the page behind the heading
+        block at ``y``, ``h`` tall, so the words read over any art."""
+        return self._rect_reqs(slide_id, f'{slide_id}plate', 0, y - pad,
+                               self.PAGE_W_EMU, h + 2 * pad, self.DECK_INK,
+                               alpha=self.ART_PLATE_ALPHA)
+
+    def _logo_plate_reqs(self, slide_id, shape_id, logo_url, x, y, w=None,
+                         h=None, img_w=None, img_h=None):
+        """A brand mark on a white plate at ``(x, y)``, ``w`` by ``h`` (the
+        kit's logo box by default), kept to its aspect when that is known."""
+        lw, lh = w or self.LOGO_W_EMU, h or self.LOGO_H_EMU
+        pad = self.LOGO_PAD_EMU
         reqs = self._rect_reqs(
             slide_id, f'{shape_id}plate', x - pad, y - pad,
             lw + 2 * pad, lh + 2 * pad, self.DECK_WHITE,
             shape_type='ROUND_RECTANGLE')
         return reqs + self._image_reqs(slide_id, shape_id, logo_url,
-                                       x, y, lw, lh)
+                                       *self._fit_box(img_w, img_h, x, y, lw,
+                                                      lh))
 
     PPTX_MIME = ('application/vnd.openxmlformats-officedocument'
                  '.presentationml.presentation')
@@ -1191,39 +1451,9 @@ class GsApi(object):
         runs small and italic above the footer."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = []
-        lines = 1 if subhead else self.HEADLINE_LINES
-        subhead, subhead_pt = self._subhead_line(subhead, cw)
-        if title and self.is_dark:
-            if eyebrow:
-                reqs += self._text_box_reqs(
-                    slide_id, f'{slide_id}e', str(eyebrow).upper(), cx,
-                    120000, cw, 220000, font_pt=8, bold=True,
-                    align='START', color=colors['muted'],
-                    font=self.eyebrow_font)
-            title_h = 420000 if subhead else 780000
-            reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}t', title, cx, 330000, cw, title_h,
-                font_pt=self.headline_pt(title, cw, lines), bold=True,
-                align='START', color=colors['ink'])
-            if subhead:
-                reqs += self._text_box_reqs(
-                    slide_id, f'{slide_id}sh', subhead, cx, 330000 + title_h,
-                    cw, self.SUBHEAD_H_EMU, font_pt=subhead_pt, align='START',
-                    color=colors['ink'])
-        elif title:
-            title_h = 320000 if subhead else 520000
-            reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}t', title, cx, 228600, cw, title_h,
-                font_pt=self.headline_pt(title, cw, lines), bold=True,
-                align='START', color=colors['ink'])
-            if subhead:
-                reqs += self._text_box_reqs(
-                    slide_id, f'{slide_id}sh', subhead, cx, 228600 + title_h,
-                    cw, self.SUBHEAD_H_LIGHT_EMU, font_pt=subhead_pt,
-                    align='START', color=colors['ink'])
-            rule_y = 850000 if subhead else 800100
-            reqs += self._rect_reqs(slide_id, f'{slide_id}rule', cx, rule_y,
-                                    cw, 22860, colors['accent'])
+        if title:
+            reqs += self._heading_reqs(slide_id, title, colors, eyebrow,
+                                       subhead)
         foot_y, foot_w = self.PAGE_H_EMU - 320000, cw - 700000
         if footer:
             reqs += self._text_box_reqs(
@@ -1242,6 +1472,32 @@ class GsApi(object):
                 self.PAGE_W_EMU - self.MARGIN_EMU - 600000,
                 foot_y, 600000, 260000, font_pt=9,
                 align='END', color=colors['muted'])
+        return reqs
+
+    def _heading_reqs(self, slide_id, title, colors, eyebrow, subhead):
+        """The eyebrow (dark chrome only), title and subhead, stacked
+        down to :meth:`content_top`."""
+        cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
+        title_y, one_h, two_h, subhead_h = (
+            self.HEADING_DARK_EMU if self.is_dark else self.HEADING_LIGHT_EMU)
+        reqs = []
+        if eyebrow and self.is_dark:
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}e', str(eyebrow).upper(), cx,
+                self.EYEBROW_Y_EMU, cw, self.EYEBROW_H_EMU, font_pt=8,
+                bold=True, align='START', color=colors['muted'],
+                font=self.eyebrow_font)
+        lines = 1 if subhead else self.HEADLINE_LINES
+        title_pt, title_h = self._title_box(title, cw, lines, one_h, two_h)
+        reqs += self._text_box_reqs(
+            slide_id, f'{slide_id}t', title, cx, title_y, cw, title_h,
+            font_pt=title_pt, bold=True, align='START', color=colors['ink'])
+        subhead, subhead_pt = self._subhead_line(subhead, cw)
+        if subhead:
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}sh', subhead, cx, title_y + title_h,
+                cw, subhead_h, font_pt=subhead_pt, align='START',
+                color=colors['ink'])
         return reqs
 
     def _subhead_line(self, subhead, width):
@@ -1291,52 +1547,60 @@ class GsApi(object):
 
     def add_stat_tile_slide(self, presentation_id, slide_id, title, tiles,
                             brand=None, footer=None, page=None,
-                            eyebrow=None, subhead=None, source=None):
-        """Draw up to nine native KPI cards, continuing dense grids before
-        text would overlap; a single row sits centred, set larger, each
-        card at most a third of the width."""
-        colors = self._brand_colors(brand)
+                            eyebrow=None, subhead=None, source=None,
+                            image_url=None, img_w=None, img_h=None,
+                            focus=None):
+        """Draw up to nine native KPI cards, four across for four, else
+        three with a short last row centred, over ``image_url`` in the ink
+        palette; a dense grid steps its values down before it continues."""
+        colors = (self._art_colors(brand) if image_url
+                  else self._brand_colors(brand))
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
+        if image_url:
+            reqs += self._art_field_reqs(slide_id, colors, image_url,
+                                         img_w, img_h, focus)
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
                                           eyebrow=eyebrow, subhead=subhead,
                                           source=source)
         tiles = list(tiles or [])[:9]
         if tiles:
-            cols = (3 if len(tiles) in (5, 6, 9)
-                    else 4 if len(tiles) > 3 else len(tiles))
+            cols = 4 if len(tiles) == 4 else min(len(tiles), 3)
             n_rows = (len(tiles) + cols - 1) // cols
             gap = 137160
             grid_y = self.content_top()
             grid_h = self.PAGE_H_EMU - grid_y - self.BODY_FOOT_EMU
             span = max(cols, 3)
             cell_w = (cw - gap * (span - 1)) // span
-            row_x = cx + (cw - cols * cell_w - gap * (cols - 1)) // 2
             cell_h = (grid_h - gap * (n_rows - 1)) // n_rows
             pad, text_w = TILE_PAD_EMU, cell_w - 2 * TILE_PAD_EMU
-            value_pt, value_h = (
-                (TILE_HERO_PT, TILE_HERO_VALUE_H_EMU)
-                if n_rows == 1 and _hero_fits(tiles, text_w)
-                else self._value_size(tiles, text_w,
-                                      self.TILE_VALUE_PT_LADDER))
             blocks = [_tile_block_heights(tile, text_w) for tile in tiles]
+            spare = cell_h - 2 * pad - max(sum(block) for block in blocks)
+            if (n_rows == 1 and _values_fit(tiles, text_w, TILE_HERO_PT)
+                    and TILE_HERO_VALUE_H_EMU <= spare):
+                value_pt, value_h = TILE_HERO_PT, TILE_HERO_VALUE_H_EMU
+            else:
+                value_pt, value_h = self._value_size(
+                    tiles, text_w, self.TILE_VALUE_PT_LADDER, spare)
             required = max(2 * pad + value_h + sum(block)
                            for block in blocks)
             if required > cell_h and n_rows > 1:
                 for start in range(0, len(tiles), cols):
                     self.add_stat_tile_slide(
-                        presentation_id,
-                        f'{slide_id}part{start}' if start else slide_id,
-                        self._continued(title) if start else title,
+                        presentation_id, *self._part(slide_id, title, start),
                         tiles[start:start + cols], brand, footer, page,
-                        eyebrow, subhead=subhead, source=source)
+                        eyebrow, subhead=subhead, source=source,
+                        image_url=image_url, img_w=img_w, img_h=img_h,
+                        focus=focus)
                 return slide_id
             cell_h = min(cell_h, max(TILE_MIN_H_EMU, required))
             if n_rows == 1:
                 grid_y += (grid_h - cell_h) // 2
             for i, tile in enumerate(tiles):
                 r, c = divmod(i, cols)
+                in_row = min(cols, len(tiles) - r * cols)
+                row_x = cx + (cw - in_row * cell_w - gap * (in_row - 1)) // 2
                 reqs += self._tile_reqs(
                     slide_id, f'{slide_id}c{i}', tile,
                     row_x + c * (cell_w + gap), grid_y + r * (cell_h + gap),
@@ -1348,33 +1612,35 @@ class GsApi(object):
     TILE_ROW_MAX = 3
     TILE_ROW_TILES_MAX = 6
     TILE_ROW_TEXT_PT = (9, 8, 7.5)
-    TILE_ROW_VALUE_PT = (20, 18, 16)
+    TILE_ROW_VALUE_PT = (28, 24, 20, 18, 16)
     TILE_ROW_LABEL_H_EMU = 180000
+    TILE_ROW_LABEL_TOP_EMU = TILE_ROW_LABEL_H_EMU + 20000
     TILE_ROW_GAP_EMU = 91440
     TILE_ROW_PAD_EMU = 80000
 
     @staticmethod
-    def _value_size(tiles, width, sizes):
-        """``(pt, box height)`` setting a row's values at one size: the
-        largest step every value holds on one line, else the floor."""
-        font_pt = next((size for size in sizes
-                        if all(len(str(tile.get('value') or ''))
-                               <= _chars_per_line(width, size)
-                               for tile in tiles)), sizes[-1])
-        return font_pt, int(font_pt * 1.36 * EMU_PER_PT)
+    def _value_size(tiles, width, sizes, height=None):
+        """``(pt, box height)`` of the largest step setting every value on
+        one line in a box that stands in ``height``, else the floor."""
+        for font_pt in sizes:
+            box_h = _value_box_h(font_pt)
+            if ((height is None or box_h <= height)
+                    and _values_fit(tiles, width, font_pt)):
+                return font_pt, box_h
+        return sizes[-1], _value_box_h(sizes[-1])
 
     def add_tile_rows_slide(self, presentation_id, slide_id, title, rows,
                             brand=None, footer=None, page=None,
-                            eyebrow=None, subhead=None):
-        """Draw up to three labelled bands of six tiles on one shared
-        column grid; a band that does not fit drops its driver notes,
-        then the bands continue one to a slide."""
+                            eyebrow=None, subhead=None, source=None):
+        """Up to three labelled bands of six tiles on one column grid,
+        stepping values down and dropping notes before they continue."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
-                                          eyebrow=eyebrow, subhead=subhead)
+                                          eyebrow=eyebrow, subhead=subhead,
+                                          source=source)
         rows = [row for row in list(rows or [])[:self.TILE_ROW_MAX]
                 if row.get('tiles')]
         if not rows:
@@ -1383,22 +1649,21 @@ class GsApi(object):
         gap, pad = self.TILE_ROW_GAP_EMU, self.TILE_ROW_PAD_EMU
         grid_y = self.content_top()
         grid_h = self.PAGE_H_EMU - grid_y - self.BODY_FOOT_EMU
-        band_h = (grid_h - gap * (len(rows) - 1)) // len(rows)
-        label_top = self.TILE_ROW_LABEL_H_EMU + 40000
-        tile_h = band_h - label_top
+        label_top = self.TILE_ROW_LABEL_TOP_EMU
         cols = max(3, *(min(len(row['tiles']), self.TILE_ROW_TILES_MAX)
                         for row in rows))
-        bands = [self._tile_band(row, cw, tile_h, cols) for row in rows]
-        if len(rows) > 1 and any(band is None for band in bands):
-            for index, row in enumerate(rows):
+        groups = self._band_groups(rows, cols)
+        if len(groups) > 1:
+            for index, group in enumerate(groups):
                 self.add_tile_rows_slide(
-                    presentation_id,
-                    f'{slide_id}part{index}' if index else slide_id,
-                    self._continued(title) if index else title, [row],
-                    brand, footer, page, eyebrow, subhead=subhead)
+                    presentation_id, *self._part(slide_id, title, index),
+                    group, brand, footer, page, eyebrow, subhead=subhead,
+                    source=source)
             return slide_id
-        for r, (row, band) in enumerate(zip(rows, bands)):
-            y = grid_y + r * (band_h + gap)
+        tile_hs = (self._band_heights(rows, cols)
+                   or [grid_h - label_top] * len(rows))
+        y = grid_y
+        for r, (row, tile_h) in enumerate(zip(rows, tile_hs)):
             base = f'{slide_id}b{r}'
             reqs += self._text_box_reqs(
                 slide_id, f'{base}l', str(row.get('label', '')).upper(),
@@ -1406,7 +1671,8 @@ class GsApi(object):
                 bold=True, align='START', color=colors['muted'],
                 font=self.eyebrow_font)
             tiles, cell_w, value_pt, heights, with_notes = (
-                band or self._tile_band(row, cw, tile_h, cols, force=True))
+                self._tile_band(row, cw, tile_h, cols)
+                or self._tile_band(row, cw, tile_h, cols, force=True))
             for i, tile in enumerate(tiles):
                 note = tile.get('note') if with_notes else None
                 reqs += self._tile_reqs(
@@ -1415,8 +1681,39 @@ class GsApi(object):
                     colors, pad, (value_pt, *self.TILE_ROW_TEXT_PT),
                     heights[i],
                     bold_label=True)
+            y += label_top + tile_h + gap
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
+
+    def _band_heights(self, rows, cols):
+        """Tile heights for ``rows`` on one slide: an even share if every
+        band stands in it, else each band's floor (notes dropped) plus an
+        even share of the spare; None when the floors overflow."""
+        _, _, width, grid_h = self.body_box(self.is_dark)
+        n = len(rows)
+        room = (grid_h - self.TILE_ROW_GAP_EMU * (n - 1)
+                - n * self.TILE_ROW_LABEL_TOP_EMU)
+        if all(self._tile_band(row, width, room // n, cols) for row in rows):
+            return [room // n] * n
+        floors = [max(2 * self.TILE_ROW_PAD_EMU + sum(block)
+                      for block in self._tile_band(row, width, 0, cols,
+                                                   force=True)[3])
+                  for row in rows]
+        spare = room - sum(floors)
+        if spare < 0:
+            return None
+        return [floor + spare // n for floor in floors]
+
+    def _band_groups(self, rows, cols):
+        """``rows`` in slide-sized runs, each slide taking as many leading
+        bands as :meth:`_band_heights` can stand."""
+        groups, rest = [], list(rows)
+        while rest:
+            take = next((k for k in range(len(rest), 1, -1)
+                         if self._band_heights(rest[:k], cols)), 1)
+            groups.append(rest[:take])
+            rest = rest[take:]
+        return groups
 
     def _tile_band(self, row, width, tile_h, cols, force=False):
         """``(tiles, cell_w, value_pt, heights, with_notes)`` for a band
@@ -1426,8 +1723,6 @@ class GsApi(object):
         pad = self.TILE_ROW_PAD_EMU
         cell_w = (width - self.TILE_ROW_GAP_EMU * (cols - 1)) // cols
         text_w = cell_w - 2 * pad
-        value_pt, value_h = self._value_size(tiles, text_w,
-                                             self.TILE_ROW_VALUE_PT)
         label_pt, caption_pt, note_pt = self.TILE_ROW_TEXT_PT
         label_h = int(label_pt * 1.6 * EMU_PER_PT)
         captions = [_block_height(tile.get('caption'), text_w, caption_pt)
@@ -1435,6 +1730,11 @@ class GsApi(object):
         notes = [_block_height(tile.get('note'), text_w, note_pt)
                  for tile in tiles]
         for with_notes in (True, False):
+            tails = [caption + (note if with_notes else 0)
+                     for caption, note in zip(captions, notes)]
+            spare = tile_h - 2 * pad - label_h - max(tails, default=0)
+            value_pt, value_h = self._value_size(
+                tiles, text_w, self.TILE_ROW_VALUE_PT, spare)
             heights = [(value_h, label_h, caption, note if with_notes else 0)
                        for caption, note in zip(captions, notes)]
             if (max(2 * pad + sum(block) for block in heights) <= tile_h
@@ -1443,16 +1743,31 @@ class GsApi(object):
         return None
 
     STORY_CHART_SHARE = 0.6
-    STORY_STAT_H_EMU = 380000
+    STORY_SPLIT_SHARE = 0.5
+    STORY_STAT_H_EMU = 440000
     STORY_GAP_EMU = 182880
+
+    def _stat_bar_reqs(self, slide_id, stats, x, w, colors):
+        """One card on the body's foot carrying ``stats``
+        (``[(value, label), ...]``) on one line."""
+        stat_h, pad = self.STORY_STAT_H_EMU, 60000
+        y = self.PAGE_H_EMU - self.BODY_FOOT_EMU - stat_h
+        reqs = self._card_reqs(slide_id, f'{slide_id}sr', x, y, w, stat_h,
+                               colors)
+        text, stat_pt = self._stat_line(stats, w - 2 * pad)
+        reqs += self._text_box_reqs(
+            slide_id, f'{slide_id}s', text, x + pad, y + pad, w - 2 * pad,
+            stat_h - 2 * pad, font_pt=stat_pt, bold=True, align='CENTER',
+            color=colors['ink'])
+        return reqs
 
     def add_chart_story_slide(self, presentation_id, slide_id, title,
                               image_url=None, img_w=None, img_h=None,
                               narrative=None, stats=None, brand=None,
                               footer=None, page=None, eyebrow=None,
-                              subhead=None, source=None):
-        """Place a chart beside its narrative and above a stat bar. Without
-        narrative, use the full width."""
+                              subhead=None, source=None, left=None):
+        """Place a chart beside its narrative and above a stat bar, full
+        width without narrative and between two rails with ``left``."""
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id)]
@@ -1461,28 +1776,28 @@ class GsApi(object):
                                           eyebrow=eyebrow, subhead=subhead,
                                           source=source)
         gap = self.STORY_GAP_EMU
-        _, top, chart_w, chart_h = self.story_chart_box(
-            self.is_dark, bool(narrative), bool(stats))
+        split = bool(narrative and left)
+        chart_x, top, chart_w, chart_h = self.story_chart_box(
+            self.is_dark, bool(narrative), bool(stats), split)
         body_h = self.PAGE_H_EMU - top - self.BODY_FOOT_EMU
-        stat_h = self.STORY_STAT_H_EMU if stats else 0
+        if split:
+            reqs += self._prose_reqs(
+                slide_id, f'{slide_id}ln', left,
+                (cx, top, chart_x - gap - cx, body_h),
+                colors, self.RAIL_PT, 'rail')
         if image_url:
-            x, y, w, h = self._fit_box(img_w, img_h, cx, top, chart_w,
+            x, y, w, h = self._fit_box(img_w, img_h, chart_x, top, chart_w,
                                        chart_h)
             reqs += self._image_reqs(slide_id, f'{slide_id}i', image_url,
                                      x, y, w, h)
         if stats:
-            bar_y = top + body_h - stat_h
-            reqs += self._card_reqs(slide_id, f'{slide_id}sr', cx, bar_y,
-                                    chart_w, stat_h, colors)
-            text, stat_pt = self._stat_line(stats, chart_w - 120000)
-            reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}s', text, cx + 60000, bar_y + 60000,
-                chart_w - 120000, stat_h - 120000, font_pt=stat_pt,
-                bold=True, align='CENTER', color=colors['ink'])
+            reqs += self._stat_bar_reqs(slide_id, stats, chart_x, chart_w,
+                                        colors)
         if narrative:
+            rail_x = chart_x + chart_w + gap
             reqs += self._prose_reqs(
                 slide_id, f'{slide_id}n', narrative,
-                (cx + chart_w + gap, top, cw - chart_w - gap, body_h),
+                (rail_x, top, cx + cw - rail_x, body_h),
                 colors, self.RAIL_PT, 'rail')
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
@@ -1503,9 +1818,60 @@ class GsApi(object):
             if fit.fits or count == 1:
                 return text, fit.pt
 
+    def _card_head_reqs(self, slide_id, shape_id, head, x, y, w, colors,
+                        tone=None):
+        """``(reqs, height)`` of a card's toned heading, fitted to
+        :data:`COLUMN_HEAD_LINES` lines and cut on a word past them."""
+        head = str(head or '')
+        head_fit = _fit_text(head, w, self.PAGE_H_EMU, self.CARD_HEAD_PT,
+                             max_lines=self.COLUMN_HEAD_LINES)
+        if not head_fit.fits:
+            head = _clip_lines(head, w, head_fit.pt, self.COLUMN_HEAD_LINES)
+        head_h = max(self.COLUMN_HEAD_H_EMU,
+                     _block_height(head, w, head_fit.pt))
+        reqs = self._text_box_reqs(
+            slide_id, shape_id, head, x, y, w, head_h, font_pt=head_fit.pt,
+            bold=True, align='START',
+            color=self._tone_color(tone, colors['accent']))
+        return reqs, head_h
+
+    def _bullet_prose_reqs(self, slide_id, shape_id, text, bullets, box,
+                           colors, sizes, slot):
+        """:meth:`_prose_reqs` with ``bullets`` joined under ``text`` as
+        one bulleted range, dropping trailing bullets that overflow."""
+        bullets = [str(b) for b in bullets or [] if str(b or '').strip()]
+        if not bullets:
+            return self._prose_reqs(slide_id, shape_id, text, box, colors,
+                                    sizes, slot)
+        x, y, w, h = box
+        lead = f'{text}\n' if text else ''
+        for count in range(len(bullets), 0, -1):
+            joined = ''.join((lead, '\n'.join(bullets[:count])))
+            fit = self._fit_prose(joined, w, h, sizes)
+            if fit.fits:
+                break
+        self._note_fit(slide_id, slot, fit)
+        reqs = self._text_box_reqs(slide_id, shape_id, joined, x, y, w, h,
+                                   font_pt=fit.pt, align='START',
+                                   color=colors['ink'])
+        reqs.append(self._prose_spacing_req(shape_id))
+        reqs.append(self._bullets_req(shape_id, self.utf16_len(lead),
+                                      self.utf16_len(joined)))
+        return reqs
+
+    @staticmethod
+    def _bullets_req(shape_id, start, end):
+        """Disc bullets on the paragraphs in ``[start, end)``, UTF-16
+        indices as the API counts them."""
+        return {'createParagraphBullets': {
+            'objectId': shape_id,
+            'textRange': {'type': 'FIXED_RANGE',
+                          'startIndex': start, 'endIndex': end},
+            'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'}}
+
     def _column_reqs(self, slide_id, base, column, x, y, w, h, colors):
-        """One card: an optional picture across its top (a competitor's
-        cover art), then the toned head and the body, each fitted."""
+        """One card: an optional picture, the toned head, an optional
+        ``stat`` figure and the body with its ``bullets``, each fitted."""
         pad = 100000
         reqs = self._card_reqs(slide_id, f'{base}r', x, y, w, h, colors)
         text_y, text_w = y + pad, w - 2 * pad
@@ -1516,22 +1882,23 @@ class GsApi(object):
             reqs += self._image_reqs(slide_id, f'{base}i',
                                      column['image_url'], ix, iy, iw, ih)
             text_y += self.COLUMN_ART_H_EMU + pad
-        head = str(column.get('head', ''))
-        head_fit = _fit_text(head, text_w, self.PAGE_H_EMU,
-                             self.CARD_HEAD_PT,
-                             max_lines=self.COLUMN_HEAD_LINES)
-        if not head_fit.fits:
-            head = _clip_lines(head, text_w, head_fit.pt,
-                               self.COLUMN_HEAD_LINES)
-        head_h = max(self.COLUMN_HEAD_H_EMU,
-                     _block_height(head, text_w, head_fit.pt))
-        head_color = self._tone_color(column.get('tone'), colors['accent'])
-        reqs += self._text_box_reqs(
-            slide_id, f'{base}h', head, x + pad, text_y, text_w, head_h,
-            font_pt=head_fit.pt, bold=True, align='START', color=head_color)
+        head_reqs, head_h = self._card_head_reqs(
+            slide_id, f'{base}h', column.get('head', ''), x + pad, text_y,
+            text_w, colors, column.get('tone'))
+        reqs += head_reqs
         body_y = text_y + head_h + 20000
-        return reqs + self._prose_reqs(
+        stat = str(column.get('stat') or '')
+        if stat:
+            stat_pt = _ladder_pt(stat, text_w, self.CARD_STAT_PT, 1)
+            stat_h = _block_height(stat, text_w, stat_pt)
+            reqs += self._text_box_reqs(
+                slide_id, f'{base}s', stat, x + pad, body_y, text_w, stat_h,
+                font_pt=stat_pt, bold=True, align='START',
+                color=colors['accent'])
+            body_y += stat_h
+        return reqs + self._bullet_prose_reqs(
             slide_id, f'{base}b', str(column.get('body', '')),
+            column.get('bullets'),
             (x + pad, body_y, text_w, max(y + h - pad - body_y, pad)),
             colors, self.CARD_BODY_PT, 'card')
 
@@ -1566,13 +1933,40 @@ class GsApi(object):
         r'^[-+(]?[$€£]?\s?\d[\d,.]*\s*(?:[KMB%]|x)?\)?'
         r'(?:\s+of plan)?$', re.IGNORECASE)
 
+    def _text_on(self, fill):
+        """White or ink, whichever contrasts more with ``fill``
+        (``{'color', 'alpha'?}``) laid over the page."""
+        under = self.DECK_INK if self.is_dark else self.DECK_WHITE
+        seen = _composite(fill['color'], fill.get('alpha'), under)
+        return max((self.DECK_WHITE, self.DECK_INK),
+                   key=lambda ink: _contrast(ink, seen))
+
+    @staticmethod
+    def _cell_fill_req(table_id, row, col, rows, cols, fill):
+        """One ``updateTableCellProperties`` filling a block of cells
+        with ``fill`` (``{'color', 'alpha'?}``)."""
+        solid, fields = _solid_fill(fill['color'], fill.get('alpha'),
+                                    'tableCellBackgroundFill')
+        return {'updateTableCellProperties': {
+            'objectId': table_id,
+            'tableRange': {'location': {'rowIndex': row, 'columnIndex': col},
+                           'rowSpan': rows, 'columnSpan': cols},
+            'tableCellProperties': {'tableCellBackgroundFill': {
+                'solidFill': solid}},
+            'fields': fields}}
+
     def _table_reqs(self, slide_id, table_id, x, y, w, h, header, body_rows,
-                    colors):
-        """Build a native table with header fill, alternating row fills and
-        aligned numeric cells. Leave empty cells unstyled because Slides
-        rejects their text ranges."""
+                    colors, col_widths=None, header_fills=None,
+                    label_col=False, head_pt=TABLE_HEAD_PT,
+                    body_pt=TABLE_BODY_PT, row_heights=()):
+        """A native table with ``header_fills`` (None takes the card), zebra
+        rows, aligned numbers and a bold ``label_col`` rail; Slides rejects
+        empty-cell styles and columns under 32pt, so neither is sent."""
         all_rows = [list(header)] + [list(r) for r in body_rows]
         n_cols = len(header)
+        card = {'color': colors['card'], 'alpha': colors.get('card_alpha')}
+        fills = [fill or card for fill in
+                 header_fills or [{'color': colors['accent']}] * n_cols]
         reqs = [{'createTable': {
             'objectId': table_id,
             'elementProperties': self._elem_props(slide_id, w, h, x, y),
@@ -1583,6 +1977,7 @@ class GsApi(object):
                 val = '' if c >= len(row) or row[c] is None else str(row[c])
                 if not val:
                     continue
+                is_label = label_col and c == 0 and not is_header
                 loc = {'rowIndex': r, 'columnIndex': c}
                 reqs.append({'insertText': {
                     'objectId': table_id, 'cellLocation': loc,
@@ -1590,40 +1985,41 @@ class GsApi(object):
                 reqs.append({'updateTextStyle': {
                     'objectId': table_id, 'cellLocation': loc,
                     'style': {
-                        'fontSize': {'magnitude': 11 if is_header else 10,
+                        'fontSize': {'magnitude': (head_pt if is_header
+                                                   else body_pt),
                                      'unit': 'PT'},
-                        'bold': is_header, 'fontFamily': self.deck_font,
+                        'bold': is_header or is_label,
+                        'fontFamily': self.deck_font,
                         'foregroundColor': {'opaqueColor': {'rgbColor': (
-                            self.DECK_WHITE if is_header
+                            self._text_on(fills[c]) if is_header
                             else colors['ink'])}}},
                     'textRange': {'type': 'ALL'},
                     'fields': 'fontSize,bold,fontFamily,foregroundColor'}})
-                if not is_header and self._NUMERIC_CELL_RE.match(val):
+                if (not is_header and not is_label
+                        and self._NUMERIC_CELL_RE.match(val)):
                     reqs.append({'updateParagraphStyle': {
                         'objectId': table_id, 'cellLocation': loc,
                         'style': {'alignment': 'END'},
                         'textRange': {'type': 'ALL'},
                         'fields': 'alignment'}})
-        reqs.append({'updateTableCellProperties': {
-            'objectId': table_id,
-            'tableRange': {'location': {'rowIndex': 0, 'columnIndex': 0},
-                           'rowSpan': 1, 'columnSpan': n_cols},
-            'tableCellProperties': {'tableCellBackgroundFill': {
-                'solidFill': {'color': {'rgbColor': colors['accent']}}}},
-            'fields': 'tableCellBackgroundFill.solidFill.color'}})
-        zebra = {'color': {'rgbColor': colors['card']}}
-        zebra_fields = 'tableCellBackgroundFill.solidFill.color'
-        if colors.get('card_alpha') is not None:
-            zebra['alpha'] = colors['card_alpha']
-            zebra_fields += ',tableCellBackgroundFill.solidFill.alpha'
+        if header_fills:
+            reqs += [self._cell_fill_req(table_id, 0, c, 1, 1, fill)
+                     for c, fill in enumerate(fills)]
+        else:
+            reqs.append(self._cell_fill_req(table_id, 0, 0, 1, n_cols,
+                                            fills[0]))
         for r in range(2, len(all_rows), 2):
-            reqs.append({'updateTableCellProperties': {
-                'objectId': table_id,
-                'tableRange': {'location': {'rowIndex': r, 'columnIndex': 0},
-                               'rowSpan': 1, 'columnSpan': n_cols},
-                'tableCellProperties': {'tableCellBackgroundFill': {
-                    'solidFill': zebra}},
-                'fields': zebra_fields}})
+            reqs.append(self._cell_fill_req(table_id, r, 0, 1, n_cols, card))
+        if label_col and len(all_rows) > 1:
+            reqs.append(self._cell_fill_req(table_id, 1, 0,
+                                            len(all_rows) - 1, 1, card))
+        if col_widths and min(col_widths) >= TABLE_COL_MIN_EMU:
+            for c, width in enumerate(col_widths):
+                reqs.append({'updateTableColumnProperties': {
+                    'objectId': table_id, 'columnIndices': [c],
+                    'tableColumnProperties': {
+                        'columnWidth': self._emu(width)},
+                    'fields': 'columnWidth'}})
         if self.is_dark:
             reqs.append({'updateTableBorderProperties': {
                 'objectId': table_id, 'borderPosition': 'ALL',
@@ -1632,46 +2028,65 @@ class GsApi(object):
                         'color': {'rgbColor': self.DECK_RULE_DARK}}},
                     'weight': {'magnitude': 0.5, 'unit': 'PT'}},
                 'fields': 'tableBorderFill,weight'}})
+        for index, height in enumerate(row_heights):
+            reqs.append({'updateTableRowProperties': {
+                'objectId': table_id, 'rowIndices': [index],
+                'tableRowProperties': {'minRowHeight': self._emu(height)},
+                'fields': 'minRowHeight'}})
         return reqs
 
     def add_table_slide(self, presentation_id, slide_id, title, header,
                         body_rows, brand=None, caption=None, footer=None,
                         page=None, eyebrow=None, subhead=None,
-                        source=None, narrative=None):
-        """Build a native table, continuing rows across slides before
-        wrapped text overflows; a ``narrative`` takes the rail beside a
-        story-width table on every continuation."""
+                        source=None, narrative=None, stats=None,
+                        col_widths=None):
+        """Build a native table, continuing rows on the whole table's
+        ``col_widths`` before wrapped text overflows, with an optional
+        ``narrative`` rail and ``stats`` bar; a short table sets larger."""
+        cx, top, tw, body_h = self.story_chart_box(
+            self.is_dark, bool(narrative), bool(stats))
+        widths = col_widths or _table_widths(
+            header, body_rows, tw, self.TABLE_HEAD_PT, self.TABLE_BODY_PT)
         groups = self.table_row_groups(header, body_rows, self.is_dark,
-                                       caption, bool(narrative))
+                                       caption, bool(narrative), bool(stats),
+                                       widths)
         if len(groups) > 1:
             for index, rows in enumerate(groups):
                 self.add_table_slide(
-                    presentation_id,
-                    f'{slide_id}part{index}' if index else slide_id,
-                    self._continued(title) if index else title, header,
-                    rows, brand, caption, footer, page, eyebrow,
-                    subhead=subhead, source=source, narrative=narrative)
+                    presentation_id, *self._part(slide_id, title, index),
+                    header, rows, brand, caption, footer, page, eyebrow,
+                    subhead=subhead, source=source, narrative=narrative,
+                    stats=stats, col_widths=widths)
             return slide_id
         colors = self._brand_colors(brand)
-        cx, ty, tw, body_h = self.story_chart_box(self.is_dark,
-                                                  bool(narrative))
+        full_h = self.PAGE_H_EMU - top - self.BODY_FOOT_EMU
         reqs = [self._blank_slide_req(slide_id)]
         reqs += self._content_chrome_reqs(slide_id, title, colors,
                                           footer=footer, page=page,
                                           eyebrow=eyebrow, subhead=subhead,
                                           source=source)
         reserve = self._caption_reserve(caption, tw, body_h)
-        head_h = _table_row_height(header, tw, 11)
-        heights = [_table_row_height(row, tw, 10, len(header))
-                   for row in body_rows]
-        th = min(body_h - reserve, head_h + sum(heights))
+        budget = body_h - reserve
+        head_pt, body_pt = self.TABLE_HEAD_PT, self.TABLE_BODY_PT
+        head_h, heights = _table_heights(header, body_rows, widths, head_pt,
+                                         body_pt)
+        ty = top
+        if (not col_widths and len(body_rows) <= self.TABLE_SHORT_ROWS
+                and head_h + sum(heights) < self.TABLE_SHORT_SHARE * budget):
+            head_pt, body_pt = (self.TABLE_SHORT_HEAD_PT,
+                                self.TABLE_SHORT_BODY_PT)
+            widths = _table_widths(header, body_rows, tw, head_pt, body_pt)
+            head_h, heights = _table_heights(header, body_rows, widths,
+                                             head_pt, body_pt,
+                                             self.TABLE_SHORT_ROW_MIN_EMU)
+            if not narrative:
+                ty += max(0, budget - head_h - sum(heights)) // 2
+        th = min(budget, head_h + sum(heights))
         reqs += self._table_reqs(slide_id, f'{slide_id}tbl', cx, ty, tw, th,
-                                 header, body_rows, colors)
-        for index, height in enumerate([head_h] + heights):
-            reqs.append({'updateTableRowProperties': {
-                'objectId': f'{slide_id}tbl', 'rowIndices': [index],
-                'tableRowProperties': {'minRowHeight': self._emu(height)},
-                'fields': 'minRowHeight'}})
+                                 header, body_rows, colors,
+                                 col_widths=widths, head_pt=head_pt,
+                                 body_pt=body_pt,
+                                 row_heights=[head_h] + heights)
         if caption:
             reqs += self._text_box_reqs(
                 slide_id, f'{slide_id}c', caption, cx,
@@ -1679,11 +2094,13 @@ class GsApi(object):
                 reserve - self.CAPTION_GAP_EMU,
                 font_pt=self.CAPTION_PT, align='START',
                 color=colors['muted'])
+        if stats:
+            reqs += self._stat_bar_reqs(slide_id, stats, cx, tw, colors)
         if narrative:
             nx = cx + tw + self.STORY_GAP_EMU
             reqs += self._prose_reqs(
                 slide_id, f'{slide_id}n', narrative,
-                (nx, ty, self.PAGE_W_EMU - self.MARGIN_EMU - nx, body_h),
+                (nx, top, self.PAGE_W_EMU - self.MARGIN_EMU - nx, full_h),
                 colors, self.RAIL_PT, 'rail')
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
@@ -1696,9 +2113,8 @@ class GsApi(object):
         fit = self._fit_prose(text, w, h, sizes)
         if not fit.fits:
             self._note_fit(slide_id, slot, fit)
-            lines = (h - TEXT_INSET_EMU) // _line_pitch(
-                fit.pt, self.NARRATIVE_SPACING)
-            text = _clip_lines(text, w, fit.pt, max(1, int(lines)),
+            lines = _lines_fit(h, fit.pt, self.NARRATIVE_SPACING)
+            text = _clip_lines(text, w, fit.pt, max(1, lines),
                                PROSE_GLYPH_RATIO)
         reqs = self._text_box_reqs(slide_id, shape_id, text, x, y, w, h,
                                    font_pt=fit.pt, align='START',
@@ -1782,6 +2198,599 @@ class GsApi(object):
                 '\n'.join(column), cx + index * (col_w + self.STORY_GAP_EMU),
                 top, col_w, body_h, font_pt=fit.pt, align='START',
                 color=colors['ink'])
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    PARAM_LEFT_SHARE = 0.46
+    PARAM_PAD_EMU = 137160
+    PARAM_FACT_PT = (14, 13, 12)
+    PARAM_LABEL_PT = 11
+    PARAM_BUDGET_PT = (40, 32, 28)
+    PARAM_SPLIT_H_EMU = 640000
+    PARAM_SPLIT_PT = (18, 16, 14)
+    PARAM_SPLIT_TEXT_PT = (9, 8, 8)
+    PARAM_CHIP_PT = 10
+    PARAM_CHIP_H_EMU = 280000
+    PARAM_BEAT_PT = 12
+
+    def _nested_colors(self, colors):
+        """Colours for a tile, pill or chip on a card: white on a light
+        card, as they are on a translucent dark one."""
+        if colors.get('card_alpha') is not None:
+            return colors
+        return dict(colors, card=self.DECK_WHITE)
+
+    def _fact_text(self, pairs):
+        """``(text, label ranges, bullet ranges)`` of upper-case labels
+        over their lines, facts a blank line apart, in UTF-16 indices."""
+        parts, labels, bullets, pos = [], [], [], 0
+        for index, (label, lines) in enumerate(pairs):
+            if index:
+                parts.append('\n')
+                pos += 1
+            for block, ranges in ((label.upper(), labels),
+                                  ('\n'.join(lines), bullets)):
+                if block:
+                    end = pos + self.utf16_len(block)
+                    ranges.append((pos, end))
+                    parts.append(f'{block}\n')
+                    pos = end + 1
+        return ''.join(parts).rstrip('\n'), labels, bullets
+
+    def _fact_list_reqs(self, slide_id, shape_id, facts, box, colors):
+        """A parameters slide's labelled bullet lists in one box, stepped
+        down the fact ladder and then cut to the facts that fit."""
+        pairs = _fact_pairs(facts)
+        if not pairs:
+            return []
+        x, y, w, h = box
+        text, _, _ = self._fact_text(pairs)
+        fit = self._fit_prose(text, w, h, self.PARAM_FACT_PT)
+        if not fit.fits:
+            self._note_fit(slide_id, 'facts', fit)
+            max_lines = _lines_fit(h, fit.pt, self.NARRATIVE_SPACING)
+            pairs = _clip_pairs(pairs, w, fit.pt, max(1, max_lines))
+        text, labels, bullets = self._fact_text(pairs)
+        reqs = self._text_box_reqs(slide_id, shape_id, text, x, y, w, h,
+                                   font_pt=fit.pt, align='START',
+                                   color=colors['ink'])
+        reqs.append(self._prose_spacing_req(shape_id))
+        for start, end in labels:
+            reqs.append({'updateTextStyle': {
+                'objectId': shape_id,
+                'style': {'bold': True, 'fontFamily': self.eyebrow_font,
+                          'fontSize': {'magnitude': self.PARAM_LABEL_PT,
+                                       'unit': 'PT'},
+                          'foregroundColor': {'opaqueColor': {
+                              'rgbColor': colors['muted']}}},
+                'textRange': {'type': 'FIXED_RANGE',
+                              'startIndex': start, 'endIndex': end},
+                'fields': 'bold,fontFamily,fontSize,foregroundColor'}})
+        reqs += [self._bullets_req(shape_id, start, end)
+                 for start, end in bullets]
+        return reqs
+
+    def _split_tile_reqs(self, slide_id, split, x, y, w, colors):
+        """The budget split as a row of small tiles on the card."""
+        gap, pad = 91440, self.TILE_ROW_PAD_EMU
+        tile_w = (w - gap * (len(split) - 1)) // len(split)
+        text_w = tile_w - 2 * pad
+        value_pt, value_h = self._value_size(split, text_w,
+                                             self.PARAM_SPLIT_PT)
+        text_pt = self.PARAM_SPLIT_TEXT_PT
+        tile_colors = self._nested_colors(colors)
+        reqs = []
+        for i, tile in enumerate(split):
+            reqs += self._tile_reqs(
+                slide_id, f'{slide_id}s{i}', tile, x + i * (tile_w + gap), y,
+                tile_w, self.PARAM_SPLIT_H_EMU, tile_colors, pad,
+                (value_pt, *text_pt),
+                (value_h, *_tile_block_heights(tile, text_w, text_pt)))
+        return reqs
+
+    def _pill_reqs(self, slide_id, rect_id, text_id, text, box, font_pt,
+                   colors):
+        """A chip or wordmark: ``text`` centred and bold on a rounded
+        fill."""
+        x, y, w, h = box
+        fill = self._nested_colors(colors)
+        reqs = self._rect_reqs(slide_id, rect_id, x, y, w, h, fill['card'],
+                               'ROUND_RECTANGLE', fill.get('card_alpha'))
+        return reqs + self._text_box_reqs(
+            slide_id, text_id, text, x, y, w, h, font_pt=font_pt, bold=True,
+            align='CENTER', color=colors['ink'])
+
+    def _chip_row_reqs(self, slide_id, base, chips, x, y, w, bottom,
+                       colors):
+        """``(reqs, next y)`` of ``chips`` flowed as pills across ``w``
+        and down to ``bottom``, past which none is drawn."""
+        chip_h, gap = self.PARAM_CHIP_H_EMU, 60000
+        reqs, chip_x, chip_y = [], x, y
+        for i, chip in enumerate(chips):
+            text = str(chip)
+            chip_w = min(w, int(len(text) * self.PARAM_CHIP_PT * EMU_PER_PT
+                                * GLYPH_WIDTH_RATIO) + 180000)
+            if chip_x > x and chip_x + chip_w > x + w:
+                chip_x, chip_y = x, chip_y + chip_h + gap
+            if chip_y + chip_h > bottom:
+                break
+            reqs += self._pill_reqs(
+                slide_id, f'{base}c{i}', f'{base}t{i}', text,
+                (chip_x, chip_y, chip_w, chip_h), self.PARAM_CHIP_PT, colors)
+            chip_x += chip_w + gap
+        return reqs, (chip_y + chip_h + 91440 if reqs else y)
+
+    def _budget_card_reqs(self, slide_id, box, budget, split, territories,
+                          beats, colors):
+        """One card stacking the budget figure, its split tiles,
+        territory chips and the dated beats while it has room."""
+        x, y, w, h = box
+        pad = self.PARAM_PAD_EMU
+        reqs = self._card_reqs(slide_id, f'{slide_id}bc', x, y, w, h, colors)
+        ix, iw = x + pad, w - 2 * pad
+        cy, bottom = y + pad, y + h - pad
+        budget = budget or {}
+        value = str(budget.get('value') or '')
+        if value:
+            font_pt = _ladder_pt(value, iw, self.PARAM_BUDGET_PT, 1)
+            value_h = int(_line_pitch(font_pt)) + 60000
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}bv', value, ix, cy, iw, value_h,
+                font_pt=font_pt, bold=True, color=colors['accent'])
+            cy += value_h
+            if budget.get('label'):
+                reqs += self._text_box_reqs(
+                    slide_id, f'{slide_id}bl', str(budget['label']), ix, cy,
+                    iw, 260000, font_pt=12, color=colors['muted'])
+                cy += 300000
+        split = list(split or [])[:3]
+        if split and cy + self.PARAM_SPLIT_H_EMU <= bottom:
+            reqs += self._split_tile_reqs(slide_id, split, ix, cy, iw, colors)
+            cy += self.PARAM_SPLIT_H_EMU + 91440
+        if territories:
+            chip_reqs, cy = self._chip_row_reqs(
+                slide_id, f'{slide_id}t', territories, ix, cy, iw, bottom,
+                colors)
+            reqs += chip_reqs
+        beats = [str(beat) for beat in beats or [] if str(beat or '').strip()]
+        max_lines = _lines_fit(bottom - cy, self.PARAM_BEAT_PT)
+        if beats and max_lines >= 1:
+            kept, _ = _leading_fit(
+                beats, [_wrapped_lines(beat, iw, self.PARAM_BEAT_PT)
+                        for beat in beats], max_lines)
+            if len(kept) < len(beats):
+                kept[-1] = f'+{len(beats) - len(kept) + 1} more beats'
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}beats', '\n'.join(kept), ix, cy, iw,
+                bottom - cy, font_pt=self.PARAM_BEAT_PT, color=colors['ink'])
+        return reqs
+
+    def add_parameters_slide(self, presentation_id, slide_id, title, facts,
+                             budget=None, split=None, territories=None,
+                             beats=None, brand=None, footer=None, page=None,
+                             eyebrow=None, subhead=None, source=None):
+        """``facts`` (``[{'label', 'lines'}]``) down the left column and a
+        budget card on the right; nothing continues, so facts and beats
+        clip to what fits."""
+        colors = self._brand_colors(brand)
+        cx, top, cw, body_h = self.body_box(self.is_dark)
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        left_w = int(cw * self.PARAM_LEFT_SHARE)
+        reqs += self._fact_list_reqs(slide_id, f'{slide_id}facts', facts,
+                                     (cx, top, left_w, body_h), colors)
+        right_x = cx + left_w + self.STORY_GAP_EMU
+        reqs += self._budget_card_reqs(
+            slide_id, (right_x, top, cx + cw - right_x, body_h), budget,
+            split, territories, beats, colors)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    PHASE_MATRIX_MAX = 6
+    PHASE_LABEL_W_EMU = 1371600
+    PHASE_MIN_SHARE = 0.12
+    PHASE_PT = (11, 10, 9)
+    PHASE_FILL_ALPHAS = (1.0, 0.75, 0.55, 0.4)
+
+    def _phase_widths(self, width, weights, columns):
+        """Column EMU for the label rail and each phase of ``columns`` by
+        spend ``weights``, each at least its floor and longest word."""
+        avail = width - self.PHASE_LABEL_W_EMU
+        count = len(columns)
+        weights = [max(float(weight or 0), 0.0)
+                   for weight in (list(weights or []) + [0] * count)[:count]]
+        mins = [max(self.PHASE_MIN_SHARE,
+                    _longest_word_emu(cells, self.PHASE_PT[0]) / avail)
+                for cells in columns]
+        return ([self.PHASE_LABEL_W_EMU]
+                + _weighted_widths(avail, weights, mins))
+
+    def _phase_fills(self, count, colors):
+        """One header fill per phase: the accent stepping down an alpha
+        ladder on dark decks, the kit's palette cycling on light ones."""
+        if self.is_dark:
+            steps = self.PHASE_FILL_ALPHAS
+            return [{'color': colors['accent'], 'alpha': steps[i % len(steps)]}
+                    for i in range(count)]
+        palette = (colors['accent'], self.DECK_INK, self.DECK_GOOD,
+                   self.DECK_MUTED)
+        return [{'color': palette[i % len(palette)]} for i in range(count)]
+
+    def _matrix_fit(self, header, body, widths, budget):
+        """``(pt, header height, row heights)`` on the matrix ladder: the
+        largest step whose rows stand in ``budget``, else the floor."""
+        for font_pt in self.PHASE_PT:
+            head_h, heights = _table_heights(header, body, widths, font_pt,
+                                             font_pt)
+            if head_h + sum(heights) <= budget:
+                break
+        return font_pt, head_h, heights
+
+    def _phase_table_reqs(self, slide_id, phases, rows, weights, colors):
+        """The matrix across the body on the :data:`PHASE_PT` ladder,
+        each row cut to an even share of the body past its floor."""
+        cx, top, tw, body_h = self.body_box(self.is_dark)
+        count = len(phases)
+        header = [''] + ['\n'.join(str(phase[key]) for key in ('head', 'dates')
+                                   if phase.get(key)) for phase in phases]
+        body = [[label, *('' if cell is None else str(cell)
+                          for cell in (cells + [''] * count)[:count])]
+                for label, cells in rows]
+        widths = self._phase_widths(tw, weights,
+                                    list(zip(header, *body))[1:])
+        font_pt, head_h, heights = self._matrix_fit(header, body, widths,
+                                                    body_h)
+        if head_h + sum(heights) > body_h:
+            body = _clip_rows(body, widths, font_pt,
+                              max(1, (body_h - head_h) // len(body)))
+            heights = [_table_row_height(row, widths, font_pt)
+                       for row in body]
+        return self._table_reqs(
+            slide_id, f'{slide_id}tbl', cx, top, tw,
+            min(body_h, head_h + sum(heights)), header, body, colors,
+            col_widths=widths,
+            header_fills=[None] + self._phase_fills(count, colors),
+            label_col=True, head_pt=font_pt, body_pt=font_pt,
+            row_heights=[head_h] + heights)
+
+    def add_phase_matrix_slide(self, presentation_id, slide_id, title,
+                               phases, rows, weights=None, brand=None,
+                               footer=None, page=None, eyebrow=None,
+                               subhead=None, source=None):
+        """``phases`` as ``weights``-sized columns beside the ``rows`` label
+        rail, past :data:`PHASE_MATRIX_MAX` continuing with the labels."""
+        phases = list(phases or [])
+        rows = [(str(label), list(cells or [])) for label, cells in rows or []]
+        weights = list(weights or [])
+        limit = self.PHASE_MATRIX_MAX
+        if len(phases) > limit:
+            for n, start in enumerate(range(0, len(phases), limit)):
+                self.add_phase_matrix_slide(
+                    presentation_id, *self._part(slide_id, title, n),
+                    phases[start:start + limit],
+                    [(label, cells[start:start + limit])
+                     for label, cells in rows],
+                    weights[start:start + limit] or None, brand, footer,
+                    page, eyebrow, subhead=subhead, source=source)
+            return slide_id
+        colors = self._brand_colors(brand)
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        if phases and rows:
+            reqs += self._phase_table_reqs(slide_id, phases, rows, weights,
+                                           colors)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    LOGO_GRID_COLS = 5
+    LOGO_GRID_GAP_EMU = 137160
+    LOGO_GROUP_PAD_EMU = 100000
+    LOGO_GROUP_LABEL_H_EMU = 240000
+    LOGO_ITEM_H_EMU = 457200
+    LOGO_PILL_H_EMU = 260000
+    LOGO_PILL_PT = 10
+    LOGO_ITEM_GAP_EMU = 45720
+
+    def _logo_item_h(self, item):
+        """A grid item's height: a logo plate, or a wordmark pill."""
+        return (self.LOGO_ITEM_H_EMU if item.get('logo_url')
+                else self.LOGO_PILL_H_EMU)
+
+    def _logo_group_h(self, group):
+        """A group card's natural height around its items."""
+        items = group['items']
+        return (2 * self.LOGO_GROUP_PAD_EMU + self.LOGO_GROUP_LABEL_H_EMU
+                + sum(self._logo_item_h(item) for item in items)
+                + self.LOGO_ITEM_GAP_EMU * (len(items) - 1))
+
+    def _logo_group_cap(self, group, avail_h):
+        """``group`` with the items that stack in ``avail_h``, the last
+        seat a "+N more" pill when some do not."""
+        items = list(group['items'])
+        kept, _ = _leading_fit(
+            items, [self._logo_item_h(item) + self.LOGO_ITEM_GAP_EMU
+                    for item in items], avail_h)
+        if len(kept) < len(items):
+            kept[-1] = {'name': f'+{len(items) - len(kept) + 1} more'}
+        return dict(group, items=kept)
+
+    def _logo_group_reqs(self, slide_id, base, group, x, y, w, h, colors):
+        """One group card: its label, then each item as a logo plate or
+        a wordmark pill, stacked."""
+        pad = self.LOGO_GROUP_PAD_EMU
+        reqs = self._card_reqs(slide_id, f'{base}r', x, y, w, h, colors)
+        inner_x, inner_w = x + pad, w - 2 * pad
+        reqs += self._text_box_reqs(
+            slide_id, f'{base}l', str(group.get('label', '')).upper(),
+            inner_x, y + pad, inner_w, self.LOGO_GROUP_LABEL_H_EMU,
+            font_pt=8, bold=True, color=colors['muted'],
+            font=self.eyebrow_font)
+        item_y = y + pad + self.LOGO_GROUP_LABEL_H_EMU
+        clear = self.LOGO_PAD_EMU
+        for i, item in enumerate(group['items']):
+            if item.get('logo_url'):
+                reqs += self._logo_plate_reqs(
+                    slide_id, f'{base}i{i}', item['logo_url'],
+                    inner_x + clear, item_y + clear, inner_w - 2 * clear,
+                    self.LOGO_ITEM_H_EMU - 2 * clear, item.get('img_w'),
+                    item.get('img_h'))
+            else:
+                name = _clip_lines(item.get('name', ''), inner_w,
+                                   self.LOGO_PILL_PT, 1, PROSE_GLYPH_RATIO)
+                reqs += self._pill_reqs(
+                    slide_id, f'{base}p{i}', f'{base}w{i}', name,
+                    (inner_x, item_y, inner_w, self.LOGO_PILL_H_EMU),
+                    self.LOGO_PILL_PT, colors)
+            item_y += self._logo_item_h(item) + self.LOGO_ITEM_GAP_EMU
+        return reqs
+
+    def add_logo_grid_slide(self, presentation_id, slide_id, title, groups,
+                            brand=None, footer=None, page=None,
+                            eyebrow=None, subhead=None, source=None):
+        """``groups`` as cards up to five across, each item a logo plate or
+        a wordmark pill, the rows continuing past the body."""
+        groups = [group for group in groups or [] if group.get('items')]
+        colors = self._brand_colors(brand)
+        cx, top, cw, body_h = self.body_box(self.is_dark)
+        gap, pad = self.LOGO_GRID_GAP_EMU, self.LOGO_GROUP_PAD_EMU
+        cols = min(self.LOGO_GRID_COLS, max(1, len(groups)))
+        group_w = (cw - gap * (cols - 1)) // cols
+        avail = body_h - 2 * pad - self.LOGO_GROUP_LABEL_H_EMU
+        groups = [self._logo_group_cap(group, avail) for group in groups]
+        bands = [groups[i:i + cols] for i in range(0, len(groups), cols)]
+        band_h = [max(self._logo_group_h(group) for group in band)
+                  for band in bands]
+        slides = _fit_rows(bands, [h + gap for h in band_h], body_h + gap)
+        if len(slides) > 1:
+            for n, chunk in enumerate(slides):
+                self.add_logo_grid_slide(
+                    presentation_id, *self._part(slide_id, title, n),
+                    [group for band in chunk for group in band], brand,
+                    footer, page, eyebrow, subhead=subhead, source=source)
+            return slide_id
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        y = top
+        for r, band in enumerate(bands):
+            for c, group in enumerate(band):
+                reqs += self._logo_group_reqs(
+                    slide_id, f'{slide_id}g{r * cols + c}', group,
+                    cx + c * (group_w + gap), y, group_w, band_h[r], colors)
+            y += band_h[r] + gap
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    ROLE_TOTAL_H_EMU = 520000
+    ROLE_TOTAL_PT = 24
+    ROLE_VALUE_PT = (32, 28, 24, 20, 18, 16)
+
+    def _role_card_reqs(self, slide_id, base, role, x, y, w, h, colors):
+        """One role card: the toned head over one to three stat tiles
+        sharing a value size."""
+        gap, pad = 137160, 100000
+        reqs = self._card_reqs(slide_id, f'{base}r', x, y, w, h, colors)
+        head_reqs, head_h = self._card_head_reqs(
+            slide_id, f'{base}h', role.get('head', ''), x + pad, y + pad,
+            w - 2 * pad, colors, role.get('tone'))
+        reqs += head_reqs
+        cards = list(role['cards'])[:3]
+        tile_y = y + pad + head_h + 20000
+        tile_h = max(y + h - pad - tile_y, TILE_PAD_EMU)
+        tile_w = (w - 2 * pad - gap * (len(cards) - 1)) // len(cards)
+        text_w = tile_w - 2 * TILE_PAD_EMU
+        blocks = [_tile_block_heights(card, text_w) for card in cards]
+        spare = tile_h - 2 * TILE_PAD_EMU - max(sum(block) for block in blocks)
+        value_pt, value_h = self._value_size(cards, text_w,
+                                             self.ROLE_VALUE_PT, spare)
+        tile_colors = self._nested_colors(colors)
+        for j, card in enumerate(cards):
+            reqs += self._tile_reqs(
+                slide_id, f'{base}c{j}', card, x + pad + j * (tile_w + gap),
+                tile_y, tile_w, tile_h, tile_colors, TILE_PAD_EMU,
+                (value_pt, *TILE_TEXT_PT), (value_h, *blocks[j]))
+        return reqs
+
+    def _total_bar_reqs(self, slide_id, total, x, y, w, colors):
+        """The full-width bar under the role cards: an accent value over
+        its label."""
+        reqs = self._card_reqs(slide_id, f'{slide_id}tr', x, y, w,
+                               self.ROLE_TOTAL_H_EMU, colors)
+        reqs += self._text_box_reqs(
+            slide_id, f'{slide_id}tv', str(total.get('value') or ''),
+            x + 100000, y + 20000, w - 200000, 330000,
+            font_pt=self.ROLE_TOTAL_PT, bold=True, color=colors['accent'])
+        reqs += self._text_box_reqs(
+            slide_id, f'{slide_id}tl', str(total.get('label') or ''),
+            x + 100000, y + 330000, w - 200000, 190000, font_pt=11,
+            color=colors['muted'])
+        return reqs
+
+    def add_role_cards_slide(self, presentation_id, slide_id, title, roles,
+                             total=None, brand=None, footer=None, page=None,
+                             eyebrow=None, subhead=None, source=None):
+        """Up to four ``roles``, each a card with its toned head over one
+        to three stat tiles, over a full-width ``total`` bar."""
+        roles = [role for role in list(roles or [])[:4] if role.get('cards')]
+        colors = self._brand_colors(brand)
+        cx, top, cw, body_h = self.body_box(self.is_dark)
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        gap = 137160
+        if roles:
+            role_h = body_h - (self.ROLE_TOTAL_H_EMU + gap if total else 0)
+            role_w = (cw - gap * (len(roles) - 1)) // len(roles)
+            for i, role in enumerate(roles):
+                reqs += self._role_card_reqs(
+                    slide_id, f'{slide_id}k{i}', role,
+                    cx + i * (role_w + gap), top, role_w, role_h, colors)
+        if total:
+            reqs += self._total_bar_reqs(
+                slide_id, total, cx, top + body_h - self.ROLE_TOTAL_H_EMU,
+                cw, colors)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    NUMBERED_GUTTER_EMU = 760000
+    NUMBERED_NUMERAL_PT = 28
+    NUMBERED_HEAD_PT = 14
+    NUMBERED_HEAD_LINES = 2
+    NUMBERED_BODY_PT = (14, 13, 12)
+    NUMBERED_GAP_EMU = 160000
+
+    def _numbered_head(self, item, width):
+        """An item's head cut to the lines its row gives it."""
+        return _clip_lines(item.get('head', ''), width,
+                           self.NUMBERED_HEAD_PT, self.NUMBERED_HEAD_LINES)
+
+    def _numbered_fit(self, items, width, budget):
+        """``(pt, head heights, row heights)`` at the largest body step
+        whose rows, none shorter than its numeral, stand in ``budget``."""
+        numeral_h = int(_line_pitch(self.NUMBERED_NUMERAL_PT)) + TEXT_INSET_EMU
+        head_hs = [_block_height(self._numbered_head(item, width), width,
+                                 self.NUMBERED_HEAD_PT) for item in items]
+        for font_pt in self.NUMBERED_BODY_PT:
+            row_hs = [max(head_h + _block_height(
+                str(item.get('body') or ''), width, font_pt,
+                self.NARRATIVE_SPACING, self.NARRATIVE_SPACE_BELOW_PT,
+                PROSE_GLYPH_RATIO), numeral_h) + self.NUMBERED_GAP_EMU
+                for item, head_h in zip(items, head_hs)]
+            if sum(row_hs) <= budget:
+                break
+        return font_pt, head_hs, row_hs
+
+    def add_numbered_slide(self, presentation_id, slide_id, title, items,
+                           first=1, brand=None, footer=None, page=None,
+                           eyebrow=None, subhead=None, source=None):
+        """Numbered items (``[{'head', 'body'}]``) down the body with
+        hairline rules between, continuing with the numbering run on."""
+        items = [item for item in items or []
+                 if item.get('head') or item.get('body')]
+        colors = self._brand_colors(brand)
+        cx, top, cw, body_h = self.body_box(self.is_dark)
+        text_x = cx + self.NUMBERED_GUTTER_EMU
+        text_w = cw - self.NUMBERED_GUTTER_EMU
+        font_pt, head_hs, row_hs = self._numbered_fit(items, text_w, body_h)
+        groups = _fit_rows(items, row_hs, body_h)
+        if len(groups) > 1:
+            start = first
+            for n, group in enumerate(groups):
+                self.add_numbered_slide(
+                    presentation_id, *self._part(slide_id, title, n), group,
+                    start, brand, footer, page, eyebrow, subhead=subhead,
+                    source=source)
+                start += len(group)
+            return slide_id
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        rule = self.DECK_RULE_DARK if self.is_dark else self.DECK_RULE
+        y = top
+        for i, (item, head_h, row_h) in enumerate(zip(items, head_hs,
+                                                      row_hs)):
+            row_h = min(row_h, top + body_h - y)
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}n{i}', f'{first + i:02d}', cx, y,
+                self.NUMBERED_GUTTER_EMU, row_h - self.NUMBERED_GAP_EMU // 2,
+                font_pt=self.NUMBERED_NUMERAL_PT, bold=True,
+                color=colors['accent'])
+            head = self._numbered_head(item, text_w)
+            if head:
+                reqs += self._text_box_reqs(
+                    slide_id, f'{slide_id}h{i}', head, text_x, y, text_w,
+                    head_h, font_pt=self.NUMBERED_HEAD_PT, bold=True,
+                    color=colors['ink'])
+            body = str(item.get('body') or '')
+            box_h = row_h - self.NUMBERED_GAP_EMU - head_h
+            if body and box_h > TEXT_INSET_EMU:
+                reqs += self._prose_reqs(
+                    slide_id, f'{slide_id}b{i}', body,
+                    (text_x, y + head_h, text_w, box_h), colors, (font_pt,),
+                    'numbered')
+            if i < len(items) - 1:
+                reqs += self._rect_reqs(
+                    slide_id, f'{slide_id}r{i}', cx,
+                    y + row_h - self.NUMBERED_GAP_EMU // 2, cw, EMU_PER_PT,
+                    rule)
+            y += row_h
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    GALLERY_MAX = 4
+    GALLERY_GAP_EMU = 137160
+    GALLERY_CAPTION_H_EMU = 260000
+    GALLERY_CAPTION_PT = 11
+
+    def _gallery_cell_reqs(self, slide_id, index, image, box, colors):
+        """One picture fitted into ``box``, keeping its aspect, over its
+        caption cut to one line."""
+        x, y, w, h = box
+        caption = str(image.get('caption') or '')
+        cap_h = self.GALLERY_CAPTION_H_EMU if caption else 0
+        fit = self._fit_box(image.get('img_w'), image.get('img_h'), x, y, w,
+                            h - cap_h)
+        reqs = self._image_reqs(slide_id, f'{slide_id}g{index}',
+                                image['url'], *fit, outline=True)
+        if not caption:
+            return reqs
+        caption = _clip_lines(caption, w, self.GALLERY_CAPTION_PT, 1,
+                              PROSE_GLYPH_RATIO)
+        return reqs + self._text_box_reqs(
+            slide_id, f'{slide_id}gc{index}', caption, x, y + h - cap_h, w,
+            cap_h, font_pt=self.GALLERY_CAPTION_PT, align='CENTER',
+            color=colors['muted'])
+
+    def add_gallery_slide(self, presentation_id, slide_id, title, images,
+                          brand=None, footer=None, page=None, eyebrow=None,
+                          subhead=None, source=None):
+        """Pictures fitted into a grid, four in two rows unless most are
+        portrait; more than :data:`GALLERY_MAX` continue."""
+        images = [image for image in images or [] if image.get('url')]
+        limit = self.GALLERY_MAX
+        if len(images) > limit:
+            for n, start in enumerate(range(0, len(images), limit)):
+                self.add_gallery_slide(
+                    presentation_id, *self._part(slide_id, title, n),
+                    images[start:start + limit], brand, footer, page,
+                    eyebrow, subhead=subhead, source=source)
+            return slide_id
+        colors = self._brand_colors(brand)
+        cx, top, cw, body_h = self.body_box(self.is_dark)
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        count, gap = len(images), self.GALLERY_GAP_EMU
+        if count:
+            portrait = sum(1 for image in images
+                           if (image.get('img_h') or 0)
+                           > (image.get('img_w') or 0))
+            cols = count if count < 4 or portrait * 2 > count else 2
+            n_rows = (count + cols - 1) // cols
+            cell_w = (cw - gap * (cols - 1)) // cols
+            cell_h = (body_h - gap * (n_rows - 1)) // n_rows
+            for i, image in enumerate(images):
+                r, c = divmod(i, cols)
+                reqs += self._gallery_cell_reqs(
+                    slide_id, i, image,
+                    (cx + c * (cell_w + gap), top + r * (cell_h + gap),
+                     cell_w, cell_h), colors)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
