@@ -8419,7 +8419,8 @@ class TestCheckConfig:
         written = []
         monkeypatch.setattr(
             handler, 'output_source',
-            lambda df, params, step, reach_cols=None: written.append(df))
+            lambda df, params, step, reach_cols=None, kept_rows=None:
+            written.append(df))
         handler.api_calls(list(cards), qtapi.QtApi())
         assert pulled == ['222']
         assert len(written) == 1
