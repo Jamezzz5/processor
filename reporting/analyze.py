@@ -3301,14 +3301,19 @@ class ValueCalc(object):
     @staticmethod
     def get_default_metrics():
         metric_names = ['CTR', 'CPC', 'CPA', 'CPLP', 'CPBC', 'View to 100',
-                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'CPV', 'ROAS']
-        formula = ['Clicks/Impressions', 'Net Cost Final/Clicks',
-                   'Net Cost Final/Conv1_CPA', 'Net Cost Final/Landing Page',
-                   'Net Cost Final/Button Click', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views 100',
-                   'Net Cost Final/Landing Page', 'Net Cost Final/Purchase',
-                   'Net Cost Final/Impressions', 'Video Views 100/Video Views',
-                   'Net Cost Final/Video Views', 'Revenue/Net Cost Final']
+                        'CPCV', 'CPLPV', 'CPP', 'CPM', 'VCR', 'VPCR', 'CPV',
+                        'ROAS', 'Viewability', 'CToV', 'LPR']
+        formula = [f'{vmc.clicks}/{vmc.impressions}', f'{cal.NCF}/{vmc.clicks}',
+                   f'{cal.NCF}/{vmc.conv1}', f'{cal.NCF}/{vmc.landingpage}',
+                   f'{cal.NCF}/{vmc.btnclick}', f'{vmc.views100}/{vmc.views}',
+                   f'{cal.NCF}/{vmc.views100}', f'{cal.NCF}/{vmc.landingpage}',
+                   f'{cal.NCF}/{vmc.purchase}', f'{cal.NCF}/{vmc.impressions}',
+                   f'{vmc.views100}/{vmc.views}',
+                   f'{vmc.views100}/{vmc.video_plays}',
+                   f'{cal.NCF}/{vmc.views}', f'{vmc.revenue}/{cal.NCF}',
+                   f'{vmc.view_imps}/{vmc.view_total_imps}',
+                   f'{vmc.landingpagepc}/{vmc.clicks}',
+                   f'{vmc.landingpage}/{vmc.impressions}']
         df = pd.DataFrame({'Metric Name': metric_names, 'Formula': formula})
         return df
 
@@ -3347,7 +3352,8 @@ class ValueCalc(object):
             formula = list(utl.db_df_translation(formula).values())
         for item in formula:
             if item.lower() == 'impressions' and not any(
-                    str(f).lower() == 'clicks' for f in formula):
+                    str(f).lower() in ['clicks', 'landing page']
+                    for f in formula):
                 df[item] = df[item] / 1000
             if current_op:
                 if col in df and item in df:
