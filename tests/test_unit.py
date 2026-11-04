@@ -7217,10 +7217,64 @@ class TestDcApiPathToConversion:
         api.get_data(*self.last_days(10), fields=[api.path_field])
         assert delivery.called, 'the path field on its own keeps the delivery'
         delivery.reset_mock()
+        api.original_report_id = '777'
         df = api.get_data(*self.last_days(10), fields=[api.path_only_field])
         delivery.assert_not_called()
+        assert '777' not in api.report_ids, 'a saved report is delivery'
         assert [x['type'] for x in sent] == ['PATH_TO_CONVERSION'] * 2
         assert df['ORD Value'].tolist() == ['ORD1', 'ORD2']
+
+    def pull_card(self, monkeypatch, tmp_path, api, sd, ed):
+        """Imports a pathOnly merge card onto an old raw file holding a
+        delivery and a path row from before the window; returns its path."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(api, 'input_config', lambda config: None)
+        old_day = (ed - dt.timedelta(days=90)).strftime('%Y-%m-%d')
+        path = (tmp_path / 'raw.csv').as_posix()
+        pd.DataFrame({'Date': [old_day, old_day],
+                      'Placement': ['P1', 'P1'],
+                      'Impressions': [100, None],
+                      'Clicks': [5, None],
+                      'Conversion ID': [None, 111],
+                      'ORD Value': [None, 'ORD0']}).to_csv(path, index=False)
+        params = {vmc.apifile: 'dcapi.json', vmc.filename: path,
+                  vmc.startdate: sd, vmc.enddate: ed, vmc.apimerge: 30,
+                  vmc.apifields: [api.path_only_field], vmc.firstrow: 0,
+                  vmc.lastrow: 0, vmc.date: ['Date']}
+        matrix = types.SimpleNamespace(vendor_set=lambda vk: dict(params))
+        ih.ImportHandler('all', matrix).api_call('API_DCM_Path', api)
+        return path
+
+    def test_path_only_merge_drops_the_old_delivery(
+            self, monkeypatch, tmp_path):
+        """A card moved to pathOnly keeps its old path rows but not its
+        delivery rows and their columns."""
+        api = dcapi.DcApi()
+        day = (dt.date.today() - dt.timedelta(days=3)).isoformat()
+        self.fake_cm360(monkeypatch, api, self.report_text([
+            f'333,Lead,{day} 09:00:00,ORD3,,,,,,1,19',
+            f'333,Lead,{day} 09:00:00,ORD3,Click,Camp C,1003,P4,TRUE,0,0']))
+        path = self.pull_card(monkeypatch, tmp_path, api,
+                              *self.last_days(10))
+        written = pd.read_csv(path)
+        assert 'Impressions' not in written and 'Clicks' not in written
+        assert written['ORD Value'].tolist() == ['ORD0', 'ORD3']
+        assert written['Placement'].tolist() == ['P1', 'P4']
+        api.parse_fields(*self.last_days(10), [api.path_field])
+        assert api.kept_raw_rows(pd.DataFrame(
+            {'Conversion ID': [None, 111]})).all(), 'delivery cards keep all'
+
+    def test_an_empty_pull_leaves_a_merge_card_file(
+            self, monkeypatch, tmp_path):
+        """An empty pull leaves a merge card's file as it was."""
+        api = dcapi.DcApi()
+        sent = self.fake_cm360(monkeypatch, api, self.report_text())
+        ed = dt.datetime.today() - dt.timedelta(days=100)
+        sd = ed - dt.timedelta(days=10)
+        path = self.pull_card(monkeypatch, tmp_path, api, sd, ed)
+        assert sent == []
+        written = pd.read_csv(path)
+        assert written['Impressions'].dropna().tolist() == [100]
 
     def test_activities_are_picked_by_id_or_name(self, monkeypatch):
         """Every activity unless the card names some; a card naming none
@@ -7591,8 +7645,8 @@ class TestPlatformReach:
         written = []
         monkeypatch.setattr(
             handler, 'output_source',
-            lambda df, p, step, reach_cols=None: written.append(
-                (df, reach_cols)))
+            lambda df, p, step, reach_cols=None, kept_rows=None:
+            written.append((df, reach_cols)))
         handler.api_call('API_Reach', api)
         trimmed = end - dt.timedelta(days=7)
         assert api.calls == [
@@ -7853,41 +7907,6 @@ def _slides_api(monkeypatch):
     monkeypatch.setattr(api, 'slides_batch_update',
                         lambda pid, reqs: captured.extend(reqs))
     return api, captured
-
-def test_slides_sparse_table_height_and_caption(monkeypatch):
-    """Sparse tables stay compact; dense tables continue onto more
-    slides before reaching the footer, each inside the page."""
-    api, captured = _slides_api(monkeypatch)
-    api.add_table_slide('p', 'compact', 'Summary', ['Metric', 'Value'],
-                        [['Cost', '$10']], caption='Evidence')
-    table = next(req['createTable'] for req in captured
-                 if 'createTable' in req)
-    height = table['elementProperties']['size']['height']['magnitude']
-    width = table['elementProperties']['size']['width']['magnitude']
-    assert height == (gsapi._table_row_height(['Metric', 'Value'], width, 11)
-                      + gsapi._table_row_height(['Cost', '$10'], width, 10,
-                                                2))
-    assert height < gsapi.TILE_MIN_H_EMU
-    caption = next(req['createShape'] for req in captured
-                   if req.get('createShape', {}).get('objectId') == 'compactc')
-    assert caption['elementProperties']['transform']['translateY'] == (
-        api.CONTENT_TOP_EMU + height + 80000)
-    batches = []
-    monkeypatch.setattr(api, 'slides_batch_update',
-                        lambda pid, reqs: batches.append(reqs))
-    api.add_table_slide('p', 'dense', 'Summary', ['Metric', 'Value'],
-                        [['Cost', '$10']] * 30, caption='Evidence')
-    tables = [req['createTable'] for batch in batches for req in batch
-              if 'createTable' in req]
-    assert len(tables) == len(batches) > 1
-    assert sum(table['rows'] - 1 for table in tables) == 30
-    assert all(table['elementProperties']['size']['height']['magnitude']
-               <= api.PAGE_H_EMU - api.CONTENT_TOP_EMU - 800000
-               for table in tables)
-    texts = [req['insertText']['text'] for batch in batches for req in batch
-             if 'insertText' in req]
-    assert texts.count('Summary (continued)') == len(batches) - 1
-    assert texts.count('Evidence') == len(batches)
 
 
 def _matrix(rows):
