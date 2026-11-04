@@ -67,18 +67,16 @@ class NzApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.game_title = self.config['game_title']
-        self.api_key = self.config['api_key']
+        self.game_title = self.config.get('game_title')
+        self.api_key = self.config.get('api_key')
         if 'country_filter' in self.config:
             self.country_filter = self.config['country_filter']
-        self.config_list = [self.config, self.api_key, self.game_title]
+        self.config_list = [('api_key', self.api_key),
+                            ('game_title', self.game_title)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Nz config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Newzoo')
 
     @staticmethod
     def get_data_default_check(sd, ed):

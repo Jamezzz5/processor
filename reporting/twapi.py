@@ -103,6 +103,7 @@ class TwApi(object):
         self.access_token_secret = None
         self.account_id = None
         self.config_list = []
+        self.warn_config_list = []
         self.campaign_filter = None
         self.dates = None
         self.client = None
@@ -141,22 +142,35 @@ class TwApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        self.consumer_key = self.config['CONSUMER_KEY']
-        self.consumer_secret = self.config['CONSUMER_SECRET']
-        self.access_token = self.config['ACCESS_TOKEN']
-        self.access_token_secret = self.config['ACCESS_TOKEN_SECRET']
-        self.account_id = self.config['ACCOUNT_ID']
-        self.config_list = [self.consumer_key, self.consumer_secret,
-                            self.access_token, self.access_token_secret]
+        self.consumer_key = self.config.get('CONSUMER_KEY')
+        self.consumer_secret = self.config.get('CONSUMER_SECRET')
+        self.access_token = self.config.get('ACCESS_TOKEN')
+        self.access_token_secret = self.config.get('ACCESS_TOKEN_SECRET')
+        self.account_id = self.config.get('ACCOUNT_ID')
+        self.set_config_lists()
         if 'CAMPAIGN_FILTER' in self.config:
             self.campaign_filter = self.config['CAMPAIGN_FILTER']
 
+    def set_config_lists(self):
+        """Pair each checked value with its key so a blank one is named.
+
+        Every request is signed with all four credentials.  ACCOUNT_ID
+        only warns: a USER_STATS pull needs no account, and get_data
+        returns no ad data without one rather than failing.
+        """
+        self.config_list = [('CONSUMER_KEY', self.consumer_key),
+                            ('CONSUMER_SECRET', self.consumer_secret),
+                            ('ACCESS_TOKEN', self.access_token),
+                            ('ACCESS_TOKEN_SECRET',
+                             self.access_token_secret)]
+        self.warn_config_list = [('ACCOUNT_ID', self.account_id)]
+
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in config file. '
-                                ' Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.configfile, 'Twitter',
+            'No ad data is pulled until it is filled in.')
+        utl.skip_on_blank_config(self.config_list, self.configfile,
+                                 'Twitter')
 
     def load_config_dict(self, config):
         """Populate credentials from an in-memory dict, bypassing the
@@ -168,8 +182,7 @@ class TwApi(object):
         self.access_token_secret = config.get('ACCESS_TOKEN_SECRET', '')
         self.account_id = config.get('ACCOUNT_ID', '')
         self.campaign_filter = config.get('CAMPAIGN_FILTER', '')
-        self.config_list = [self.consumer_key, self.consumer_secret,
-                            self.access_token, self.access_token_secret]
+        self.set_config_lists()
 
     def get_client(self):
         self.client = OAuth1Session(self.consumer_key, self.consumer_secret,

@@ -201,7 +201,8 @@ class AwApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        self.load_config_dict(config.get('adwords', config))
+        config = config or {}
+        self.load_config_dict(config.get('adwords') or config)
 
     def load_config_dict(self, config):
         """Populate credentials from the flat ``adwords`` dict, bypassing
@@ -223,20 +224,20 @@ class AwApi(object):
         self.developer_token = config.get('developer_token', '')
         self.refresh_token = config.get('refresh_token', '')
         self.client_customer_id = str(config.get('client_customer_id') or '')
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.developer_token, self.refresh_token,
-                            self.client_customer_id]
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('developer_token', self.developer_token),
+                            ('refresh_token', self.refresh_token),
+                            ('client_customer_id', self.client_customer_id)]
         self.campaign_filter = config.get('campaign_filter',
                                           self.campaign_filter)
         self.login_customer_id = config.get('login_customer_id',
                                             self.login_customer_id)
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in AW config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        """Skip the card when a credential or the account id is blank"""
+        utl.skip_on_blank_config(self.config_list, self.configfile,
+                                 'Google Ads')
 
     def refresh_client_token(self, extra, attempt=1):
         try:

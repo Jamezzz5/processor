@@ -47,20 +47,19 @@ class AdkApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
-        self.api_key = self.config['api_key']
-        self.campaign_filter = self.config['campaign_filter']
-        self.company_id = self.config['company_id']
-        self.config_list = [self.config, self.username, self.password,
-                            self.api_key, self.company_id]
+        self.username = self.config.get('username')
+        self.password = self.config.get('password')
+        self.api_key = self.config.get('api_key')
+        self.campaign_filter = self.config.get('campaign_filter', '')
+        self.company_id = self.config.get('company_id')
+        self.config_list = [('username', self.username),
+                            ('password', self.password),
+                            ('api_key', self.api_key),
+                            ('company_id', self.company_id)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Adikteev config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Adikteev')
 
     def set_headers(self):
         self.headers = {'authorization': self.api_key}

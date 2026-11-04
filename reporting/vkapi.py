@@ -45,20 +45,16 @@ class VkApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.act_id = self.config['act_id']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.access_token, self.act_id]
+        self.client_id = self.config.get('client_id', '')
+        self.client_secret = self.config.get('client_secret', '')
+        self.access_token = self.config.get('access_token')
+        self.act_id = self.config.get('act_id')
+        self.config_list = [('access_token', self.access_token),
+                            ('act_id', self.act_id)]
         self.base_params = self.get_url_params()
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not found in config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file, 'VK')
 
     @staticmethod
     def date_check(sd, ed):

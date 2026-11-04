@@ -30,6 +30,8 @@ class SamApi(object):
         self.author_name = None
         self.campaign_ids = None
         self.config_list = None
+        self.warn_config_list = None
+        self.warn_campaign_list = None
         self.client = None
         self.df = pd.DataFrame()
         self.r = None
@@ -52,24 +54,33 @@ class SamApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.author_id = self.config['author_id']
-        self.author_name = self.config['author_name']
-        self.access_token = self.config['access_token']
-        self.campaign_ids = self.remove_space(self.config['campaign_id'])
-        self.campaign_ids = [x for x in self.campaign_ids.split(',')]
-        self.config_list = [self.config, self.author_name, self.access_token,
-                            self.campaign_ids]
+        self.author_id = self.config.get('author_id')
+        self.author_name = self.config.get('author_name')
+        self.access_token = self.config.get('access_token')
+        campaign_id = self.config.get('campaign_id')
+        blank = utl.blank_config_keys([('campaign_id', campaign_id)])
+        campaign_id = '' if blank else self.remove_space(campaign_id)
+        self.campaign_ids = campaign_id.split(',')
+        self.config_list = [('access_token', self.access_token)]
+        self.warn_config_list = [('author_id', self.author_id),
+                                 ('author_name', self.author_name)]
+        self.warn_campaign_list = [('campaign_id', campaign_id)]
 
     @staticmethod
     def remove_space(val):
         return str(val).replace(' ', '')
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Sam config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'Samsung',
+            'The card is still pulled; if it comes back empty, fill this '
+            'in first.')
+        utl.warn_on_blank_config(
+            self.warn_campaign_list, self.config_file, 'Samsung',
+            'The card pulls every campaign the access token can see, not '
+            'just this card\'s.')
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Samsung')
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)

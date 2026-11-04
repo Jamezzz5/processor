@@ -69,23 +69,21 @@ class ScApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.ad_account_id = self.config['ad_account_id']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.access_token, self.ad_account_id,
-                            self.refresh_token]
+        self.client_id = self.config.get('client_id')
+        self.client_secret = self.config.get('client_secret')
+        self.access_token = self.config.get('access_token')
+        self.refresh_token = self.config.get('refresh_token')
+        self.ad_account_id = self.config.get('ad_account_id')
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token),
+                            ('ad_account_id', self.ad_account_id)]
         if self.campaign_filter_col in self.config:
             self.campaign_filter = self.config[self.campaign_filter_col]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in SC config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Snapchat')
 
     def get_client(self):
         token = {'access_token': self.access_token,

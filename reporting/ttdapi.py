@@ -25,6 +25,8 @@ class TtdApi(object):
         self.configfile = None
         self.config = None
         self.config_list = None
+        self.token_config_list = None
+        self.warn_config_list = None
         self.login = None
         self.password = None
         self.ad_id = None
@@ -51,16 +53,15 @@ class TtdApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.configfile))
             sys.exit(0)
-        if 'LOGIN' in self.config:
-            self.login = self.config['LOGIN']
-        if 'PASS' in self.config:
-            self.password = self.config['PASS']
-        self.ad_id = self.config['ADID']
-        self.report_name = self.config['Report Name']
+        self.login = self.config.get('LOGIN')
+        self.password = self.config.get('PASS')
+        self.ad_id = self.config.get('ADID')
+        self.report_name = self.config.get('Report Name')
+        credentials = [('LOGIN', self.login), ('PASS', self.password)]
         if 'Token' in self.config and self.config['Token']:
             self.query_token = self.config['Token']
             logging.info('Loaded token from config file.')
-        else:
+        elif not utl.blank_config_keys(credentials):
             self.query_token = self.get_new_token(self.login, self.password)
             if self.query_token:
                 logging.info('New token retrieved and saved to config file.')
@@ -71,7 +72,35 @@ class TtdApi(object):
                 except IOError:
                     logging.warning('Failed to write token to config file:'
                                     ' {}'.format(self.configfile))
-        self.config_list = [self.login, self.password]
+        self.set_config_lists(credentials)
+
+    def set_config_lists(self, credentials):
+        """Sort the config keys by what a blank one costs this card.
+
+        Report Name picks the pull in get_data.  A report name is
+        downloaded with LOGIN and PASS for the advertiser in ADID.  Ids
+        are read over GraphQL with the saved Token, which LOGIN and
+        PASS only renew; a list of campaign ids takes the campaign
+        names from ADID, while a lone id may be an advertiser, which
+        pulls all its campaigns without ADID.
+
+        :param credentials: (key name, value) for LOGIN and PASS
+        """
+        required = [('Report Name', self.report_name)]
+        ad_id = [('ADID', self.ad_id)]
+        ids = (not utl.blank_config_keys(required) and
+               self.check_report_type(str(self.report_name)))
+        self.token_config_list = []
+        self.warn_config_list = []
+        if ids and self.query_token:
+            self.token_config_list = credentials
+        else:
+            required += credentials
+        if ids and ',' not in str(self.report_name):
+            self.warn_config_list = ad_id
+        else:
+            required += ad_id
+        self.config_list = required
 
     def get_new_token(self, login, password):
         token = ""
@@ -95,11 +124,18 @@ class TtdApi(object):
         return token
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in TTD config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        """Name each blank key: skip the card for one its pull needs,
+        warn for one that only limits it."""
+        utl.warn_on_blank_config(
+            self.token_config_list, self.configfile, 'The Trade Desk',
+            'The card is still pulled with the saved Token, but it cannot '
+            'be renewed when it expires.')
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.configfile, 'The Trade Desk',
+            'The card is still pulled if Report Name is an advertiser ID; '
+            'for campaign IDs, fill it in.')
+        utl.skip_on_blank_config(self.config_list, self.configfile,
+                                 'The Trade Desk')
 
     def authenticate(self):
         url = self.walmart_check()

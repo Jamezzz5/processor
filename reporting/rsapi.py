@@ -77,20 +77,18 @@ class RsApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.api_key = self.config['api_key']
-        self.game_name = self.config['game_name']
-        self.config_list = [self.api_key, self.game_name]
+        self.api_key = self.config.get('api_key')
+        self.game_name = self.config.get('game_name')
+        self.config_list = [('api_key', self.api_key),
+                            ('game_name', self.game_name)]
         if 'campaign_filter' in self.config:
             self.campaign_filter = self.config['campaign_filter']
         if 'domain' in self.config and self.config['domain']:
             self.stats_url = self.config['domain']
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in RS config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Redshell')
 
     def set_headers(self, version):
         self.headers = {'Authorization': self.api_key,

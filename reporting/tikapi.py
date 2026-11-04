@@ -164,20 +164,17 @@ class TikApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.access_token = self.config['access_token']
-        self.config_list = [self.config, self.access_token]
-        if 'advertiser_id' in self.config:
-            self.advertiser_id = self.config['advertiser_id']
-            self.params['advertiser_id'] = self.advertiser_id
+        self.access_token = self.config.get('access_token')
+        self.advertiser_id = self.config.get('advertiser_id')
+        self.params['advertiser_id'] = self.advertiser_id
+        self.config_list = [('access_token', self.access_token),
+                            ('advertiser_id', self.advertiser_id)]
         if 'campaign_id' in self.config:
             self.campaign_id = self.config['campaign_id']
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in Tik config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 self.vendor_name)
 
     def set_headers(self):
         self.headers = {'Access-Token': self.access_token,

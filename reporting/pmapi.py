@@ -114,21 +114,23 @@ class PmApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.username = self.config['username']
-        self.password = self.config['password']
+        self.username = self.config.get('username')
+        self.password = self.config.get('password')
         if isinstance(self.config.get('site'), dict):
             self.site.update(self.config['site'])
-        self.pm_title = self.config['account_filter']
-        if not self.config['campaign_filter'] == "":
-            self.publisher = self.config['campaign_filter']
+        self.pm_title = self.config.get('account_filter')
+        self.config_list = [('username', self.username),
+                            ('password', self.password),
+                            ('account_filter', self.pm_title)]
+        campaign_filter = self.config.get('campaign_filter', '')
+        if not campaign_filter == "":
+            self.publisher = campaign_filter
         else:
             self.publisher = 1
 
     def check_config(self):
-        if self.config['account_filter'] == '':
-            logging.warning('{} not in config file. '
-                            ' Aborting.'.format(self.config['account_filter']))
-            sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Pathmatics')
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:

@@ -28,7 +28,7 @@ class AfApi(object):
         self.api_token = None
         self.app_id = None
         self.source = []
-        self.config_list = None
+        self.warn_config_list = None
         self.default_config_file_name = 'afconfig.json'
         self.df = pd.DataFrame()
         self.r = None
@@ -56,8 +56,8 @@ class AfApi(object):
         if 'source' in self.config:
             self.source = self.remove_space(self.config.get('source', []))
             self.source = self.source.split(',') if self.source else []
-        self.config_list = [('api_token', self.api_token),
-                            ('app_id', self.app_id)]
+        self.warn_config_list = [('api_token', self.api_token),
+                                 ('app_id', self.app_id)]
         return True
 
     @staticmethod
@@ -65,10 +65,9 @@ class AfApi(object):
         return str(val).replace(', ', ',')
 
     def check_config(self):
-        for name, item in self.config_list:
-            if not item:
-                logging.warning('{} not in AF config file.  AppsFlyer '
-                                'pull may not return data.'.format(name))
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'AppsFlyer',
+            'The card returns no data until it is filled in.')
 
     def get_headers(self):
         return {'Authorization': 'Bearer {}'.format(self.api_token),

@@ -109,6 +109,7 @@ class DbApi(object):
         self.query_id = None
         self.report_id = None
         self.config_list = None
+        self.warn_config_list = None
         self.client = None
         self.start_time = None
         self.end_time = None
@@ -135,25 +136,28 @@ class DbApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.refresh_url = self.config['refresh_url']
-        self.report_id = self.config['report_id']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.refresh_token, self.refresh_url]
-        if 'advertiser_id' in self.config:
-            self.advertiser_id = self.config['advertiser_id']
+        self.client_id = self.config.get('client_id')
+        self.client_secret = self.config.get('client_secret')
+        self.access_token = self.config.get('access_token', '')
+        self.refresh_token = self.config.get('refresh_token')
+        self.refresh_url = self.config.get('refresh_url')
+        self.report_id = self.config.get('report_id', '')
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token),
+                            ('refresh_url', self.refresh_url)]
+        self.advertiser_id = self.config.get('advertiser_id')
+        self.warn_config_list = [('advertiser_id', self.advertiser_id)]
         if 'campaign_id' in self.config:
             self.campaign_id = self.config['campaign_id']
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in DB config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.warn_on_blank_config(
+            self.warn_config_list, self.config_file, 'DV360',
+            'The card is still pulled, but every report it requests is '
+            'filtered on a blank advertiser and may come back empty.')
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'DV360')
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):

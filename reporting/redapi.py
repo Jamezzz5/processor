@@ -67,6 +67,12 @@ class RedApi(object):
     date_col = 'date'
     no_reach_field = utl.no_reach_field
     vendor_name = 'Reddit'
+    api_warn_effect = ('The card is still pulled, but Reddit may refuse '
+                       'the sign-in without it.')
+    browser_warn_effect = ('The card is still pulled, but the browser '
+                           'sign-in fails without it.')
+    reused_token_effect = ('The card is still pulled, with the sign-in an '
+                           'earlier Reddit card in this run used.')
     api_field_options = (
         (no_reach_field,
          'Skip the whole range campaign and ad group reach and the daily '
@@ -108,6 +114,8 @@ class RedApi(object):
                                             self.vendor_name)
         self.account = None
         self.config_list = None
+        self.warn_config_list = None
+        self.token_config_list = None
         self.config = None
         self.key_list = [self.username_str, self.password_str]
         self.aborted = False
@@ -141,7 +149,7 @@ class RedApi(object):
         self.access_token = self.config.get(self.access_token_str)
         self.refresh_token = self.config.get(self.refresh_token_str)
         self.resolve_campaign_filter()
-        self.config_list = [ self.username, self.password]
+        self.set_config_lists()
 
     def load_config_dict(self, config):
         """Populate credentials from an in-memory dict, bypassing the
@@ -156,7 +164,37 @@ class RedApi(object):
         self.access_token = config.get(self.access_token_str)
         self.refresh_token = config.get(self.refresh_token_str)
         self.resolve_campaign_filter()
-        self.config_list = [self.username, self.password]
+        self.set_config_lists()
+
+    def set_config_lists(self):
+        """
+        Pairs the keys the card cannot be pulled without, and the ones it
+        pulls worse without, with their values for the card's mode.
+
+        The api pull finds the account by the username and signs in with
+        the client keys and refresh token, raising mid-run without one.
+        The browser pull signs in with the username and password.  The
+        password otherwise holds the campaign filter, so blank is normal
+        in api mode and never reported.
+
+        One instance pulls every Reddit card in a run and only asks for a
+        token while it holds none, so once an earlier card has signed in
+        the token keys are only warned on: the pull still works.
+        """
+        self.config_list = [(self.username_str, self.username)]
+        self.token_config_list = []
+        if not self.api:
+            self.warn_config_list = [(self.password_str, self.password)]
+            return
+        token_keys = [
+            (self.client_id_str, self.client_id),
+            (self.client_secret_str, self.client_secret),
+            (self.refresh_token_str, self.refresh_token)]
+        if self.headers:
+            self.token_config_list = token_keys
+        else:
+            self.config_list.extend(token_keys)
+        self.warn_config_list = [(self.redirect_uri_str, self.redirect_uri)]
 
     @staticmethod
     def looks_like_password(value):
@@ -230,9 +268,14 @@ class RedApi(object):
                                          self.campaign_col)
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in config file.'.format(item))
+        """Names each blank key; skips the card when the pull needs it."""
+        effect = self.api_warn_effect if self.api else self.browser_warn_effect
+        utl.warn_on_blank_config(self.warn_config_list, self.config_file,
+                                 self.vendor_name, effect)
+        utl.warn_on_blank_config(self.token_config_list, self.config_file,
+                                 self.vendor_name, self.reused_token_effect)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 self.vendor_name)
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:

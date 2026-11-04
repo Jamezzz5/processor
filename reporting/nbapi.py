@@ -56,21 +56,21 @@ class NbApi(object):
         except IOError:
             logging.error(self.config_file + ' not found.  Aborting.')
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.refresh_url = self.config['refresh_url']
-        self.topic_id = self.config['topic_id']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.refresh_token, self.refresh_url,
-                            self.topic_id]
+        self.client_id = self.config.get('client_id')
+        self.client_secret = self.config.get('client_secret')
+        self.access_token = self.config.get('access_token', '')
+        self.refresh_token = self.config.get('refresh_token')
+        self.refresh_url = self.config.get('refresh_url')
+        self.topic_id = self.config.get('topic_id')
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token),
+                            ('refresh_url', self.refresh_url),
+                            ('topic_id', self.topic_id)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning(item + 'not in NB config file.  Aborting.')
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Netbase')
 
     def get_client(self):
         token = {'access_token': self.access_token,

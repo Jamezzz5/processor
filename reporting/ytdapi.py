@@ -59,21 +59,21 @@ class YtdApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.access_token = self.config['access_token']
-        self.refresh_token = self.config['refresh_token']
-        self.refresh_url = self.config['refresh_url']
-        self.query = self.config['query']
-        self.config_list = [self.config, self.client_id, self.client_secret,
-                            self.refresh_token, self.refresh_url]
+        self.client_id = self.config.get('client_id')
+        self.client_secret = self.config.get('client_secret')
+        self.access_token = self.config.get('access_token', '')
+        self.refresh_token = self.config.get('refresh_token')
+        self.refresh_url = self.config.get('refresh_url')
+        self.query = self.config.get('query')
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret),
+                            ('refresh_token', self.refresh_token),
+                            ('refresh_url', self.refresh_url),
+                            ('query', self.query)]
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not in YT config file.'
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'YouTube')
 
     def get_client(self):
         token = {'access_token': self.access_token,

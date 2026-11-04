@@ -47,17 +47,15 @@ class RcApi(object):
         except IOError:
             logging.error('{} not found.  Aborting.'.format(self.config_file))
             sys.exit(0)
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.config_list = [self.config, self.client_id, self.client_secret]
+        self.client_id = self.config.get('client_id')
+        self.client_secret = self.config.get('client_secret')
+        self.config_list = [('client_id', self.client_id),
+                            ('client_secret', self.client_secret)]
         self.base_params = self.get_url_params()
 
     def check_config(self):
-        for item in self.config_list:
-            if item == '':
-                logging.warning('{} not found in config file.  '
-                                'Aborting.'.format(item))
-                sys.exit(0)
+        utl.skip_on_blank_config(self.config_list, self.config_file,
+                                 'Revcontent')
 
     @staticmethod
     def date_check(sd, ed):
