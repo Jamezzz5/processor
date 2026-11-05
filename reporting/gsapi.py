@@ -12,8 +12,36 @@ import reporting.utils as utl
 import reporting.vmcolumns as vmc
 from requests_oauthlib import OAuth2Session
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 config_path = utl.config_path
+
+QUOTA_RETRIES = 6
+QUOTA_BACKOFF_S = 2
+
+
+def quota_retry_adapter(retries=QUOTA_RETRIES, backoff=QUOTA_BACKOFF_S):
+    """An adapter that waits out Google's per-minute request quota.
+
+    Every Slides write is its own batchUpdate, so a long deck runs past
+    the per-user writes-per-minute limit and each call after that comes
+    back 429. A 429 means Google applied nothing, so even a POST is safe
+    to send again; nothing else is retried, because a write that failed
+    any other way may have landed. The resends wait 0, 4, 8, 16, 32 and
+    64 seconds (or Google's ``Retry-After``), past a minute by the
+    fifth, so the quota window turns over before the call gives up.
+    The last 429 is returned rather than raised, for
+    :meth:`GsApi.request_applied` to log as a rejection.
+
+    :param retries: resends after the first 429.
+    :param backoff: urllib3's ``backoff_factor``.
+    :returns: an ``HTTPAdapter`` to mount on the authed session.
+    """
+    retry = Retry(total=retries, connect=0, read=0, status_forcelist=(429,),
+                  allowed_methods=None, backoff_factor=backoff,
+                  raise_on_status=False)
+    return HTTPAdapter(max_retries=retry)
 
 
 EMU_PER_PT = 12700
@@ -421,6 +449,9 @@ class GsApi(object):
                     self.parse_response = self.parse_google_doc
 
     def get_client(self):
+        """Refresh the access token and keep an authed session on
+        ``self.client`` that resends quota-limited calls
+        (:func:`quota_retry_adapter`)."""
         token = {'access_token': self.access_token,
                  'refresh_token': self.refresh_token,
                  'token_type': 'Bearer',
@@ -431,6 +462,7 @@ class GsApi(object):
         self.client = OAuth2Session(self.client_id, token=token)
         token = self.client.refresh_token(self.refresh_url, **extra)
         self.client = OAuth2Session(self.client_id, token=token)
+        self.client.mount('https://', quota_retry_adapter())
         if self.on_token_refresh:
             self.on_token_refresh(token)
 

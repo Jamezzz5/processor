@@ -15,6 +15,7 @@ import subprocess
 import http.server
 import numpy as np
 import pandas as pd
+import requests
 import datetime as dt
 from unittest.mock import Mock
 import urllib3.exceptions as url_ex
@@ -349,6 +350,21 @@ class _EchoHandler(_StallingHandler):
         self.send_header('Content-Type', 'text/html')
         self.end_headers()
         self.wfile.write(b'<html><body><h1>Seen</h1></body></html>')
+
+
+class _QuotaHandler(_StallingHandler):
+    """Answers each POST with the next of the server's ``codes`` (200
+    once they run out), keeping every body on the server's ``seen``."""
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers['Content-Length']))
+        self.server.seen.append(body)
+        codes = self.server.codes
+        code = codes.pop(0) if codes else 200
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{}' if code == 200 else b'{"error": "quota"}')
 
 
 def _start_server(handler):
@@ -7907,6 +7923,64 @@ def _slides_api(monkeypatch):
     monkeypatch.setattr(api, 'slides_batch_update',
                         lambda pid, reqs: captured.extend(reqs))
     return api, captured
+
+
+def _quota_api(server, retries=gsapi.QUOTA_RETRIES):
+    """A ``GsApi`` posting Slides writes to ``server`` through the quota
+    adapter, its waits taken out."""
+    api = gsapi.GsApi()
+    api.slides_url = _server_url(server).rstrip('/')
+    api.client = requests.Session()
+    api.client.mount('http://', gsapi.quota_retry_adapter(retries, backoff=0))
+    return api
+
+
+class TestGsApiQuota:
+    """Google's per-minute write quota answers 429 and applies nothing;
+    a long deck used to lose every slide written past it."""
+
+    REQUESTS = [{'createSlide': {'objectId': 'rbslide3'}}]
+
+    @pytest.fixture
+    def server(self):
+        server = _start_server(_QuotaHandler)
+        server.codes, server.seen = [], []
+        yield server
+        _stop_server(server)
+
+    def test_a_quota_429_is_sent_again_until_it_applies(self, server):
+        server.codes.extend([429, 429])
+        api = _quota_api(server)
+        response = api.slides_batch_update('deck', self.REQUESTS)
+        assert response.status_code == 200
+        assert not getattr(api, 'slides_rejections', [])
+        assert len(server.seen) == 3
+        assert len(set(server.seen)) == 1
+
+    def test_spent_retries_return_the_429_as_a_rejection(self, server):
+        server.codes.extend([429] * 3)
+        api = _quota_api(server, retries=2)
+        response = api.slides_batch_update('deck', self.REQUESTS)
+        assert response.status_code == 429
+        assert len(server.seen) == 3
+        assert api.slides_rejections == [('rbslide3', '{"error": "quota"}')]
+
+    def test_other_failures_are_not_sent_twice(self, server):
+        server.codes.append(500)
+        api = _quota_api(server)
+        response = api.slides_batch_update('deck', self.REQUESTS)
+        assert response.status_code == 500
+        assert len(server.seen) == 1
+
+    def test_get_client_mounts_the_quota_adapter(self, monkeypatch):
+        monkeypatch.setattr(gsapi.OAuth2Session, 'refresh_token',
+                            lambda session, url, **kwargs: {
+                                'access_token': 'a', 'token_type': 'Bearer'})
+        api = gsapi.GsApi()
+        api.get_client()
+        retry = api.client.get_adapter(api.slides_url).max_retries
+        assert retry.status_forcelist == (429,)
+        assert retry.total == gsapi.QUOTA_RETRIES
 
 
 def _matrix(rows):
