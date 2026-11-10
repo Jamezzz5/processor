@@ -7,6 +7,8 @@ import requests
 import pandas as pd
 import datetime as dt
 import reporting.utils as utl
+import reporting.vmcolumns as vmc
+from oauthlib.oauth2 import OAuth2Error
 from requests_oauthlib import OAuth2Session
 
 config_path = utl.config_path
@@ -92,6 +94,7 @@ class DbApi(object):
          'suffix': utl.reach_suffix(utl.platform_report_level, daily=True)}]
     default_groups = base_groups
     default_metrics = base_metrics
+    test_days = 30
 
     def __init__(self):
         self.config = None
@@ -259,9 +262,11 @@ class DbApi(object):
         query_url = '{}/queries'.format(base_url)
         return query_url
 
-    def create_run_url(self):
+    def create_run_url(self, synchronous=False):
         query_url = self.create_query_url()
         full_url = '{}/{}:run'.format(query_url, self.query_id)
+        if synchronous:
+            full_url = '{}?synchronous=true'.format(full_url)
         return full_url
 
     def create_url(self):
@@ -710,3 +715,68 @@ class DbApi(object):
                               self.date_col, date)
         return utl.name_reach_rows(df, self.placement,
                                    ','.join(self.campaign_ids))
+
+    def run_test_report(self):
+        """
+        Creates and synchronously runs a one metric report by campaign.
+
+        :return: The url of the finished report, blank when it did not run
+        """
+        ed = dt.datetime.today()
+        sd = ed - dt.timedelta(days=self.test_days)
+        self.default_groups = self.campaign_groups
+        self.default_metrics = self.base_metrics[:1]
+        metadata = self.create_report_metadata(sd, ed, 'test')
+        if not self.request_query(metadata):
+            return ''
+        self.raw_request(self.create_run_url(synchronous=True), 'post')
+        metadata = self.r.json().get('metadata', {})
+        return metadata.get('googleCloudStoragePath', '')
+
+    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
+        try:
+            report_url = self.run_test_report()
+            error = self.r.json()
+        except OAuth2Error as e:
+            report_url = ''
+            error = e
+        if report_url:
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
+                   True]
+        else:
+            msg = ('Report did not run. Double Check the credentials and '
+                   'Advertiser ID and Ensure Permissions were granted.'
+                   '\n Error Msg:')
+            row = [acc_col, ' '.join([failure_msg, msg, str(error)]), False]
+        results.append(row)
+        return results, report_url
+
+    def check_campaign_id(self, results, camp_col, success_msg, failure_msg,
+                          report_url):
+        self.df = utl.import_read_csv(report_url, file_check=False,
+                                      error_bad='warn', empty_df=True)
+        self.check_empty_df()
+        self.remove_footer()
+        self.parse_campaign_filter()
+        self.filter_df_on_campaign(keep_on_no_match=False)
+        if self.df.empty or self.campaign_col not in self.df.columns:
+            msg = ('No campaigns delivered in the last {} days under '
+                   'filter:'.format(self.test_days))
+            row = [camp_col, ' '.join([failure_msg, msg,
+                                       str(self.campaign_id)]), False]
+        else:
+            names = self.df[self.campaign_col].astype('U').unique()
+            row = [camp_col, ' '.join([success_msg, ', '.join(names)]), True]
+        results.append(row)
+        return results
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results, report_url = self.check_advertiser_id(
+            [], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results = self.check_campaign_id(
+            results, camp_col, success_msg, failure_msg, report_url)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)

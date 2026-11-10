@@ -12,6 +12,7 @@ import pandas as pd
 import datetime as dt
 import reporting.utils as utl
 import reporting.gsapi as gsapi
+import reporting.vmcolumns as vmc
 import reporting.dictcolumns as dctc
 from selenium.webdriver.common.by import By
 from requests_oauthlib import OAuth1Session
@@ -939,6 +940,40 @@ class TwApi(object):
     def rename_cols(self):
         self.df = self.df.rename(columns=colnamedic)
         return self.df
+
+    def check_account_id(self, results, acc_col, success_msg, failure_msg):
+        if self.check_account_access(self.account_id):
+            row = [acc_col, ' '.join([success_msg, str(self.account_id)]),
+                   True]
+        else:
+            msg = ('Account ID NOT Found. Double Check the credentials and '
+                   'Account ID and Ensure Permissions were granted.')
+            row = [acc_col, ' '.join([failure_msg, msg]), False]
+        results.append(row)
+        return results
+
+    def check_campaign_ids(self, results, camp_col, success_msg, failure_msg):
+        self.cid_dict = self.get_ids(entity='campaigns', eid='id', name='name',
+                                     parent='funding_instrument_id')
+        if self.cid_dict:
+            names = [x['name'] for x in self.cid_dict.values()]
+            row = [camp_col, ' '.join([success_msg, ', '.join(names)]), True]
+        else:
+            msg = 'No campaigns in the account under filter:'
+            row = [camp_col, ' '.join([failure_msg, msg,
+                                       str(self.campaign_filter)]), False]
+        results.append(row)
+        return results
+
+    def test_connection(self, acc_col, camp_col, acc_pre):
+        success_msg = 'SUCCESS:'
+        failure_msg = 'FAILURE:'
+        results = self.check_account_id([], acc_col, success_msg, failure_msg)
+        if False in results[0]:
+            return pd.DataFrame(data=results, columns=vmc.r_cols)
+        results = self.check_campaign_ids(
+            results, camp_col, success_msg, failure_msg)
+        return pd.DataFrame(data=results, columns=vmc.r_cols)
 
 
 class TwitterAsyncRequests(object):
