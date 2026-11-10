@@ -51,7 +51,7 @@ class SimApi(object):
         logging.info('Loading Sim config file: {}'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -68,8 +68,8 @@ class SimApi(object):
                             ('countries', self.countries)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Similarweb')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Similarweb')
 
     def set_headers(self):
         headers = {

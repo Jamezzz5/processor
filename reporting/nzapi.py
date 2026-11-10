@@ -58,7 +58,7 @@ class NzApi(object):
         logging.info('Loading Nz config file: {}'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -75,8 +75,8 @@ class NzApi(object):
                             ('game_title', self.game_title)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Newzoo')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Newzoo')
 
     @staticmethod
     def get_data_default_check(sd, ed):

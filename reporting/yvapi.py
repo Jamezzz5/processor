@@ -60,7 +60,7 @@ class YvApi(object):
             'Loading Yahoo DSP - Verizon config file: {}'.format(config))
         self.config_file = os.path.join(utl.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -91,8 +91,8 @@ class YvApi(object):
         self.campaign_filter = config.get('campaign', self.campaign_filter)
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Yahoo DSP')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Yahoo DSP')
 
     def make_request(self, method, url, attempt=1, **kwargs):
         """Sends one request, retrying when the connection breaks.

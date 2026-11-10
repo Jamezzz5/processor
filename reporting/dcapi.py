@@ -148,7 +148,7 @@ class DcApi(object):
         logging.info('Loading DC config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -194,11 +194,12 @@ class DcApi(object):
         return str(val).replace(' ', '')
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.config_file, 'DCM',
             'The card is still pulled, but may return no rows until it is '
             'filled in.')
-        utl.skip_on_blank_config(self.config_list, self.config_file, 'DCM')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'DCM')
 
     def refresh_client_token(self, extra, max_attempts=10):
         """

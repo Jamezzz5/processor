@@ -8420,12 +8420,9 @@ class TestCheckConfig:
     def test_the_skip_reason_reaches_the_step(self, tmp_path):
         with utl.TimedStep('import', 'Facebook', 'API_Facebook_A',
                            config_path_dir=str(tmp_path)) as step:
-            try:
-                utl.skip_on_blank_config([('act_id', None)],
-                                         'config/fbconfig.json', 'Facebook')
-            except SystemExit as e:
+            if not utl.check_blank_config(
+                    [('act_id', None)], 'config/fbconfig.json', 'Facebook'):
                 step.status = 'skipped'
-                step.error = e
         with open(os.path.join(str(tmp_path), utl.run_stats_file)) as f:
             record = json.load(f)[-1]
         assert record['status'] == 'skipped'
@@ -8433,13 +8430,23 @@ class TestCheckConfig:
             'Facebook config fbconfig.json is missing act_id.  Fill it in '
             'to pull this card.')
 
+    def test_a_blank_value_with_an_effect_only_warns(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            passed = utl.check_blank_config(
+                [('app_id', ''), ('act_id', '1')], 'config/fbconfig.json',
+                'Facebook', 'The card is still pulled.')
+        assert passed is True
+        assert [(x.levelname, x.getMessage()) for x in caplog.records] == [
+            ('WARNING', 'Facebook config fbconfig.json is missing app_id.  '
+                        'The card is still pulled.')]
+
     @pytest.mark.parametrize('case', _CONFIG_CASES,
                              ids=[x[1] for x in _CONFIG_CASES])
     def test_a_filled_config_passes_quietly(
             self, tmp_path, monkeypatch, caplog, case):
         api = _loaded_api(case, case[3], tmp_path, monkeypatch)
         with caplog.at_level(logging.WARNING):
-            api.check_config()
+            assert api.check_config() is True
         assert 'is missing' not in caplog.text
 
     @pytest.mark.parametrize('case', _SKIP_CASES,
@@ -8449,10 +8456,8 @@ class TestCheckConfig:
         key = case[4]
         api = _loaded_api(case, {**case[3], key: None}, tmp_path,
                           monkeypatch)
-        with caplog.at_level(logging.ERROR), \
-                pytest.raises(SystemExit) as exit_info:
-            api.check_config()
-        assert exit_info.value.code == 0
+        with caplog.at_level(logging.ERROR):
+            assert api.check_config() is False
         assert 'is missing {}.'.format(key) in caplog.text
 
     @pytest.mark.parametrize('case', _SKIP_CASES,
@@ -8464,8 +8469,8 @@ class TestCheckConfig:
         key = case[4]
         api = _loaded_api(case, _without(case[3], key), tmp_path,
                           monkeypatch)
-        with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
-            api.check_config()
+        with caplog.at_level(logging.ERROR):
+            assert api.check_config() is False
         assert 'is missing {}.'.format(key) in caplog.text
 
     @pytest.mark.parametrize('case', _WARN_CASES,
@@ -8476,7 +8481,7 @@ class TestCheckConfig:
         api = _loaded_api(case, {**case[3], key: None}, tmp_path,
                           monkeypatch)
         with caplog.at_level(logging.WARNING):
-            api.check_config()
+            assert api.check_config() is True
         assert 'is missing {}.'.format(key) in caplog.text
         assert not [x for x in caplog.records if x.levelno >= logging.ERROR]
 

@@ -40,7 +40,7 @@ class QtApi(object):
         logging.info('Loading Quantcast config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -58,8 +58,8 @@ class QtApi(object):
                             ('act_id', self.act_id)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Quantcast')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Quantcast')
 
     def set_header(self):
         token = self.get_token()

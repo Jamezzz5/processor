@@ -235,7 +235,7 @@ class AmzApi(object):
         logging.info('Loading AMZ config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -270,12 +270,12 @@ class AmzApi(object):
         self.use_v1 = self.config_use_v1
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.config_file, 'Amazon',
             'The card pulls the first account these credentials can see, '
             'which may not be this card\'s advertiser.')
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Amazon')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Amazon')
 
     def refresh_client_token(self, extra, attempt=1):
         try:

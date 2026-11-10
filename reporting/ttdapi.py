@@ -44,7 +44,7 @@ class TtdApi(object):
         logging.info('Loading TTD config file: {}'.format(config))
         self.configfile = os.path.join(config_path + config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -126,16 +126,16 @@ class TtdApi(object):
     def check_config(self):
         """Name each blank key: skip the card for one its pull needs,
         warn for one that only limits it."""
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.token_config_list, self.configfile, 'The Trade Desk',
             'The card is still pulled with the saved Token, but it cannot '
             'be renewed when it expires.')
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.configfile, 'The Trade Desk',
             'The card is still pulled if Report Name is an advertiser ID; '
             'for campaign IDs, fill it in.')
-        utl.skip_on_blank_config(self.config_list, self.configfile,
-                                 'The Trade Desk')
+        return utl.check_blank_config(
+            self.config_list, self.configfile, 'The Trade Desk')
 
     def authenticate(self):
         url = self.walmart_check()

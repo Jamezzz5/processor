@@ -133,8 +133,9 @@ class RedApi(object):
         logging.info('Loading Reddit config file: {}.'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        if not self.aborted:
-            self.check_config()
+        if self.aborted:
+            return True
+        return self.check_config()
 
     def load_config(self):
         with open(self.config_file, 'r') as f:
@@ -270,12 +271,12 @@ class RedApi(object):
     def check_config(self):
         """Names each blank key; skips the card when the pull needs it."""
         effect = self.api_warn_effect if self.api else self.browser_warn_effect
-        utl.warn_on_blank_config(self.warn_config_list, self.config_file,
-                                 self.vendor_name, effect)
-        utl.warn_on_blank_config(self.token_config_list, self.config_file,
-                                 self.vendor_name, self.reused_token_effect)
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 self.vendor_name)
+        utl.check_blank_config(self.warn_config_list, self.config_file,
+                               self.vendor_name, effect)
+        utl.check_blank_config(self.token_config_list, self.config_file,
+                               self.vendor_name, self.reused_token_effect)
+        return utl.check_blank_config(
+            self.config_list, self.config_file, self.vendor_name)
 
     def get_data_default_check(self, sd, ed, fields):
         if sd is None:

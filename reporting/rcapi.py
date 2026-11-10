@@ -38,7 +38,7 @@ class RcApi(object):
         logging.info('Loading RC config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -54,8 +54,8 @@ class RcApi(object):
         self.base_params = self.get_url_params()
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Revcontent')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Revcontent')
 
     @staticmethod
     def date_check(sd, ed):

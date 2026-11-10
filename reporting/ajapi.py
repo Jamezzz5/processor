@@ -42,7 +42,7 @@ class AjApi(object):
         logging.info('Loading AJ config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -58,7 +58,8 @@ class AjApi(object):
                             ('api_token', self.api_token)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file, 'Adjust')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Adjust')
 
     @staticmethod
     def date_check(sd, ed):

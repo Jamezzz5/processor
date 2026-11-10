@@ -65,7 +65,7 @@ class AfApi(object):
         return str(val).replace(', ', ',')
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        return utl.check_blank_config(
             self.warn_config_list, self.config_file, 'AppsFlyer',
             'The card returns no data until it is filled in.')
 

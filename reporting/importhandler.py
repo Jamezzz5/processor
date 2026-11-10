@@ -274,12 +274,16 @@ class ImportHandler(object):
         params = self.matrix.vendor_set(vk)
         with utl.TimedStep('import', api_key_of(vk), vk) as step:
             try:
-                api_class.input_config(params[vmc.apifile])
+                loaded = api_class.input_config(params[vmc.apifile])
             except (FileNotFoundError, ValueError, SystemExit) as e:
                 reason = '' if isinstance(e, SystemExit) else ': {}'.format(e)
                 logging.warning('Skipped {}{}'.format(vk, reason))
                 step.status = 'skipped'
                 step.error = e
+                return
+            if loaded is False:
+                logging.warning('Skipped {}'.format(vk))
+                step.status = 'skipped'
                 return
             utl.set_card_placement(api_class, params)
             start_check = self.date_check(params[vmc.startdate])
@@ -379,8 +383,9 @@ class ImportHandler(object):
         """Load a card's config for Test Connection.
 
         A card the import loop would skip gets a failure row with the
-        reason instead: the skip is a SystemExit or a ValueError, which
-        would otherwise end the whole test.
+        reason instead: the skip is a False from ``input_config``, or a
+        SystemExit or ValueError that would otherwise end the whole
+        test.
 
         :param api_class: the API object that reads the config
         :param config_name: the card's API_FILE value
@@ -390,18 +395,19 @@ class ImportHandler(object):
         counter = utl.StepLogCounter()
         logging.getLogger().addHandler(counter)
         try:
-            api_class.input_config(config_name)
+            if api_class.input_config(config_name) is not False:
+                return None
+            reason = counter.last_error
         except (FileNotFoundError, ValueError, SystemExit) as e:
             reason = counter.last_error
             if not isinstance(e, SystemExit):
                 reason = str(e)
-            reason = reason or ("This card's API file could not be loaded.  "
-                                "Check the API file on the card.")
-            return pd.DataFrame([[acc_col, 'FAILURE: {}'.format(reason),
-                                  False]], columns=vmc.r_cols)
         finally:
             logging.getLogger().removeHandler(counter)
-        return None
+        reason = reason or ("This card's API file could not be loaded.  "
+                            "Check the API file on the card.")
+        return pd.DataFrame([[acc_col, 'FAILURE: {}'.format(reason), False]],
+                            columns=vmc.r_cols)
 
     def ftp_load(self, ftp_key, ftp_class):
         for vk in ftp_key:

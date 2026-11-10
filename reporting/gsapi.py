@@ -400,7 +400,7 @@ class GsApi(object):
         logging.info('Loading GS config file:{}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -435,11 +435,11 @@ class GsApi(object):
         self.warn_config_list = [('sheet_id', self.sheet_id)]
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.config_file, 'Google Sheets',
             'The card reads no sheet or doc until it is filled in.')
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Google Sheets')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Google Sheets')
 
     def parse_fields(self, fields):
         if fields:

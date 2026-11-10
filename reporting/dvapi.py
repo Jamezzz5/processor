@@ -67,7 +67,7 @@ class DvApi(object):
         logging.info('Loading DV config file: {}.'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -86,8 +86,8 @@ class DvApi(object):
             self.client = self.config['client']
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'DoubleVerify')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'DoubleVerify')
 
     def get_data_default_check(self, sd, ed, fields=None):
         if sd is None:

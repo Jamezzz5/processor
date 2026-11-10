@@ -126,8 +126,7 @@ class DbApi(object):
         logging.info('Loading DB config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
-        return True
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -152,12 +151,12 @@ class DbApi(object):
             self.campaign_id = self.config['campaign_id']
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.config_file, 'DV360',
             'The card is still pulled, but every report it requests is '
             'filtered on a blank advertiser and may come back empty.')
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'DV360')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'DV360')
 
     @staticmethod
     def get_data_default_check(sd, ed, fields):

@@ -38,7 +38,7 @@ class AdkApi(object):
         logging.info('Loading Adikteev config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -58,8 +58,8 @@ class AdkApi(object):
                             ('company_id', self.company_id)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Adikteev')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Adikteev')
 
     def set_headers(self):
         self.headers = {'authorization': self.api_key}

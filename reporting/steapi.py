@@ -50,7 +50,7 @@ class SteApi(object):
         logging.info('Loading Ste config file: {}'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -72,7 +72,8 @@ class SteApi(object):
         self.config_list = [('key', self.key)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file, 'Steam')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Steam')
 
     def make_request(self, url, method='GET', params=None, body=None,
                      header=None, attempt=1):

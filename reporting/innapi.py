@@ -40,7 +40,7 @@ class InnApi(object):
         logging.info('Loading Innovid config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -58,8 +58,8 @@ class InnApi(object):
                             ('advertiser', self.advertiser)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Innovid')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Innovid')
 
     def set_headers(self):
         user_pass = base64.b64encode(bytes('{}:{}'.format(

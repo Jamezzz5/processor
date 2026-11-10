@@ -140,7 +140,7 @@ class FbApi(object):
         logging.info('Loading Facebook config file: {}'.format(config))
         self.configfile = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -184,11 +184,11 @@ class FbApi(object):
         return [x.export_all_data() for x in accounts]
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.configfile, 'Facebook',
             'The card is still pulled with the access token alone.')
-        utl.skip_on_blank_config(self.config_list, self.configfile,
-                                 'Facebook')
+        return utl.check_blank_config(
+            self.config_list, self.configfile, 'Facebook')
 
     @staticmethod
     def parse_fields(items):

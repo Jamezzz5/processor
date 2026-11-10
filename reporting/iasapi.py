@@ -42,7 +42,7 @@ class IasApi(object):
         logging.info('Loading IAS config file: {}.'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         with open(self.config_file, 'r') as f:
@@ -57,10 +57,10 @@ class IasApi(object):
 
     def check_config(self):
         """Name a blank login or advertiser without skipping the card"""
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.config_file, 'Integral Ad Science',
             'The card returns no data until it is filled in.')
-        utl.warn_on_blank_config(
+        return utl.check_blank_config(
             self.warn_advertiser_list, self.config_file,
             'Integral Ad Science',
             'The pull cannot switch to this card\'s advertiser, so it may '

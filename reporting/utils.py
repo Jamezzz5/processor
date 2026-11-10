@@ -8,7 +8,6 @@ import time
 import codecs
 import shutil
 import signal
-import sys
 import random
 import tempfile
 import contextlib
@@ -1278,50 +1277,29 @@ def blank_config_keys(pairs):
             if value is None or str(value).strip() in ('', 'nan')]
 
 
-def blank_config_message(missing, config_file, api_name, ending):
-    """'<API> config <file> is missing <keys>.  <ending>'"""
-    return '{} config {} is missing {}.  {}'.format(
-        api_name, os.path.basename(config_file), ', '.join(missing), ending)
+def check_blank_config(pairs, config_file, api_name, effect=''):
+    """Log each blank config value by key and file.
 
+    Without ``effect`` the values are required: logged at ERROR, which
+    TimedStep keeps as the skipped step's reason, and the False tells
+    ``input_config``'s caller to skip the card.  With ``effect`` they
+    only limit the pull: a warning, and the card is still pulled.
 
-def skip_on_blank_config(pairs, config_file, api_name):
-    """Skip the card, naming each blank key and the file, when a
-    required config value is blank.
-
-    ``sys.exit(0)`` is how an API class skips a card from
-    ``input_config``: the import handler records the SystemExit as a
-    skipped step.  The exit carries no text, so the message is logged
-    at ERROR, which TimedStep keeps as the step's reason.
-
-    :param pairs: (key name, value) for each required setting
+    :param pairs: (key name, value) for each setting to check
     :param config_file: the card's config file
     :param api_name: the vendor, as the message names it
+    :param effect: what a blank value the pull can do without costs it
+    :returns: False when a required value is blank, else True
     """
     missing = blank_config_keys(pairs)
     if not missing:
-        return
-    logging.error(blank_config_message(missing, config_file, api_name,
-                                       'Fill it in to pull this card.'))
-    sys.exit(0)
-
-
-def warn_on_blank_config(pairs, config_file, api_name,
-                         effect='The card is still pulled.'):
-    """Name each blank config value the card can be pulled without,
-    and carry on: a value whose absence only limits the pull, so the
-    card must not be skipped for it.
-
-    :param pairs: (key name, value) for each setting to report
-    :param config_file: the card's config file
-    :param api_name: the vendor, as the message names it
-    :param effect: what the blank value means for this pull
-    :returns: the blank names, in order
-    """
-    missing = blank_config_keys(pairs)
-    if missing:
-        logging.warning(blank_config_message(missing, config_file, api_name,
-                                             effect))
-    return missing
+        return True
+    logging.log(
+        logging.WARNING if effect else logging.ERROR,
+        '{} config {} is missing {}.  {}'.format(
+            api_name, os.path.basename(config_file), ', '.join(missing),
+            effect or 'Fill it in to pull this card.'))
+    return bool(effect)
 
 
 def error_http_status(error):
@@ -1362,7 +1340,8 @@ class StepLogCounter(logging.Handler):
 class TimedStep(object):
     """Time one run step into ``run_stats.json``, written on entry so a
     crash leaves it as the running step. A block that swallows a failure
-    sets ``error``; it may also set ``rows`` and ``status``."""
+    sets ``error``; it may also set ``rows`` and ``status``. A step set
+    to skipped with no error keeps the last ERROR logged as its reason."""
 
     def __init__(self, step, api_key='', vendor_key='',
                  config_path_dir=None):
@@ -1402,6 +1381,9 @@ class TimedStep(object):
             self.record.update(error_type=type(error).__name__,
                                error_text=text[:_RUN_STATS_ERROR_CHARS],
                                http_status=error_http_status(error))
+        elif self.status == 'skipped':
+            self.record['error_text'] = self.counter.last_error[
+                :_RUN_STATS_ERROR_CHARS]
         records = [self.record if x.get('token') == self.record['token']
                    else x for x in _read_json(self.file_name, [])]
         if self.record not in records:

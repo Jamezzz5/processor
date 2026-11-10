@@ -133,7 +133,7 @@ class TwApi(object):
         logging.info('Loading Twitter config file: {}.'.format(config))
         self.configfile = os.path.join(configpath, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -166,11 +166,11 @@ class TwApi(object):
         self.warn_config_list = [('ACCOUNT_ID', self.account_id)]
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.configfile, 'Twitter',
             'No ad data is pulled until it is filled in.')
-        utl.skip_on_blank_config(self.config_list, self.configfile,
-                                 'Twitter')
+        return utl.check_blank_config(
+            self.config_list, self.configfile, 'Twitter')
 
     def load_config_dict(self, config):
         """Populate credentials from an in-memory dict, bypassing the
