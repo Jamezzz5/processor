@@ -593,14 +593,24 @@ class SsApi(object):
         self.config[index][self.full_shot_key] = key
 
     def upload_slot_shots(self, index):
-        """Upload one row's ad-slot shots beside its page shot."""
+        """Upload one row's ad-slot shots -- the crop and the screen
+        around it -- beside its page shot."""
         for slot in self.slots.get(index, []):
-            path = slot.pop('shot_path', '')
-            data = utl.image_to_binary(path, True) if path else None
-            slot['shot_key'] = path.replace('\\', '/') if data else ''
-            slot['shot_url'] = (
-                self.s3.s3_upload_file_obj(data, slot['shot_key'])
-                if data else '')
+            slot['shot_key'], slot['shot_url'] = self.upload_slot_file(
+                slot.pop('shot_path', ''))
+            slot['context_key'], slot['context_url'] = (
+                self.upload_slot_file(slot.pop('context_path', '')))
+            if not slot['context_key']:
+                slot['context_top'] = None
+
+    def upload_slot_file(self, path):
+        """``(key, url)`` for one slot file uploaded, ``('', '')`` for a
+        file that was never written."""
+        data = utl.image_to_binary(path, True) if path else None
+        if not data:
+            return '', ''
+        key = path.replace('\\', '/')
+        return key, self.s3.s3_upload_file_obj(data, key)
 
     @staticmethod
     def clean_value(value):

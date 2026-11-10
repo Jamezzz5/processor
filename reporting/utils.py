@@ -1777,6 +1777,10 @@ class SeleniumWrapper(object):
                        'u')
     slot_mark = 'data-lq-slot'
     max_ad_slots = 20
+    max_context_shots = 8
+    context_shot_suffix = '_ctx.jpg'
+    view_size_script = (
+        'return {w: window.innerWidth, h: window.innerHeight};')
     scan_budget = 60
     min_slot_size = (100, 50)
     full_shot_max_height = 4000
@@ -3320,12 +3324,33 @@ class SeleniumWrapper(object):
         return count + sum(cls.count_ad_frames(child)
                            for child in node.get('childFrames') or [])
 
-    def read_ad_slot(self, cand, evidence, shot_prefix):
+    def shoot_context(self, elem, path):
+        """Screenshot the screen around one ad slot, scrolled mid-screen,
+        as a jpeg: ``(path, top)`` with ``top`` the shot's first page px
+        row, or ``('', None)`` when the driver could not."""
+        try:
+            box = self.browser.execute_script(self.elem_box_script,
+                                              elem) or {}
+            view = self.browser.execute_script(self.view_size_script) or {}
+            width, height = int(view.get('w') or 0), int(view.get('h') or 0)
+            if not (width and height and box.get('height')):
+                return '', None
+            top = max(0, int(box['y'] + box['height'] / 2 - height / 2))
+            self.write_clip(path, {'x': 0, 'y': top, 'width': width,
+                                   'height': height},
+                            format='jpeg', quality=self.full_shot_quality)
+        except (KeyError, TypeError, ValueError) + self.browser_errors as e:
+            logging.warning('Ad context shot not taken: {}'.format(e))
+            return '', None
+        return path, top
+
+    def read_ad_slot(self, cand, evidence, shot_prefix, context=False):
         """One slot's shot and reading, or None when it vanished.
 
         :param cand: one dict from ``find_ad_candidates``
         :param evidence: its ``slot_evidence``
         :param shot_prefix: path prefix for the slot shot, '' to skip
+        :param context: also shoot the screen around the slot
         :return: the ad dict, or None
         """
         try:
@@ -3336,6 +3361,10 @@ class SeleniumWrapper(object):
             shot_path = self.shoot_elem(
                 elem, '{}_ad{}.png'.format(shot_prefix, cand['n'])
             ) if shot_prefix else ''
+            context_path, context_top = self.shoot_context(
+                elem, '{}_ad{}{}'.format(shot_prefix, cand['n'],
+                                          self.context_shot_suffix)
+            ) if shot_prefix and context else ('', None)
             found = (self.read_ad_frame(elem) if cand['tag'] == 'iframe'
                      else {'hrefs': [], 'imgs': [], 'labels': [], 'text': ''})
         except self.browser_errors as e:
@@ -3347,7 +3376,8 @@ class SeleniumWrapper(object):
                        | {self.url_host(x['src']) for x in found['imgs']}
                        - {''})
         frame_host = self.url_host(cand['src'])
-        return {'shot_path': shot_path, 'width': cand['width'],
+        return {'shot_path': shot_path, 'context_path': context_path,
+                'context_top': context_top, 'width': cand['width'],
                 'height': cand['height'], 'top': cand.get('top'),
                 'left': cand.get('left'), 'frame_host': frame_host,
                 'hosts': hosts,
@@ -3397,8 +3427,9 @@ class SeleniumWrapper(object):
                     break
                 evidence = self.slot_evidence(cand)
                 if evidence:
-                    slots.append(self.read_ad_slot(cand, evidence,
-                                                   shot_prefix))
+                    slots.append(self.read_ad_slot(
+                        cand, evidence, shot_prefix,
+                        context=len(slots) < self.max_context_shots))
         except self.browser_errors as e:
             logging.warning('Ad scan stopped: {}'.format(e))
         finally:

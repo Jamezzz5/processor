@@ -582,9 +582,12 @@ class _FakeSweepBrowser(object):
 
     def scan_ad_slots(self, shot_prefix='', **kwargs):
         path = '{}_ad0.png'.format(shot_prefix)
-        with open(path, 'wb') as f:
-            f.write(b'y')
-        return [{'shot_path': path, 'width': 300, 'height': 250,
+        context = '{}_ad0_ctx.jpg'.format(shot_prefix)
+        for name in (path, context):
+            with open(name, 'wb') as f:
+                f.write(b'y')
+        return [{'shot_path': path, 'context_path': context,
+                 'context_top': 0, 'width': 300, 'height': 250,
                  'top': 100, 'left': 50,
                  'frame_host': 'tpc.googlesyndication.com',
                  'landing_domain': 'landing.example.com',
@@ -1458,6 +1461,11 @@ class TestUtils:
             assert 'Buy Game X' in slot['text']
             assert (slot['width'], slot['height']) == (300, 250)
             assert os.path.isfile(slot['shot_path'])
+            view = sw.browser.execute_script(sw.view_size_script)
+            with Image.open(slot['context_path']) as img:
+                assert img.size[0] == view['w']
+            assert slot['context_path'].endswith('_ctx.jpg')
+            assert 0 <= slot['context_top'] <= slot['top']
             assert sw.browser.execute_script('return window.clicked;') == 0
             frame = sw.browser.find_element(By.ID, 'google_ads_iframe_1')
             sw.switch_to_frame(frame)
@@ -1480,6 +1488,9 @@ class TestUtils:
             sw.go_to_url(url, sleep=1)
             frame = sw.browser.find_element(By.ID, 'google_ads_iframe_1')
             assert sw.shoot_elem(frame, str(shot)) == str(shot)
+            context = str(tmp_path / 'context.jpg')
+            path, top = sw.shoot_context(frame, context)
+            box = sw.browser.execute_script(sw.elem_box_script, frame)
             hidden = sw.browser.find_element(By.ID, 'div-gpt-ad-1')
             assert sw.shoot_elem(hidden, str(tmp_path / 'no.png')) == ''
             verdict = sw.take_screenshot(after,
@@ -1490,6 +1501,11 @@ class TestUtils:
             assert img.size == (300, 250)
             red, green, blue = img.convert('RGB').getpixel((290, 240))
         assert red > 150 and green < 40 and blue < 60
+        assert path == context
+        with Image.open(context) as img:
+            red, green, blue = img.convert('RGB').getpixel(
+                (int(box['x']) + 290, int(box['y']) - top + 240))
+        assert red > 150 and green < 60 and blue < 80
         assert not utl.SeleniumWrapper.is_solid_png(shot.read_bytes())
         assert not (tmp_path / 'no.png').exists()
         assert verdict == ('ok', '')
@@ -1508,6 +1524,13 @@ class TestUtils:
                 'x': 0, 'y': 0, 'width': 10, 'height': 10},
             execute_cdp_cmd=lambda name, args: {}))
         assert mute.shoot_elem(None, str(shot)) == ''
+        assert not shot.exists()
+        dead.view_size_script = ''
+        assert utl.SeleniumWrapper.shoot_context(dead, None, str(shot)) == (
+            '', None)
+        blind = _bare_wrapper(browser=types.SimpleNamespace(
+            execute_script=lambda script, *elem: {}))
+        assert blind.shoot_context(None, str(shot)) == ('', None)
         assert not shot.exists()
 
     def test_page_vitals_reads_the_shown_page(self, tmp_path):
@@ -2663,6 +2686,11 @@ class TestSsApi:
         assert row['ads'][0]['shot_url'].endswith('example_Desktop_ad0.png')
         assert row['ads'][0]['evidence'] == ['marker google_ads_iframe']
         assert 'shot_path' not in row['ads'][0]
+        context = f'{run}example_Desktop_ad0_ctx.jpg'
+        assert context in api.s3.uploads
+        assert (row['ads'][0]['context_key'], row['ads'][0]['context_top']
+                ) == (context, 0)
+        assert 'context_path' not in row['ads'][0]
         assert os.path.isfile(tmp_path / 'screenshots' / 'plans' / '7'
                               / '260101_08' / 'manifest.json')
         shots = [s for b in _FakeSweepBrowser.instances for s in b.shots]
