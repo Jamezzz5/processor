@@ -107,6 +107,42 @@ def _clip_lines(text, width, font_pt, max_lines, glyph=GLYPH_WIDTH_RATIO):
     return f'{cut.rstrip()}…'
 
 
+def _clip_block(text, width, font_pt, max_lines, glyph=GLYPH_WIDTH_RATIO):
+    """``text`` cut to the first ``max_lines`` wrapped lines of a
+    ``width`` box, paragraph breaks kept and an ellipsis where it was
+    cut; the cut line backs off a word at a time until the wrap fits."""
+    if max_lines < 1:
+        return ''
+    kept, used = [], 0
+    for paragraph in str(text or '').split('\n'):
+        lines = _wrapped_lines(paragraph, width, font_pt, glyph)
+        if used + lines <= max_lines:
+            kept.append(paragraph)
+            used += lines
+            continue
+        room = max_lines - used
+        if room > 0:
+            piece = _clip_lines(paragraph, width, font_pt, room, glyph)
+            while (_wrapped_lines(piece, width, font_pt, glyph) > room
+                   and ' ' in piece):
+                piece = f"{piece[:piece.rstrip('…').rfind(' ')].rstrip()}…"
+            kept.append(piece)
+        elif kept:
+            kept[-1] = f'{kept[-1].rstrip(".…")}…'
+        break
+    return '\n'.join(kept)
+
+
+def _clamped_ranges(ranges, length):
+    """``ranges`` cut to a text of UTF-16 ``length``, empties dropped."""
+    out = []
+    for start, end in ranges or []:
+        end = min(end, length)
+        if end > start:
+            out.append((start, end))
+    return out
+
+
 FitResult = collections.namedtuple('FitResult', 'pt lines height fits')
 
 
@@ -170,6 +206,12 @@ def _lines_fit(height, font_pt, spacing=100):
     """How many lines at ``font_pt`` stand in a ``height`` box after its
     insets."""
     return int((height - TEXT_INSET_EMU) // _line_pitch(font_pt, spacing))
+
+
+def _clip_box(text, width, height, font_pt, spacing=100):
+    """``text`` cut to the prose lines a ``width`` by ``height`` box holds."""
+    return _clip_block(text, width, font_pt,
+                       _lines_fit(height, font_pt, spacing), PROSE_GLYPH_RATIO)
 
 
 def _leading_fit(items, sizes, budget):
@@ -800,6 +842,7 @@ class GsApi(object):
     TITLE_BLOCK_W_EMU = 5900000
     TITLE_BLOCK_H_EMU = 900000
     COVER_TITLE_PT = (36, 32, 28)
+    TABLE_FILL_SHARE = 0.92
     SECTION_X_EMU = 1600200
     CAPTION_H_EMU = 340000
     CAPTION_PT = 12
@@ -883,7 +926,9 @@ class GsApi(object):
     def table_row_groups(cls, header, rows, dark, caption=None,
                          narrative=False, stats=False, widths=None):
         """``rows`` split into the groups :meth:`add_table_slide` draws a
-        slide each, laid out on ``widths`` when a continuation keeps them."""
+        slide each, laid out on ``widths`` when a continuation keeps them;
+        rows take :data:`TABLE_FILL_SHARE` of the budget, since Slides
+        grows a wrapped cell past its height."""
         _, _, width, body_h = cls.story_chart_box(dark, bool(narrative),
                                                   bool(stats))
         widths = widths or _table_widths(header, rows, width,
@@ -892,7 +937,7 @@ class GsApi(object):
                                          cls.TABLE_HEAD_PT, cls.TABLE_BODY_PT)
         budget = (body_h - cls._caption_reserve(caption, width, body_h)
                   - head_h)
-        return _fit_rows(rows, heights, budget)
+        return _fit_rows(rows, heights, int(budget * cls.TABLE_FILL_SHARE))
 
     @classmethod
     def _caption_reserve(cls, caption, width, body_h):
@@ -995,10 +1040,17 @@ class GsApi(object):
         return self.headline_pt(title, width, lines, two_h), two_h
 
     def slides_batch_update(self, presentation_id, requests):
-        """POST a Slides batchUpdate and record whether it applied."""
+        """POST a Slides batchUpdate and record whether it applied; every
+        ``createSlide`` id lands on ``drawn_slides``, the count a deck
+        budget reads."""
         if not requests:
             return None
         url = '{}/{}:batchUpdate'.format(self.slides_url, presentation_id)
+        self.drawn_slides = getattr(self, 'drawn_slides', [])
+        self.drawn_slides.extend(
+            r['createSlide'].get('objectId') for r in requests
+            if isinstance(r, dict) and 'createSlide' in r
+            and r['createSlide'].get('objectId'))
         response = self.client.post(url=url, json={'requests': requests})
         if not self.request_applied(response, presentation_id):
             slide_id = next(
@@ -1283,6 +1335,13 @@ class GsApi(object):
         cx, top, cw, text_h = self.body_box(self.is_dark, bool(stats))
         fit = self.fit_body(body_text, self.is_dark, bool(stats))
         self._note_fit(slide_id, 'body', fit)
+        if not fit.fits:
+            body_text = _clip_box(body_text, cw, text_h, fit.pt,
+                                  self.NARRATIVE_SPACING)
+        length = self.utf16_len(body_text)
+        bold_ranges = _clamped_ranges((rich or {}).get('bold_ranges'), length)
+        bullet_ranges = _clamped_ranges((rich or {}).get('bullet_ranges'),
+                                        length)
         reqs += self._text_box_reqs(
             slide_id, body_id, body_text, cx, top, cw, text_h,
             font_pt=fit.pt, align='START', color=colors['ink'])
@@ -1290,16 +1349,14 @@ class GsApi(object):
             reqs.append(self._prose_spacing_req(body_id))
         if stats:
             reqs += self._stat_bar_reqs(slide_id, stats, cx, cw, colors)
-        for start, end in (rich or {}).get('bold_ranges') or []:
-            if end > start:
-                reqs.append({'updateTextStyle': {
-                    'objectId': body_id, 'style': {'bold': True},
-                    'textRange': {'type': 'FIXED_RANGE',
-                                  'startIndex': start, 'endIndex': end},
-                    'fields': 'bold'}})
-        for start, end in (rich or {}).get('bullet_ranges') or []:
-            if end > start:
-                reqs.append(self._bullets_req(body_id, start, end))
+        for start, end in bold_ranges:
+            reqs.append({'updateTextStyle': {
+                'objectId': body_id, 'style': {'bold': True},
+                'textRange': {'type': 'FIXED_RANGE',
+                              'startIndex': start, 'endIndex': end},
+                'fields': 'bold'}})
+        for start, end in bullet_ranges:
+            reqs.append(self._bullets_req(body_id, start, end))
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -1325,9 +1382,10 @@ class GsApi(object):
                                      x, y, w, h, outline=True)
         if caption:
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}c', caption, cx, caption_y, cw,
-                caption_h, font_pt=self.CAPTION_PT, align='START',
-                color=colors['muted'])
+                slide_id, f'{slide_id}c',
+                _clip_box(caption, cw, caption_h, self.CAPTION_PT),
+                cx, caption_y, cw, caption_h, font_pt=self.CAPTION_PT,
+                align='START', color=colors['muted'])
         self.slides_batch_update(presentation_id, reqs)
         if notes:
             self.add_speaker_notes(presentation_id, slide_id, notes)
@@ -1481,23 +1539,26 @@ class GsApi(object):
                              page=None, eyebrow=None, subhead=None,
                              source=None):
         """Build the heading and footer for light or dark content layouts;
-        a ``subhead`` sits under a one-line title, a ``source`` line
-        runs small and italic above the footer."""
+        a ``subhead`` sits under a one-line title. A ``source`` runs
+        small and italic on the foot line, or leads the footer's one
+        line when both are given, so neither sits on the body."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = []
         if title:
             reqs += self._heading_reqs(slide_id, title, colors, eyebrow,
                                        subhead)
         foot_y, foot_w = self.PAGE_H_EMU - 320000, cw - 700000
+        if footer and source:
+            footer = _clip_lines(f'{source} · {footer}', foot_w, 9, 1)
+            source = None
         if footer:
             reqs += self._text_box_reqs(
                 slide_id, f'{slide_id}f', footer, cx, foot_y, foot_w,
                 260000, font_pt=9, align='START', color=colors['muted'])
         if source:
-            source_y = foot_y - self.SOURCE_H_EMU if footer else foot_y
             reqs += self._text_box_reqs(
                 slide_id, f'{slide_id}src',
-                _clip_lines(source, foot_w, self.SOURCE_PT, 1), cx, source_y,
+                _clip_lines(source, foot_w, self.SOURCE_PT, 1), cx, foot_y,
                 foot_w, self.SOURCE_H_EMU, font_pt=self.SOURCE_PT,
                 italic=True, align='START', color=colors['muted'])
         if page:
@@ -1510,7 +1571,8 @@ class GsApi(object):
 
     def _heading_reqs(self, slide_id, title, colors, eyebrow, subhead):
         """The eyebrow (dark chrome only), title and subhead, stacked
-        down to :meth:`content_top`."""
+        down to :meth:`content_top`; a title past its lines at the floor
+        is cut, since the box under it cannot move."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         title_y, one_h, two_h, subhead_h = (
             self.HEADING_DARK_EMU if self.is_dark else self.HEADING_LIGHT_EMU)
@@ -1523,6 +1585,7 @@ class GsApi(object):
                 font=self.eyebrow_font)
         lines = 1 if subhead else self.HEADLINE_LINES
         title_pt, title_h = self._title_box(title, cw, lines, one_h, two_h)
+        title = _clip_lines(title, cw, title_pt, lines)
         reqs += self._text_box_reqs(
             slide_id, f'{slide_id}t', title, cx, title_y, cw, title_h,
             font_pt=title_pt, bold=True, align='START', color=colors['ink'])
@@ -1572,10 +1635,13 @@ class GsApi(object):
         for (key, suffix, color, bold), size, height in zip(
                 fields, sizes, heights):
             if key in ('value', 'label') or tile.get(key):
+                text = str(tile.get(key, ''))
+                if key in ('caption', 'note'):
+                    text = _clip_box(text, w - 2 * pad, height, size)
                 reqs += self._text_box_reqs(
-                    slide_id, f'{base}{suffix}', str(tile.get(key, '')),
-                    x + pad, text_y, w - 2 * pad, height, font_pt=size,
-                    bold=bold, color=color)
+                    slide_id, f'{base}{suffix}', text, x + pad, text_y,
+                    w - 2 * pad, height, font_pt=size, bold=bold,
+                    color=color)
             text_y += height
         return reqs
 
@@ -1885,12 +1951,16 @@ class GsApi(object):
             if fit.fits:
                 break
         self._note_fit(slide_id, slot, fit)
+        if not fit.fits:
+            joined = _clip_box(joined, w, h, fit.pt, self.NARRATIVE_SPACING)
         reqs = self._text_box_reqs(slide_id, shape_id, joined, x, y, w, h,
                                    font_pt=fit.pt, align='START',
                                    color=colors['ink'])
         reqs.append(self._prose_spacing_req(shape_id))
-        reqs.append(self._bullets_req(shape_id, self.utf16_len(lead),
-                                      self.utf16_len(joined)))
+        end = self.utf16_len(joined)
+        start = min(self.utf16_len(lead), end)
+        if end > start:
+            reqs.append(self._bullets_req(shape_id, start, end))
         return reqs
 
     @staticmethod
@@ -2076,7 +2146,8 @@ class GsApi(object):
                         col_widths=None):
         """Build a native table, continuing rows on the whole table's
         ``col_widths`` before wrapped text overflows, with an optional
-        ``narrative`` rail and ``stats`` bar; a short table sets larger."""
+        ``narrative`` rail and ``stats`` bar; a short table sets larger and
+        a full one's caption sits at the body's foot."""
         cx, top, tw, body_h = self.story_chart_box(
             self.is_dark, bool(narrative), bool(stats))
         widths = col_widths or _table_widths(
@@ -2122,12 +2193,15 @@ class GsApi(object):
                                  body_pt=body_pt,
                                  row_heights=[head_h] + heights)
         if caption:
+            cap_h = reserve - self.CAPTION_GAP_EMU
+            cap_y = ty + th + self.CAPTION_GAP_EMU
+            if th > budget * self.TABLE_FILL_SHARE:
+                cap_y = max(cap_y, top + body_h - cap_h)
             reqs += self._text_box_reqs(
-                slide_id, f'{slide_id}c', caption, cx,
-                ty + th + self.CAPTION_GAP_EMU, tw,
-                reserve - self.CAPTION_GAP_EMU,
-                font_pt=self.CAPTION_PT, align='START',
-                color=colors['muted'])
+                slide_id, f'{slide_id}c',
+                _clip_box(caption, tw, cap_h, self.CAPTION_PT),
+                cx, cap_y, tw, cap_h, font_pt=self.CAPTION_PT,
+                align='START', color=colors['muted'])
         if stats:
             reqs += self._stat_bar_reqs(slide_id, stats, cx, tw, colors)
         if narrative:

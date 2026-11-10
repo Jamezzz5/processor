@@ -4153,7 +4153,7 @@ class AliChat(object):
                          source_context=None, tools=None,
                          tool_choice='auto', extra_messages=None,
                          chat_template_kwargs=None, read_timeout=None,
-                         max_tokens=None):
+                         max_tokens=None, sampler=None):
         """
         Passes the context to the llm url to better answer the question
 
@@ -4185,6 +4185,9 @@ class AliChat(object):
             ``finish_reason='length'`` — callers that must never parse
             a truncated answer watch for that. ``None`` (the default)
             leaves generation unbounded, as before.
+        :param sampler: extra sampling fields for the request body
+            (``top_p``, ``top_k``, ``min_p``, ``presence_penalty``,
+            ``repeat_penalty``); absent, the server's defaults stand.
         :return: response from the llm as string
         """
         if not instructions:
@@ -4233,6 +4236,8 @@ class AliChat(object):
             body['chat_template_kwargs'] = chat_template_kwargs
         if max_tokens:
             body['max_tokens'] = max_tokens
+        if sampler:
+            body.update(sampler)
         if stream:
             if read_timeout is None:
                 return self.llm_request_generator(body)
