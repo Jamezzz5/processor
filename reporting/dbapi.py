@@ -18,6 +18,7 @@ base_url = 'https://doubleclickbidmanager.googleapis.com/v2'
 class DbApi(object):
     no_reach_field = utl.no_reach_field
     vendor_name = 'DV360'
+    default_config_file_name = 'dbapi.json'
     api_field_options = (
         ('YOUTUBE', 'YouTube groupings and metrics'),
         (no_reach_field,
@@ -510,7 +511,7 @@ class DbApi(object):
     def create_report_params(self):
         params = {
             'filters': [{'type': 'FILTER_ADVERTISER',
-                         'value': self.advertiser_id}],
+                         'value': str(self.advertiser_id)}],
             'groupBys': self.default_groups,
             'metrics': self.default_metrics,
             'type': self.query_type}
@@ -716,47 +717,52 @@ class DbApi(object):
         return utl.name_reach_rows(df, self.placement,
                                    ','.join(self.campaign_ids))
 
-    def run_test_report(self):
+    def get_test_report(self):
         """
-        Creates and synchronously runs a one metric report by campaign.
+        Creates, synchronously runs and downloads a one metric report by
+        advertiser and campaign.
 
-        :return: The url of the finished report, blank when it did not run
+        :return: The error that stopped the report, blank when it ran
         """
+        if utl.blank_config_keys([('advertiser_id', self.advertiser_id)]):
+            return 'Advertiser ID is blank.'
         ed = dt.datetime.today()
         sd = ed - dt.timedelta(days=self.test_days)
-        self.default_groups = self.campaign_groups
+        self.default_groups = self.reach_groups + self.campaign_groups
         self.default_metrics = self.base_metrics[:1]
         metadata = self.create_report_metadata(sd, ed, 'test')
-        if not self.request_query(metadata):
-            return ''
-        self.raw_request(self.create_run_url(synchronous=True), 'post')
-        metadata = self.r.json().get('metadata', {})
-        return metadata.get('googleCloudStoragePath', '')
-
-    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
         try:
-            report_url = self.run_test_report()
-            error = self.r.json()
+            if self.request_query(metadata):
+                run_url = self.create_run_url(synchronous=True)
+                self.raw_request(run_url, 'post')
         except OAuth2Error as e:
-            report_url = ''
-            error = e
-        if report_url:
-            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
-                   True]
-        else:
-            msg = ('Report did not run. Double Check the credentials and '
-                   'Advertiser ID and Ensure Permissions were granted.'
-                   '\n Error Msg:')
-            row = [acc_col, ' '.join([failure_msg, msg, str(error)]), False]
-        results.append(row)
-        return results, report_url
-
-    def check_campaign_id(self, results, camp_col, success_msg, failure_msg,
-                          report_url):
+            return str(e)
+        response = self.r.json()
+        report_url = response.get('metadata', {}).get('googleCloudStoragePath')
+        if not report_url:
+            return str(response)
         self.df = utl.import_read_csv(report_url, file_check=False,
                                       error_bad='warn', empty_df=True)
         self.check_empty_df()
-        self.remove_footer()
+        self.remove_reach_footer()
+        return ''
+
+    def check_advertiser_id(self, results, acc_col, success_msg, failure_msg):
+        error = self.get_test_report()
+        if self.df.empty:
+            error = error or 'No delivery in the last {} days.'.format(
+                self.test_days)
+            msg = ('No report for Advertiser ID. Double Check the '
+                   'credentials and Advertiser ID and Ensure Permissions '
+                   'were granted.\n Error Msg:')
+            row = [acc_col, ' '.join([failure_msg, msg, error]), False]
+        else:
+            row = [acc_col, ' '.join([success_msg, str(self.advertiser_id)]),
+                   True]
+        results.append(row)
+        return results
+
+    def check_campaign_id(self, results, camp_col, success_msg, failure_msg):
         self.parse_campaign_filter()
         self.filter_df_on_campaign(keep_on_no_match=False)
         if self.df.empty or self.campaign_col not in self.df.columns:
@@ -773,10 +779,10 @@ class DbApi(object):
     def test_connection(self, acc_col, camp_col, acc_pre):
         success_msg = 'SUCCESS:'
         failure_msg = 'FAILURE:'
-        results, report_url = self.check_advertiser_id(
+        results = self.check_advertiser_id(
             [], acc_col, success_msg, failure_msg)
         if False in results[0]:
             return pd.DataFrame(data=results, columns=vmc.r_cols)
         results = self.check_campaign_id(
-            results, camp_col, success_msg, failure_msg, report_url)
+            results, camp_col, success_msg, failure_msg)
         return pd.DataFrame(data=results, columns=vmc.r_cols)
