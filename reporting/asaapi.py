@@ -69,7 +69,7 @@ class AsaApi(object):
             'Loading Apple Search Ads config file: {}'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -135,8 +135,8 @@ class AsaApi(object):
                             self.org_id, self.private_key]))
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Apple Search Ads')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Apple Search Ads')
 
     def get_client_secret(self):
         now = int(time.time())

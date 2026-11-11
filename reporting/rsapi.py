@@ -67,8 +67,10 @@ class RsApi(object):
         logging.info('Loading RS config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        if not self.check_config():
+            return False
         self.set_headers(self.games_version)
+        return True
 
     def load_config(self):
         try:
@@ -87,8 +89,8 @@ class RsApi(object):
             self.stats_url = self.config['domain']
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Redshell')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Redshell')
 
     def set_headers(self, version):
         self.headers = {'Authorization': self.api_key,

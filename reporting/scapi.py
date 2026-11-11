@@ -60,7 +60,7 @@ class ScApi(object):
         logging.info('Loading SC config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -82,8 +82,8 @@ class ScApi(object):
             self.campaign_filter = self.config[self.campaign_filter_col]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Snapchat')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Snapchat')
 
     def get_client(self):
         token = {'access_token': self.access_token,

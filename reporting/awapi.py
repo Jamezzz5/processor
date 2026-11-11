@@ -192,7 +192,7 @@ class AwApi(object):
         logging.info('Loading Adwords config file: {}'.format(config))
         self.configfile = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -236,8 +236,8 @@ class AwApi(object):
 
     def check_config(self):
         """Skip the card when a credential or the account id is blank"""
-        utl.skip_on_blank_config(self.config_list, self.configfile,
-                                 'Google Ads')
+        return utl.check_blank_config(
+            self.config_list, self.configfile, 'Google Ads')
 
     def refresh_client_token(self, extra, attempt=1):
         try:

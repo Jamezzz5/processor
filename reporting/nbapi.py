@@ -46,8 +46,7 @@ class NbApi(object):
         logging.info('Loading NB config file: ' + str(config))
         self.config_file = config_path + config
         self.load_config()
-        self.check_config()
-        self.config_file = config_path + config
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -69,8 +68,8 @@ class NbApi(object):
                             ('topic_id', self.topic_id)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Netbase')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Netbase')
 
     def get_client(self):
         token = {'access_token': self.access_token,

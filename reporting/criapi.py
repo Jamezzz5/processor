@@ -43,7 +43,7 @@ class CriApi(object):
         logging.info('Loading Cri config file: {}'.format(config))
         self.config_file = os.path.join(config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -62,7 +62,8 @@ class CriApi(object):
             self.campaign_id = self.config['campaign_id']
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file, 'Criteo')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Criteo')
 
     def refresh_token(self):
         data = {'client_id': self.client_id,

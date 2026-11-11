@@ -45,7 +45,7 @@ class SamApi(object):
         logging.info('Loading Sam config file: {}'.format(config))
         self.config_file = os.path.join(self.config_path, config)
         self.load_config()
-        self.check_config()
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -71,16 +71,16 @@ class SamApi(object):
         return str(val).replace(' ', '')
 
     def check_config(self):
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_config_list, self.config_file, 'Samsung',
             'The card is still pulled; if it comes back empty, fill this '
             'in first.')
-        utl.warn_on_blank_config(
+        utl.check_blank_config(
             self.warn_campaign_list, self.config_file, 'Samsung',
             'The card pulls every campaign the access token can see, not '
             'just this card\'s.')
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'Samsung')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'Samsung')
 
     def get_data(self, sd=None, ed=None, fields=None):
         sd, ed = self.get_data_default_check(sd, ed)

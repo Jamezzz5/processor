@@ -49,8 +49,7 @@ class YtdApi(object):
         logging.info('Loading YT config file: {}'.format(config))
         self.config_file = config_path + config
         self.load_config()
-        self.check_config()
-        self.config_file = config_path + config
+        return self.check_config()
 
     def load_config(self):
         try:
@@ -72,8 +71,8 @@ class YtdApi(object):
                             ('query', self.query)]
 
     def check_config(self):
-        utl.skip_on_blank_config(self.config_list, self.config_file,
-                                 'YouTube')
+        return utl.check_blank_config(
+            self.config_list, self.config_file, 'YouTube')
 
     def get_client(self):
         token = {'access_token': self.access_token,
