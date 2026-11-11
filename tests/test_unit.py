@@ -3301,9 +3301,15 @@ class TestApis:
         self.send_api_call(api)
         self.send_test_api_call(api)
 
+    def test_dbapi(self):
+        api = dbapi.DbApi()
+        self.send_api_call(api)
+        self.send_test_api_call(api)
+
     def test_twapi(self, tmp_path_factory):
         api = twapi.TwApi()
         self.send_api_call(api)
+        self.send_test_api_call(api)
 
     def test_afapi(self, tmp_path_factory):
         api = afapi.AfApi()
