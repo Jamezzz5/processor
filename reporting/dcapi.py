@@ -32,7 +32,10 @@ class DcApi(object):
                          'path, credited or not, up to 200 where CM360 '
                          'allows extended paths, otherwise the last 5'),
         (path_only_field, 'Path to Conversion rows only, without '
-                          'impressions, clicks or spend'))
+                          'impressions, clicks or spend'),
+        (utl.no_reach_field,
+         'Skip the whole range and the daily placement, campaign and site '
+         'reach'))
     default_fields = [
         'campaign', 'campaignId', 'site', 'placement',
         'date', 'placementId', 'creative', 'ad', 'creativeId', 'adId',
@@ -139,6 +142,7 @@ class DcApi(object):
         self.path_all_interactions = False
         self.path_only = False
         self.path_activities = []
+        self.pull_reach = True
 
     def input_config(self, config):
         if str(config) == 'nan':
@@ -265,8 +269,9 @@ class DcApi(object):
         is added, since one instance pulls every DCM card in a run and an
         appended class list carried the dimension into every later card.
         Any path field turns the path report on and only adds a report,
-        so on its own it leaves the card's dates as they are where any
-        other field moves the reports to a relative range.
+        and No Reach only drops reports, so on their own they leave the
+        card's dates as they are where any other field moves the reports
+        to a relative range.
 
         :param sd: The card's start date
         :param ed: The card's end date
@@ -283,7 +288,9 @@ class DcApi(object):
         fields = fields or []
         path_fields = [x for x in fields
                        if x in toggles or x.startswith(prefix)]
-        fields = [x for x in fields if x not in path_fields]
+        self.pull_reach = utl.pull_reach(fields)
+        fields = [x for x in fields
+                  if x not in path_fields and x != utl.no_reach_field]
         self.path_report = bool(path_fields)
         self.path_all_interactions = self.path_all_field in path_fields
         self.path_only = self.path_only_field in path_fields
@@ -395,6 +402,8 @@ class DcApi(object):
                         (True, True, False, True),
                         (True, False, True, False),
                         (True, False, False, True)]
+        if not self.pull_reach:
+            report_types = [x for x in report_types if not x[0]]
         if self.path_only:
             report_types = []
         elif self.original_report_id:
@@ -520,12 +529,18 @@ class DcApi(object):
     def kept_raw_rows(self, df):
         """Boolean Series over ``df``, the card's old raw file, of the rows
         an import merge may keep: under pathOnly only those naming a
-        conversion.  Read right after get_data, which sets it per card."""
-        if not self.path_only:
+        conversion, and under No Reach none carrying a reach figure, as
+        the other apis' cards shed theirs.  Read right after get_data,
+        which sets both per card."""
+        if self.path_only:
+            if self.path_conversion_id_col not in df.columns:
+                return pd.Series(False, index=df.index)
+            return df[self.path_conversion_id_col].notna()
+        if self.pull_reach:
             return pd.Series(True, index=df.index)
-        if self.path_conversion_id_col not in df.columns:
-            return pd.Series(False, index=df.index)
-        return df[self.path_conversion_id_col].notna()
+        names = tuple(self.reach_metrics.values())
+        reach_cols = [x for x in df.columns if str(x).startswith(names)]
+        return ~df[reach_cols].notna().any(axis=1)
 
     def check_for_campaign_vendor_dicts(self, tdf):
         """
