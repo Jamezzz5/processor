@@ -6,6 +6,8 @@ import json
 import time
 import yaml
 import types
+import colorsys
+import functools
 import socket
 import string
 import pytest
@@ -22,6 +24,8 @@ import urllib3.exceptions as url_ex
 from PIL import Image, ImageDraw
 import selenium.common.exceptions as ex
 from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.command import Command
+from selenium.webdriver.remote.remote_connection import RemoteConnection
 from processor.main import main
 import processor.reporting.utils as utl
 import processor.reporting.vendormatrix as vm
@@ -456,7 +460,7 @@ class _ProfileLauncher(object):
         self.refusals = refusals
         self.launches = []
 
-    def __call__(self, co):
+    def __call__(self, co, headless, download_path):
         self.launches.append(list(co.arguments))
         named = any(x.startswith('--user-data-dir=') for x in co.arguments)
         if named and self.refusals:
@@ -488,6 +492,38 @@ class _FakeProcess(object):
 
     def wait(self, timeout=None):
         self.stops.append('wait')
+
+
+class _SilentDriver(object):
+    """A driver port that accepts every connection and never answers,
+    holding each one so a re-sent command shows as a second."""
+
+    def __init__(self):
+        self.sock = socket.create_server(('127.0.0.1', 0))
+        self.sock.settimeout(0.05)
+        self.url = 'http://127.0.0.1:{}'.format(self.sock.getsockname()[1])
+        self.held = []
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+
+    def serve(self):
+        while not self.done.is_set():
+            try:
+                self.held.append(self.sock.accept()[0])
+            except socket.timeout:
+                continue
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.done.set()
+        self.thread.join()
+        for conn in self.held:
+            conn.close()
+        self.sock.close()
+        return False
 
 
 class _DeadBrowser(object):
@@ -1175,14 +1211,33 @@ class TestUtils:
         Selenium builds its connection pool with no timeout, so a
         driver that stops answering blocks the caller forever instead
         of raising. The pool is built when the driver is constructed,
-        so the cap only takes if it is set before that.
+        so the cap only takes if it is set before that. A command that
+        times out is not re-sent.
         """
         sw = utl.SeleniumWrapper()
         pool_kw = sw.browser.command_executor._conn.connection_pool_kw
         try:
             assert pool_kw['timeout'] == sw.command_timeout
+            assert pool_kw['retries'] is sw.command_retries
         finally:
             sw.quit()
+
+    def test_a_timed_out_command_is_sent_once(self, monkeypatch):
+        """A driver that stops answering costs one command timeout per
+        command, never four.
+
+        urllib3 re-sends a GET or DELETE after a read timeout, so a hung
+        driver held ``quit`` for four timeouts.
+        """
+        monkeypatch.setattr(RemoteConnection, '_timeout', 0.2)
+        with _SilentDriver() as driver:
+            executor = RemoteConnection(driver.url, keep_alive=True,
+                                        ignore_proxy=True)
+            _bare_wrapper().send_commands_once(
+                types.SimpleNamespace(command_executor=executor))
+            with pytest.raises(url_ex.ReadTimeoutError):
+                executor.execute(Command.QUIT, {'sessionId': 'x'})
+        assert len(driver.held) == 1
 
     def test_go_to_url_restarts_dead_session(self, monkeypatch):
         """A hung driver is replaced, not retried into another hang."""
@@ -1321,9 +1376,34 @@ class TestUtils:
         fake = _HalfBuiltBrowser()
         monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser',
                             lambda self, co: fake)
+        monkeypatch.setattr(
+            utl.SeleniumWrapper, 'chrome_commands', staticmethod(
+                lambda: pytest.fail('looked for a browser to kill')))
         with pytest.raises(ValueError):
             utl.SeleniumWrapper()
         assert fake.quit_calls == 1
+
+    def test_a_browser_hung_on_its_first_command_is_replaced(
+            self, monkeypatch, tmp_path):
+        """A chrome that starts but never answers is killed by its own
+        profile and launched again, like one whose start timed out."""
+        profiles = [str(tmp_path / 'hung'), str(tmp_path / 'fresh')]
+        hung, fresh = [types.SimpleNamespace(
+            window_handles=['w0'], quit=Mock(),
+            capabilities={'chrome': {'userDataDir': x}}) for x in profiles]
+        monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser',
+                            Mock(side_effect=[hung, fresh]))
+        monkeypatch.setattr(utl.SeleniumWrapper, 'configure_browser',
+                            Mock(side_effect=[url_ex.ReadTimeoutError(
+                                None, 'url', 'Read timed out.'), None]))
+        pids = Mock(return_value=[])
+        monkeypatch.setattr(utl.SeleniumWrapper, 'profile_pids', pids)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'launch_pause', 0)
+        sw = utl.SeleniumWrapper()
+        assert sw.browser is fresh and not fresh.quit.called
+        assert hung.quit.call_count == 1
+        assert [c.args for c in pids.call_args_list] == [(profiles[0],)]
+        assert sw.browser_profile == profiles[1]
 
     def test_mobile_emulation_names_no_device(self, monkeypatch):
         """Mobile spells out its metrics rather than naming a device.
@@ -1348,14 +1428,14 @@ class TestUtils:
         attempts = utl.SeleniumWrapper.launch_attempts
         launch = Mock(side_effect=[url_ex.ReadTimeoutError(
             None, None, 'timed out')] * (attempts + extra) + ['browser'])
-        monkeypatch.setattr(utl.SeleniumWrapper, 'create_browser', launch)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'start_browser', launch)
         monkeypatch.setattr(utl.SeleniumWrapper, 'launch_pause', 0)
         sw = utl.SeleniumWrapper.__new__(utl.SeleniumWrapper)
         if extra:
-            assert sw.launch_browser('options') == 'browser'
+            assert sw.launch_browser('options', True, 'tmp') == 'browser'
         else:
             with pytest.raises(url_ex.ReadTimeoutError):
-                sw.launch_browser('options')
+                sw.launch_browser('options', True, 'tmp')
         assert launch.call_count == attempts
 
     def test_wrapper_is_a_context_manager(self, monkeypatch):
@@ -2027,7 +2107,7 @@ class TestUtils:
         kept.set_page_load_timeout.assert_called_once_with(45)
         assert len(kept.named(self.OVERRIDE)) == 1
         assert kept.named('Network.clearBrowserCache') == [{}]
-        assert sw.browser_profile == 'profiles/desktop'
+        assert sw.profile_of(kept) == 'profiles/desktop'
 
     @requires_local_browser
     def test_native_identity_reads_as_an_ordinary_chrome(self):
@@ -2233,8 +2313,6 @@ class TestUtils:
         recovery = Mock(return_value='1.2.3.4')
         monkeypatch.setattr(utl.SeleniumWrapper, 'launch_browser',
                             launcher)
-        monkeypatch.setattr(utl.SeleniumWrapper, 'configure_browser',
-                            Mock())
         monkeypatch.setattr(utl.SeleniumWrapper, 'get_chrome_version',
                             recovery)
         monkeypatch.setattr(utl.SeleniumWrapper, 'get_chromedriver_version',
@@ -2279,7 +2357,9 @@ class TestUtils:
         only, and is given up on quit."""
         stops = Mock()
         chrome = Mock(return_value=types.SimpleNamespace(
-            window_handles=['w0'], close=Mock(), quit=Mock()))
+            window_handles=['w0'], close=Mock(), quit=Mock(),
+            capabilities={}, command_executor=RemoteConnection(
+                'http://127.0.0.1:9', keep_alive=True, ignore_proxy=True)))
         monkeypatch.setattr(utl.VirtualDisplay, 'available',
                             Mock(return_value=True))
         monkeypatch.setattr(utl.VirtualDisplay, 'start',
@@ -8051,6 +8131,423 @@ class TestGsApiQuota:
         retry = api.client.get_adapter(api.slides_url).max_retries
         assert retry.status_forcelist == (429,)
         assert retry.total == gsapi.QUOTA_RETRIES
+
+
+def _proof_shape(object_id, text, x=0, y=0, w=1000000, h=300000, pt=None):
+    """A Slides text shape as the API returns it."""
+    style = {'fontSize': {'magnitude': pt, 'unit': 'PT'}} if pt else {}
+    return {'objectId': object_id,
+            'size': {'width': {'magnitude': w}, 'height': {'magnitude': h}},
+            'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': x,
+                          'translateY': y},
+            'shape': {'text': {'textElements': [
+                {'textRun': {'content': f'{text}\n', 'style': style}}]}}}
+
+
+def _proof_template():
+    """A cover, a divider, a placement example (title, frame and two chips,
+    one grouped with its brush) and a closing slide."""
+    brush = {'objectId': 'g2i', 'image': {},
+             'size': {'width': {'magnitude': 1500000},
+                      'height': {'magnitude': 500000}},
+             'transform': {'scaleX': 1, 'scaleY': 1}}
+    group = {'objectId': 'g2',
+             'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': 3000000,
+                           'translateY': 4100000},
+             'elementGroup': {'children': [
+                 brush, _proof_shape('g2t', '{{chip}}', 100000, 150000,
+                                     1300000, 200000)]}}
+    example = [
+        _proof_shape('pt', '{{placement}}', 400350, 547725, 8743500, 353400,
+                     pt=27),
+        _proof_shape('fr', '{{images}}', 100000, 1000000, 8900000, 3600000),
+        group,
+        _proof_shape('g1', '{{chip}}', 500000, 4100000, 1500000, 500000)]
+    return {'slides': [
+        {'objectId': 'cover', 'pageElements': [
+            _proof_shape('ct', '{{title}}'),
+            _proof_shape('cs', '{{subtitle}}')]},
+        {'objectId': 'div', 'pageElements': [
+            _proof_shape('dt', '{{platform}}')]},
+        {'objectId': 'place', 'pageElements': example},
+        {'objectId': 'end', 'pageElements': [
+            _proof_shape('et', 'Thank You')]}]}
+
+
+def _proof_api(template=True):
+    """A ``GsApi`` recording its batches, on the template's kit or none."""
+    api = gsapi.GsApi()
+    api.slides_batch_update = Mock()
+    if template:
+        api.proof_kit = gsapi.GsApi.read_proof_kit(_proof_template())
+        api.proof_slides, api.proof_dividers = 4, 0
+    return api
+
+
+def _of(requests, kind):
+    return [request[kind] for request in requests if kind in request]
+
+
+def _sent(api, kind=None):
+    """Every request ``api`` batched, or each ``kind`` request's body."""
+    requests = [request for call in api.slides_batch_update.call_args_list
+                for request in call.args[1]]
+    return requests if kind is None else _of(requests, kind)
+
+
+def _refuse(api, *_args):
+    """A batch Google refused, as ``slides_batch_update`` records one."""
+    api.slides_rejections.append(('rbdeck0', 'bad image'))
+
+
+ART_THEME = {'field': {'red': 0.2, 'green': 0.1, 'blue': 0.1},
+             'rule': {'red': 0.4, 'green': 0.2, 'blue': 0.2},
+             'accent': {'red': 0.9, 'green': 0.7, 'blue': 0.2}}
+
+
+class TestGsApiPlacementSlides:
+    PORTRAIT = {'url': 'https://img/a', 'img_w': 1080, 'img_h': 1350}
+    WIDE = {'url': 'https://img/w', 'img_w': 1920, 'img_h': 780}
+    STRIP = {'url': 'https://img/s', 'img_w': 840, 'img_h': 260}
+
+    def test_template_slides_are_read_by_their_tokens(self):
+        kit = gsapi.GsApi.read_proof_kit(_proof_template())
+        assert (kit['cover'], kit['dividers'], kit['closing']) == (
+            'cover', ['div'], 'end')
+        example = kit['placement']
+        assert example['title'] == {'id': 'pt', 'pt': 27, 'w': 8743500}
+        assert example['frame'] == {
+            'id': 'fr', 'box': (100000, 1000000, 8900000, 3600000)}
+        assert [chip['id'] for chip in example['chips']] == ['g1', 'g2']
+        grouped = example['chips'][1]
+        assert grouped['ids'] == ['g2', 'g2i', 'g2t']
+        assert (grouped['text_id'], grouped['text']) == ('g2t', '{{chip}}')
+        assert grouped['box'] == (3000000, 4100000, 1500000, 500000)
+        bare = {'slides': _proof_template()['slides'][:2]}
+        assert gsapi.GsApi.read_proof_kit(bare) is None
+
+    def test_screenshots_stand_side_by_side_over_their_chips(self):
+        api = gsapi.GsApi
+        fx, fy, fw, fh = api.PROOF_FRAME_EMU
+        assert api.placement_cells([]) == []
+        images = [dict(self.PORTRAIT, label='Copy 01'),
+                  dict(self.PORTRAIT, label='Copy 02')]
+        (first, chip_a), (second, chip_b) = api.placement_cells(images)
+        assert first[1:] == second[1:]
+        assert first[2] / first[3] == pytest.approx(1080 / 1350, abs=.001)
+        assert first[0] + first[2] < second[0]
+        assert abs((first[0] - fx) - (fx + fw - second[0] - second[2])) <= 2
+        for box, chip in ((first, chip_a), (second, chip_b)):
+            assert chip[2:] == api.PROOF_CHIP_EMU
+            assert box[1] + box[3] <= chip[1] <= fy + fh - chip[3]
+            assert abs((chip[0] + chip[2] / 2) - (box[0] + box[2] / 2)) <= 2
+
+    def test_a_lone_wide_shot_takes_the_width_and_strips_stack(self):
+        api = gsapi.GsApi
+        fx, _fy, fw, _fh = api.PROOF_FRAME_EMU
+        [(box, chip)] = api.placement_cells([self.WIDE])
+        assert chip is None and (box[0], box[2]) == (fx, fw)
+        strips = [dict(self.STRIP, label=label)
+                  for label in ('Copy 01', 'Copy 02')]
+        (top, chip_a), (bottom, chip_b) = api.placement_cells(strips)
+        assert top[1] + top[3] <= bottom[1]
+        assert top[0] == bottom[0] and chip_a[0] == chip_b[0]
+        assert top[0] - chip_a[0] - chip_a[2] == 2 * api.PROOF_CHIP_GAP_EMU
+        assert top[2] / top[3] == pytest.approx(840 / 260, abs=.01)
+        assert abs((chip_a[0] - fx) - (fx + fw - top[0] - top[2])) <= 2
+        [(box, placed)] = api.placement_cells(
+            [dict(self.PORTRAIT, label='x')], (0, 0, 4000000, 2000000),
+            (500000, 200000))
+        assert placed[2:] == (500000, 200000) and box[3] <= 1800000
+
+    def test_a_deck_without_a_template_draws_a_dark_slide(self):
+        api = _proof_api(template=False)
+        images = [dict(self.PORTRAIT, label='Copy 01'), self.PORTRAIT,
+                  {'img_w': 5, 'img_h': 5, 'label': 'no picture'}]
+        ink = {'red': .1, 'green': .1, 'blue': .2}
+        assert api.add_placement_slide('deck', 'rbdeck0', 'US | In-Feed',
+                                       images, {'ink': ink}) == 'rbdeck0'
+        assert 'createSlide' in _sent(api)[0]
+        assert len(_sent(api, 'createImage')) == 2
+        assert [i['text'] for i in _sent(api, 'insertText')] == [
+            'US | In-Feed', 'Copy 01']
+        field = _sent(api, 'updateShapeProperties')[0]
+        assert field['objectId'] == 'rbdeck0bg'
+        assert field['shapeProperties']['shapeBackgroundFill']['solidFill'][
+            'color']['rgbColor'] == ink
+        api.deck_theme = ART_THEME
+        api.add_placement_slide('deck', 'rbdeck1', 'US | Story', [])
+        assert 'rbdeck1bg' not in [
+            shape['objectId'] for shape in _sent(api, 'createShape')], (
+            'a painted theme is already the field')
+
+    def test_an_empty_slide_says_its_screenshot_is_to_come(self):
+        """Centred in the template's picture frame, else the kit's; a
+        slide with a picture says nothing."""
+        for template, frame in ((False, gsapi.GsApi.PROOF_FRAME_EMU),
+                                (True, (100000, 1000000, 8900000, 3600000))):
+            api = _proof_api(template=template)
+            api.add_placement_slide('deck', 'rbdeck0', 'Title',
+                                    [self.PORTRAIT])
+            api.add_placement_slide('deck', 'rbdeck1', 'Gap', [])
+            texts = {i['objectId']: i['text']
+                     for i in _sent(api, 'insertText')}
+            assert texts['rbdeck1p'] == api.PROOF_PENDING
+            assert 'rbdeck0p' not in texts
+            shape = next(s for s in _sent(api, 'createShape')
+                         if s['objectId'] == 'rbdeck1p')
+            props = shape['elementProperties']
+            assert (props['transform']['translateX'],
+                    props['transform']['translateY'],
+                    props['size']['width']['magnitude'],
+                    props['size']['height']['magnitude']) == frame
+            assert {'objectId': 'rbdeck1p',
+                    'shapeProperties': {'contentAlignment': 'MIDDLE'},
+                    'fields': 'contentAlignment'} in _sent(
+                api, 'updateShapeProperties')
+
+    def test_more_than_four_screenshots_continue(self):
+        api = _proof_api(template=False)
+        api.add_placement_slide('deck', 'rbdeck0', 'Title',
+                                [self.PORTRAIT] * 5)
+        calls = [call.args[1]
+                 for call in api.slides_batch_update.call_args_list]
+        assert [len(_of(reqs, 'createImage')) for reqs in calls] == [4, 1]
+        assert _of(calls[1], 'createSlide')[0]['objectId'] == 'rbdeck0part1'
+        assert _of(calls[1], 'insertText')[0]['text'] == 'Title (continued)'
+
+    def test_a_template_deck_copies_the_example_and_moves_its_chips(self):
+        api = _proof_api()
+        images = [dict(self.PORTRAIT, label='Copy 01'),
+                  dict(self.PORTRAIT, label='15s')]
+        heading = 'US | True View | Kova Launch Trailer | 1920x1080 | 15s'
+        api.add_placement_slide('deck', 'rbdeck0', heading, images)
+        requests = _sent(api)
+        assert [d['objectIds'] for d in _of(requests, 'duplicateObject')] == [
+            {'place': 'rbdeck0', 'pt': 'rbdeck0t', 'fr': 'rbdeck0fr',
+             'g1': 'rbdeck0k0', 'g2': 'rbdeck0k1', 'g2i': 'rbdeck0k1c0',
+             'g2t': 'rbdeck0k1c1'},
+            {'rbdeck0k0': 'rbdeck0c0'},
+            {'rbdeck0k1': 'rbdeck0c1', 'rbdeck0k1c0': 'rbdeck0c1c0',
+             'rbdeck0k1c1': 'rbdeck0c1c1'}]
+        assert requests[1]['updateSlidesPosition']['insertionIndex'] == 5
+        assert _of(requests, 'replaceAllText')[0]['replaceText'] == heading
+        assert not _of(requests, 'createSlide')
+        assert not _of(requests, 'updateTextStyle'), 'the heading fits'
+        cells = api.placement_cells(images, (100000, 1000000, 8900000,
+                                             3600000), (1500000, 500000))
+        assert [(m['objectId'], m['transform']['translateX'],
+                 m['transform']['translateY'])
+                for m in _of(requests, 'updatePageElementTransform')] == [
+            ('rbdeck0c0', cells[0][1][0] - 500000, cells[0][1][1] - 4100000),
+            ('rbdeck0c1', cells[1][1][0] - 3000000,
+             cells[1][1][1] - 4100000)]
+        assert [(i['objectId'], i['text'])
+                for i in _of(requests, 'insertText')] == [
+            ('rbdeck0c0', 'Copy 01'), ('rbdeck0c1c1', '15s')]
+        assert [(d['objectId'], d['textRange']['startIndex'],
+                 d['textRange']['endIndex'])
+                for d in _of(requests, 'deleteText')] == [
+            ('rbdeck0c0', 7, 15), ('rbdeck0c1c1', 3, 11)]
+        assert [d['objectId'] for d in _of(requests, 'deleteObject')] == [
+            'rbdeck0fr', 'rbdeck0k0', 'rbdeck0k1']
+        assert api.proof_slides == 5
+
+    def test_a_long_title_steps_down_and_a_refusal_adds_no_slide(self):
+        api = _proof_api()
+        api.slides_rejections = []
+        api.slides_batch_update.side_effect = functools.partial(_refuse, api)
+        api.add_placement_slide('deck', 'rbdeck0', 'Very long title ' * 9,
+                                [])
+        style = _sent(api, 'updateTextStyle')[0]
+        assert style['objectId'] == 'rbdeck0t'
+        assert style['style']['fontSize']['magnitude'] < 27
+        assert api.proof_slides == 4
+
+    def test_chips_take_their_colour_by_label(self):
+        """Two copies on two surfaces read green, red, green, red, on a
+        template and off one."""
+        images = [dict(self.PORTRAIT, label=label)
+                  for label in ('Copy 01', 'Copy 02', 'Copy 01', 'Copy 02')]
+        api = _proof_api()
+        api.add_placement_slide('deck', 'rbdeck0', 'Title', images)
+        assert [d['objectId'] for d in _sent(api, 'duplicateObject')[1:]] == [
+            'rbdeck0k0', 'rbdeck0k1', 'rbdeck0k0', 'rbdeck0k1']
+        api = _proof_api(template=False)
+        api.add_placement_slide('deck', 'rbdeck0', 'Title', images)
+        fills = [u['shapeProperties']['shapeBackgroundFill']['solidFill'][
+                     'color']['rgbColor']
+                 for u in _sent(api, 'updateShapeProperties')
+                 if u['objectId'].endswith('bar')]
+        green, red = api.PROOF_CHIP_COLORS[:2]
+        assert fills == [green, red, green, red]
+
+    def test_cover_dividers_and_closing_come_from_the_template(self):
+        api = _proof_api()
+        api.create_title_slide('deck', {'title': 'Launch Deck',
+                                        'subtitle': 'November 2026'})
+        api.add_section_slide('deck', 'rbdecksection0', 'Meta')
+        api.add_section_slide('deck', 'rbdecksection3', 'Reddit')
+        api.add_closing_slide('deck', 'rbdeckclose', 'Thank You')
+        assert [(d['objectId'], d['objectIds'])
+                for d in _sent(api, 'duplicateObject')] == [
+            ('cover', {'cover': 'rbtitle'}),
+            ('div', {'div': 'rbdecksection0'}),
+            ('div', {'div': 'rbdecksection3'}),
+            ('end', {'end': 'rbdeckclose'})]
+        assert [(r['containsText']['text'], r['replaceText'])
+                for r in _sent(api, 'replaceAllText')] == [
+            ('{{title}}', 'Launch Deck'), ('{{subtitle}}', 'November 2026'),
+            ('{{platform}}', 'Meta'), ('{{platform}}', 'Reddit')]
+        assert [m['insertionIndex']
+                for m in _sent(api, 'updateSlidesPosition')] == [5, 6, 7, 8]
+        assert not _sent(api, 'createSlide')
+
+
+def _painted_post(paint_status, url, json=None, params=None):
+    """Drive and Slides answering a deck build: a template copy, a blank
+    deck, and ``paint_status`` for the field's batch."""
+    if url.endswith('/copy'):
+        return Mock(status_code=200, json=Mock(return_value={'id': 'tplcopy'}))
+    status = paint_status if url.endswith(':batchUpdate') else 200
+    return Mock(status_code=status, text='refused',
+                json=Mock(return_value={'presentationId': 'blank'}))
+
+
+def _painted_api(paint_status=200, template=False):
+    """A ``GsApi`` whose blank deck holds a master and a layout, and whose
+    copied ``template`` brings its dark layouts."""
+    api = gsapi.GsApi()
+    api.client = Mock()
+    api.client.post.side_effect = functools.partial(_painted_post,
+                                                    paint_status)
+    api.add_permissions = Mock()
+    layouts = [{'objectId': 'p6', 'layoutProperties': {'name': 'TITLE'}},
+               {'objectId': 'p8', 'layoutProperties': {
+                   'name': f'{api.TEMPLATE_LAYOUT_STEM}_1_1'}}]
+    api.get_presentation = Mock(return_value={
+        'masters': [{'objectId': 'm1'}],
+        'layouts': layouts if template else layouts[:1]})
+    api.slides_batch_update = Mock()
+    return api
+
+
+class TestGsApiArtTheme:
+    """A game deck with no template is drawn dark in its key art's
+    colours."""
+
+    RED_ART = [(0.5, (0.3, 0.04, 0.04)), (0.3, (0.02, 0.02, 0.02)),
+               (0.1, (0.95, 0.75, 0.1)), (0.01, (0.1, 1.0, 0.1))]
+
+    def test_field_takes_the_lead_hue_and_accent_the_vivid_one(self):
+        theme = gsapi.GsApi.art_theme(self.RED_ART)
+        field, accent = theme['field'], theme['accent']
+        assert field['red'] > field['green'] == field['blue']
+        _, light, _ = colorsys.rgb_to_hls(*field.values())
+        assert light == pytest.approx(gsapi.GsApi.ART_FIELD_L, abs=.01)
+        assert theme['rule']['red'] > field['red']
+        assert accent['red'] > accent['green'] > accent['blue']
+        assert gsapi._contrast(gsapi.GsApi.DECK_WHITE, field) > 7
+        dim = gsapi.GsApi.art_theme([(0.6, (0.05, 0.05, 0.4)),
+                                     (0.4, (0.1, 0.1, 0.9))])
+        for lifted in (theme, dim):
+            assert gsapi._contrast(lifted['accent'], lifted['field']) >= (
+                gsapi.GsApi.ART_ACCENT_CONTRAST)
+
+    def test_grey_art_keeps_a_neutral_field_and_no_accent(self):
+        theme = gsapi.GsApi.art_theme([(0.7, (0.4, 0.4, 0.4)),
+                                       (0.3, (0.9, 0.9, 0.9))])
+        assert 'accent' not in theme
+        field = theme['field']
+        assert field['red'] == field['green'] == field['blue']
+        assert gsapi.GsApi.art_theme([])['field'] == field
+
+    def test_a_logo_reads_on_the_dark_cover_by_its_ink(self):
+        """Swatches as two Steam logos quantise: black letters under a thin
+        glow fail, a bright mark holds."""
+        reads = gsapi.GsApi.reads_on_dark
+        assert not reads([(0.41, (0.0, 0.0, 0.0)), (0.33, (0.08, 0.08, .08)),
+                          (0.18, (0.35, 0.35, 0.35)),
+                          (0.08, (0.85, 0.85, 0.85))])
+        assert reads([(0.6, (0.0, 0.0, 0.0)), (0.25, (1.0, 0.85, 0.1)),
+                      (0.15, (0.9, 0.9, 0.95))])
+        assert not reads([])
+
+    def test_a_theme_paints_a_blank_deck_dark(self):
+        api = _painted_api()
+        assert api.create_presentation('Deck') == 'blank'
+        api.paint_field('blank', ART_THEME)
+        paint = api.client.post.call_args.kwargs
+        assert paint['url'].endswith('/blank:batchUpdate')
+        assert [(r['updatePageProperties']['objectId'],
+                 r['updatePageProperties']['pageProperties'][
+                     'pageBackgroundFill']['solidFill']['color']['rgbColor'])
+                for r in paint['json']['requests']] == [
+            ('m1', ART_THEME['field']), ('p6', ART_THEME['field'])]
+        assert api.is_dark and api.deck_theme == ART_THEME
+        assert api._blank_slide_req('rb1')['createSlide'][
+            'slideLayoutReference'] == {'predefinedLayout': 'BLANK'}
+        assert api._brand_colors({'accent': {'red': 0.9, 'green': 0.1,
+                                             'blue': 0.1}})['accent'] == (
+            ART_THEME['accent'])
+        api.add_section_slide('p', 'rb2', 'Audience',
+                              image_url='https://cdn/art.jpg',
+                              img_w=1920, img_h=1080)
+        veil = next(r for r in _sent(api, 'updateShapeProperties')
+                    if r['objectId'] == 'rb2bg')
+        assert veil['shapeProperties']['shapeBackgroundFill']['solidFill'][
+            'color']['rgbColor'] == ART_THEME['field']
+        api.add_table_slide('p', 'rb3', 'Spend', ['Partner', 'Spend'],
+                            [['Meta', '$1,000']])
+        border = _sent(api, 'updateTableBorderProperties')[0]
+        assert border['tableBorderProperties']['tableBorderFill'][
+            'solidFill']['color']['rgbColor'] == ART_THEME['rule']
+
+    def test_a_refused_or_missing_theme_leaves_the_deck_unthemed(self):
+        api = _painted_api(paint_status=400)
+        api.paint_field(api.create_presentation('Deck'), ART_THEME)
+        assert not api.is_dark and api.deck_theme is None
+        assert api.field_ink == gsapi.GsApi.DECK_INK
+        api = _painted_api(template=True)
+        api.paint_field(api.create_presentation('Deck'), None)
+        assert api.client.post.call_count == 1, 'no theme sends no fill'
+        api.paint_field('blank', ART_THEME)
+        assert api.create_presentation('Deck', template_id='tpl') == (
+            'tplcopy')
+        assert api.deck_theme is None and api.is_dark
+        assert api._brand_colors({})['accent'] == (
+            gsapi.GsApi.DECK_ACCENT_DARK)
+
+    def test_the_cover_draws_the_house_mark_once(self):
+        api = _painted_api()
+        api.paint_field(api.create_presentation('Deck'), ART_THEME)
+        cover = {'title': 'Orbit', 'image_url': 'https://cdn/art.jpg',
+                 'img_w': 3840, 'img_h': 1240,
+                 'logo_url': 'https://cdn/lq.png',
+                 'house_logo_url': 'https://cdn/lq.png'}
+        api.create_title_slide('p', cover)
+        api.create_title_slide('p', dict(cover, logo_url='https://cdn/p.png'))
+        assert [r['objectId'] for r in _sent(api, 'createImage')] == [
+            'rbtitleart', 'rbtitlelogo',
+            'rbtitleart', 'rbtitlelogo', 'rbtitlehouse']
+
+    def test_a_wrapped_cover_title_pushes_the_subtitle_down(self):
+        api = _painted_api()
+        api.paint_field(api.create_presentation('Deck'), ART_THEME)
+        for title in ('Orbit', 'Comet X Shadow Generations launch'):
+            api.slides_batch_update.reset_mock()
+            api.create_title_slide('p', {'title': title, 'subtitle': 'Sub',
+                                         'image_url': 'https://cdn/a.jpg'})
+            boxes = {r['objectId']: r['elementProperties']
+                     for r in _sent(api, 'createShape')}
+            top = boxes['rbtitlet']['transform']['translateY']
+            height = boxes['rbtitlet']['size']['height']['magnitude']
+            assert boxes['rbtitles']['transform']['translateY'] == (
+                top + height)
+            plate = boxes['rbtitleplate']['size']['height']['magnitude']
+            assert plate > height + 300000
+        assert height > gsapi.GsApi.TITLE_BLOCK_H_EMU
+        assert height >= 2 * 1.2 * 32 * 12700
 
 
 def _matrix(rows):

@@ -4,6 +4,7 @@ import sys
 import json
 import logging
 import time
+import colorsys
 import collections
 import textwrap
 import pandas as pd
@@ -190,6 +191,68 @@ def _ladder_pt(text, width, sizes, max_lines, height=None):
     return sizes[-1]
 
 
+def _group_children(element):
+    return (element.get('elementGroup') or {}).get('children') or []
+
+
+def _walk(element):
+    """A page element, then each of its group's descendants, depth first."""
+    yield element
+    for child in _group_children(element):
+        yield from _walk(child)
+
+
+def _text_runs(element):
+    """A shape's own text runs; none for a group or a picture."""
+    return ((element.get('shape') or {}).get('text') or {}).get(
+        'textElements') or []
+
+
+def _own_text(element):
+    """The text a shape itself holds, without its group's children."""
+    return ''.join((run.get('textRun') or {}).get('content', '')
+                   for run in _text_runs(element))
+
+
+def _element_text(element):
+    """All the text on a page element, a group's children included."""
+    return ''.join(_own_text(part) for part in _walk(element))
+
+
+def _first_font_pt(element):
+    """The size of a shape's first styled run, or None when inherited."""
+    for run in _text_runs(element):
+        size = ((run.get('textRun') or {}).get('style') or {}).get(
+            'fontSize') or {}
+        if size.get('magnitude'):
+            return size['magnitude']
+    return None
+
+
+def _element_box(element, parent=(1, 1, 0, 0)):
+    """``(x, y, w, h)`` EMU of a page element on its page, a group's
+    being the union of its children; shear is ignored."""
+    transform = element.get('transform') or {}
+    parent_sx, parent_sy, parent_x, parent_y = parent
+    scale_x = transform.get('scaleX', 1) * parent_sx
+    scale_y = transform.get('scaleY', 1) * parent_sy
+    x = transform.get('translateX', 0) * parent_sx + parent_x
+    y = transform.get('translateY', 0) * parent_sy + parent_y
+    children = _group_children(element)
+    if children:
+        boxes = [_element_box(child, (scale_x, scale_y, x, y))
+                 for child in children]
+        left = min(box[0] for box in boxes)
+        top = min(box[1] for box in boxes)
+        return (left, top, max(box[0] + box[2] for box in boxes) - left,
+                max(box[1] + box[3] for box in boxes) - top)
+    size = element.get('size') or {}
+    w = (size.get('width') or {}).get('magnitude', 0) * scale_x
+    h = (size.get('height') or {}).get('magnitude', 0) * scale_y
+    return (int(x + min(w, 0)), int(y + min(h, 0)), int(abs(w)),
+            int(abs(h)))
+
+
 def _values_fit(tiles, width, font_pt):
     """Whether every tile value sets on one line at ``font_pt``."""
     chars = _chars_per_line(width, font_pt)
@@ -260,6 +323,16 @@ def _luminance(rgb):
                         else ((v + 0.055) / 1.055) ** 2.4
                         for v in (rgb['red'], rgb['green'], rgb['blue']))
     return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _rgb(values):
+    """A 0-1 ``{'red', 'green', 'blue'}`` from ``(r, g, b)``."""
+    return dict(zip(('red', 'green', 'blue'), values))
+
+
+def _hls(hue, light, sat):
+    """A rounded rgbColor from hue, lightness and saturation."""
+    return _rgb(round(v, 3) for v in colorsys.hls_to_rgb(hue, light, sat))
 
 
 def _contrast(fore, back):
@@ -431,6 +504,7 @@ class GsApi(object):
         self.google_doc = False
         self.on_token_refresh = None
         self.deck_layouts = {}
+        self.deck_theme = None
         self.deck_fonts = {}
         self.parse_response = self.parse_sheets_response
 
@@ -627,16 +701,21 @@ class GsApi(object):
             spreadsheet_id)
 
     def create_presentation(self, presentation_name=None, template_id=None,
-                            fonts=None):
+                            fonts=None, proof=False):
         """Create a deck from a template, falling back to blank if copying
-        or layout detection fails; ``fonts`` overrides the kit's faces."""
+        or layout detection fails; ``fonts`` overrides the kit's faces and
+        ``proof`` reads a screenshot deck's example slides instead."""
         logging.info('Creating GSlides Presentation: {}'.format(
             presentation_name))
         self.deck_layouts = {}
+        self.deck_theme = None
+        self.proof_kit = None
+        self.proof_slides = 0
+        self.proof_dividers = 0
         self.deck_fonts = dict(fonts or {})
         if template_id:
             presentation_id = self._copy_template(template_id,
-                                                  presentation_name)
+                                                  presentation_name, proof)
             if presentation_id:
                 self.add_permissions(presentation_id)
                 return presentation_id
@@ -649,11 +728,99 @@ class GsApi(object):
         self.add_permissions(presentation_id)
         return presentation_id
 
-    def _copy_template(self, template_id, name):
-        """Copy the template into the caller's own Drive and load
-        recognized layouts; return None if unusable. Without a parent
-        the copy stays beside the template, and a template kept on a
-        shared drive would hand every deck to that drive's members."""
+    def paint_field(self, presentation_id, theme):
+        """Fill a blank deck's masters and layouts with ``theme``'s field
+        and take it on; a refused fill leaves a light deck, not a hole."""
+        if not theme:
+            return
+        presentation = self.get_presentation(presentation_id)
+        pages = [*(presentation.get('masters') or []),
+                 *(presentation.get('layouts') or [])]
+        fill = {'pageBackgroundFill': {'solidFill': {
+            'color': {'rgbColor': theme['field']}}}}
+        reqs = [{'updatePageProperties': {
+            'objectId': page['objectId'], 'pageProperties': fill,
+            'fields': 'pageBackgroundFill.solidFill.color'}}
+            for page in pages]
+        if not reqs:
+            return
+        response = self.client.post(
+            url=f'{self.slides_url}/{presentation_id}:batchUpdate',
+            json={'requests': reqs})
+        if self.request_applied(response, presentation_id):
+            self.deck_theme = dict(theme)
+
+    ART_FIELD_L = 0.15
+    ART_RULE_L = 0.32
+    ART_FIELD_S_MAX = 0.45
+    ART_HUE_MIN_S = 0.15
+    ART_HUE_L = (0.08, 0.92)
+    ART_ACCENT_MIN_S = 0.35
+    ART_ACCENT_MIN_V = 0.35
+    ART_ACCENT_MIN_SHARE = 0.02
+    ART_ACCENT_L = (0.58, 0.78)
+    ART_ACCENT_S = 0.55
+    ART_ACCENT_CONTRAST = 3.0
+    ART_ACCENT_STEP = 0.04
+    ART_LOGO_CONTRAST = 2.3
+
+    @classmethod
+    def reads_on_dark(cls, swatches):
+        """Whether a logo's ``swatches``, weighted by share, average
+        :data:`ART_LOGO_CONTRAST` against the kit's ink."""
+        held = sum(share * _contrast(_rgb(rgb), cls.DECK_INK)
+                   for share, rgb in swatches)
+        return held >= cls.ART_LOGO_CONTRAST
+
+    @classmethod
+    def art_theme(cls, swatches):
+        """``{'field', 'rule', 'accent'}`` from ``[(share, (r, g, b))]``:
+        dark in the lead colour's hue, the accent the most vivid swatch."""
+        hued = [(share, colorsys.rgb_to_hls(*rgb)) for share, rgb in swatches]
+        low, high = cls.ART_HUE_L
+        coloured = [(share, hls) for share, hls in hued
+                    if hls[2] >= cls.ART_HUE_MIN_S and low < hls[1] < high]
+        hue, _, sat = (max(coloured, key=lambda swatch: swatch[0])[1]
+                       if coloured else (0.0, 0.0, 0.0))
+        sat = min(sat, cls.ART_FIELD_S_MAX)
+        theme = {'field': _hls(hue, cls.ART_FIELD_L, sat),
+                 'rule': _hls(hue, cls.ART_RULE_L, sat)}
+        vivid = cls._vivid_swatch(swatches)
+        if vivid:
+            theme['accent'] = cls._lifted_accent(vivid, theme['field'])
+        return theme
+
+    @classmethod
+    def _vivid_swatch(cls, swatches):
+        """The swatch scoring highest on saturation, brightness and share,
+        past the floors on each; None in a grey picture."""
+        best, top = None, 0.0
+        for share, rgb in swatches:
+            _, sat, val = colorsys.rgb_to_hsv(*rgb)
+            score = sat * val * share ** 0.5
+            if (sat >= cls.ART_ACCENT_MIN_S and val >= cls.ART_ACCENT_MIN_V
+                    and share >= cls.ART_ACCENT_MIN_SHARE and score > top):
+                best, top = rgb, score
+        return best
+
+    @classmethod
+    def _lifted_accent(cls, rgb, field):
+        """``rgb`` in the accent's band, lightened until it holds
+        :data:`ART_ACCENT_CONTRAST` against ``field``."""
+        hue, light, sat = colorsys.rgb_to_hls(*rgb)
+        low, high = cls.ART_ACCENT_L
+        light, sat = min(max(light, low), high), max(sat, cls.ART_ACCENT_S)
+        color = _hls(hue, light, sat)
+        while (_contrast(color, field) < cls.ART_ACCENT_CONTRAST
+               and light < 1 - cls.ART_ACCENT_STEP):
+            light += cls.ART_ACCENT_STEP
+            color = _hls(hue, light, sat)
+        return color
+
+    def _copy_template(self, template_id, name, proof=False):
+        """Copy the template into the caller's own Drive, never beside a
+        shared-drive template, and load its layouts or ``proof`` examples;
+        return None if unusable."""
         response = self.client.post(
             '{}/{}/copy'.format(self.files_url, template_id),
             params={'supportsAllDrives': 'true'},
@@ -666,7 +833,11 @@ class GsApi(object):
         presentation_id = response.json().get('id')
         if not presentation_id:
             return None
-        layouts = self._read_layouts(self.get_presentation(presentation_id))
+        presentation = self.get_presentation(presentation_id)
+        if proof:
+            return self._load_proof_kit(template_id, presentation_id,
+                                        presentation)
+        layouts = self._read_layouts(presentation)
         if 'content' not in layouts:
             logging.warning('Deck template %s has no content layout; '
                             'the deck starts blank', template_id)
@@ -674,6 +845,20 @@ class GsApi(object):
                                               presentation_id))
             return None
         self.deck_layouts = layouts
+        return presentation_id
+
+    def _load_proof_kit(self, template_id, presentation_id, presentation):
+        """The copy's id when it holds a placement example, else None."""
+        kit = self.read_proof_kit(presentation)
+        if not kit:
+            logging.warning('Deck template %s has no slide titled %s; '
+                            'the deck starts blank', template_id,
+                            self.PROOF_TOKENS['placement'])
+            self.client.delete('{}/{}'.format(self.files_url,
+                                              presentation_id))
+            return None
+        self.proof_kit = kit
+        self.proof_slides = len(presentation.get('slides') or [])
         return presentation_id
 
     @classmethod
@@ -696,8 +881,24 @@ class GsApi(object):
 
     @property
     def is_dark(self):
-        """Whether the deck draws on the template's dark layouts."""
-        return bool(getattr(self, 'deck_layouts', None))
+        """Whether the deck draws dark, on template layouts or a painted
+        field."""
+        return bool(getattr(self, 'deck_layouts', None) or self._theme)
+
+    @property
+    def _theme(self):
+        """The painted :meth:`paint_field` theme, {} on any other deck."""
+        return getattr(self, 'deck_theme', None) or {}
+
+    @property
+    def field_ink(self):
+        """The dark field's colour: the painted theme's, else the ink."""
+        return self._theme.get('field') or self.DECK_INK
+
+    @property
+    def rule_dark(self):
+        """The rule on a dark slide, in the theme's hue when it has one."""
+        return self._theme.get('rule') or self.DECK_RULE_DARK
 
     @property
     def deck_font(self):
@@ -842,6 +1043,7 @@ class GsApi(object):
     TITLE_BLOCK_W_EMU = 5900000
     TITLE_BLOCK_H_EMU = 900000
     COVER_TITLE_PT = (36, 32, 28)
+    COVER_TITLE_SPACING = 115
     TABLE_FILL_SHARE = 0.92
     SECTION_X_EMU = 1600200
     CAPTION_H_EMU = 340000
@@ -963,9 +1165,10 @@ class GsApi(object):
 
     def _art_colors(self, brand):
         """The palette for anything drawn over the ink field, whatever
-        the deck's theme."""
+        the deck's theme; a painted theme's accent leads the brand's."""
         brand = brand or {}
-        return {'accent': brand.get('accent') or self.DECK_ACCENT_DARK,
+        return {'accent': (self._theme.get('accent') or brand.get('accent')
+                           or self.DECK_ACCENT_DARK),
                 'ink': self.DECK_WHITE,
                 'muted': self.DECK_MUTED_LIGHT,
                 'card': self.DECK_WHITE,
@@ -1140,6 +1343,12 @@ class GsApi(object):
         mark on a white plate so any logo colorway reads on the dark field."""
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         colors = self._brand_colors(meta.get('deck_brand'))
+        if self._proof('cover'):
+            return self._send_clone(
+                presentation_id, slide_id, self._clone_slide_reqs(
+                    self._proof('cover'), slide_id,
+                    {'title': meta.get('title'),
+                     'subtitle': meta.get('subtitle')}))
         if self.is_dark:
             return self._template_title_slide(presentation_id, meta,
                                               slide_id, colors)
@@ -1177,8 +1386,8 @@ class GsApi(object):
 
     def _template_title_slide(self, presentation_id, meta, slide_id,
                               colors):
-        """The template cover: title (or ``game_logo_url``) on a plate, the
-        publisher mark bottom-left and, over art, the house mark right."""
+        """The template cover: title (or ``game_logo_url``) on a plate that
+        grows as it wraps, the publisher mark left, the house mark right."""
         reqs = [self._blank_slide_req(slide_id, 'title')]
         art = meta.get('image_url')
         reqs += self._art_field_reqs(slide_id, colors, art,
@@ -1187,14 +1396,20 @@ class GsApi(object):
         block_w = self.TITLE_BLOCK_W_EMU
         block_x = self.PAGE_W_EMU - self.MARGIN_EMU - block_w
         y = self.TITLE_BLOCK_Y_EMU
-        sub_y = y + self.TITLE_BLOCK_H_EMU
+        title = str(meta.get('title', '') or '')
+        title_pt = _ladder_pt(title, block_w, self.COVER_TITLE_PT, 2,
+                              self.TITLE_BLOCK_H_EMU)
+        title_h = self.TITLE_BLOCK_H_EMU
+        if not meta.get('game_logo_url'):
+            title_h = max(title_h, _block_height(
+                title, block_w, title_pt, self.COVER_TITLE_SPACING))
+        sub_y = y + title_h
         sub_h, foot_h = 300000, 260000
         foot = ' · '.join(s for s in (meta.get('brand', ''),
                                       meta.get('legal', '')) if s)
         if art:
             reqs += self._text_plate_reqs(
-                slide_id, y,
-                self.TITLE_BLOCK_H_EMU + sub_h + (foot_h if foot else 0))
+                slide_id, y, title_h + sub_h + (foot_h if foot else 0))
         if meta.get('game_logo_url'):
             _, gy, gw, gh = self._fit_box(
                 meta.get('game_logo_w'), meta.get('game_logo_h'),
@@ -1203,13 +1418,10 @@ class GsApi(object):
                                      meta['game_logo_url'],
                                      block_x + block_w - gw, gy, gw, gh)
         else:
-            title = str(meta.get('title', '') or '')
             reqs += self._text_box_reqs(
                 slide_id, f'{slide_id}t', title, block_x, y, block_w,
-                self.TITLE_BLOCK_H_EMU,
-                font_pt=_ladder_pt(title, block_w, self.COVER_TITLE_PT, 2,
-                                   self.TITLE_BLOCK_H_EMU),
-                bold=True, align='END', color=self.DECK_WHITE)
+                title_h, font_pt=title_pt, bold=True, align='END',
+                color=self.DECK_WHITE)
         reqs += self._text_box_reqs(
             slide_id, f'{slide_id}s', meta.get('subtitle', ''),
             block_x, sub_y, block_w, sub_h, font_pt=14,
@@ -1225,7 +1437,8 @@ class GsApi(object):
                 slide_id, f'{slide_id}logo', meta['logo_url'],
                 self.MARGIN_EMU, logo_y, img_w=meta.get('logo_w'),
                 img_h=meta.get('logo_h'))
-        if art and meta.get('house_logo_url'):
+        house = meta.get('house_logo_url')
+        if art and house and house != meta.get('logo_url'):
             reqs += self._logo_plate_reqs(
                 slide_id, f'{slide_id}house', meta['house_logo_url'],
                 self.PAGE_W_EMU - self.MARGIN_EMU - self.LOGO_W_EMU, logo_y,
@@ -1239,7 +1452,14 @@ class GsApi(object):
                           image_url=None, img_w=None, img_h=None,
                           focus=None):
         """Build a divider with optional eyebrow, note and background art,
-        cropped to ``focus``, the heading block on a plate over art."""
+        cropped to ``focus``, or copy a proof template's dividers in turn."""
+        dividers = self._proof('dividers')
+        if dividers:
+            source = dividers[self.proof_dividers % len(dividers)]
+            self.proof_dividers += 1
+            return self._send_clone(
+                presentation_id, slide_id, self._clone_slide_reqs(
+                    source, slide_id, {'platform': heading}))
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id, 'section')]
@@ -1288,7 +1508,11 @@ class GsApi(object):
                           focus=None):
         """The deck's last slide: a thank-you on the art field over
         ``logos`` (``[publisher_url, liquid_url]``, either None) and the
-        legal line."""
+        legal line, or a proof template's own closing slide."""
+        if self._proof('closing'):
+            return self._send_clone(
+                presentation_id, slide_id, self._clone_slide_reqs(
+                    self._proof('closing'), slide_id, {}))
         colors = self._brand_colors(brand)
         cx, cw = self.MARGIN_EMU, self.PAGE_W_EMU - 2 * self.MARGIN_EMU
         reqs = [self._blank_slide_req(slide_id, 'section')]
@@ -1484,7 +1708,7 @@ class GsApi(object):
                         img_w=None, img_h=None, focus=None):
         """The field behind a dark slide: full-bleed art under a
         translucent ink veil, else plain ink — or nothing at all on a
-        template layout, whose own art is the field."""
+        dark deck, whose layouts are the field."""
         reqs = []
         if not image_url and self.is_dark:
             return reqs
@@ -1494,7 +1718,7 @@ class GsApi(object):
                                      x, y, w, h)
         reqs += self._rect_reqs(
             slide_id, f'{slide_id}bg', 0, 0, self.PAGE_W_EMU,
-            self.PAGE_H_EMU, self.DECK_INK if self.is_dark else colors['ink'],
+            self.PAGE_H_EMU, self.field_ink if self.is_dark else colors['ink'],
             alpha=self.ART_VEIL_ALPHA if image_url else None)
         return reqs
 
@@ -1502,7 +1726,7 @@ class GsApi(object):
         """A translucent ink plate across the page behind the heading
         block at ``y``, ``h`` tall, so the words read over any art."""
         return self._rect_reqs(slide_id, f'{slide_id}plate', 0, y - pad,
-                               self.PAGE_W_EMU, h + 2 * pad, self.DECK_INK,
+                               self.PAGE_W_EMU, h + 2 * pad, self.field_ink,
                                alpha=self.ART_PLATE_ALPHA)
 
     def _logo_plate_reqs(self, slide_id, shape_id, logo_url, x, y, w=None,
@@ -2040,7 +2264,7 @@ class GsApi(object):
     def _text_on(self, fill):
         """White or ink, whichever contrasts more with ``fill``
         (``{'color', 'alpha'?}``) laid over the page."""
-        under = self.DECK_INK if self.is_dark else self.DECK_WHITE
+        under = self.field_ink if self.is_dark else self.DECK_WHITE
         seen = _composite(fill['color'], fill.get('alpha'), under)
         return max((self.DECK_WHITE, self.DECK_INK),
                    key=lambda ink: _contrast(ink, seen))
@@ -2129,7 +2353,7 @@ class GsApi(object):
                 'objectId': table_id, 'borderPosition': 'ALL',
                 'tableBorderProperties': {
                     'tableBorderFill': {'solidFill': {
-                        'color': {'rgbColor': self.DECK_RULE_DARK}}},
+                        'color': {'rgbColor': self.rule_dark}}},
                     'weight': {'magnitude': 0.5, 'unit': 'PT'}},
                 'fields': 'tableBorderFill,weight'}})
         for index, height in enumerate(row_heights):
@@ -2277,6 +2501,332 @@ class GsApi(object):
                                         *self.EVIDENCE_FRAME_EMU)
             reqs += self._image_reqs(slide_id, f'{slide_id}i', image_url,
                                      x, iy, w, h, outline=True)
+        self.slides_batch_update(presentation_id, reqs)
+        return slide_id
+
+    PROOF_TOKENS = {'title': '{{title}}', 'subtitle': '{{subtitle}}',
+                    'platform': '{{platform}}', 'placement': '{{placement}}',
+                    'chip': '{{chip}}', 'images': '{{images}}'}
+    PROOF_TITLE_EMU = (400350, 547725, 8343300, 353400)
+    PROOF_TITLE_PT = (27, 24, 22, 20, 18)
+    PROOF_FRAME_EMU = (152400, 1053525, 8839200, 3619500)
+    PROOF_CHIP_EMU = (1563000, 532500)
+    PROOF_CHIP_BAR_EMU = 300000
+    PROOF_CHIP_PT = 12
+    PROOF_CHIP_GAP_EMU = 91440
+    PROOF_GAP_EMU = 457200
+    PROOF_INSET_EMU = 250000
+    PROOF_TITLE_GLYPH = .46
+    PROOF_MAX = 4
+    PROOF_STACK_ASPECT = 3
+    PROOF_PENDING = 'Screenshot to come'
+    PROOF_PENDING_PT = 18
+    PROOF_PENDING_INK = {'red': 0.55, 'green': 0.55, 'blue': 0.55}
+    PROOF_CHIP_COLORS = ({'red': 0.243, 'green': 0.706, 'blue': 0.490},
+                         {'red': 0.890, 'green': 0.200, 'blue': 0.365},
+                         {'red': 0.906, 'green': 0.675, 'blue': 0.157})
+
+    @classmethod
+    def read_proof_kit(cls, presentation):
+        """A screenshot-deck template's example slides, told apart by their
+        :data:`PROOF_TOKENS`; None without a placement example."""
+        tokens = cls.PROOF_TOKENS
+        kit = {'cover': None, 'dividers': [], 'closing': None,
+               'placement': None}
+        for index, slide in enumerate(presentation.get('slides') or []):
+            elements = slide.get('pageElements') or []
+            text = ''.join(_element_text(element) for element in elements)
+            slide_id = slide['objectId']
+            if tokens['placement'] in text:
+                kit['placement'] = kit['placement'] or cls._proof_example(
+                    slide_id, elements)
+            elif tokens['platform'] in text:
+                kit['dividers'].append(slide_id)
+            elif not index or tokens['title'] in text:
+                kit['cover'] = kit['cover'] or slide_id
+            else:
+                kit['closing'] = kit['closing'] or slide_id
+        return kit if kit['placement'] else None
+
+    @classmethod
+    def _proof_example(cls, slide_id, elements):
+        """The placement example's title, frame and chips, left to right."""
+        tokens = cls.PROOF_TOKENS
+        example = {'slide': slide_id, 'title': None, 'frame': None,
+                   'chips': []}
+        for element in elements:
+            text = _element_text(element)
+            box = _element_box(element)
+            if tokens['chip'] in text:
+                parts = list(_walk(element))
+                shape = next((part for part in parts
+                              if tokens['chip'] in _own_text(part)), element)
+                example['chips'].append({
+                    'id': element['objectId'],
+                    'ids': [part['objectId'] for part in parts],
+                    'text_id': shape['objectId'],
+                    'text': _element_text(shape).rstrip('\n'), 'box': box})
+            elif tokens['images'] in text:
+                example['frame'] = {'id': element['objectId'], 'box': box}
+            elif tokens['placement'] in text and not example['title']:
+                example['title'] = {'id': element['objectId'],
+                                    'pt': _first_font_pt(element),
+                                    'w': box[2]}
+        example['chips'].sort(key=lambda chip: chip['box'][:2])
+        return example
+
+    @classmethod
+    def placement_cells(cls, images, frame=None, chip=None):
+        """``[(image box, chip box or None)]`` laying ``images`` side by
+        side over their chips in ``frame``, or stacked when all are strips."""
+        fx, fy, fw, fh = frame or cls.PROOF_FRAME_EMU
+        chip_w, chip_h = chip or cls.PROOF_CHIP_EMU
+        count, gap = len(images), cls.PROOF_GAP_EMU
+        if not count:
+            return []
+        if count > 1:
+            fx, fw = fx + cls.PROOF_INSET_EMU, fw - 2 * cls.PROOF_INSET_EMU
+        sizes = [(image.get('img_w') or 0, image.get('img_h') or 0)
+                 for image in images]
+        labelled = any(image.get('label') for image in images)
+        if count > 1 and all(h and w / h > cls.PROOF_STACK_ASPECT
+                             for w, h in sizes):
+            return cls._stacked_cells(images, sizes, (fx, fy, fw, fh),
+                                      (chip_w, chip_h), labelled)
+        chip_band = chip_h + cls.PROOF_CHIP_GAP_EMU if labelled else 0
+        image_h = fh - chip_band
+        slot_w = (fw - gap * (count - 1)) // count
+        widest = max(cls._fit_box(w, h, 0, 0, slot_w, image_h)[2]
+                     for w, h in sizes)
+        col_w = min(slot_w, max(widest, chip_w if labelled else 0))
+        left = fx + (fw - count * col_w - gap * (count - 1)) // 2
+        cells = []
+        for index, (image, (w, h)) in enumerate(zip(images, sizes)):
+            x = left + index * (col_w + gap)
+            chip_box = None
+            if image.get('label'):
+                chip_box = (x + (col_w - chip_w) // 2,
+                            fy + image_h + cls.PROOF_CHIP_GAP_EMU,
+                            chip_w, chip_h)
+            cells.append((cls._fit_box(w, h, x, fy, col_w, image_h),
+                          chip_box))
+        return cells
+
+    @classmethod
+    def _stacked_cells(cls, images, sizes, frame, chip, labelled):
+        """Wide strips one under another, each just right of its chip, the
+        rows sharing a left edge and centred as a group."""
+        fx, fy, fw, fh = frame
+        chip_w, chip_h = chip
+        count, gap = len(images), cls.PROOF_CHIP_GAP_EMU * 2
+        indent = chip_w + gap if labelled else 0
+        row_h = (fh - gap * (count - 1)) // count
+        fits = [cls._fit_box(w, h, 0, 0, fw - indent, row_h)[2:]
+                for w, h in sizes]
+        left = fx + (fw - indent - max(w for w, _ in fits)) // 2
+        cells = []
+        for index, (image, (w, h)) in enumerate(zip(images, fits)):
+            y = fy + index * (row_h + gap)
+            chip_box = None
+            if image.get('label'):
+                chip_box = (left, y + (row_h - chip_h) // 2, chip_w, chip_h)
+            cells.append(((left + indent, y + (row_h - h) // 2, w, h),
+                          chip_box))
+        return cells
+
+    @classmethod
+    def _proof_title_pt(cls, title, width, sizes):
+        """The largest of ``sizes`` setting ``title`` on one line of
+        ``width``, at the display serif's narrower advance."""
+        return next((font_pt for font_pt in sizes if _wrapped_lines(
+            str(title or ''), width, font_pt, cls.PROOF_TITLE_GLYPH) <= 1),
+            sizes[-1])
+
+    def _proof(self, key):
+        """The copied template's ``key`` example, or None on a deck drawn
+        without one."""
+        return (getattr(self, 'proof_kit', None) or {}).get(key)
+
+    def _clone_slide_reqs(self, source_id, slide_id, texts, ids=None):
+        """Requests copying template slide ``source_id`` to the deck's end
+        as ``slide_id``, ``ids`` naming copies, and filling ``texts``."""
+        reqs = [
+            {'duplicateObject': {
+                'objectId': source_id,
+                'objectIds': dict(ids or {}, **{source_id: slide_id})}},
+            {'updateSlidesPosition': {
+                'slideObjectIds': [slide_id],
+                'insertionIndex': self.proof_slides + 1}}]
+        for token, text in texts.items():
+            reqs.append({'replaceAllText': {
+                'containsText': {'text': self.PROOF_TOKENS[token],
+                                 'matchCase': True},
+                'replaceText': str(text or ''),
+                'pageObjectIds': [slide_id]}})
+        return reqs
+
+    def _send_clone(self, presentation_id, slide_id, reqs):
+        """Send one cloned slide's batch, counting it only if applied."""
+        refused = len(getattr(self, 'slides_rejections', ()))
+        self.slides_batch_update(presentation_id, reqs)
+        if len(getattr(self, 'slides_rejections', ())) == refused:
+            self.proof_slides += 1
+        return slide_id
+
+    @staticmethod
+    def _chip_ids(chip, stem):
+        """``{template id: id}`` naming a chip's copy ``stem`` and its
+        children ``<stem>c<n>``."""
+        return {chip['id']: stem,
+                **{child: f'{stem}c{n}'
+                   for n, child in enumerate(chip['ids'][1:])}}
+
+    def _placement_clone_reqs(self, slide_id, title, example):
+        """The placement example copied as ``slide_id``, its title stepped
+        down to fit one line and its frame marker removed."""
+        ids = {}
+        heading, frame = example['title'], example['frame']
+        if heading:
+            ids[heading['id']] = f'{slide_id}t'
+        if frame:
+            ids[frame['id']] = f'{slide_id}fr'
+        for index, chip in enumerate(example['chips']):
+            ids.update(self._chip_ids(chip, f'{slide_id}k{index}'))
+        reqs = self._clone_slide_reqs(example['slide'], slide_id,
+                                      {'placement': title}, ids)
+        if title and heading and heading['pt']:
+            sizes = [heading['pt'] - step for step in (0, 2, 4, 6, 8)
+                     if heading['pt'] - step >= 12]
+            font_pt = self._proof_title_pt(title, heading['w'], sizes)
+            if font_pt != heading['pt']:
+                reqs.append({'updateTextStyle': {
+                    'objectId': f'{slide_id}t',
+                    'style': {'fontSize': {'magnitude': font_pt,
+                                           'unit': 'PT'}},
+                    'textRange': {'type': 'ALL'}, 'fields': 'fontSize'}})
+        if frame:
+            reqs.append({'deleteObject': {'objectId': f'{slide_id}fr'}})
+        return reqs
+
+    def _placement_field_reqs(self, slide_id, title, brand):
+        """A placement slide without a template: its one-line title over
+        the brand's ink, unless a painted theme is the field."""
+        x, y, w, h = self.PROOF_TITLE_EMU
+        reqs = [self._blank_slide_req(slide_id)]
+        if not self._theme:
+            reqs += self._rect_reqs(slide_id, f'{slide_id}bg', 0, 0,
+                                    self.PAGE_W_EMU, self.PAGE_H_EMU,
+                                    self._brand_colors(brand)['ink'])
+        return reqs + self._text_box_reqs(
+            slide_id, f'{slide_id}t', title or '', x, y, w, h,
+            font_pt=self._proof_title_pt(title, w, self.PROOF_TITLE_PT),
+            bold=True, color=self.DECK_WHITE)
+
+    def _chip_clone_reqs(self, slide_id, index, slot, label, box, chips):
+        """Example chip ``slot`` copied to ``box`` for image ``index``, the
+        label typed ahead of the token before it is cut, keeping its type."""
+        slot %= len(chips)
+        chip = chips[slot]
+        source = self._chip_ids(chip, f'{slide_id}k{slot}')
+        copy = self._chip_ids(chip, f'{slide_id}c{index}')
+        text_id = copy[chip['text_id']]
+        start = len(str(label).encode('utf-16-le')) // 2
+        end = start + len(chip['text'].encode('utf-16-le')) // 2
+        return [
+            {'duplicateObject': {
+                'objectId': source[chip['id']],
+                'objectIds': {source[tid]: new
+                              for tid, new in copy.items()}}},
+            {'updatePageElementTransform': {
+                'objectId': copy[chip['id']], 'applyMode': 'RELATIVE',
+                'transform': {'scaleX': 1, 'scaleY': 1,
+                              'translateX': box[0] - chip['box'][0],
+                              'translateY': box[1] - chip['box'][1],
+                              'unit': 'EMU'}}},
+            {'insertText': {'objectId': text_id, 'insertionIndex': 0,
+                            'text': str(label)}},
+            {'deleteText': {'objectId': text_id, 'textRange': {
+                'type': 'FIXED_RANGE', 'startIndex': start,
+                'endIndex': end}}}]
+
+    def _chip_field_reqs(self, slide_id, index, slot, label, box):
+        """A chip without a template: the label on a bar of colour
+        ``slot``."""
+        x, y, w, h = box
+        bar_h = min(h, self.PROOF_CHIP_BAR_EMU)
+        bar_y = y + (h - bar_h) // 2
+        shape_id = f'{slide_id}c{index}'
+        colors = self.PROOF_CHIP_COLORS
+        reqs = self._rect_reqs(slide_id, f'{shape_id}bar', x, bar_y, w,
+                               bar_h, colors[slot % len(colors)],
+                               shape_type='ROUND_RECTANGLE')
+        reqs += self._text_box_reqs(
+            slide_id, shape_id, label, x, bar_y, w, bar_h,
+            font_pt=self.PROOF_CHIP_PT, bold=True, align='CENTER',
+            color=self.DECK_WHITE)
+        return reqs + [self._middle_req(shape_id)]
+
+    def _pending_reqs(self, slide_id, frame=None):
+        """:data:`PROOF_PENDING` in the middle of an empty slide's picture
+        area, in a grey that reads on a dark field and a light template."""
+        shape_id = f'{slide_id}p'
+        return self._text_box_reqs(
+            slide_id, shape_id, self.PROOF_PENDING,
+            *(frame or self.PROOF_FRAME_EMU), font_pt=self.PROOF_PENDING_PT,
+            align='CENTER', color=self.PROOF_PENDING_INK) + [
+            self._middle_req(shape_id)]
+
+    @staticmethod
+    def _middle_req(shape_id):
+        """Centre a text box's text vertically."""
+        return {'updateShapeProperties': {
+            'objectId': shape_id,
+            'shapeProperties': {'contentAlignment': 'MIDDLE'},
+            'fields': 'contentAlignment'}}
+
+    def add_placement_slide(self, presentation_id, slide_id, title, images,
+                            brand=None):
+        """A placement's title over ``images`` (``url``, ``img_w``,
+        ``img_h``, ``label``), continuing past :data:`PROOF_MAX`, each chip
+        coloured by its label; with none, :meth:`_pending_reqs`."""
+        images = [image for image in images or [] if image.get('url')]
+        limit = self.PROOF_MAX
+        if len(images) > limit:
+            for n, start in enumerate(range(0, len(images), limit)):
+                self.add_placement_slide(
+                    presentation_id, *self._part(slide_id, title, n),
+                    images[start:start + limit], brand)
+            return slide_id
+        example = self._proof('placement')
+        chips = example['chips'] if example else []
+        frame = chip = None
+        if example:
+            reqs = self._placement_clone_reqs(slide_id, title, example)
+            frame = (example['frame'] or {}).get('box')
+            chip = chips[0]['box'][2:] if chips else None
+        else:
+            reqs = self._placement_field_reqs(slide_id, title, brand)
+        if not images:
+            reqs += self._pending_reqs(slide_id, frame)
+        cells = self.placement_cells(images, frame, chip)
+        labels = list(dict.fromkeys(
+            image['label'] for image in images if image.get('label')))
+        for index, (image, (box, chip_box)) in enumerate(zip(images, cells)):
+            reqs += self._image_reqs(slide_id, f'{slide_id}i{index}',
+                                     image['url'], *box)
+            if not chip_box:
+                continue
+            slot, label = labels.index(image['label']), image['label']
+            if chips:
+                reqs += self._chip_clone_reqs(slide_id, index, slot, label,
+                                              chip_box, chips)
+            else:
+                reqs += self._chip_field_reqs(slide_id, index, slot, label,
+                                              chip_box)
+        reqs += [{'deleteObject': {'objectId': f'{slide_id}k{n}'}}
+                 for n in range(len(chips))]
+        if example:
+            return self._send_clone(presentation_id, slide_id, reqs)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
@@ -2810,7 +3360,7 @@ class GsApi(object):
             return slide_id
         reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
             slide_id, title, colors, footer, page, eyebrow, subhead, source)]
-        rule = self.DECK_RULE_DARK if self.is_dark else self.DECK_RULE
+        rule = self.rule_dark if self.is_dark else self.DECK_RULE
         y = top
         for i, (item, head_h, row_h) in enumerate(zip(items, head_hs,
                                                       row_hs)):

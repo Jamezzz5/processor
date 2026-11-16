@@ -22,6 +22,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import urllib3.exceptions as url_ex
+from urllib3.util.retry import Retry
 from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 from PIL import Image
@@ -1566,6 +1567,7 @@ class SeleniumWrapper(object):
     selectize_xpath = 'selectized'
     liquid_xpath = 'liquid'
     command_timeout = 60
+    command_retries = Retry(3, read=False)
     launch_errors = (url_ex.HTTPError, http_client.HTTPException)
     launch_attempts = 3
     launch_pause = 15
@@ -2027,8 +2029,28 @@ class SeleniumWrapper(object):
         if self.display:
             service_kwargs['env'] = dict(os.environ,
                                          DISPLAY=self.display.name)
-        return wd.Chrome(service=ChromeService(**service_kwargs),
-                         options=co)
+        browser = wd.Chrome(service=ChromeService(**service_kwargs),
+                            options=co)
+        self.send_commands_once(browser)
+        return browser
+
+    def send_commands_once(self, browser):
+        """Never re-send a driver command whose answer timed out.
+
+        urllib3 re-sends an idempotent request (every GET and DELETE,
+        ``quit`` and ``close`` among them) three more times after a
+        read timeout, so one hung driver held a teardown for four
+        command timeouts. POSTs were already sent once; refused
+        connections are still retried. Selenium builds the pool inside
+        ``wd.Chrome`` with no way to pass this in, so the pool the
+        new-session call opened is dropped for one built with it.
+
+        :param browser: a driver ``wd.Chrome`` just returned
+        :return: None
+        """
+        pool = browser.command_executor._conn
+        pool.connection_pool_kw['retries'] = self.command_retries
+        pool.clear()
 
     def open_display(self, headless):
         """The headless flag to launch with, starting a virtual display
@@ -2055,12 +2077,41 @@ class SeleniumWrapper(object):
             self.display.stop()
             self.display = None
 
-    def launch_browser(self, co):
-        """Start chrome, retrying with a growing pause when the
-        new-session call times out on a loaded box."""
+    def start_browser(self, co, headless, download_path):
+        """One launch: chrome started and configured, or torn down.
+
+        Every configure statement talks to a chrome that already
+        exists, so a raise there would otherwise strand it beyond any
+        caller's ``finally``. A driver that stopped answering cannot be
+        trusted to take its chrome with it, so that chrome is killed.
+
+        :param co: chrome options to launch with
+        :param headless: whether the browser was launched headless
+        :param download_path: directory downloads land in
+        :return: the configured driver
+        """
+        browser = self.create_browser(co)
+        self.browser_profile = self.profile_of(browser)
+        try:
+            self.configure_browser(browser, headless, download_path)
+        except Exception as e:
+            try:
+                browser.quit()
+            except Exception as quit_error:
+                logging.warning(
+                    'Error quitting mid-init: {}'.format(quit_error))
+            if isinstance(e, self.launch_errors):
+                self.reap_browser()
+            raise
+        return browser
+
+    def launch_browser(self, co, headless, download_path):
+        """Start chrome, retrying with a growing pause when the driver
+        does not answer in time: a new-session call on a loaded box, or
+        a chrome that came up but hangs on its first command."""
         for attempt in range(1, self.launch_attempts + 1):
             try:
-                return self.create_browser(co)
+                return self.start_browser(co, headless, download_path)
             except self.launch_errors as e:
                 if attempt == self.launch_attempts:
                     raise
@@ -2111,7 +2162,7 @@ class SeleniumWrapper(object):
         download_path = os.path.join(os.getcwd(), 'tmp')
         co = self.chrome_options(self.launch_args(headless), download_path)
         try:
-            browser = self.launch_browser(co)
+            browser = self.launch_browser(co, headless, download_path)
         except (ex.SessionNotCreatedException, FileNotFoundError) as e:
             logging.warning(e)
             if self.capture.profile_dir and self.profile_locked_mark in str(e):
@@ -2126,23 +2177,14 @@ class SeleniumWrapper(object):
                 driver_version = self.get_chromedriver_version(
                     chrome_version)
                 self.download_chromedriver(driver_version)
-            browser = self.launch_browser(co)
-        try:
-            self.configure_browser(browser, headless, download_path)
-        except Exception:
-            try:
-                browser.quit()
-            except Exception as quit_error:
-                logging.warning(
-                    'Error quitting mid-init: {}'.format(quit_error))
-            raise
+            browser = self.launch_browser(co, headless, download_path)
         return browser, co
 
     def configure_browser(self, browser, headless, download_path):
         """Post-spawn setup: stealth shims, user agent, window size,
         timeouts and the headless download directory.
 
-        Runs under :func:`init_browser`'s guard: every statement here
+        Runs under :func:`start_browser`'s guard: every statement here
         talks to a chrome that already exists, so a raise would
         otherwise strand that process where nothing can quit it.
 
@@ -2167,7 +2209,6 @@ class SeleniumWrapper(object):
         browser.set_page_load_timeout(min(self.capture.page_load_timeout,
                                           self.command_timeout - 15))
         self.enable_download_in_headless_chrome(browser, download_path)
-        self.browser_profile = self.profile_of(browser)
 
     def headful_agent(self, browser):
         """A headless desktop browser's agent with the headless mark
