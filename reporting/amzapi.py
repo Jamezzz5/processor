@@ -1146,9 +1146,12 @@ class AmzApi(object):
         return body
 
     def filter_df_on_campaign(self, df):
-        if self.campaign_id and self.campaign_col in df.columns:
-            df = df[df[self.campaign_col].astype('U').str.contains(
-                self.campaign_id)]
+        """Keeps the rows whose campaign name, or a DSP report's orderName,
+        matches the card's filter, a regular expression."""
+        col = next((x for x in (self.campaign_col, 'orderName')
+                    if x in df.columns), None)
+        if self.campaign_id and col:
+            df = df[df[col].astype('U').str.contains(self.campaign_id)]
         return df
 
     def get_report_id(self, url, body):

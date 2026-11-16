@@ -1637,6 +1637,7 @@ class SeleniumWrapper(object):
     profile_arg = '--user-data-dir='
     profile_cache_arg = '--disk-cache-size=52428800'
     profile_locked_mark = 'user data directory is already in use'
+    driver_refused_mark = 'only supports Chrome version'
     window_size = (1920, 1080)
     dialog_selector = (
         '[role=dialog],[aria-modal=true],#onetrust-banner-sdk,'
@@ -2119,7 +2120,8 @@ class SeleniumWrapper(object):
                 co = self.chrome_options(
                     self.launch_args(headless, use_profile=False),
                     download_path)
-            else:
+            elif (isinstance(e, FileNotFoundError)
+                  or self.driver_refused_mark in str(e)):
                 chrome_version = self.get_chrome_version()
                 driver_version = self.get_chromedriver_version(
                     chrome_version)

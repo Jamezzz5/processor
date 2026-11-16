@@ -441,9 +441,10 @@ class DcApi(object):
             if report_param.get('path_report'):
                 tdf = self.attributed_path_rows(tdf)
             tdf = self.rename_cols(tdf, report_param)
-            tdf = utl.filter_df_on_campaign(
-                tdf, self.campaign_name_filter, self.campaign_col,
-                self.campaign_id_col)
+            if report_param.get('path_report') or not self.campaign_ids:
+                tdf = utl.filter_df_on_campaign(
+                    tdf, self.campaign_name_filter, self.campaign_col,
+                    self.campaign_id_col)
             if 'reach_report' in report_param:
                 if not report_param['reach_report']:
                     self.check_for_campaign_vendor_dicts(tdf)
@@ -451,7 +452,15 @@ class DcApi(object):
                     tdf = self.add_placement_name(tdf)
             df = pd.concat([df, tdf], ignore_index=True)
         df = self.drop_empty_conversion_cols(df)
+        self.record_id_filter(df)
         return df
+
+    def record_id_filter(self, df):
+        """Records every campaign pulled as matched when the filter's ids
+        went to CM360, whose reports then hold nothing else."""
+        if self.campaign_ids and self.campaign_col in df.columns:
+            utl.record_campaign_filter_stats(
+                self.campaign_ids, df, df, self.campaign_col, False)
 
     @staticmethod
     def drop_empty_conversion_cols(df):

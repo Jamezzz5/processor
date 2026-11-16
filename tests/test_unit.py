@@ -2226,7 +2226,8 @@ class TestUtils:
     def test_locked_profile_falls_back(self, monkeypatch, tmp_path):
         """A profile another Chrome holds costs the profile, not the
         capture, and never fetches a new driver; a driver Chrome refuses
-        is still replaced with the profile kept."""
+        is still replaced with the profile kept, and any other refusal
+        only relaunches."""
         browser = types.SimpleNamespace(window_handles=['w0'])
         launcher = _ProfileLauncher(browser)
         recovery = Mock(return_value='1.2.3.4')
@@ -2254,6 +2255,12 @@ class TestUtils:
         assert recovery.call_count == 3
         assert [f'--user-data-dir={profile}' in x
                 for x in stale.launches] == [True, True]
+        flaky = _ProfileLauncher(
+            browser, 'session not created\nfrom disconnected: unable to '
+                     'connect to renderer', refusals=1)
+        monkeypatch.setattr(utl.SeleniumWrapper, 'launch_browser', flaky)
+        assert utl.SeleniumWrapper(capture=options).browser is browser
+        assert recovery.call_count == 3 and len(flaky.launches) == 2
 
     def test_virtual_display_absent_is_none(self, monkeypatch):
         monkeypatch.setattr(utl.shutil, 'which', Mock(return_value=None))
@@ -3500,6 +3507,22 @@ class TestAccountListing:
         api.client = types.SimpleNamespace(
             get=lambda url: self.response({'error': {}}, 401))
         assert api.get_user_profiles() == []
+
+    def test_amz_filter_reaches_dsp_orders(self, monkeypatch, tmp_path):
+        """A DSP report names its orders orderName; the card's filter used
+        to look only for campaignName and kept every order."""
+        monkeypatch.chdir(tmp_path)
+        api = amzapi.AmzApi()
+        api.campaign_id = '268426'
+        dsp = pd.DataFrame({'orderName': ['268426 - Sega - Metaphor',
+                                          '268407 - Sega - Football'],
+                            'impressions': [1, 2]})
+        assert api.filter_df_on_campaign(dsp)['impressions'].tolist() == [1]
+        api.campaign_id = '^NSW2 Launch - '
+        sponsored = pd.DataFrame({'campaignName': ['NSW2 Launch - JRPG',
+                                                   'APK2 NSW2 Launch - Auto']})
+        assert api.filter_df_on_campaign(sponsored)[
+            'campaignName'].tolist() == ['NSW2 Launch - JRPG']
 
     def test_amz_builds_without_a_config_dir(self, monkeypatch, tmp_path):
         monkeypatch.chdir(tmp_path)
@@ -6980,6 +7003,19 @@ class TestDcApiCampaignFilter:
             dcapi.DcApi.campaign_id_col)
         assert tdf[dcapi.DcApi.campaign_id_col].tolist() == ['111']
 
+    def test_id_filter_records_every_campaign_matched(self):
+        """Ids went to CM360, so a reach report with no id column holds only
+        the filter's campaigns and must not read as a filter that missed."""
+        reach = pd.DataFrame({dcapi.DcApi.campaign_col: ['NSW2', 'NSW2 - R'],
+                              'Impressions': [1, 2]})
+        utl.drain_campaign_filter_stats()
+        self.get_api('32446667,32357452').record_id_filter(reach)
+        stat = utl.drain_campaign_filter_stats()
+        assert (stat['matched'], stat['total'], stat['kept_all']) == (
+            2, 2, False)
+        self.get_api('GameA').record_id_filter(reach)
+        assert utl.drain_campaign_filter_stats() == {}
+
 
 class TestDcApiReachWindows:
     """CM360 refuses a reach report over 93 days, which used to lose every
@@ -8103,6 +8139,17 @@ class TestDayOneFixes:
                             dctc.DICT_COL_NVALUE: ['b']})
         assert dct.DictTranslationConfig().add_and_write(row) is False
 
+    def test_adwords_split_reads_names_in_any_case(self):
+        """Uploader names say 'Google SEM' and 'YouTube'; the split's word
+        lists are lowercase and the card filters on the name as typed."""
+        check = az.CheckAdwordsSplit
+        words = check.sem_list + check.yt_list
+        assert check.match_substring('37223957_YouTube_US_ATLUS', words) == (
+            'YouTube')
+        assert check.match_substring('37223957_Google SEM_US', words) == 'SEM'
+        assert check.match_substring('test_video_youtube', words) == 'video'
+        assert check.match_substring('Brand_Display', words) is None
+
     def test_adwords_split_keeps_the_delivered_rows(self, monkeypatch):
         os.makedirs('raw_data')
         pd.DataFrame({'Campaign': ['brand search', 'launch video',
@@ -8216,6 +8263,37 @@ class TestAutoDictOrder:
         names = ['Snapchat_US_Launch_Snapchat_US_Launch'] * 4
         assert _proposals(_order_source(order, names)) == []
         assert 'mix two layouts' not in caplog.text
+
+    def test_reach_rows_do_not_vote(self):
+        """Day one on Meta: the reach rows are named to fit the current
+        order or have no ad name, so only the delivered ad votes."""
+        order = 'mpMisc|mpBudget|mpVendor|mpMisc|mpCampaign'
+        fits_order = utl.placement_name(
+            'Snapchat', layout=utl.shifted_layout(
+                utl.placement_layout(order.split('|')), 1))
+        os.makedirs('raw_data', exist_ok=True)
+        pd.DataFrame({
+            'Campaign Name': ['Brand_Q4', 'Brand_Q4', 'Brand_Q4', None],
+            'Ad Set Name': ['JRPG_Feed', fits_order, 'JRPG_Feed', fits_order],
+            'Ad Name': ['1001_Snapchat_US_Launch', None, None, None],
+            'Date': '2026-10-14', 'Impressions': 1}).to_csv(
+            os.path.join('raw_data', 'snap.csv'), index=False)
+        matrix = _matrix([{
+            vmc.vendorkey: _SNAP, vmc.filename: 'snap.csv', vmc.firstrow: 0,
+            vmc.lastrow: 0, vmc.placement: 'Ad Set Name',
+            vmc.fullplacename: '::Campaign Name|Ad Set Name|Ad Name',
+            vmc.autodicplace: dctc.FPN, vmc.autodicord: order,
+            vmc.date: 'Date', vmc.impressions: 'Impressions'}])
+        matrix.sort_vendor_list()
+        assert _proposals(matrix, ['Snapchat'], [], ['Launch']) == [
+            ['mpMisc', 'mpMisc', *order.split('|')]]
+
+    def test_trafficked_rows_keeps_a_sample_it_would_empty(self):
+        tdf = pd.DataFrame({'Ad Name': [None, None],
+                            dctc.FPN: ['a__', '_b__']})
+        kept = az.CheckAutoDictOrder.trafficked_rows(
+            tdf, dctc.FPN, ['Ad Name'])
+        assert len(kept) == 2
 
     def test_given_lists_are_never_rebuilt(self, monkeypatch):
         check = az.CheckAutoDictOrder(az.Analyze(

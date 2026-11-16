@@ -1100,6 +1100,22 @@ class CheckAutoDictOrder(AnalyzeBase):
             return -1
         return best
 
+    @staticmethod
+    def trafficked_rows(tdf, auto_place, name_cols=None):
+        """The sampled rows whose names can say where the vendor sits,
+        dropping reach rows (a name column the ads fill left blank, or a
+        name mostly blank parts) unless no other row is left."""
+        cols = [str(x).removeprefix('::') for x in name_cols or []]
+        drop = pd.Series(False, index=tdf.index)
+        for col in [x for x in cols if x in tdf.columns]:
+            blank = utl.blank_text(tdf[col])
+            if not blank.all():
+                drop |= blank
+        parts = tdf[auto_place].astype('U').str.split('_')
+        drop |= parts.map(lambda x: 2 * sum(
+            part.strip() in ('', 'nan') for part in x) > len(x))
+        return tdf if drop.all() else tdf[~drop]
+
     def do_analysis_on_data_source(self, source, df, ven_list=None,
                                    cou_list=None, camp_list=None):
         """
@@ -1123,6 +1139,8 @@ class CheckAutoDictOrder(AnalyzeBase):
             logging.warning('{} {}]'.format(auto_place, msg))
             tdf[auto_place] = tdf[auto_place].astype(str)
         tdf = utl.data_to_type(tdf, str_col=[auto_place])
+        tdf = self.trafficked_rows(tdf, auto_place,
+                                   source.p.get(vmc.fullplacename))
         tdf = pd.DataFrame(tdf[auto_place].str.split('_').to_list())
         names = self.check_vendor_lists(ven_list, cou_list, camp_list)
         shifts = {kind: auto_order.index(kind) - ven_auto_idx
@@ -1700,9 +1718,14 @@ class CheckAdwordsSplit(AnalyzeBase):
 
     @staticmethod
     def match_substring(cell, string_list):
+        """The first of ``string_list`` in ``cell`` whatever its case, as
+        the cell spells it, since a split card filters campaign names as
+        typed and 'Google SEM' or 'YouTube' never held the lowercase."""
+        lower = str(cell).lower()
         for substring in string_list:
-            if substring in cell:
-                return substring
+            at = lower.find(substring)
+            if at >= 0:
+                return str(cell)[at:at + len(substring)]
         return None
 
     def do_analysis(self):
