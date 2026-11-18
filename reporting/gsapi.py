@@ -1043,7 +1043,11 @@ class GsApi(object):
     TITLE_BLOCK_W_EMU = 5900000
     TITLE_BLOCK_H_EMU = 900000
     COVER_TITLE_PT = (36, 32, 28)
+    COVER_PLAIN_TITLE_PT = (24, 20, 18)
     COVER_TITLE_SPACING = 115
+    COVER_FOOT_CLEAR_EMU = 292100
+    COVER_MARK_H_EMU = 1905000
+    COVER_MARK_GAP_EMU = 228600
     TABLE_FILL_SHARE = 0.92
     SECTION_X_EMU = 1600200
     CAPTION_H_EMU = 340000
@@ -1395,21 +1399,27 @@ class GsApi(object):
                                      meta.get('focus'))
         block_w = self.TITLE_BLOCK_W_EMU
         block_x = self.PAGE_W_EMU - self.MARGIN_EMU - block_w
-        y = self.TITLE_BLOCK_Y_EMU
         title = str(meta.get('title', '') or '')
-        title_pt = _ladder_pt(title, block_w, self.COVER_TITLE_PT, 2,
-                              self.TITLE_BLOCK_H_EMU)
-        title_h = self.TITLE_BLOCK_H_EMU
-        if not meta.get('game_logo_url'):
-            title_h = max(title_h, _block_height(
-                title, block_w, title_pt, self.COVER_TITLE_SPACING))
-        sub_y = y + title_h
         sub_h, foot_h = 300000, 260000
         foot = ' · '.join(s for s in (meta.get('brand', ''),
                                       meta.get('legal', '')) if s)
+        title_pt = _ladder_pt(
+            title, block_w,
+            self.COVER_TITLE_PT if art else self.COVER_PLAIN_TITLE_PT, 2,
+            self.TITLE_BLOCK_H_EMU)
+        title_h = self.TITLE_BLOCK_H_EMU
+        if not meta.get('game_logo_url'):
+            wrapped = _block_height(title, block_w, title_pt,
+                                    self.COVER_TITLE_SPACING)
+            title_h = max(title_h, wrapped) if art else wrapped
+        block_h = title_h + sub_h + (foot_h if foot else 0)
+        y = self.TITLE_BLOCK_Y_EMU if art else (
+            self.PAGE_H_EMU - self.COVER_FOOT_CLEAR_EMU - block_h)
+        sub_y = y + title_h
+        mark, mark_w = self._cover_mark_reqs(slide_id, meta)
+        reqs += mark
         if art:
-            reqs += self._text_plate_reqs(
-                slide_id, y, title_h + sub_h + (foot_h if foot else 0))
+            reqs += self._text_plate_reqs(slide_id, y, block_h)
         if meta.get('game_logo_url'):
             _, gy, gw, gh = self._fit_box(
                 meta.get('game_logo_w'), meta.get('game_logo_h'),
@@ -1435,7 +1445,7 @@ class GsApi(object):
         if meta.get('logo_url'):
             reqs += self._logo_plate_reqs(
                 slide_id, f'{slide_id}logo', meta['logo_url'],
-                self.MARGIN_EMU, logo_y, img_w=meta.get('logo_w'),
+                self.MARGIN_EMU + mark_w, logo_y, img_w=meta.get('logo_w'),
                 img_h=meta.get('logo_h'))
         house = meta.get('house_logo_url')
         if art and house and house != meta.get('logo_url'):
@@ -1446,6 +1456,22 @@ class GsApi(object):
                 img_h=meta.get('house_logo_h'))
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
+
+    def _cover_mark_reqs(self, slide_id, meta):
+        """``(requests, width taken)`` for ``game_mark_url``, the game's
+        box art drawn whole at the cover's bottom left; 0 without one."""
+        url = meta.get('game_mark_url')
+        img_w, img_h = meta.get('game_mark_w'), meta.get('game_mark_h')
+        if not (url and img_w and img_h):
+            return [], 0
+        room = self.PAGE_W_EMU - 2 * self.MARGIN_EMU - self.TITLE_BLOCK_W_EMU
+        scale = min(self.COVER_MARK_H_EMU / img_h,
+                    (room - self.COVER_MARK_GAP_EMU) / img_w)
+        draw_w, draw_h = int(img_w * scale), int(img_h * scale)
+        y = self.PAGE_H_EMU - self.COVER_FOOT_CLEAR_EMU - draw_h
+        return (self._image_reqs(slide_id, f'{slide_id}gm', url,
+                                 self.MARGIN_EMU, y, draw_w, draw_h),
+                draw_w + self.COVER_MARK_GAP_EMU)
 
     def add_section_slide(self, presentation_id, slide_id, heading,
                           brand=None, eyebrow=None, note=None,

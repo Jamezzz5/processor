@@ -8550,6 +8550,51 @@ class TestGsApiArtTheme:
         assert height >= 2 * 1.2 * 32 * 12700
 
 
+def test_a_cover_with_no_picture_sits_at_the_foot_with_its_mark():
+    """Without art the cover's title block ends above the page foot and
+    the game's box art is drawn whole at the bottom left."""
+    api = _painted_api()
+    api.paint_field(api.create_presentation('Deck'), ART_THEME)
+    page_h, kit = gsapi.GsApi.PAGE_H_EMU, gsapi.GsApi
+    cover = {'title': 'Harbor Heist VI Competitive Analysis',
+             'subtitle': 'August to November', 'brand': 'Liquid',
+             'game_mark_url': 'https://cdn/cover.jpg', 'game_mark_w': 810,
+             'game_mark_h': 1080, 'logo_url': 'https://cdn/pub.png'}
+    api.create_title_slide('p', cover)
+    boxes = {r['objectId']: r['elementProperties']
+             for r in _sent(api, 'createShape')}
+    top = boxes['rbtitlet']['transform']['translateY']
+    assert top > 246 * 12700, 'the title clears the template mark'
+    legal = boxes['rbtitlelegal']
+    assert (legal['transform']['translateY']
+            + legal['size']['height']['magnitude']) == (
+        page_h - kit.COVER_FOOT_CLEAR_EMU)
+    assert 'rbtitleplate' not in boxes
+    images = {r['objectId']: r['elementProperties']
+              for r in _sent(api, 'createImage')}
+    mark = images['rbtitlegm']
+    width = mark['size']['width']['magnitude']
+    height = mark['size']['height']['magnitude']
+    assert height == kit.COVER_MARK_H_EMU
+    assert abs(width / height - 810 / 1080) < 0.01
+    assert mark['transform']['translateX'] == kit.MARGIN_EMU
+    assert mark['transform']['translateY'] + height == (
+        page_h - kit.COVER_FOOT_CLEAR_EMU)
+    block_x = kit.PAGE_W_EMU - kit.MARGIN_EMU - kit.TITLE_BLOCK_W_EMU
+    assert kit.MARGIN_EMU + width < block_x
+    assert images['rbtitlelogo']['transform']['translateX'] > (
+        kit.MARGIN_EMU + width)
+    api.slides_batch_update.reset_mock()
+    api.create_title_slide('p', {'title': 'Orbit', 'subtitle': 'Sub',
+                                 'image_url': 'https://cdn/a.jpg'})
+    boxes = {r['objectId']: r['elementProperties']
+             for r in _sent(api, 'createShape')}
+    assert boxes['rbtitlet']['transform']['translateY'] == (
+        kit.TITLE_BLOCK_Y_EMU)
+    assert 'rbtitlegm' not in [
+        r['objectId'] for r in _sent(api, 'createImage')]
+
+
 def _matrix(rows):
     matrix = vm.VendorMatrix(display_log=False)
     matrix.vm_parse(pd.DataFrame(rows).reindex(
