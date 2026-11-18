@@ -102,6 +102,11 @@ class TikApi(object):
     buying_type_groups = [['AUCTION', 'RESERVATION_RF'],
                           ['RESERVATION_TOP_VIEW']]
     ad_id_col = 'ad_id'
+    smart_ad_id_col = 'smart_plus_ad_id'
+    creative_col = 'creative_list'
+    creative_id_col = 'smart_plus_creative_id'
+    name_metrics = ['ad_name', 'adgroup_name', 'campaign_name',
+                    'campaign_id', 'adgroup_id']
     campaign_col = 'campaign_name'
     campaign_id_col = 'campaign_id'
     api_field_options = (
@@ -141,7 +146,8 @@ class TikApi(object):
         self.params = {'advertiser_id': self.advertiser_id,
                        'report_type': 'BASIC',
                        'data_level': 'AUCTION_AD',
-                       'metrics': json.dumps(list(self.metrics.keys())),
+                       'metrics': json.dumps(
+                           list(self.metrics.keys()) + self.name_metrics),
                        'dimensions': json.dumps(self.dimensions),
                        'page_size': 1000}
         self.df = pd.DataFrame()
@@ -322,16 +328,34 @@ class TikApi(object):
             return ids, r
         results = response_data['list']
         if ad_ids:
-            for result in results:
-                creative_list = result.get('creative_list', [])
-                if creative_list:
-                    result['ad_id'] = creative_list[0].get(
-                        'smart_plus_creative_id')
+            results = self.report_id_rows(results)
             self.ad_id_list.extend(results)
         else:
             self.campaign_id_list.extend(results)
-        ids.extend([x[key] for x in results])
+        ids.extend([x[key] for x in results if key in x])
         return ids, r
+
+    def report_id_rows(self, ads):
+        """
+        Repeats an ad once per id a report row can carry for it.
+        A Smart+ report row is keyed on the creative that served, not on
+        the ad, and one ad holds several creatives.
+
+        :param ads: ad dicts as the ad endpoint returned them
+        :returns: list of ad dicts, each with one of its ids as ad_id
+        """
+        rows = []
+        for ad in ads:
+            ad_ids = [ad.get(self.ad_id_col), ad.get(self.smart_ad_id_col)]
+            ad_ids += [x.get(self.creative_id_col)
+                       for x in ad.get(self.creative_col) or []]
+            ad_ids = list(dict.fromkeys(str(x) for x in ad_ids if x))
+            if not ad_ids:
+                logging.warning('Ad with no id to join the report on, '
+                                'skipping: {}'.format(ad))
+                continue
+            rows.extend({**ad, self.ad_id_col: x} for x in ad_ids)
+        return rows
 
     @staticmethod
     def unpack_nested_dataframe(df):
@@ -522,6 +546,10 @@ class TikApi(object):
         """
         Joins the pulled ad ids on to the report for their names.
 
+        The pulled name wins.  A row whose id no pulled ad lists, such as
+        a creative since removed from its Smart+ ad, keeps the names the
+        report itself returned rather than going without.
+
         :param df: the downloaded report
         :returns: the report with the ad and campaign names joined on
         """
@@ -534,7 +562,15 @@ class TikApi(object):
                     len(self.ad_id_list), len(df)))
             return df
         id_df = id_df.drop_duplicates(subset=self.ad_id_col)
-        return df.merge(id_df, on=self.ad_id_col, how='left')
+        names = [x for x in self.name_metrics
+                 if x in df.columns and x in id_df.columns]
+        report_names = df[names]
+        df = df.drop(columns=names).merge(
+            id_df, on=self.ad_id_col, how='left')
+        for col in names:
+            df[col] = df[col].where(df[col].notna(),
+                                    report_names[col].to_numpy())
+        return df
 
     def parse_campaign_filter(self):
         """
