@@ -50,6 +50,8 @@ TEXT_INSET_EMU = 100000
 LINE_LEADING_PT = 3
 GLYPH_WIDTH_RATIO = .6
 PROSE_GLYPH_RATIO = .52
+HEAD_GLYPH_RATIO = .7
+REFUSED_IMAGE_RE = re.compile(r'requests\[(\d+)\]\.createImage')
 TILE_PAD_EMU = 100000
 TILE_HERO_PT = 60
 TILE_HERO_VALUE_H_EMU = 914400
@@ -396,13 +398,12 @@ TABLE_WIDTH_CAP_CHARS = 40
 TABLE_COL_MIN_EMU = 406400
 
 
-def _longest_word_emu(cells, font_pt):
+def _longest_word_emu(cells, font_pt, glyph=GLYPH_WIDTH_RATIO):
     """EMU the longest word in any of ``cells`` needs at ``font_pt``,
     insets included, so a column that wide never breaks it mid-word."""
     longest = max((len(word) for cell in cells
                    for word in str(cell or '').split()), default=0)
-    return (longest * font_pt * EMU_PER_PT * GLYPH_WIDTH_RATIO
-            + TEXT_INSET_EMU)
+    return longest * font_pt * EMU_PER_PT * glyph + TEXT_INSET_EMU
 
 
 def _weighted_widths(width, weights, mins):
@@ -418,12 +419,14 @@ def _weighted_widths(width, weights, mins):
 
 def _table_widths(header, rows, width, head_pt, body_pt):
     """EMU per column: each at least its longest word and the API's 32pt
-    floor, the rest by longest cell; equal when the floors overflow."""
+    floor, the rest by longest cell; equal when the floors overflow. A
+    bold header word is measured at :data:`HEAD_GLYPH_RATIO`."""
     if not header:
         return []
     columns = [[head] + [row[c] for row in rows if c < len(row)]
                for c, head in enumerate(header)]
-    mins = [max(TABLE_COL_MIN_EMU, _longest_word_emu([head], head_pt),
+    mins = [max(TABLE_COL_MIN_EMU,
+                _longest_word_emu([head], head_pt, HEAD_GLYPH_RATIO),
                 _longest_word_emu(cells, body_pt)) / width
             for head, *cells in columns]
     if sum(mins) >= 1:
@@ -3422,25 +3425,155 @@ class GsApi(object):
     GALLERY_GAP_EMU = 137160
     GALLERY_CAPTION_H_EMU = 260000
     GALLERY_CAPTION_PT = 11
+    PICTURE_FACTS_PT = (10,)
+    PICTURE_TEXT_PT = (13, 12, 11)
+    PICTURE_TEXT_SHARE = 0.38
+    PICTURE_RAIL_SHARE = 0.38
+    PICTURE_CAPTION_PT = (10, 9)
+    PICTURE_CAPTION_H_EMU = 480000
+    PICTURE_WIDE_ROW = 3
 
-    def _gallery_cell_reqs(self, slide_id, index, image, box, colors):
+    def _gallery_cell_reqs(self, slide_id, index, image, box, colors,
+                           prose=False):
         """One picture fitted into ``box``, keeping its aspect, over its
-        caption cut to one line."""
+        caption: one centred line, or with ``prose`` up to two."""
         x, y, w, h = box
         caption = str(image.get('caption') or '')
-        cap_h = self.GALLERY_CAPTION_H_EMU if caption else 0
+        cap_h = 0
+        if caption:
+            cap_h = (self.PICTURE_CAPTION_H_EMU if prose
+                     else self.GALLERY_CAPTION_H_EMU)
         fit = self._fit_box(image.get('img_w'), image.get('img_h'), x, y, w,
                             h - cap_h)
         reqs = self._image_reqs(slide_id, f'{slide_id}g{index}',
                                 image['url'], *fit, outline=True)
         if not caption:
             return reqs
+        cap_id, cap_y = f'{slide_id}gc{index}', y + h - cap_h
+        if prose:
+            return reqs + self._prose_reqs(
+                slide_id, cap_id, caption, (x, cap_y, w, cap_h), colors,
+                self.PICTURE_CAPTION_PT, 'picture caption')
         caption = _clip_lines(caption, w, self.GALLERY_CAPTION_PT, 1,
                               PROSE_GLYPH_RATIO)
         return reqs + self._text_box_reqs(
-            slide_id, f'{slide_id}gc{index}', caption, x, y + h - cap_h, w,
-            cap_h, font_pt=self.GALLERY_CAPTION_PT, align='CENTER',
+            slide_id, cap_id, caption, x, cap_y, w, cap_h,
+            font_pt=self.GALLERY_CAPTION_PT, align='CENTER',
             color=colors['muted'])
+
+    def _grid_reqs(self, slide_id, images, box, colors, cols, prose=False):
+        """``images`` in even cells across ``box``, ``cols`` to a row."""
+        x, y, width, height = box
+        gap = self.GALLERY_GAP_EMU
+        rows = (len(images) + cols - 1) // cols
+        cell_w = (width - gap * (cols - 1)) // cols
+        cell_h = (height - gap * (rows - 1)) // rows
+        reqs = []
+        for index, image in enumerate(images):
+            row, col = divmod(index, cols)
+            reqs += self._gallery_cell_reqs(
+                slide_id, index, image,
+                (x + col * (cell_w + gap), y + row * (cell_h + gap), cell_w,
+                 cell_h), colors, prose)
+        return reqs
+
+    def _picture_columns(self, images, width):
+        """Pictures per row: all of them, or two when four captions would
+        not set in a quarter of the width."""
+        count = len(images)
+        if count <= self.PICTURE_WIDE_ROW:
+            return count
+        cell = (width - self.GALLERY_GAP_EMU * (count - 1)) // count
+        fits = all(self._fit_prose(str(image.get('caption') or ''), cell,
+                                   self.PICTURE_CAPTION_H_EMU,
+                                   self.PICTURE_CAPTION_PT).fits
+                   for image in images)
+        return count if fits else 2
+
+    def _picture_words_reqs(self, slide_id, facts, text, box, colors):
+        """``(requests, height)`` for the facts line over the reading in
+        ``box``, the reading cut to the lines the box holds."""
+        x, y, width, height = box
+        reqs, used = [], 0
+        if facts:
+            used = min(height, self._fit_prose(
+                str(facts), width, height, self.PICTURE_FACTS_PT).height)
+            reqs += self._text_box_reqs(
+                slide_id, f'{slide_id}pf', str(facts), x, y, width, used,
+                font_pt=self.PICTURE_FACTS_PT[0], bold=True,
+                color=colors['muted'])
+        if text:
+            room = height - used
+            needed = min(room, self._fit_prose(
+                text, width, room, self.PICTURE_TEXT_PT).height)
+            reqs += self._prose_reqs(
+                slide_id, f'{slide_id}px', text, (x, y + used, width, needed),
+                colors, self.PICTURE_TEXT_PT, 'picture text')
+            used += needed
+        return reqs, used
+
+    def picture_slide_reqs(self, slide_id, title, pictures, facts=None,
+                           text=None, brand=None, footer=None, page=None,
+                           eyebrow=None, subhead=None, source=None):
+        """One picture beside its reading, or up to :data:`GALLERY_MAX`
+        under the words, each over a caption of up to two lines."""
+        colors = self._brand_colors(brand)
+        reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
+            slide_id, title, colors, footer, page, eyebrow, subhead, source)]
+        x, y, width, height = self.body_box(self.is_dark)
+        gap = self.GALLERY_GAP_EMU
+        pictures = [p for p in pictures if p.get('url')][:self.GALLERY_MAX]
+        if len(pictures) == 1 and text:
+            rail_w = int(width * self.PICTURE_RAIL_SHARE)
+            words, _ = self._picture_words_reqs(
+                slide_id, facts, text, (x + width - rail_w, y, rail_w, height),
+                colors)
+            return reqs + words + self._grid_reqs(
+                slide_id, pictures, (x, y, width - rail_w - gap, height),
+                colors, 1, prose=True)
+        words, used = self._picture_words_reqs(
+            slide_id, facts, text,
+            (x, y, width, int(height * self.PICTURE_TEXT_SHARE)), colors)
+        if not pictures:
+            return reqs + words
+        top = y + used + (gap if used else 0)
+        return reqs + words + self._grid_reqs(
+            slide_id, pictures, (x, top, width, y + height - top), colors,
+            self._picture_columns(pictures, width), prose=True)
+
+    def _refused_picture(self, seen, requests):
+        """The URL of the picture Google refused in the batch just sent,
+        taking the refusal and its undrawn slide off the records."""
+        refused = (getattr(self, 'slides_rejections', None) or [])[seen:]
+        found = refused and REFUSED_IMAGE_RE.search(refused[-1][1])
+        if not found:
+            return None
+        del self.slides_rejections[seen:]
+        self.drawn_slides.pop()
+        return requests[int(found.group(1))]['createImage']['url']
+
+    def add_picture_slide(self, presentation_id, slide_id, title, pictures,
+                          facts=None, text=None, **chrome):
+        """Draw :meth:`picture_slide_reqs`, retrying on a refused picture
+        and leaving off one refused twice, so a deck never loses the slide.
+        """
+        asked = set()
+        for _ in range(2 * len(pictures) + 1):
+            seen = len(getattr(self, 'slides_rejections', None) or [])
+            requests = self.picture_slide_reqs(slide_id, title, pictures,
+                                               facts, text, **chrome)
+            self.slides_batch_update(presentation_id, requests)
+            refused = self._refused_picture(seen, requests)
+            if refused is None:
+                return slide_id
+            if refused in asked:
+                logging.warning('Picture slide %s: Google could not fetch '
+                                '%s; drawn without it', slide_id,
+                                refused.split('?')[0])
+                pictures = [picture for picture in pictures
+                            if picture.get('url') != refused]
+            asked.add(refused)
+        return slide_id
 
     def add_gallery_slide(self, presentation_id, slide_id, title, images,
                           brand=None, footer=None, page=None, eyebrow=None,
@@ -3460,21 +3593,14 @@ class GsApi(object):
         cx, top, cw, body_h = self.body_box(self.is_dark)
         reqs = [self._blank_slide_req(slide_id), *self._content_chrome_reqs(
             slide_id, title, colors, footer, page, eyebrow, subhead, source)]
-        count, gap = len(images), self.GALLERY_GAP_EMU
+        count = len(images)
         if count:
             portrait = sum(1 for image in images
                            if (image.get('img_h') or 0)
                            > (image.get('img_w') or 0))
             cols = count if count < 4 or portrait * 2 > count else 2
-            n_rows = (count + cols - 1) // cols
-            cell_w = (cw - gap * (cols - 1)) // cols
-            cell_h = (body_h - gap * (n_rows - 1)) // n_rows
-            for i, image in enumerate(images):
-                r, c = divmod(i, cols)
-                reqs += self._gallery_cell_reqs(
-                    slide_id, i, image,
-                    (cx + c * (cell_w + gap), top + r * (cell_h + gap),
-                     cell_w, cell_h), colors)
+            reqs += self._grid_reqs(slide_id, images,
+                                    (cx, top, cw, body_h), colors, cols)
         self.slides_batch_update(presentation_id, reqs)
         return slide_id
 
