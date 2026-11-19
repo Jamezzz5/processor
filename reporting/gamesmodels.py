@@ -1022,6 +1022,10 @@ class CommunityPulse(Base):
                          '("sponsored" without "not sponsored", #ad, '
                          '"paid partnership", ...). The token rule '
                          'lives in the twitch_pulse lane.')
+    twitch_rank = Column(
+        Integer, comment="The category's position in Twitch's top "
+                         'games at the sample (Helix Get Top Games, '
+                         'first 100). NULL outside the list read.')
 
 
 class StreamFlag(Base):
@@ -1057,6 +1061,38 @@ class StreamFlag(Base):
     viewer_count = Column(
         Numeric, comment='Viewers on the flagged stream at sample '
                          'time.')
+
+
+class StreamTop(Base):
+    """The biggest streams on a title's category at a ``community_pulse``
+    sample, one row per channel per slot, updated in place on a rerun."""
+    __tablename__ = 'stream_top'
+    __table_args__ = (
+        UniqueConstraint('gameid', 'sampled_at', 'channel',
+                         name='uq_stream_top_slot'),
+        Index('ix_stream_top_sampled', 'sampled_at'),
+        {'schema': 'games',
+         'comment': "The most-watched streams on a title's Twitch "
+                    'category during a community_pulse sample. Capped '
+                    'per title per slot - the head of the category, '
+                    'not a census; totals live on community_pulse.'},
+    )
+
+    streamtopid = Column(BigIntPk, primary_key=True)
+    gameid = Column(BigInteger, ForeignKey('games.game.gameid'),
+                    nullable=False)
+    sampled_at = Column(
+        DateTime, nullable=False,
+        comment='Naive UTC slot start - same truncation as '
+                'community_pulse.sampled_at.')
+    channel = Column(Text, nullable=False,
+                     comment='Streamer login (user_login).')
+    title = Column(Text, comment='Stream title as observed.')
+    viewer_count = Column(
+        Numeric, comment='Viewers on the stream at sample time.')
+    rank = Column(
+        Integer, comment="The stream's position by viewers on the "
+                         'category at sample time, 1 the biggest.')
 
 
 class PriceSnapshot(Base):
@@ -1195,6 +1231,9 @@ class CriticReview(Base):
         Date, comment='UTC date the review was published; NULL when '
                       'absent.')
     url = Column(Text, comment="The review on the outlet's site.")
+    snippet = Column(
+        Text, comment="The review's pull quote as OpenCritic gives "
+                      'it; NULL when absent.')
     fetched_at = Column(
         DateTime, nullable=False,
         comment='Naive UTC; the last sweep that touched the row - the '

@@ -6515,6 +6515,31 @@ class TestGamesDb:
         s.add(gmdl.CriticReview(**fields))
         assert gdb.safe_commit(s, 'test') is False
 
+    def test_stream_top_rerun_updates_in_place(self):
+        s = self._session()
+        game = gdb.upsert_game(s, 'Game A Prime',
+                               registry_slug='game-a-prime')
+        slot = dt.datetime(2026, 8, 31, 8)
+        top_key = {'gameid': game.gameid, 'sampled_at': slot,
+                   'channel': 'streamer_one'}
+        assert gdb.upsert_fact(
+            s, gmdl.StreamTop, top_key,
+            {'title': 'Game A launch night', 'viewer_count': 9000,
+             'rank': 1}) == 1
+        assert gdb.upsert_fact(
+            s, gmdl.StreamTop, dict(top_key, channel='streamer_two'),
+            {'viewer_count': 4000, 'rank': 2}) == 1
+        s.commit()
+        assert gdb.upsert_fact(
+            s, gmdl.StreamTop, top_key,
+            {'viewer_count': 3000, 'rank': 2}) == 0
+        s.commit()
+        tops = {row.channel: row for row in s.query(gmdl.StreamTop)}
+        assert set(tops) == {'streamer_one', 'streamer_two'}
+        assert float(tops['streamer_one'].viewer_count) == 3000
+        assert tops['streamer_one'].rank == 2
+        assert tops['streamer_one'].title == 'Game A launch night'
+
     def test_store_asset_fields_shapes(self):
         assert gamesw.store_asset_fields(None) == []
         assert gamesw.store_asset_fields({}) == []
@@ -8083,6 +8108,128 @@ def _quota_api(server, retries=gsapi.QUOTA_RETRIES):
     api.client = requests.Session()
     api.client.mount('http://', gsapi.quota_retry_adapter(retries, backoff=0))
     return api
+
+
+def test_a_short_bold_header_never_breaks_mid_word():
+    header = ['Activation', 'Where']
+    rows = [['Rooftop sign over the arena ' * 4, 'US'],
+            ['Tram livery in two depots ' * 4, 'AU']]
+    widths = gsapi._table_widths(header, rows, 4000000, 12, 10)
+    bold = gsapi._longest_word_emu(['Where'], 12, gsapi.HEAD_GLYPH_RATIO)
+    assert widths[1] >= int(bold)
+    assert widths[1] > gsapi._longest_word_emu(['Where'], 12)
+    assert sum(widths) == 4000000
+
+
+class _RefusingGsApi(gsapi.GsApi):
+    """A ``GsApi`` whose Google cannot fetch the pictures in ``dead`` and
+    fails once on those in ``flaky``, refusing the whole batch."""
+
+    def __init__(self, dead=(), flaky=()):
+        super().__init__()
+        self.dead, self.flaky = set(dead), set(flaky)
+        self.slides_rejections, self.drawn_slides, self.applied = [], [], []
+        self.sent = 0
+
+    def slides_batch_update(self, presentation_id, requests):
+        self.sent += 1
+        sid = next(req['createSlide']['objectId'] for req in requests
+                   if 'createSlide' in req)
+        self.drawn_slides.append(sid)
+        for index, req in enumerate(requests):
+            url = req.get('createImage', {}).get('url')
+            if url in self.dead or url in self.flaky:
+                self.flaky.discard(url)
+                self.slides_rejections.append((
+                    sid, f'Invalid requests[{index}].createImage: There '
+                         'was a problem retrieving the image.'))
+                return
+        self.applied.append(requests)
+
+
+def _box(properties):
+    """``(x, y, w, h)`` of one element's placement."""
+    return (properties['transform']['translateX'],
+            properties['transform']['translateY'],
+            properties['size']['width']['magnitude'],
+            properties['size']['height']['magnitude'])
+
+
+def _picture_boxes(api, pictures, text):
+    """Where a picture slide puts its pictures and text boxes."""
+    requests = api.picture_slide_reqs(
+        'rbslide1', 'Tower wrap', pictures, 'Out of home · US', text,
+        page=2)
+    return {'images': [_box(req['createImage']['elementProperties'])
+                       for req in requests if 'createImage' in req],
+            'shapes': {req['createShape']['objectId']:
+                       _box(req['createShape']['elementProperties'])
+                       for req in requests if 'createShape' in req}}
+
+
+class TestGsApiPictureSlide:
+
+    def test_a_refused_picture_is_tried_again_then_left_off(self):
+        """A refused picture is sent again, then left off when refused
+        twice, with nothing left on the record to fail the deck."""
+        good, flaky, dead = ('https://img/good.png', 'https://img/flaky.png',
+                             'https://img/dead.png')
+        api = _RefusingGsApi(dead={dead}, flaky={flaky})
+        pictures = [{'url': url, 'caption': url[-8:]}
+                    for url in (good, flaky, dead)]
+        api.add_picture_slide('p', 'rbslide3', 'Tower wrap', pictures,
+                              'Out of home · US', 'It ran.')
+        [requests] = api.applied
+        assert [req['createImage']['url'] for req in requests
+                if 'createImage' in req] == [good, flaky]
+        assert api.sent == 4, 'flaky once, dead twice, then the slide'
+        assert (api.slides_rejections, api.drawn_slides) == (
+            [], ['rbslide3'])
+        api = _RefusingGsApi(dead={good})
+        api.add_picture_slide('p', 'rbslide4', 'Tower wrap', pictures[:1],
+                              'Out of home · US', 'It ran.')
+        [requests] = api.applied
+        assert not [req for req in requests if 'createImage' in req]
+        assert 'It ran.' in [req['insertText']['text'] for req in requests
+                             if 'insertText' in req]
+        api.slides_rejections.append(('rbslide5', 'Invalid requests[2].'
+                                                  'createShape: no'))
+        api.drawn_slides.append('rbslide5')
+        assert api._refused_picture(0, []) is None
+        assert len(api.slides_rejections) == 1
+
+    def test_one_picture_sits_beside_its_reading(self):
+        """One picture sits beside its reading, several under it; four
+        long captions take two rows of two."""
+        api = gsapi.GsApi()
+        _, top, width, height = api.body_box(api.is_dark)
+        one = _picture_boxes(api, [{'url': 'https://img/a.png'}],
+                             'It ran in public.')
+        (x, y, w, h), = one['images']
+        rx, ry, _, _ = one['shapes']['rbslide1px']
+        fx, fy, _, fh = one['shapes']['rbslide1pf']
+        assert x + w <= rx == fx, 'the words sit to the right'
+        assert (fy, ry) == (top, top + fh), 'facts first, then the reading'
+        bare = _picture_boxes(api, [{'url': 'https://img/a.png'}], '')
+        assert bare['images'][0][2] == width
+        pair = _picture_boxes(api, [{'url': 'https://img/a.png'},
+                                    {'url': 'https://img/b.png'}],
+                              'It ran in public.')
+        _, ty, _, th = pair['shapes']['rbslide1px']
+        assert all(y >= ty + th for _, y, _, _ in pair['images'])
+        assert all(y + h <= top + height + 1
+                   for _, y, _, h in pair['images'])
+        short = [{'url': f'https://img/{n}.png', 'caption': f'Spot {n}'}
+                 for n in range(5)]
+        assert len({x for x, _, _, _ in _picture_boxes(
+            api, short, '')['images']}) == 4, 'four across, never five'
+        long = [dict(shot, caption='A caption far too long for a quarter '
+                                   'of the slide to set on two lines '
+                                   'without cutting it short')
+                for shot in short[:4]]
+        boxes = _picture_boxes(api, long, '')['images']
+        assert len({x for x, _, _, _ in boxes}) == 2
+        assert len({y for _, y, _, _ in boxes}) == 2
 
 
 class TestGsApiQuota:
