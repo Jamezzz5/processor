@@ -50,9 +50,6 @@ class Dict(object):
         return self.data_dict
 
     def merge(self, df, colname):
-        """``df`` with the dictionary joined on ``colname``, both cast
-        to text first: a dictionary read back with numeric or empty
-        names otherwise refuses to merge onto the data's text names."""
         logging.info('Merging {}'.format(self.filename))
         data_dict = utl.data_to_type(self.data_dict, str_col=[colname])
         df = utl.data_to_type(df, str_col=[colname])

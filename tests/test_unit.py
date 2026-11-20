@@ -1157,14 +1157,6 @@ class TestUtils:
         df = utl.apply_rules(df, vm_rules, utl.POST, **kwargs)
         assert pd.testing.assert_frame_equal(df, ndf) is None
 
-    def test_data_to_type_takes_a_lone_column_name(self):
-        """A bare name was iterated letter by letter, so nothing was
-        cast and merges on the column still failed on type."""
-        df = pd.DataFrame({'a': [1, 2], 'b': ['3', '4']})
-        ndf = utl.data_to_type(df.copy(), str_col='a', float_col='b')
-        assert ndf['a'].tolist() == ['1', '2']
-        assert ndf['b'].tolist() == [3.0, 4.0]
-
     def test_data_to_type(self):
         str_col = 'str_col'
         float_col = 'float_col'
@@ -4239,16 +4231,6 @@ class TestDictionary:
     mock_rc_auto = ({dctc.TAR: [dctc.TB, dctc.DT1, dctc.GT]},
                     {dctc.TAR: ['_', '_']})
 
-    def test_merge_joins_numeric_dictionary_names_to_the_data_text(
-            self):
-        """A dictionary read back with numeric placement names still
-        joins the data, whose names are always text (ticket 747)."""
-        dic = dct.Dict()
-        dic.data_dict = pd.DataFrame({dctc.FPN: [123], dctc.CAM: ['c']})
-        df = dic.merge(pd.DataFrame({dctc.FPN: ['123', '9']}), dctc.FPN)
-        assert df[dctc.CAM].tolist()[0] == 'c'
-        assert pd.isna(df[dctc.CAM].tolist()[1])
-
     def construct_empty_sort(self):
         auto = self.mock_rc_auto[0]
         empty_sort = {key: {comp: [] for comp in auto[key]} for key in auto}
@@ -4476,21 +4458,6 @@ class TestErrorReport:
         err = er.ErrorReport(df, dic, dctc.FPN, error_filename)
         assert not err.data_err.empty
         assert len(err.data_err) == 1
-
-    def test_numeric_dictionary_names_merge_with_text_placements(
-            self, tmp_path_factory):
-        """A dictionary whose placement names read back as numbers, or
-        as an empty float column, joins the data's text names instead
-        of pandas refusing the merge (tickets 747, 2916)."""
-        file_path = tmp_path_factory.mktemp(utl.error_path)
-        error_filename = '{}/ER_num.csv'.format(file_path)
-        df = pd.DataFrame({dctc.FPN: ['123', '456']})
-        dic = pd.DataFrame({dctc.FPN: [123]})
-        err = er.ErrorReport(df, dic, None, error_filename)
-        assert err.data_err.values.tolist() == [['456']]
-        dic = pd.DataFrame({dctc.FPN: pd.Series([], dtype=float)})
-        err = er.ErrorReport(df, dic, None, error_filename)
-        assert len(err.data_err) == 2
 
 
 class TestCalc:

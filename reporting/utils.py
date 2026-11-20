@@ -372,8 +372,6 @@ _WHITESPACE_RUN = re.compile(r'\s+')
 
 
 def _col_list(cols):
-    """``cols`` as a list: a lone column name was iterated letter by
-    letter, so the cast it asked for silently never happened."""
     if isinstance(cols, str):
         return [cols]
     return [] if cols is None else list(cols)
