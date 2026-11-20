@@ -316,16 +316,17 @@ class PmApi(object):
                     IMPRESSIONS_COL: point.get('impressions')})
         return rows
 
-    def export_to_csv(self):
-        """Pull the remembered brand's daily spend by channel; False when
-        it spent nothing in the window."""
+    def export_to_csv(self, country=None):
+        """Pull the remembered brand's daily spend by channel, in the
+        site's country unless ``country`` names another; False when it
+        spent nothing in the window."""
         sd, ed = self.window
         query = urlencode([('category_id', 0), ('date_granularity', 'daily'),
                            ('start_date', sd.date().isoformat()),
                            ('end_date', ed.date().isoformat()),
                            ('sort_by', 'spend')])
         path = self.site['series_path'].format(self.brand['id'])
-        body = [{'country_code': self.site['country'],
+        body = [{'country_code': country or self.site['country'],
                  'channels': list(CHANNELS)}]
         rows = self.series_rows(
             self.request_json('POST', f'{path}?{query}', body))
