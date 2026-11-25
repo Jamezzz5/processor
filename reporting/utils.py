@@ -371,17 +371,17 @@ def string_to_date(my_string):
 _WHITESPACE_RUN = re.compile(r'\s+')
 
 
+def _col_list(cols):
+    if isinstance(cols, str):
+        return [cols]
+    return [] if cols is None else list(cols)
+
+
 def data_to_type(df, float_col=None, date_col=None, str_col=None, int_col=None,
                  fill_empty=True):
     df = df.loc[:, ~df.columns.duplicated()]
-    if float_col is None:
-        float_col = []
-    if date_col is None:
-        date_col = []
-    if str_col is None:
-        str_col = []
-    if int_col is None:
-        int_col = []
+    float_col, date_col, str_col, int_col = map(
+        _col_list, (float_col, date_col, str_col, int_col))
     for col in float_col:
         if col not in df:
             continue

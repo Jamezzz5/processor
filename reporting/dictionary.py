@@ -51,7 +51,9 @@ class Dict(object):
 
     def merge(self, df, colname):
         logging.info('Merging {}'.format(self.filename))
-        df = df.merge(self.data_dict, on=colname, how='left')
+        data_dict = utl.data_to_type(self.data_dict, str_col=[colname])
+        df = utl.data_to_type(df, str_col=[colname])
+        df = df.merge(data_dict, on=colname, how='left')
         return df
 
     def auto_functions(self, err, autodicord, placement, rc_auto):
