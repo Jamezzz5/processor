@@ -1620,6 +1620,9 @@ class SeleniumWrapper(object):
     consent_cover_min = 0.2
     blank_span = 6
     blank_ratio = 0.995
+    dark_level = 48
+    dark_ratio = 0.95
+    video_settle = 3
     retry_settles = {'blank': (3, 8), 'bot_check': (8,),
                      'consent_wall': (1,), 'login_wall': (1,)}
     ready_wait = 8
@@ -2731,11 +2734,11 @@ class SeleniumWrapper(object):
         return ' '.join(str(x) for x in parts if x)
 
     @classmethod
-    def is_solid_png(cls, png_bytes):
-        """Whether a shot is one colour give or take ``blank_span``
-        grey levels, or unreadable: a page that had not painted."""
+    def grey_mode(cls, png_bytes):
+        """``(mode, share)``: a shot's commonest grey level and the share
+        of pixels within ``blank_span`` of it; None for unreadable bytes."""
         if not png_bytes:
-            return True
+            return None
         try:
             with Image.open(io.BytesIO(png_bytes)) as img:
                 grey = img.convert('L')
@@ -2743,13 +2746,28 @@ class SeleniumWrapper(object):
                 lo, hi = grey.getextrema()
                 hist = grey.histogram()
         except (OSError, ValueError):
-            return True
-        if hi - lo <= cls.blank_span:
-            return True
+            return None
         mode = max(range(len(hist)), key=hist.__getitem__)
+        if hi - lo <= cls.blank_span:
+            return mode, 1.0
         near = sum(hist[max(0, mode - cls.blank_span):
                         mode + cls.blank_span + 1])
-        return near / float(sum(hist) or 1) >= cls.blank_ratio
+        return mode, near / float(sum(hist) or 1)
+
+    @classmethod
+    def is_solid_png(cls, png_bytes):
+        """Whether a shot is one colour give or take ``blank_span``
+        grey levels, or unreadable: a page that had not painted."""
+        found = cls.grey_mode(png_bytes)
+        return found is None or found[1] >= cls.blank_ratio
+
+    @classmethod
+    def is_dark_frame(cls, png_bytes):
+        """Whether a slot shot is near-black over ``dark_ratio`` of it, as
+        a video player is before its first frame."""
+        found = cls.grey_mode(png_bytes)
+        return (found is not None and found[0] < cls.dark_level
+                and found[1] >= cls.dark_ratio)
 
     @classmethod
     def _marker_hit(cls, text, kind):
@@ -2993,14 +3011,16 @@ class SeleniumWrapper(object):
 
     def write_clip(self, path, clip, **shot):
         """Write the page's capture of ``clip`` (page pixels, past the
-        viewport) to ``path``, with ``shot`` as further capture params;
-        raises what the driver or the decode does, writing nothing."""
+        viewport) to ``path`` and return its bytes, with ``shot`` as further
+        capture params; raises what the driver or the decode does, writing
+        nothing."""
         answer = self.browser.execute_cdp_cmd(
             'Page.captureScreenshot',
             dict(shot, captureBeyondViewport=True, clip=dict(clip, scale=1)))
         data = base64.b64decode(answer['data'])
         with open(path, 'wb') as f:
             f.write(data)
+        return data
 
     def scroll_through(self, steps=3, pause=0.7):
         """Walk the page top to bottom and back so lazily loaded ad
@@ -3306,14 +3326,17 @@ class SeleniumWrapper(object):
     def shoot_elem(self, elem, path):
         """Screenshot one element to ``path`` as a clip of the page's
         capture, since the driver's element shot blanks later pages;
-        '' when the driver could not."""
+        '' when the driver could not. A dark first shot is a video ad not
+        yet started, so it is shot again after ``video_settle`` seconds."""
         try:
             box = self.browser.execute_script(self.elem_box_script,
                                               elem) or {}
             if not (box.get('width') and box.get('height')):
                 return ''
             time.sleep(self.slot_settle)
-            self.write_clip(path, box, format='png')
+            if self.is_dark_frame(self.write_clip(path, box, format='png')):
+                time.sleep(self.video_settle)
+                self.write_clip(path, box, format='png')
         except (KeyError, TypeError, ValueError) + self.browser_errors as e:
             logging.warning('Could not shoot ad slot: {}'.format(e))
             return ''

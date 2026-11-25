@@ -1,5 +1,6 @@
 import io
 import os
+import base64
 import re
 import sys
 import json
@@ -475,6 +476,20 @@ def _bare_wrapper(**attrs):
     sw = utl.SeleniumWrapper.__new__(utl.SeleniumWrapper)
     vars(sw).update(attrs)
     return sw
+
+
+class _ShotCapture(object):
+    """``execute_cdp_cmd`` stand-in handing out ``frames`` in turn, the
+    last again once they run out, and keeping each clip asked for."""
+
+    def __init__(self, frames):
+        self.frames = frames
+        self.clips = []
+
+    def __call__(self, name, args):
+        self.clips.append(args['clip'])
+        data = self.frames[min(len(self.clips), len(self.frames)) - 1]
+        return {'data': base64.b64encode(data).decode()}
 
 
 class _FakeProcess(object):
@@ -1910,6 +1925,42 @@ class TestUtils:
         assert utl.SeleniumWrapper.classify_page(
             state, self._png((244, 244, 244))) == (
             'blank', 'single-colour page')
+
+    def test_dark_frame_reads_an_unstarted_video_only(self):
+        """A black frame with only a rating badge is an unstarted video;
+        a light placeholder, a drawn creative and bad bytes are not."""
+        dark = utl.SeleniumWrapper.is_dark_frame
+        assert dark(self._png((0, 0, 0)))
+        assert dark(self._png((0, 0, 0), size=(320, 180),
+                              mark=(300, 160, 314, 176)))
+        assert not dark(self._png((238, 238, 238)))
+        assert not dark(self._png((0, 0, 0), mark=(0, 0, 63, 20)))
+        assert not dark(b'not a png')
+
+    def test_a_dark_slot_is_shot_again_after_the_video_settles(
+            self, tmp_path, monkeypatch):
+        """The second shot replaces a dark first one; a painted first
+        shot is kept without waiting."""
+        frames = [self._png((0, 0, 0)), self._png((200, 30, 30))]
+        capture = _ShotCapture(frames)
+        waits = []
+        wrapper = _bare_wrapper(
+            slot_settle=0, video_settle=7,
+            browser=types.SimpleNamespace(
+                execute_script=lambda script, elem: {
+                    'x': 0, 'y': 0, 'width': 64, 'height': 48},
+                execute_cdp_cmd=capture))
+        path = str(tmp_path / 'slot.png')
+        monkeypatch.setattr(utl.time, 'sleep', waits.append)
+        assert wrapper.shoot_elem(None, path) == path
+        assert len(capture.clips) == 2 and waits == [0, 7]
+        with open(path, 'rb') as f:
+            assert not utl.SeleniumWrapper.is_dark_frame(f.read())
+        frames[0] = self._png((200, 30, 30))
+        capture.clips.clear()
+        waits.clear()
+        wrapper.shoot_elem(None, path)
+        assert len(capture.clips) == 1 and waits == [0]
 
     def test_vendor_of_names_the_serving_network(self):
         """The creative's hosts outrank the frame's."""
